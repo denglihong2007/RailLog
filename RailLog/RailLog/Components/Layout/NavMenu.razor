@@ -1,81 +1,34 @@
-﻿@implements IDisposable
-
+@implements IDisposable
 @inject NavigationManager NavigationManager
 
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">RailLog</a>
-    </div>
-</div>
+<MudNavMenu>
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="my-trips" Icon="@Icons.Material.Filled.Train">运转日志</MudNavLink>
+    <MudNavLink Href="add-trip" Icon="@Icons.Material.Filled.Edit">记录行程</MudNavLink>
+    <MudNavLink Href="auth" Icon="@Icons.Material.Filled.Lock">Auth Required</MudNavLink>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <i class="bi bi-house-door-fill"></i>
-                <span>Home</span>
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="my-trips">
-                <i class="bi bi-train-front-fill"></i>
-                <span>运转日志</span>
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="add-trip">
-                <i class="bi bi-pen"></i>
-                <span>记录行程</span>
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="auth">
-                <i class="bi bi-lock"></i>
-                <span>Auth Required</span>
-            </NavLink>
-        </div>
-
-        <AuthorizeView>
-            <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="Account/Manage">
-                        <i class="bi bi-person-fill"></i>
-                        <span>@context.User.Identity?.Name</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <form action="Account/Logout" method="post">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="ReturnUrl" value="@currentUrl" />
-                        <button type="submit" class="nav-link">
-                            <i class="bi bi-arrow-bar-left"></i>
-                            <span>Logout</span>
-                        </button>
-                    </form>
-                </div>
-            </Authorized>
-            <NotAuthorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="Account/Register">
-                        <i class="bi bi-person"></i>
-                        <span></span> Register
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="Account/Login">
-                        <i class="bi bi-person-badge"></i>
-                        <span></span> Login
-                    </NavLink>
-                </div>
-            </NotAuthorized>
-        </AuthorizeView>
-    </nav>
-</div>
+    <AuthorizeView>
+        <Authorized>
+            <MudNavLink Href="Account/Manage" Icon="@Icons.Material.Filled.Person">@context.User.Identity?.Name</MudNavLink>
+            <form action="Account/Logout" method="post">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                <MudButton ButtonType="ButtonType.Submit"
+                           FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.Logout"
+                           Variant="Variant.Text"
+                           Class="mud-nav-link"
+                           Style="justify-content: flex-start; text-transform: none; padding-left: 16px;">
+                    Logout
+                </MudButton>
+            </form>
+        </Authorized>
+        <NotAuthorized>
+            <MudNavLink Href="Account/Register" Icon="@Icons.Material.Filled.PersonAdd">Register</MudNavLink>
+            <MudNavLink Href="Account/Login" Icon="@Icons.Material.Filled.Login">Login</MudNavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+</MudNavMenu>
 
 @code {
     private string? currentUrl;
@@ -97,4 +50,3 @@
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
 }
-

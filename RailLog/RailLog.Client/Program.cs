@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using MudBlazor.Services;
 using RailLog.Client;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
+builder.Services.AddMudServices();
 builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthenticationStateDeserialization();

@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="8.15.0" />
     <ProjectReference Include="..\..\RailLog.Shared\RailLog.Shared.csproj" />
     <ProjectReference Include="..\RailLog.Client\RailLog.Client.csproj" />
     <PackageReference Include="AutoMapper" Version="16.0.0" />

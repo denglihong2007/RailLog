@@ -1,4 +1,4 @@
-﻿@page "/add-trip"
+@page "/add-trip"
 @using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
 @using RailLog.Shared.Models
@@ -9,120 +9,109 @@
 
 <PageTitle>新增运转记录 - RailLog</PageTitle>
 
-<div class="card shadow-sm border-0">
-    <div class="card-header bg-primary text-white py-3">
-        <h5 class="mb-0"><i class="bi bi-train-front me-2"></i>添加行程记录</h5>
-    </div>
-    <div class="card-body p-4">
-        <EditForm Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
-            <DataAnnotationsValidator />
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
+    <MudCard Elevation="1">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h5"><MudIcon Icon="@Icons.Material.Filled.Train" Class="mr-2" />添加行程记录</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (model != null)
+            {
+                <EditForm Model="model" OnValidSubmit="HandleSubmit">
+                    <DataAnnotationsValidator />
 
-            <div class="mb-4">
-                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">基本信息</h6>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">车次</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-light"><i class="bi bi-hash"></i></span>
-                            <InputText @bind-Value="model!.TrainNumber" class="form-control" placeholder="如: G1" />
-                        </div>
-                        <ValidationMessage For="@(() => model.TrainNumber)" class="text-danger small" />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">乘车日期</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-light"><i class="bi bi-calendar-event"></i></span>
-                            <InputDate @bind-Value="model.TravelDate" class="form-control" />
-                        </div>
-                        <ValidationMessage For="@(() => model.TravelDate)" class="text-danger small" />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">车底/本务</label>
-                        <InputText @bind-Value="model.RollingStock" class="form-control" placeholder="如: CR400AF-2018" />
-                    </div>
-                </div>
-            </div>
+                    <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-3">基本信息</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="model.TrainNumber" Label="车次" Placeholder="如: G1" For="@(() => model.TrainNumber)" Variant="Variant.Outlined" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Numbers" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudDatePicker @bind-Date="travelDate" Label="乘车日期" Editable="true" For="@(() => travelDate)" Variant="Variant.Outlined" AdornmentIcon="@Icons.Material.Filled.CalendarToday" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="model.RollingStock" Label="车底/本务" Placeholder="如: CR400AF-2018" Variant="Variant.Outlined" />
+                        </MudItem>
+                    </MudGrid>
 
-            <div class="mb-4">
-                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">路线详情</h6>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="p-3 bg-light rounded-3">
-                            <label class="form-label fw-semibold text-success">出发地</label>
-                            <InputText @bind-Value="model.FromStation" class="form-control mb-2" placeholder="输入出发站" />
-                            <ValidationMessage For="@(() => model.FromStation)" class="text-danger small" />
+                    <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-3 mt-4">路线详情</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-4" Elevation="0" Style="background-color: var(--mud-palette-background-grey)">
+                                <MudText Typo="Typo.subtitle1" Color="Color.Success">出发地</MudText>
+                                <MudTextField @bind-Value="model.FromStation" Label="出发站" For="@(() => model.FromStation)" Variant="Variant.Outlined" Class="mb-2" />
+                                <MudTimePicker @bind-Time="departureTime" Label="出发时间" Variant="Variant.Outlined" />
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            <MudPaper Class="pa-4" Elevation="0" Style="background-color: var(--mud-palette-background-grey)">
+                                <MudText Typo="Typo.subtitle1" Color="Color.Error">目的地</MudText>
+                                <MudTextField @bind-Value="model.ToStation" Label="到达站" For="@(() => model.ToStation)" Variant="Variant.Outlined" Class="mb-2" />
+                                <MudTimePicker @bind-Time="arrivalTime" Label="到达时间" Variant="Variant.Outlined" />
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
 
-                            <label class="form-label small text-muted">出发时间</label>
-                            <input type="time" @bind="model.DepartureTime" class="form-control" />
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="p-3 bg-light rounded-3">
-                            <label class="form-label fw-semibold text-danger">目的地</label>
-                            <InputText @bind-Value="model.ToStation" class="form-control mb-2" placeholder="输入到达站" />
-                            <ValidationMessage For="@(() => model.ToStation)" class="text-danger small" />
+                    <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-3 mt-4">席位及费用</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudSelect T="string" @bind-Value="model.SeatType" Label="席别" Variant="Variant.Outlined">
+                                <MudSelectItem Value="@("")">请选择...</MudSelectItem>
+                                <MudSelectItem Value="@("商务座")">商务座</MudSelectItem>
+                                <MudSelectItem Value="@("一等座")">一等座</MudSelectItem>
+                                <MudSelectItem Value="@("二等座")">二等座</MudSelectItem>
+                                <MudSelectItem Value="@("软卧")">软卧</MudSelectItem>
+                                <MudSelectItem Value="@("硬卧")">硬卧</MudSelectItem>
+                                <MudSelectItem Value="@("硬座")">硬座</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="model.SeatNumber" Label="座位号" Placeholder="如: 05车 12A" Variant="Variant.Outlined" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="model.Price" Label="票价 (元)" Format="N2" Variant="Variant.Outlined" Adornment="Adornment.Start" AdornmentText="¥" />
+                        </MudItem>
+                    </MudGrid>
 
-                            <label class="form-label small text-muted">到达时间</label>
-                            <input type="time" @bind="model.ArrivalTime" class="form-control" />
-                        </div>
-                    </div>
-                </div>
-            </div>
+                    <MudTextField @bind-Value="model.Notes" Label="备注" Placeholder="记录下旅途中的精彩瞬间吧..." Lines="3" Variant="Variant.Outlined" Class="mt-4" />
 
-            <div class="mb-4">
-                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">席位及费用</h6>
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">席别</label>
-                        <InputSelect @bind-Value="model.SeatType" class="form-select">
-                            <option value="">请选择...</option>
-                            <option value="商务座">商务座</option>
-                            <option value="一等座">一等座</option>
-                            <option value="二等座">二等座</option>
-                            <option value="软卧">软卧</option>
-                            <option value="硬卧">硬卧</option>
-                            <option value="硬座">硬座</option>
-                        </InputSelect>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">座位号</label>
-                        <InputText @bind-Value="model.SeatNumber" class="form-control" placeholder="如: 05车 12A" />
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">票价 (元)</label>
-                        <div class="input-group">
-                            <span class="input-group-text">¥</span>
-                            <InputNumber @bind-Value="model.Price" class="form-control" step="0.01" />
+                    <MudDivider Class="my-6" />
+
+                    <div class="d-flex justify-space-between align-center">
+                        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" Href="/">返回首页</MudButton>
+                        <div>
+                            <MudButton ButtonType="ButtonType.Reset" Variant="Variant.Outlined" Class="mr-2">重置</MudButton>
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">保存行程记录</MudButton>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="form-label fw-semibold">备注</label>
-                <InputTextArea @bind-Value="model.Notes" class="form-control" rows="2" placeholder="记录下旅途中的精彩瞬间吧..." />
-            </div>
-
-            <hr />
-
-            <div class="d-flex justify-content-between align-items-center">
-                <a href="/" class="btn btn-link text-decoration-none text-muted">
-                    <i class="bi bi-arrow-left"></i> 返回首页
-                </a>
-                <div>
-                    <button type="reset" class="btn btn-outline-secondary px-4 me-2">重置</button>
-                    <button type="submit" class="btn btn-primary px-5 shadow-sm">
-                        <i class="bi bi-check2-circle me-1"></i> 保存行程记录记录
-                    </button>
-                </div>
-            </div>
-        </EditForm>
-    </div>
-</div>
+                </EditForm>
+            }
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
 
 @code {
     [SupplyParameterFromForm]
     private TripRecordDto? model { get; set; }
+
+    private DateTime? travelDate
+    {
+        get => model?.TravelDate.ToDateTime(TimeOnly.MinValue);
+        set { if (value.HasValue && model != null) model.TravelDate = DateOnly.FromDateTime(value.Value); }
+    }
+
+    private TimeSpan? departureTime
+    {
+        get => model?.DepartureTime?.ToTimeSpan();
+        set => model!.DepartureTime = value.HasValue ? TimeOnly.FromTimeSpan(value.Value) : null;
+    }
+
+    private TimeSpan? arrivalTime
+    {
+        get => model?.ArrivalTime?.ToTimeSpan();
+        set => model!.ArrivalTime = value.HasValue ? TimeOnly.FromTimeSpan(value.Value) : null;
+    }
 
     protected override void OnInitialized()
     {

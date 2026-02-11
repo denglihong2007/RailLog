@@ -1,4 +1,4 @@
-﻿@page "/my-trips"
+@page "/my-trips"
 @using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
 @using RailLog.Shared.Models
@@ -8,54 +8,49 @@
 
 <PageTitle>我的运转日志</PageTitle>
 
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>🚄 我的运转日志</h3>
-        <a href="/add-trip" class="btn btn-success">新增行程</a>
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <div class="d-flex justify-space-between align-center mb-4">
+        <MudText Typo="Typo.h4">🚄 我的运转日志</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add" Href="/add-trip">新增行程</MudButton>
     </div>
 
     @if (trips == null)
     {
-        <div class="text-center">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p>正在努力加载你的行程记录...</p>
+        <div class="d-flex flex-column align-center">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+            <MudText Class="mt-2">正在努力加载你的行程记录...</MudText>
         </div>
     }
     else if (!trips.Any())
     {
-        <div class="alert alert-info">你还没有录入过行程记录哦，快去添加一条吧！</div>
+        <MudAlert Severity="Severity.Info">你还没有录入过行程记录哦，快去添加一条吧！</MudAlert>
     }
     else
     {
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>日期</th>
-                        <th>车次</th>
-                        <th>区间</th>
-                        <th>席别</th>
-                        <th>票价</th>
-                        <th>备注</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var trip in trips)
-                    {
-                        <tr>
-                            <td>@trip.TravelDate.ToString("yyyy-MM-dd")</td>
-                            <td><span class="badge bg-primary">@trip.TrainNumber</span></td>
-                            <td>@trip.FromStation ➔ @trip.ToStation</td>
-                            <td>@trip.SeatNumber</td>
-                            <td>¥@trip.Price</td>
-                            <td class="text-muted small">@trip.Notes</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+        <MudTable Items="@trips" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1">
+            <HeaderContent>
+                <MudTh>日期</MudTh>
+                <MudTh>车次</MudTh>
+                <MudTh>区间</MudTh>
+                <MudTh>席别</MudTh>
+                <MudTh>票价</MudTh>
+                <MudTh>备注</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="日期">@context.TravelDate.ToString("yyyy-MM-dd")</MudTd>
+                <MudTd DataLabel="车次">
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small">@context.TrainNumber</MudChip>
+                </MudTd>
+                <MudTd DataLabel="区间">@context.FromStation ➔ @context.ToStation</MudTd>
+                <MudTd DataLabel="席别">@context.SeatType @context.SeatNumber</MudTd>
+                <MudTd DataLabel="票价">¥@context.Price</MudTd>
+                <MudTd DataLabel="备注">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@context.Notes</MudText>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
     }
-</div>
+</MudContainer>
 
 @code {
     private List<TripRecordDto>? trips;

@@ -1,28 +1,30 @@
-﻿@page "/Error"
+@page "/Error"
 @using System.Diagnostics
 
-<PageTitle>Error</PageTitle>
+<PageTitle>Error - RailLog</PageTitle>
 
-<h1 class="text-danger">Error.</h1>
-<h2 class="text-danger">An error occurred while processing your request.</h2>
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">
+        <MudText Typo="Typo.h4">Error.</MudText>
+        <MudText Typo="Typo.h6">An error occurred while processing your request.</MudText>
+    </MudAlert>
 
-@if (ShowRequestId)
-{
-    <p>
-        <strong>Request ID:</strong> <code>@RequestId</code>
-    </p>
-}
+    @if (ShowRequestId)
+    {
+        <MudText Typo="Typo.body1">
+            <strong>Request ID:</strong> <code>@RequestId</code>
+        </MudText>
+    }
 
-<h3>Development Mode</h3>
-<p>
-    Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
-</p>
-<p>
-    <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
-    It can result in displaying sensitive information from exceptions to end users.
-    For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
-    and restarting the app.
-</p>
+    <MudText Typo="Typo.h5" Class="mt-6">Development Mode</MudText>
+    <MudText Typo="Typo.body1" Class="mt-2">
+        Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
+    </MudText>
+    <MudText Typo="Typo.body1" Color="Color.Error" Class="mt-2">
+        <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
+        It can result in displaying sensitive information from exceptions to end users.
+    </MudText>
+</MudContainer>
 
 @code{
     [CascadingParameter]
