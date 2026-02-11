@@ -1,0 +1,143 @@
+﻿@page "/add-trip"
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@using RailLog.Shared.Models
+@attribute [Authorize] 
+@rendermode InteractiveWebAssembly
+@inject NavigationManager Nav
+@inject HttpClient HttpClient
+
+<PageTitle>新增运转记录 - RailLog</PageTitle>
+
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-primary text-white py-3">
+        <h5 class="mb-0"><i class="bi bi-train-front me-2"></i>添加行程记录</h5>
+    </div>
+    <div class="card-body p-4">
+        <EditForm Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
+            <DataAnnotationsValidator />
+
+            <div class="mb-4">
+                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">基本信息</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">车次</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-hash"></i></span>
+                            <InputText @bind-Value="model!.TrainNumber" class="form-control" placeholder="如: G1" />
+                        </div>
+                        <ValidationMessage For="@(() => model.TrainNumber)" class="text-danger small" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">乘车日期</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-calendar-event"></i></span>
+                            <InputDate @bind-Value="model.TravelDate" class="form-control" />
+                        </div>
+                        <ValidationMessage For="@(() => model.TravelDate)" class="text-danger small" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">车底/本务</label>
+                        <InputText @bind-Value="model.RollingStock" class="form-control" placeholder="如: CR400AF-2018" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">路线详情</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded-3">
+                            <label class="form-label fw-semibold text-success">出发地</label>
+                            <InputText @bind-Value="model.FromStation" class="form-control mb-2" placeholder="输入出发站" />
+                            <ValidationMessage For="@(() => model.FromStation)" class="text-danger small" />
+
+                            <label class="form-label small text-muted">出发时间</label>
+                            <input type="time" @bind="model.DepartureTime" class="form-control" />
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded-3">
+                            <label class="form-label fw-semibold text-danger">目的地</label>
+                            <InputText @bind-Value="model.ToStation" class="form-control mb-2" placeholder="输入到达站" />
+                            <ValidationMessage For="@(() => model.ToStation)" class="text-danger small" />
+
+                            <label class="form-label small text-muted">到达时间</label>
+                            <input type="time" @bind="model.ArrivalTime" class="form-control" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">席位及费用</h6>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">席别</label>
+                        <InputSelect @bind-Value="model.SeatType" class="form-select">
+                            <option value="">请选择...</option>
+                            <option value="商务座">商务座</option>
+                            <option value="一等座">一等座</option>
+                            <option value="二等座">二等座</option>
+                            <option value="软卧">软卧</option>
+                            <option value="硬卧">硬卧</option>
+                            <option value="硬座">硬座</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">座位号</label>
+                        <InputText @bind-Value="model.SeatNumber" class="form-control" placeholder="如: 05车 12A" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">票价 (元)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">¥</span>
+                            <InputNumber @bind-Value="model.Price" class="form-control" step="0.01" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label fw-semibold">备注</label>
+                <InputTextArea @bind-Value="model.Notes" class="form-control" rows="2" placeholder="记录下旅途中的精彩瞬间吧..." />
+            </div>
+
+            <hr />
+
+            <div class="d-flex justify-content-between align-items-center">
+                <a href="/" class="btn btn-link text-decoration-none text-muted">
+                    <i class="bi bi-arrow-left"></i> 返回首页
+                </a>
+                <div>
+                    <button type="reset" class="btn btn-outline-secondary px-4 me-2">重置</button>
+                    <button type="submit" class="btn btn-primary px-5 shadow-sm">
+                        <i class="bi bi-check2-circle me-1"></i> 保存行程记录记录
+                    </button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private TripRecordDto? model { get; set; }
+
+    protected override void OnInitialized()
+    {
+        model ??= new();
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (model is not null)
+        {
+            var response = await HttpClient.PostAsJsonAsync("api/trips", model);
+            if (response.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo("/my-trips");
+            }
+        }
+    }
+}
