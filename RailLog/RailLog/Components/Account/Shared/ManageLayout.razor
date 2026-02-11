@@ -1,17 +1,17 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @layout RailLog.Components.Layout.MainLayout
 
-<h1>Manage your account</h1>
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8">
+    <MudText Typo="Typo.h4" GutterBottom="true">Manage your account</MudText>
+    <MudText Typo="Typo.subtitle1" GutterBottom="true">Change your account settings</MudText>
+    <MudDivider Class="mb-6" />
 
-<div>
-    <h2>Change your account settings</h2>
-    <hr />
-    <div class="row">
-        <div class="col-lg-3">
+    <MudGrid>
+        <MudItem xs="12" md="3">
             <ManageNavMenu />
-        </div>
-        <div class="col-lg-9">
+        </MudItem>
+        <MudItem xs="12" md="9">
             @Body
-        </div>
-    </div>
-</div>
+        </MudItem>
+    </MudGrid>
+</MudContainer>

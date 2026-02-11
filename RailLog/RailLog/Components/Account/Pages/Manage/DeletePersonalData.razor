@@ -1,4 +1,4 @@
-﻿@page "/Account/Manage/DeletePersonalData"
+@page "/Account/Manage/DeletePersonalData"
 
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Identity
@@ -9,33 +9,40 @@
 @inject IdentityRedirectManager RedirectManager
 @inject ILogger<DeletePersonalData> Logger
 
-<PageTitle>Delete Personal Data</PageTitle>
+<PageTitle>Delete Personal Data - RailLog</PageTitle>
 
-<StatusMessage Message="@message" />
+<MudContainer MaxWidth="MaxWidth.Small">
+    <StatusMessage Message="@message" />
 
-<h3>Delete Personal Data</h3>
+    <MudText Typo="Typo.h5" GutterBottom="true">Delete Personal Data</MudText>
 
-<div class="alert alert-warning" role="alert">
-    <p>
-        <strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
-    </p>
-</div>
+    <MudAlert Severity="Severity.Warning" Class="mb-4">
+        <MudText Typo="Typo.body2"><strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong></MudText>
+    </MudAlert>
 
-<div>
     <EditForm Model="Input" FormName="delete-user" OnValidSubmit="OnValidSubmitAsync" method="post">
         <DataAnnotationsValidator />
-        <ValidationSummary class="text-danger" role="alert" />
+
         @if (requirePassword)
         {
-            <div class="form-floating mb-3">
-                <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Please enter your password." />
-                <label for="Input.Password" class="form-label">Password</label>
-                <ValidationMessage For="() => Input.Password" class="text-danger" />
-            </div>
+            <MudTextField Value="Input.Password"
+                               Label="Password"
+                               Variant="Variant.Outlined"
+                               InputType="InputType.Password"
+                               FullWidth="true"
+                               Class="mb-4"
+                               name="Input.Password"
+                               For="() => Input.Password"
+                               Placeholder="Please enter your password." />
         }
-        <button class="w-100 btn btn-lg btn-danger" type="submit">Delete data and close my account</button>
+
+        <MudButton ButtonType="ButtonType.Submit"
+                   Variant="Variant.Filled"
+                   Color="Color.Error"
+                   FullWidth="true"
+                   Size="Size.Large">Delete data and close my account</MudButton>
     </EditForm>
-</div>
+</MudContainer>
 
 @code {
     private string? message;

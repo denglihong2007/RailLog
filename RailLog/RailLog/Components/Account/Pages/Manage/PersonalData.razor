@@ -1,4 +1,4 @@
-﻿@page "/Account/Manage/PersonalData"
+@page "/Account/Manage/PersonalData"
 
 @using Microsoft.AspNetCore.Identity
 @using RailLog.Data
@@ -6,26 +6,27 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Personal Data</PageTitle>
+<PageTitle>Personal Data - RailLog</PageTitle>
 
+<MudText Typo="Typo.h5" GutterBottom="true">Personal Data</MudText>
 <StatusMessage />
-<h3>Personal Data</h3>
 
-<div class="row">
-    <div class="col-md-6">
-        <p>Your account contains personal data that you have given us. This page allows you to download or delete that data.</p>
-        <p>
-            <strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
-        </p>
-        <form action="Account/Manage/DownloadPersonalData" method="post">
-            <AntiforgeryToken />
-            <button class="btn btn-primary" type="submit">Download</button>
-        </form>
-        <p>
-            <a href="Account/Manage/DeletePersonalData" class="btn btn-danger">Delete</a>
-        </p>
-    </div>
-</div>
+<MudGrid>
+    <MudItem xs="12" sm="8" md="6">
+        <MudText Typo="Typo.body1" Class="mb-4">Your account contains personal data that you have given us. This page allows you to download or delete that data.</MudText>
+        <MudAlert Severity="Severity.Error" Class="mb-6">
+            <MudText Typo="Typo.body2"><strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong></MudText>
+        </MudAlert>
+
+        <div class="d-flex flex-wrap gap-2">
+            <form action="Account/Manage/DownloadPersonalData" method="post">
+                <AntiforgeryToken />
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary">Download</MudButton>
+            </form>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" Href="Account/Manage/DeletePersonalData">Delete</MudButton>
+        </div>
+    </MudItem>
+</MudGrid>
 
 @code {
     [CascadingParameter]

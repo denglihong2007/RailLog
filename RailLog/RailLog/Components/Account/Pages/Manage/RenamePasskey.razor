@@ -1,4 +1,4 @@
-﻿@page "/Account/Manage/RenamePasskey/{Id}"
+@page "/Account/Manage/RenamePasskey/{Id}"
 
 @using RailLog.Data
 @using System.ComponentModel.DataAnnotations
@@ -8,27 +8,33 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject IdentityRedirectManager RedirectManager
 
-<EditForm Model="Input" OnValidSubmit="Rename" FormName="rename-passkey" method="post">
-    <DataAnnotationsValidator />
-    @if (passkey?.Name is { } name)
-    {
-        <h4>Enter a new name for your "@name" passkey</h4>
-    }
-    else
-    {
-        <h4>Enter a name for your passkey</h4>
-    }
-    <hr />
-    <ValidationSummary class="text-danger" role="alert" />
-    <div class="form-floating mb-3">
-        <InputText @bind-Value="Input.Name" id="Input.Name" class="form-control" aria-required="true" placeholder="My passkey" />
-        <label for="Input.Name" class="form-label">Passkey name</label>
-        <ValidationMessage For="() => Input.Name" class="text-danger" />
-    </div>
-    <div>
-        <button type="submit" class="w-100 btn btn-lg btn-primary">Continue</button>
-    </div>
-</EditForm>
+<PageTitle>Rename passkey - RailLog</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small">
+    <EditForm Model="Input" OnValidSubmit="Rename" FormName="rename-passkey" method="post">
+        <DataAnnotationsValidator />
+        @if (passkey?.Name is { } name)
+        {
+            <MudText Typo="Typo.h5" GutterBottom="true">Enter a new name for your "@name" passkey</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.h5" GutterBottom="true">Enter a name for your passkey</MudText>
+        }
+        <MudDivider Class="mb-6" />
+
+        <MudTextField Value="Input.Name"
+                           Label="Passkey name"
+                           Variant="Variant.Outlined"
+                           FullWidth="true"
+                           Class="mb-4"
+                           name="Input.Name"
+                           For="() => Input.Name"
+                           Placeholder="My passkey" />
+
+        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large">Continue</MudButton>
+    </EditForm>
+</MudContainer>
 
 @code {
     private ApplicationUser? user;

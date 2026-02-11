@@ -1,8 +1,12 @@
-﻿@page "/Account/AccessDenied"
+@page "/Account/AccessDenied"
 
-<PageTitle>Access denied</PageTitle>
+<PageTitle>Access denied - RailLog</PageTitle>
 
-<header>
-    <h1 class="text-danger">Access denied</h1>
-    <p class="text-danger">You do not have access to this resource.</p>
-</header>
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+    <MudIcon Icon="@Icons.Material.Filled.Block" Size="Size.Large" Color="Color.Error" Style="font-size: 100px;" />
+    <MudText Typo="Typo.h4" Color="Color.Error" Class="mt-4">Access denied</MudText>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4">
+        You do not have access to this resource.
+    </MudAlert>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/" Class="mt-8">Back to Home</MudButton>
+</MudContainer>

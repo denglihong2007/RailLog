@@ -1,7 +1,10 @@
-﻿@page "/Account/InvalidUser"
+@page "/Account/InvalidUser"
 
-<PageTitle>Invalid user</PageTitle>
+<PageTitle>Invalid user - RailLog</PageTitle>
 
-<h3>Invalid user</h3>
-
-<StatusMessage />
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+    <MudIcon Icon="@Icons.Material.Filled.PersonOff" Size="Size.Large" Color="Color.Error" Style="font-size: 100px;" />
+    <MudText Typo="Typo.h4" Class="mt-4">Invalid user</MudText>
+    <StatusMessage Class="mt-4" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="Account/Login" Class="mt-8">Back to Login</MudButton>
+</MudContainer>

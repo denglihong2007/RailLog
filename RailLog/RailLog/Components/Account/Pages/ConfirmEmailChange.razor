@@ -1,4 +1,4 @@
-﻿@page "/Account/ConfirmEmailChange"
+@page "/Account/ConfirmEmailChange"
 
 @using System.Text
 @using Microsoft.AspNetCore.Identity
@@ -9,11 +9,13 @@
 @inject SignInManager<ApplicationUser> SignInManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Confirm email change</PageTitle>
+<PageTitle>Confirm email change - RailLog</PageTitle>
 
-<h1>Confirm email change</h1>
-
-<StatusMessage Message="@message" />
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+    <MudText Typo="Typo.h4" GutterBottom="true">Confirm email change</MudText>
+    <StatusMessage Message="@message" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="Account/Manage/Email" Class="mt-8">Back to Email Settings</MudButton>
+</MudContainer>
 
 @code {
     private string? message;
@@ -42,7 +44,7 @@
         var user = await UserManager.FindByIdAsync(UserId);
         if (user is null)
         {
-            message = "Unable to find user with Id '{userId}'";
+            message = $"Unable to find user with Id '{UserId}'";
             return;
         }
 

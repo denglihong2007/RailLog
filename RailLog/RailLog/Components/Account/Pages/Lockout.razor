@@ -1,8 +1,12 @@
-﻿@page "/Account/Lockout"
+@page "/Account/Lockout"
 
-<PageTitle>Locked out</PageTitle>
+<PageTitle>Locked out - RailLog</PageTitle>
 
-<header>
-    <h1 class="text-danger">Locked out</h1>
-    <p class="text-danger" role="alert">This account has been locked out, please try again later.</p>
-</header>
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Error" Style="font-size: 100px;" />
+    <MudText Typo="Typo.h4" Color="Color.Error" Class="mt-4">Locked out</MudText>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-4">
+        This account has been locked out, please try again later.
+    </MudAlert>
+    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="Account/Login" Class="mt-8">Back to Login</MudButton>
+</MudContainer>

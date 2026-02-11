@@ -1,4 +1,4 @@
-﻿@page "/Account/ConfirmEmail"
+@page "/Account/ConfirmEmail"
 
 @using System.Text
 @using Microsoft.AspNetCore.Identity
@@ -8,10 +8,13 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Confirm email</PageTitle>
+<PageTitle>Confirm email - RailLog</PageTitle>
 
-<h1>Confirm email</h1>
-<StatusMessage Message="@statusMessage" />
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16 text-center">
+    <MudText Typo="Typo.h4" GutterBottom="true">Confirm email</MudText>
+    <StatusMessage Message="@statusMessage" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="Account/Login" Class="mt-8">Go to Login</MudButton>
+</MudContainer>
 
 @code {
     private string? statusMessage;
