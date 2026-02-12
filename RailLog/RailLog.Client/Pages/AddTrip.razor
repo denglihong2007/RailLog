@@ -1,8 +1,9 @@
-﻿@page "/add-trip"
+@page "/add-trip"
 @using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
+@using System.Text.Json
 @using RailLog.Shared.Models
-@attribute [Authorize] 
+@attribute [Authorize]
 @rendermode InteractiveWebAssembly
 @inject NavigationManager Nav
 @inject HttpClient HttpClient
@@ -11,7 +12,7 @@
 
 <PageHeader Title="新增运转记录" IconClass="bi bi-pen" />
 
-<hr/>
+<hr />
 
 <EditForm class="mb-4" Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
     <DataAnnotationsValidator />
@@ -20,21 +21,30 @@
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputText @bind-Value="model!.TrainNumber" id="trainNumber" class="form-control" placeholder="如: G89" />
+                    <input type="text" id="trainNumber" class="form-control" placeholder="如: G89"
+                           list="train-number-options" value="@model!.TrainNumber" @oninput="OnTrainInputChanged"
+                           @onblur="OnTrainInputCompleted" />
+                    <datalist id="train-number-options">
+                        @foreach (var train in trainSuggestions)
+                        {
+                            <option value="@train"></option>
+                        }
+                    </datalist>
                     <label for="trainNumber" class="form-label">车次</label>
                     <ValidationMessage For="@(() => model.TrainNumber)" class="text-danger small" />
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputDate @bind-Value="model.TravelDate" id="travelDate" class="form-control" />
+                    <InputDate @bind-Value="model.TravelDate" @bind-Value:after="OnTravelDateChanged" id="travelDate" class="form-control" />
                     <label for="travelDate" class="form-label">乘车日期</label>
                     <ValidationMessage For="@(() => model.TravelDate)" class="text-danger small" />
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputText @bind-Value="model.RollingStock" id="rollingStock" class="form-control" placeholder="如: CR400BF-5033" />
+                    <InputText @bind-Value="model.RollingStock" id="rollingStock" class="form-control"
+                               placeholder="如: CR400BF-5033" />
                     <label for="rollingStock" class="form-label">车底/本务</label>
                     <ValidationMessage For="@(() => model.RollingStock)" class="text-danger small" />
                 </div>
@@ -43,12 +53,14 @@
     </div>
 
     <div class="mb-4">
-        <SectionHeader Title="路线详情"/>
+        <SectionHeader Title="路线详情" />
         <div class="row g-3 align-items-center">
             <div class="col-md-5">
                 <div class="p-3 bg-light rounded-3">
                     <div class="form-floating mb-2">
-                        <InputText @bind-Value="model.FromStation" id="fromStation" class="form-control" placeholder="如：北京西" />
+                        <input type="text" id="fromStation" class="form-control" list="station-options"
+                               placeholder="如：北京西" value="@model!.FromStation" @oninput="OnFromStationChanged"
+                               @onblur="OnStationInputCompleted" />
                         <label for="fromStation">出发地</label>
                         <ValidationMessage For="@(() => model.FromStation)" class="text-danger small" />
                     </div>
@@ -70,7 +82,15 @@
             <div class="col-md-5">
                 <div class="p-3 bg-light rounded-3">
                     <div class="form-floating mb-2">
-                        <InputText @bind-Value="model.ToStation" id="toStation" class="form-control" placeholder="如：西安北" />
+                        <input type="text" id="toStation" class="form-control" list="station-options"
+                               placeholder="如：西安北" value="@model!.ToStation" @oninput="OnToStationChanged"
+                               @onblur="OnStationInputCompleted" />
+                        <datalist id="station-options">
+                            @foreach (var station in stationSuggestions)
+                            {
+                                <option value="@station"></option>
+                            }
+                        </datalist>
                         <label for="toStation">目的地</label>
                         <ValidationMessage For="@(() => model.ToStation)" class="text-danger small" />
                     </div>
@@ -84,7 +104,8 @@
             </div>
             <div class="col-12">
                 <div class="form-floating">
-                    <InputNumber @bind-Value="model.MileageKm" id="mileageKm" class="form-control" step="0.1" placeholder="如：1216.5" />
+                    <InputNumber @bind-Value="model.MileageKm" id="mileageKm" class="form-control" step="0.1"
+                                 placeholder="如：1216.5" />
                     <label for="mileageKm">里程 (km)</label>
                     <ValidationMessage For="@(() => model.MileageKm)" class="text-danger small" />
                 </div>
@@ -93,7 +114,7 @@
     </div>
 
     <div class="mb-4">
-        <SectionHeader Title="席位与票价"/>
+        <SectionHeader Title="席位与票价" />
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="form-floating mb-3">
@@ -112,14 +133,16 @@
             </div>
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputText @bind-Value="model.SeatNumber" id="seatNumber" class="form-control" placeholder="如：5车1A" />
+                    <InputText @bind-Value="model.SeatNumber" id="seatNumber" class="form-control"
+                               placeholder="如：5车1A" />
                     <label for="seatNumber">座位号</label>
                     <ValidationMessage For="@(() => model.SeatNumber)" class="text-danger small" />
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputNumber @bind-Value="model.Price" id="price" class="form-control" step="0.5" placeholder="0.00" />
+                    <InputNumber @bind-Value="model.Price" id="price" class="form-control" step="0.5"
+                                 placeholder="0.00" />
                     <label for="price">票价 (¥)</label>
                     <ValidationMessage For="@(() => model.Price)" class="text-danger small" />
                 </div>
@@ -130,7 +153,8 @@
     <SectionHeader Title="杂项" />
     <div class="mb-4">
         <div class="form-floating">
-            <InputTextArea @bind-Value="model.Notes" id="notes" class="form-control" rows="3" placeholder="记录下旅途中的机破瞬间吧..." />
+            <InputTextArea @bind-Value="model.Notes" id="notes" class="form-control" rows="3"
+                           placeholder="记录下旅途中的机破瞬间吧..." />
             <label for="notes">备注</label>
             <ValidationMessage For="@(() => model.Notes)" class="text-danger small" />
         </div>
@@ -149,13 +173,344 @@
 </EditForm>
 
 @code {
+    private const string TrainPreselectApi = "api/train/preselect?keyword=";
+    private const string TrainQueryApi = "api/train/query?train=";
+    private const string TrainRollingStockApi = "api/train/rolling-stock?train=";
+
     [SupplyParameterFromForm]
     private TripRecordDto? model { get; set; }
+
+    private List<string> trainSuggestions = [];
+    private List<string> stationSuggestions = [];
+    private List<TrainStopInfo> stationStops = [];
+    private HashSet<string> trainSuggestionSet = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? trainSuggestCts;
+    private CancellationTokenSource? rollingStockCts;
+    private string? loadedStationsForTrain;
 
     protected override void OnInitialized()
     {
         model ??= new();
     }
+
+    private async Task OnTrainInputChanged(ChangeEventArgs args)
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        var trainInput = args.Value?.ToString()?.Trim().ToUpperInvariant() ?? string.Empty;
+        model.TrainNumber = trainInput;
+        loadedStationsForTrain = null;
+        stationSuggestions = [];
+        stationStops = [];
+        model.RollingStock = string.Empty;
+
+        await LoadTrainSuggestionsAsync(trainInput, useDebounce: true);
+    }
+
+    private async Task OnTrainInputCompleted(FocusEventArgs _)
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        var train = model.TrainNumber.Trim().ToUpperInvariant();
+        model.TrainNumber = train;
+
+        if (string.IsNullOrWhiteSpace(train))
+        {
+            stationSuggestions = [];
+            stationStops = [];
+            loadedStationsForTrain = null;
+            return;
+        }
+
+        await LoadTrainSuggestionsAsync(train, useDebounce: false);
+
+        if (trainSuggestionSet.Contains(train))
+        {
+            await LoadStationsByTrainAsync(train);
+            await TryLoadRollingStockAsync();
+        }
+        else
+        {
+            stationSuggestions = [];
+            stationStops = [];
+            loadedStationsForTrain = null;
+            model.RollingStock = string.Empty;
+        }
+    }
+
+    private Task OnTravelDateChanged()
+    {
+        return TryLoadRollingStockAsync();
+    }
+
+    private Task OnFromStationChanged(ChangeEventArgs args)
+    {
+        if (model is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        model.FromStation = args.Value?.ToString()?.Trim() ?? string.Empty;
+        TryAutoFillTripDetails();
+        return Task.CompletedTask;
+    }
+
+    private Task OnToStationChanged(ChangeEventArgs args)
+    {
+        if (model is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        model.ToStation = args.Value?.ToString()?.Trim() ?? string.Empty;
+        TryAutoFillTripDetails();
+        return Task.CompletedTask;
+    }
+
+    private Task OnStationInputCompleted(FocusEventArgs _)
+    {
+        TryAutoFillTripDetails();
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadTrainSuggestionsAsync(string keyword, bool useDebounce)
+    {
+        trainSuggestCts?.Cancel();
+        trainSuggestCts = new CancellationTokenSource();
+        var cancellationToken = trainSuggestCts.Token;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                trainSuggestions = [];
+                trainSuggestionSet.Clear();
+                return;
+            }
+
+            if (useDebounce)
+            {
+                await Task.Delay(220, cancellationToken);
+            }
+
+            var raw = await HttpClient.GetFromJsonAsync<List<string>>(
+                $"{TrainPreselectApi}{Uri.EscapeDataString(keyword)}",
+                cancellationToken);
+
+            var expanded = ExpandTrainNumbers(raw);
+            trainSuggestions = expanded;
+            trainSuggestionSet = expanded.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled request caused by continuous typing.
+        }
+        catch
+        {
+            trainSuggestions = [];
+            trainSuggestionSet.Clear();
+        }
+    }
+
+    private async Task TryLoadRollingStockAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        var train = model.TrainNumber.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(train))
+        {
+            model.RollingStock = string.Empty;
+            return;
+        }
+
+        rollingStockCts?.Cancel();
+        rollingStockCts = new CancellationTokenSource();
+        var cancellationToken = rollingStockCts.Token;
+
+        try
+        {
+            var url = $"{TrainRollingStockApi}{Uri.EscapeDataString(train)}&date={model.TravelDate:yyyy-MM-dd}";
+            var result = await HttpClient.GetFromJsonAsync<TrainRollingStockResponse>(url, cancellationToken);
+            model.RollingStock = result?.RollingStock?.Trim() ?? string.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled request caused by rapid changes.
+        }
+        catch
+        {
+            model.RollingStock = string.Empty;
+        }
+    }
+
+    private async Task LoadStationsByTrainAsync(string train)
+    {
+        if (loadedStationsForTrain == train)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = await HttpClient.GetStringAsync($"{TrainQueryApi}{Uri.EscapeDataString(train)}");
+            using var doc = JsonDocument.Parse(json);
+
+            stationStops = ExtractStationStops(doc.RootElement);
+            stationSuggestions = stationStops
+                .Select(x => x.Station)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            loadedStationsForTrain = train;
+            TryAutoFillTripDetails();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load stations for train {train}: {ex}");
+            stationSuggestions = [];
+            stationStops = [];
+            loadedStationsForTrain = null;
+        }
+    }
+
+    private static List<string> ExpandTrainNumbers(List<string>? source)
+    {
+        if (source is null || source.Count == 0)
+        {
+            return [];
+        }
+
+        return source
+            .SelectMany(item => item.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(200)
+            .ToList();
+    }
+
+    private void TryAutoFillTripDetails()
+    {
+        if (model is null || stationStops.Count == 0)
+        {
+            return;
+        }
+
+        var from = model.FromStation.Trim();
+        var to = model.ToStation.Trim();
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+        {
+            return;
+        }
+
+        var fromStop = stationStops.FirstOrDefault(x => string.Equals(x.Station, from, StringComparison.OrdinalIgnoreCase));
+        var toStop = stationStops.FirstOrDefault(x => string.Equals(x.Station, to, StringComparison.OrdinalIgnoreCase));
+
+        if (fromStop is null || toStop is null)
+        {
+            return;
+        }
+
+        if (fromStop.Order >= toStop.Order)
+        {
+            return;
+        }
+
+        if (TryParseTime(fromStop.Depart, out var departure))
+        {
+            model.DepartureTime = departure;
+        }
+
+        if (TryParseTime(toStop.Arrive, out var arrival))
+        {
+            model.ArrivalTime = arrival;
+        }
+
+        var mileage = toStop.Distance - fromStop.Distance;
+        if (mileage > 0)
+        {
+            model.MileageKm = mileage;
+        }
+    }
+
+    private static bool TryParseTime(string? value, out TimeOnly result)
+    {
+        return TimeOnly.TryParse(value, out result);
+    }
+
+    private static List<TrainStopInfo> ExtractStationStops(JsonElement root)
+    {
+        if (!root.TryGetProperty("timetable", out var timetable) || timetable.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var stations = new List<TrainStopInfo>();
+        var index = 0;
+
+        foreach (var stop in timetable.EnumerateArray())
+        {
+            if (stop.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (!stop.TryGetProperty("station", out var stationElement))
+            {
+                continue;
+            }
+
+            var station = stationElement.GetString();
+            if (!string.IsNullOrWhiteSpace(station))
+            {
+                var arrive = stop.TryGetProperty("arrive", out var arriveElement)
+                    ? arriveElement.GetString()
+                    : null;
+                var depart = stop.TryGetProperty("depart", out var departElement)
+                    ? departElement.GetString()
+                    : null;
+                var distance = 0m;
+                if (stop.TryGetProperty("distance", out var distanceElement))
+                {
+                    if (distanceElement.ValueKind == JsonValueKind.Number && distanceElement.TryGetDecimal(out var km))
+                    {
+                        distance = km;
+                    }
+                    else if (distanceElement.ValueKind == JsonValueKind.String)
+                    {
+                        var text = distanceElement.GetString()?.Trim();
+                        if (string.Equals(text, "-", StringComparison.Ordinal))
+                        {
+                            distance = 0m;
+                        }
+                        else if (decimal.TryParse(text, out var parsedKm))
+                        {
+                            distance = parsedKm;
+                        }
+                    }
+                }
+
+                stations.Add(new TrainStopInfo(station, arrive, depart, distance, index));
+                index++;
+            }
+        }
+
+        return stations
+            .GroupBy(x => x.Station, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    private sealed record TrainStopInfo(string Station, string? Arrive, string? Depart, decimal Distance, int Order);
+    private sealed record TrainRollingStockResponse(string RollingStock);
 
     private async Task HandleSubmit()
     {

@@ -32,7 +32,7 @@ namespace RailLog.Shared.Models
         public TimeOnly? ArrivalTime { get; set; }
 
         [Display(Name = "里程")]
-        [Range(0.1, 50000, ErrorMessage = "里程必须大于 0")]
+        [Range(0.0, 50000, ErrorMessage = "里程必须大于 0")]
         [Column(TypeName = "decimal(8, 1)")]
         public decimal MileageKm { get; set; }
 
@@ -43,7 +43,7 @@ namespace RailLog.Shared.Models
         public string? SeatNumber { get; set; } // 例如：05车 12A
 
         [Display(Name = "票价")]
-        [Range(0.1, 50000, ErrorMessage = "票价必须大于 0")]
+        [Range(0.0, 50000, ErrorMessage = "票价必须大于 0")]
         [Column(TypeName = "decimal(18, 2)")] // 明确数据库存储精度
         public decimal Price { get; set; }
 
