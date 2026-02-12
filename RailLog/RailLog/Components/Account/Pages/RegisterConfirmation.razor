@@ -10,22 +10,22 @@
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Register confirmation</PageTitle>
+<PageTitle>注册确认 - 轨记</PageTitle>
 
-<h1>Register confirmation</h1>
+<h1>注册确认</h1>
 
 <StatusMessage Message="@statusMessage" />
 
 @if (emailConfirmationLink is not null)
 {
     <p>
-        This app does not currently have a real email sender registered, see <a href="https://aka.ms/aspaccountconf">these docs</a> for how to configure a real email sender.
-        Normally this would be emailed: <a href="@emailConfirmationLink">Click here to confirm your account</a>
+        此应用目前未注册真实的电子邮件发送器，请参阅 <a href="https://aka.ms/aspaccountconf">这些文档</a> 了解如何配置真实的电子邮件发送器。
+        通常这会通过电子邮件发送：<a href="@emailConfirmationLink">点击此处确认您的账户</a>
     </p>
 }
 else
 {
-    <p role="alert">Please check your email to confirm your account.</p>
+    <p role="alert">请检查您的电子邮件以确认您的账户。</p>
 }
 
 @code {
@@ -53,7 +53,7 @@ else
         if (user is null)
         {
             HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
-            statusMessage = "Error finding user for unspecified email";
+            statusMessage = "无法找到指定电子邮件的用户";
         }
         else if (EmailSender is IdentityNoOpEmailSender)
         {

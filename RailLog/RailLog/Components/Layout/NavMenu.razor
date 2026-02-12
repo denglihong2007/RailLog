@@ -4,18 +4,18 @@
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">RailLog</a>
+        <a class="navbar-brand" href="">轨记</a>
     </div>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+<input type="checkbox" title="导航菜单" class="navbar-toggler" />
 
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
     <nav class="nav flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
                 <i class="bi bi-house-door-fill"></i>
-                <span>Home</span>
+                <span>首页</span>
             </NavLink>
         </div>
 
@@ -36,7 +36,7 @@
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="auth">
                 <i class="bi bi-lock"></i>
-                <span>Auth Required</span>
+                <span>需要认证</span>
             </NavLink>
         </div>
 
@@ -54,7 +54,7 @@
                         <input type="hidden" name="ReturnUrl" value="@currentUrl" />
                         <button type="submit" class="nav-link">
                             <i class="bi bi-arrow-bar-left"></i>
-                            <span>Logout</span>
+                            <span>退出登录</span>
                         </button>
                     </form>
                 </div>
@@ -63,13 +63,13 @@
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Register">
                         <i class="bi bi-person"></i>
-                        <span></span> Register
+                        注册
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Login">
                         <i class="bi bi-person-badge"></i>
-                        <span></span> Login
+                        登录
                     </NavLink>
                 </div>
             </NotAuthorized>

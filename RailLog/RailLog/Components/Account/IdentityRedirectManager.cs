@@ -50,6 +50,6 @@ namespace RailLog.Components.Account
             => RedirectToWithStatus(CurrentPath, message, context);
 
         public void RedirectToInvalidUser(UserManager<ApplicationUser> userManager, HttpContext context)
-            => RedirectToWithStatus("Account/InvalidUser", $"Error: Unable to load user with ID '{userManager.GetUserId(context.User)}'.", context);
+            => RedirectToWithStatus("Account/InvalidUser", $"错误：无法加载 ID 为 '{userManager.GetUserId(context.User)}' 的用户。", context);
     }
 }
