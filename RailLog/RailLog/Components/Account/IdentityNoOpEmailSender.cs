@@ -10,12 +10,12 @@ namespace RailLog.Components.Account
         private readonly IEmailSender emailSender = new NoOpEmailSender();
 
         public Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink) =>
-            emailSender.SendEmailAsync(email, "Confirm your email", $"Please confirm your account by <a href='{confirmationLink}'>clicking here</a>.");
+            emailSender.SendEmailAsync(email, "确认您的电子邮件", $"请点击<a href='{confirmationLink}'>此处</a>确认您的账户。");
 
         public Task SendPasswordResetLinkAsync(ApplicationUser user, string email, string resetLink) =>
-            emailSender.SendEmailAsync(email, "Reset your password", $"Please reset your password by <a href='{resetLink}'>clicking here</a>.");
+            emailSender.SendEmailAsync(email, "重置您的密码", $"请点击<a href='{resetLink}'>此处</a>重置您的密码。");
 
         public Task SendPasswordResetCodeAsync(ApplicationUser user, string email, string resetCode) =>
-            emailSender.SendEmailAsync(email, "Reset your password", $"Please reset your password using the following code: {resetCode}");
+            emailSender.SendEmailAsync(email, "重置您的密码", $"请使用以下代码重置您的密码：{resetCode}");
     }
 }
