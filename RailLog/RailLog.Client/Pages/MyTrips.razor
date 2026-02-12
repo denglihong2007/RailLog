@@ -34,6 +34,7 @@
                         <th>日期</th>
                         <th>车次</th>
                         <th>区间</th>
+                        <th>里程</th>
                         <th>席别</th>
                         <th>票价</th>
                         <th>备注</th>
@@ -46,6 +47,7 @@
                             <td>@trip.TravelDate.ToString("yyyy-MM-dd")</td>
                             <td><span class="badge bg-primary">@trip.TrainNumber</span></td>
                             <td>@trip.FromStation ➔ @trip.ToStation</td>
+                            <td>@trip.MileageKm km</td>
                             <td>@trip.SeatNumber</td>
                             <td>¥@trip.Price</td>
                             <td class="text-muted small">@trip.Notes</td>

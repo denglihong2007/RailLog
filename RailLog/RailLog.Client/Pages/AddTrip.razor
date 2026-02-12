@@ -82,6 +82,13 @@
                     </div>
                 </div>
             </div>
+            <div class="col-12">
+                <div class="form-floating">
+                    <InputNumber @bind-Value="model.MileageKm" id="mileageKm" class="form-control" step="0.1" placeholder="如：1216.5" />
+                    <label for="mileageKm">里程 (km)</label>
+                    <ValidationMessage For="@(() => model.MileageKm)" class="text-danger small" />
+                </div>
+            </div>
         </div>
     </div>
 
