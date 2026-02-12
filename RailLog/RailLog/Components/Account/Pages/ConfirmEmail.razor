@@ -8,9 +8,9 @@
 @inject UserManager<ApplicationUser> UserManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Confirm email</PageTitle>
+<PageTitle>确认电子邮件 - 轨记</PageTitle>
 
-<h1>Confirm email</h1>
+<h1>确认电子邮件</h1>
 <StatusMessage Message="@statusMessage" />
 
 @code {
@@ -37,13 +37,13 @@
         if (user is null)
         {
             HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
-            statusMessage = $"Error loading user with ID {UserId}";
+            statusMessage = $"加载 ID 为 {UserId} 的用户时出错";
         }
         else
         {
             var code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code));
             var result = await UserManager.ConfirmEmailAsync(user, code);
-            statusMessage = result.Succeeded ? "Thank you for confirming your email." : "Error confirming your email.";
+            statusMessage = result.Succeeded ? "感谢您确认您的电子邮件。" : "确认您的电子邮件时出错。";
         }
     }
 }

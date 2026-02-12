@@ -16,17 +16,16 @@
 @inject IdentityRedirectManager RedirectManager
 @inject ILogger<ExternalLogin> Logger
 
-<PageTitle>Register</PageTitle>
+<PageTitle>注册 - 轨记</PageTitle>
 
 <StatusMessage Message="@message" />
-<h1>Register</h1>
-<h2>Associate your @ProviderDisplayName account.</h2>
+<h1>注册</h1>
+<h2>绑定您的 @ProviderDisplayName 账户</h2>
 <hr />
 
 <div  class="alert alert-info">
-    You've successfully authenticated with <strong>@ProviderDisplayName</strong>.
-    Please enter an email address for this site below and click the Register button to finish
-    logging in.
+    您已成功通过 <strong>@ProviderDisplayName</strong> 的身份验证。
+    请在下方输入用于本站的电子邮件地址，并点击“注册”按钮以完成登录。
 </div>
 
 <div class="row">
@@ -36,10 +35,10 @@
             <ValidationSummary class="text-danger" role="alert" />
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="email" placeholder="Please enter your email." />
-                <label for="Input.Email" class="form-label">Email</label>
+                <label for="Input.Email" class="form-label">电子邮件</label>
                 <ValidationMessage For="() => Input.Email" />
             </div>
-            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">注册</button>
         </EditForm>
     </div>
 </div>
@@ -73,14 +72,14 @@
 
         if (RemoteError is not null)
         {
-            RedirectManager.RedirectToWithStatus("Account/Login", $"Error from external provider: {RemoteError}", HttpContext);
+            RedirectManager.RedirectToWithStatus("Account/Login", $"外部提供商错误：{RemoteError}", HttpContext);
             return;
         }
 
         var info = await SignInManager.GetExternalLoginInfoAsync();
         if (info is null)
         {
-            RedirectManager.RedirectToWithStatus("Account/Login", "Error loading external login information.", HttpContext);
+            RedirectManager.RedirectToWithStatus("Account/Login", "加载外部登录信息时出错。", HttpContext);
             return;
         }
 
@@ -104,7 +103,7 @@
     {
         if (externalLoginInfo is null)
         {
-            RedirectManager.RedirectToWithStatus("Account/Login", "Error loading external login information.", HttpContext);
+            RedirectManager.RedirectToWithStatus("Account/Login", "加载外部登录信息时出错。", HttpContext);
             return;
         }
 
@@ -141,7 +140,7 @@
     {
         if (externalLoginInfo is null)
         {
-            RedirectManager.RedirectToWithStatus("Account/Login", "Error loading external login information during confirmation.", HttpContext);
+            RedirectManager.RedirectToWithStatus("Account/Login", "确认过程中加载外部登录信息时出错。", HttpContext);
             return;
         }
 
@@ -182,7 +181,7 @@
         }
         else
         {
-            message = $"Error: {string.Join(",", result.Errors.Select(error => error.Description))}";
+            message = $"错误：{string.Join(",", result.Errors.Select(error => error.Description))}";
         }
     }
 
@@ -210,8 +209,8 @@
 
     private sealed class InputModel
     {
-        [Required]
-        [EmailAddress]
+        [Required(ErrorMessage = "请输入电子邮件")]
+        [EmailAddress(ErrorMessage = "邮件地址格式不正确")]
         public string Email { get; set; } = "";
     }
 }

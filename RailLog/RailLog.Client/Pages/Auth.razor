@@ -5,10 +5,10 @@
 @attribute [Authorize]
 @rendermode InteractiveAuto
 
-<PageTitle>Auth</PageTitle>
+<PageTitle>认证 - 轨记</PageTitle>
 
-<h1>You are authenticated</h1>
+<h1>您已通过身份认证</h1>
 
 <AuthorizeView>
-    Hello @context.User.Identity?.Name!
+    你好，@context.User.Identity?.Name！
 </AuthorizeView>
