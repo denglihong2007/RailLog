@@ -1,0 +1,11 @@
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@using RailLog.Shared.Models
+@namespace RailLog.Shared.Components
+
+<h6 class="border-bottom pb-2 mb-3 fw-bold">@Title</h6>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = "默认标题";
+}

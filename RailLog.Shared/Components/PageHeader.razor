@@ -1,0 +1,18 @@
+﻿@namespace RailLog.Shared.Components
+<div class="bg-primary text-white p-3 rounded-3 mb-4 shadow-sm">
+    <h5 class="mb-0 d-flex align-items-center">
+        @if (!string.IsNullOrEmpty(IconClass))
+        {
+            <i class="@IconClass me-2" aria-hidden="true"></i>
+        }
+        <span>@Title</span>
+    </h5>
+</div>
+
+@code {
+    [Parameter] 
+    public string Title { get; set; } = "默认标题";
+
+    [Parameter] 
+    public string IconClass { get; set; } = "";
+}

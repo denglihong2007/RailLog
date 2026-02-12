@@ -9,116 +9,137 @@
 
 <PageTitle>新增运转记录 - RailLog</PageTitle>
 
-<div class="card shadow-sm border-0">
-    <div class="card-header bg-primary text-white py-3">
-        <h5 class="mb-0"><i class="bi bi-train-front me-2"></i>添加行程记录</h5>
+<PageHeader Title="新增运转记录" IconClass="bi bi-pen" />
+
+<hr/>
+
+<EditForm class="mb-4" Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
+    <DataAnnotationsValidator />
+    <div class="mb-4">
+        <SectionHeader Title="基本信息" />
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="model!.TrainNumber" id="trainNumber" class="form-control" placeholder="如: G89" />
+                    <label for="trainNumber" class="form-label">车次</label>
+                    <ValidationMessage For="@(() => model.TrainNumber)" class="text-danger small" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-floating mb-3">
+                    <InputDate @bind-Value="model.TravelDate" id="travelDate" class="form-control" />
+                    <label for="travelDate" class="form-label">乘车日期</label>
+                    <ValidationMessage For="@(() => model.TravelDate)" class="text-danger small" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="model.RollingStock" id="rollingStock" class="form-control" placeholder="如: CR400BF-5033" />
+                    <label for="rollingStock" class="form-label">车底/本务</label>
+                    <ValidationMessage For="@(() => model.RollingStock)" class="text-danger small" />
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="card-body p-4">
-        <EditForm Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
-            <DataAnnotationsValidator />
 
-            <div class="mb-4">
-                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">基本信息</h6>
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">车次</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-light"><i class="bi bi-hash"></i></span>
-                            <InputText @bind-Value="model!.TrainNumber" class="form-control" placeholder="如: G1" />
-                        </div>
-                        <ValidationMessage For="@(() => model.TrainNumber)" class="text-danger small" />
+    <div class="mb-4">
+        <SectionHeader Title="路线详情"/>
+        <div class="row g-3 align-items-center">
+            <div class="col-md-5">
+                <div class="p-3 bg-light rounded-3">
+                    <div class="form-floating mb-2">
+                        <InputText @bind-Value="model.FromStation" id="fromStation" class="form-control" placeholder="如：北京西" />
+                        <label for="fromStation">出发地</label>
+                        <ValidationMessage For="@(() => model.FromStation)" class="text-danger small" />
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">乘车日期</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-light"><i class="bi bi-calendar-event"></i></span>
-                            <InputDate @bind-Value="model.TravelDate" class="form-control" />
-                        </div>
-                        <ValidationMessage For="@(() => model.TravelDate)" class="text-danger small" />
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label fw-semibold">车底/本务</label>
-                        <InputText @bind-Value="model.RollingStock" class="form-control" placeholder="如: CR400AF-2018" />
+                    <div class="form-floating">
+                        <input type="time" @bind="model.DepartureTime" id="departureTime" class="form-control" />
+                        <label for="departureTime">出发时间</label>
+                        <ValidationMessage For="@(() => model.DepartureTime)" class="text-danger small" />
                     </div>
                 </div>
             </div>
-
-            <div class="mb-4">
-                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">路线详情</h6>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <div class="p-3 bg-light rounded-3">
-                            <label class="form-label fw-semibold text-success">出发地</label>
-                            <InputText @bind-Value="model.FromStation" class="form-control mb-2" placeholder="输入出发站" />
-                            <ValidationMessage For="@(() => model.FromStation)" class="text-danger small" />
-
-                            <label class="form-label small text-muted">出发时间</label>
-                            <input type="time" @bind="model.DepartureTime" class="form-control" />
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="p-3 bg-light rounded-3">
-                            <label class="form-label fw-semibold text-danger">目的地</label>
-                            <InputText @bind-Value="model.ToStation" class="form-control mb-2" placeholder="输入到达站" />
-                            <ValidationMessage For="@(() => model.ToStation)" class="text-danger small" />
-
-                            <label class="form-label small text-muted">到达时间</label>
-                            <input type="time" @bind="model.ArrivalTime" class="form-control" />
-                        </div>
+            <div class="col-md-2 d-flex justify-content-center">
+                <div class="text-center text-muted small py-2">
+                    <div class="d-flex flex-column align-items-center">
+                        <i class="bi bi-arrow-right fs-3 d-none d-md-block" aria-hidden="true"></i>
+                        <i class="bi bi-arrow-down fs-3 d-block d-md-none" aria-hidden="true"></i>
                     </div>
                 </div>
             </div>
+            <div class="col-md-5">
+                <div class="p-3 bg-light rounded-3">
+                    <div class="form-floating mb-2">
+                        <InputText @bind-Value="model.ToStation" id="toStation" class="form-control" placeholder="如：西安北" />
+                        <label for="toStation">目的地</label>
+                        <ValidationMessage For="@(() => model.ToStation)" class="text-danger small" />
+                    </div>
 
-            <div class="mb-4">
-                <h6 class="text-primary border-bottom pb-2 mb-3 fw-bold">席位及费用</h6>
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">席别</label>
-                        <InputSelect @bind-Value="model.SeatType" class="form-select">
-                            <option value="">请选择...</option>
-                            <option value="商务座">商务座</option>
-                            <option value="一等座">一等座</option>
-                            <option value="二等座">二等座</option>
-                            <option value="软卧">软卧</option>
-                            <option value="硬卧">硬卧</option>
-                            <option value="硬座">硬座</option>
-                        </InputSelect>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">座位号</label>
-                        <InputText @bind-Value="model.SeatNumber" class="form-control" placeholder="如: 05车 12A" />
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label fw-semibold">票价 (元)</label>
-                        <div class="input-group">
-                            <span class="input-group-text">¥</span>
-                            <InputNumber @bind-Value="model.Price" class="form-control" step="0.01" />
-                        </div>
+                    <div class="form-floating">
+                        <input type="time" @bind="model.ArrivalTime" id="arrivalTime" class="form-control" />
+                        <label for="arrivalTime">到达时间</label>
+                        <ValidationMessage For="@(() => model.ArrivalTime)" class="text-danger small" />
                     </div>
                 </div>
             </div>
-
-            <div class="mb-4">
-                <label class="form-label fw-semibold">备注</label>
-                <InputTextArea @bind-Value="model.Notes" class="form-control" rows="2" placeholder="记录下旅途中的精彩瞬间吧..." />
-            </div>
-
-            <hr />
-
-            <div class="d-flex justify-content-between align-items-center">
-                <a href="/" class="btn btn-link text-decoration-none text-muted">
-                    <i class="bi bi-arrow-left"></i> 返回首页
-                </a>
-                <div>
-                    <button type="reset" class="btn btn-outline-secondary px-4 me-2">重置</button>
-                    <button type="submit" class="btn btn-primary px-5 shadow-sm">
-                        <i class="bi bi-check2-circle me-1"></i> 保存行程记录记录
-                    </button>
-                </div>
-            </div>
-        </EditForm>
+        </div>
     </div>
-</div>
+
+    <div class="mb-4">
+        <SectionHeader Title="席位与票价"/>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="form-floating mb-3">
+                    <InputSelect @bind-Value="model.SeatType" id="seatType" class="form-select">
+                        <option value="">请选择...</option>
+                        <option value="商务座">商务座</option>
+                        <option value="一等座">一等座</option>
+                        <option value="二等座">二等座</option>
+                        <option value="软卧">软卧</option>
+                        <option value="硬卧">硬卧</option>
+                        <option value="硬座">硬座</option>
+                    </InputSelect>
+                    <label for="seatType">席别</label>
+                    <ValidationMessage For="@(() => model.SeatType)" class="text-danger small" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="model.SeatNumber" id="seatNumber" class="form-control" placeholder="如：5车1A" />
+                    <label for="seatNumber">座位号</label>
+                    <ValidationMessage For="@(() => model.SeatNumber)" class="text-danger small" />
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-floating mb-3">
+                    <InputNumber @bind-Value="model.Price" id="price" class="form-control" step="0.5" placeholder="0.00" />
+                    <label for="price">票价 (¥)</label>
+                    <ValidationMessage For="@(() => model.Price)" class="text-danger small" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <SectionHeader Title="杂项" />
+    <div class="mb-4">
+        <div class="form-floating">
+            <InputTextArea @bind-Value="model.Notes" id="notes" class="form-control" rows="3" placeholder="记录下旅途中的机破瞬间吧..." />
+            <label for="notes">备注</label>
+            <ValidationMessage For="@(() => model.Notes)" class="text-danger small" />
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="d-flex justify-content-end align-items-center">
+        <div>
+            <button type="reset" class="btn btn-outline-secondary px-4 me-2">重置</button>
+            <button type="submit" class="btn btn-primary px-5 shadow-sm">
+                <i class="bi bi-check2-circle me-1"></i> 保存行程记录记录
+            </button>
+        </div>
+    </div>
+</EditForm>
 
 @code {
     [SupplyParameterFromForm]
