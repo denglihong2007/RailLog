@@ -1,9 +1,9 @@
 ﻿@page "/Account/Login"
 
 @using System.ComponentModel.DataAnnotations
-@using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Identity
 @using RailLog.Data
+@using RailLog.Shared.Components
 
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
@@ -13,61 +13,62 @@
 
 <PageTitle>登录 - 轨记</PageTitle>
 
-<h1>登录</h1>
-<div class="row">
-    <div class="col-lg-6">
-        <section>
-            <StatusMessage Message="@errorMessage" />
-            <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
-                <DataAnnotationsValidator />
-                <h2>使用本地账户登录。</h2>
-                <hr />
-                <ValidationSummary class="text-danger" role="alert" />
-                <div class="form-floating mb-3">
-                    <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username webauthn" aria-required="true" placeholder="name@example.com" />
-                    <label for="Input.Email" class="form-label">电子邮件</label>
-                    <ValidationMessage For="() => Input.Email" class="text-danger" />
-                </div>
-                <div class="form-floating mb-3">
-                    <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
-                    <label for="Input.Password" class="form-label">密码</label>
-                    <ValidationMessage For="() => Input.Password" class="text-danger" />
-                </div>
-                <div class="checkbox mb-3">
-                    <label class="form-label">
-                        <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
-                        记住我
-                    </label>
-                </div>
-                <div>
-                    <button type="submit" class="w-100 btn btn-lg btn-primary">登录</button>
-                </div>
-                <hr />
-                <div class="d-flex flex-column">
-                    <span class="text-secondary mx-auto mt-2">或</span>
-                    <PasskeySubmit Operation="PasskeyOperation.Request" Name="Input.Passkey" EmailName="Input.Email" class="btn btn-link mx-auto">使用通行密钥登录</PasskeySubmit>
-                </div>
-                <hr />
-                <div>
-                    <p>
-                        <a href="Account/ForgotPassword">忘记密码？</a>
+<PageHeader Title="账号登录" Subtitle="继续你的铁路记录" IconClass="bi bi-box-arrow-in-right" />
+
+<div class="container py-2">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+            <section class="card border-0 shadow-sm">
+                <div class="card-body p-4 p-lg-5">
+                    <StatusMessage Message="@errorMessage" />
+
+                    <p class="mt-3 alert alert-info mb-4" role="note">
+                        欢迎加入用户群707976051（暗号：114514）
                     </p>
-                    <p>
-                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">注册为新用户</a>
-                    </p>
-                    <p>
-                        <a href="Account/ResendEmailConfirmation">重发确认邮件</a>
-                    </p>
+                    <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
+                        <DataAnnotationsValidator />
+                        <h2 class="h5 mb-3">使用本地账户登录</h2>
+                        <ValidationSummary class="text-danger" role="alert" />
+                        <div class="form-floating mb-3">
+                            <InputText @bind-Value="Input.Account" id="Input.Account" class="form-control" autocomplete="username webauthn" aria-required="true" placeholder="用户名或电子邮件" />
+                            <label for="Input.Account" class="form-label">电子邮件</label>
+                            <ValidationMessage For="() => Input.Account" class="text-danger" />
+                        </div>
+                        <div class="form-floating mb-3">
+                            <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+                            <label for="Input.Password" class="form-label">密码</label>
+                            <ValidationMessage For="() => Input.Password" class="text-danger" />
+                        </div>
+                        <div class="checkbox mb-3">
+                            <label class="form-label">
+                                <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
+                                记住我
+                            </label>
+                        </div>
+                        <div>
+                            <button type="submit" class="w-100 btn btn-lg btn-primary">登录</button>
+                        </div>
+                        <hr />
+                        <div class="d-flex flex-column">
+                            <span class="text-secondary mx-auto mt-2">或</span>
+                            <PasskeySubmit Operation="PasskeyOperation.Request" Name="Input.Passkey" EmailName="Input.Account" class="btn btn-link mx-auto">使用通行密钥登录</PasskeySubmit>
+                        </div>
+                        <hr />
+                        <div>
+                            <p>
+                                <a href="Account/ForgotPassword">忘记密码？</a>
+                            </p>
+                            <p>
+                                <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">注册为新用户</a>
+                            </p>
+                            <p>
+                                <a href="Account/ResendEmailConfirmation">重发确认邮件</a>
+                            </p>
+                        </div>
+                    </EditForm>
                 </div>
-            </EditForm>
-        </section>
-    </div>
-    <div class="col-lg-4 col-lg-offset-2">
-        <section>
-            <h3>使用其他服务登录。</h3>
-            <hr />
-            <ExternalLoginPicker />
-        </section>
+            </section>
+        </div>
     </div>
 </div>
 
@@ -75,26 +76,16 @@
     private string? errorMessage;
     private EditContext editContext = default!;
 
-    [CascadingParameter]
-    private HttpContext HttpContext { get; set; } = default!;
-
     [SupplyParameterFromForm]
     private InputModel Input { get; set; } = default!;
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         Input ??= new();
-
         editContext = new EditContext(Input);
-
-        if (HttpMethods.IsGet(HttpContext.Request.Method))
-        {
-            // Clear the existing external cookie to ensure a clean login process
-            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
-        }
     }
 
     public async Task LoginUser()
@@ -108,20 +99,27 @@
         SignInResult result;
         if (!string.IsNullOrEmpty(Input.Passkey?.CredentialJson))
         {
-            // When performing passkey sign-in, don't perform form validation.
             result = await SignInManager.PasskeySignInAsync(Input.Passkey.CredentialJson);
         }
         else
         {
-            // If doing a password sign-in, validate the form.
             if (!editContext.Validate())
             {
                 return;
             }
 
-            // This doesn't count login failures towards account lockout
-            // To enable password failures to trigger account lockout, set lockoutOnFailure: true
-            result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+            var account = Input.Account.Trim();
+            var signInUserName = account;
+            if (account.Contains('@'))
+            {
+                var emailMatchedUser = await UserManager.FindByEmailAsync(account);
+                if (emailMatchedUser is not null)
+                {
+                    signInUserName = await UserManager.GetUserNameAsync(emailMatchedUser) ?? account;
+                }
+            }
+
+            result = await SignInManager.PasswordSignInAsync(signInUserName, Input.Password, Input.RememberMe, lockoutOnFailure: false);
         }
 
         if (result.Succeeded)
@@ -148,9 +146,8 @@
 
     private sealed class InputModel
     {
-        [Required(ErrorMessage = "请输入电子邮件")]
-        [EmailAddress(ErrorMessage = "邮件地址格式不正确")]
-        public string Email { get; set; } = "";
+        [Required(ErrorMessage = "请输入用户名或电子邮件")]
+        public string Account { get; set; } = "";
 
         [Required(ErrorMessage = "请输入密码")]
         [DataType(DataType.Password)]
@@ -162,3 +159,4 @@
         public PasskeyInputModel? Passkey { get; set; }
     }
 }
+

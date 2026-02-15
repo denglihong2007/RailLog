@@ -1,6 +1,9 @@
 @page "/add-trip"
+@page "/edit-trip/{TripId:int}"
 @using Microsoft.AspNetCore.Authorization
-@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Net
+@using System.Net.Http.Headers
 @using System.Text.Json
 @using RailLog.Shared.Models
 @attribute [Authorize]
@@ -8,14 +11,63 @@
 @inject NavigationManager Nav
 @inject HttpClient HttpClient
 
-<PageTitle>新增运转记录 - 轨记</PageTitle>
+<PageTitle>@(IsEditMode ? "编辑运转记录 - 轨记" : "新增运转记录 - 轨记")</PageTitle>
 
-<PageHeader Title="新增运转记录" IconClass="bi bi-pen" />
+<PageHeader Title="@(IsEditMode ? "编辑运转记录" : "新增运转记录")" IconClass="bi bi-pen" />
 
 <hr />
 
 <EditForm class="mb-4" Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
     <DataAnnotationsValidator />
+    <div class="mb-4">
+        <SectionHeader Title="车票识别" />
+        <div class="ticket-ocr">
+            <div class="row g-3 align-items-center">
+                <div class="col-lg-8 ticket-ocr__actions">
+                    <InputFile id="ocr-file-input" class="d-none" OnChange="OnOcrFileSelected"
+                               accept=".jpg,.jpeg,.png,.bmp,image/jpeg,image/png,image/bmp,image/jpg" />
+                    <InputFile id="ocr-camera-input" class="d-none" OnChange="OnOcrFileSelected" accept="image/*"
+                               capture="environment" />
+                    <label for="ocr-file-input" class="btn btn-outline-secondary mb-0">
+                        <i class="bi bi-folder2-open me-1"></i>选择文件
+                    </label>
+                    <label for="ocr-camera-input" class="btn btn-outline-secondary mb-0">
+                        <i class="bi bi-camera me-1"></i>打开相机
+                    </label>
+                    <div class="form-text w-100">
+                        可选择本地图片，或在移动端直接调用相机拍照后识别。
+                    </div>
+                    @if (ocrImageFile is not null)
+                    {
+                        <div class="small text-muted mt-1">
+                            已选择：@ocrImageFile.Name (@((ocrImageFile.Size / 1024.0).ToString("0.#")) KB)
+                        </div>
+                    }
+                </div>
+                <div class="col-lg-4">
+                    <button type="button" class="btn btn-outline-primary w-100" @onclick="RecognizeTicketAsync"
+                            disabled="@(isOcrProcessing || ocrImageFile is null)">
+                        @if (isOcrProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>识别中...</span>
+                        }
+                        else
+                        {
+                            <span><i class="bi bi-camera me-1"></i>识别并填充</span>
+                        }
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(ocrStatusMessage))
+            {
+                <div class="alert @(ocrStatusIsError ? "alert-danger" : "alert-success") py-2 mb-0 mt-3">
+                    @ocrStatusMessage
+                </div>
+            }
+        </div>
+    </div>
+
     <div class="mb-4">
         <SectionHeader Title="基本信息" />
         <div class="row g-3">
@@ -36,7 +88,8 @@
             </div>
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputDate @bind-Value="model.TravelDate" @bind-Value:after="OnTravelDateChanged" id="travelDate" class="form-control" />
+                    <InputDate @bind-Value="model.TravelDate" @bind-Value:after="OnTravelDateChanged" id="travelDate"
+                               class="form-control" />
                     <label for="travelDate" class="form-label">乘车日期</label>
                     <ValidationMessage For="@(() => model.TravelDate)" class="text-danger small" />
                 </div>
@@ -110,6 +163,88 @@
                     <ValidationMessage For="@(() => model.MileageKm)" class="text-danger small" />
                 </div>
             </div>
+            <div class="col-12">
+                <div class="via-editor">
+                    <div class="via-editor__header">
+                        <label class="form-label mb-0">经由线路</label>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="AddViaSegment">
+                                新增分段
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                    @onclick="ComputeShortestViaRoutesAsync">
+                                计算最短经由
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        @if (model!.ViaRouteSegments.Count == 0)
+                        {
+                            <div class="via-editor__empty">暂无经由分段</div>
+                        }
+                        else
+                        {
+                            <div class="vstack gap-2">
+                                @for (var i = 0; i < model.ViaRouteSegments.Count; i++)
+                                {
+                                    var idx = i;
+                                    var segment = model.ViaRouteSegments[i];
+                                    <div class="via-segment">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-md-3">
+                                                <label class="form-label mb-1 small">线路</label>
+                                                <input class="form-control form-control-sm" list="segment-route-options"
+                                                       value="@segment.RouteName"
+                                                       @oninput="async e => await OnSegmentRouteChangedAsync(idx, e.Value?.ToString())" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label mb-1 small">该线起点</label>
+                                                <input class="form-control form-control-sm" list="segment-station-options"
+                                                       value="@segment.FromStation"
+                                                       @oninput="async e => await OnSegmentStationChangedAsync(idx, true, e.Value?.ToString())" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label mb-1 small">该线终点</label>
+                                                <input class="form-control form-control-sm" list="segment-station-options"
+                                                       value="@segment.ToStation"
+                                                       @oninput="async e => await OnSegmentStationChangedAsync(idx, false, e.Value?.ToString())" />
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label mb-1 small">里程</label>
+                                                <div class="via-segment__mileage">@segment.MileageKm km</div>
+                                            </div>
+                                            <div class="col-md-1">
+                                                <button type="button" class="btn btn-outline-danger btn-sm w-100"
+                                                        @onclick="() => RemoveViaSegment(idx)">
+                                                    删除
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <datalist id="segment-route-options">
+                        @foreach (var route in segmentRouteNameSuggestions)
+                        {
+                            <option value="@route"></option>
+                        }
+                    </datalist>
+                    <datalist id="segment-station-options">
+                        @foreach (var station in segmentStationNameSuggestions)
+                        {
+                            <option value="@station"></option>
+                        }
+                    </datalist>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(routeHintMessage))
+            {
+                <div class="col-12">
+                    <div class="alert alert-warning py-2 mb-0">@routeHintMessage</div>
+                </div>
+            }
         </div>
     </div>
 
@@ -166,7 +301,7 @@
         <div>
             <button type="reset" class="btn btn-outline-secondary px-4 me-2">重置</button>
             <button type="submit" class="btn btn-primary px-5 shadow-sm">
-                <i class="bi bi-check2-circle me-1"></i> 保存行程记录记录
+                <i class="bi bi-check2-circle me-1"></i> @(IsEditMode ? "保存修改" : "保存行程记录")
             </button>
         </div>
     </div>
@@ -176,21 +311,96 @@
     private const string TrainPreselectApi = "api/train/preselect?keyword=";
     private const string TrainQueryApi = "api/train/query?train=";
     private const string TrainRollingStockApi = "api/train/rolling-stock?train=";
+    private const string RoutePathApi = "api/routes/path";
+    private const string RouteSuggestApi = "api/routes/suggest";
+    private const string RouteStationsApi = "api/routes/stations?routeName=";
+    private const string TrainTicketOcrApi = "api/ocr/train-ticket";
+    private const long OcrMaxUploadBytes = 5 * 1024 * 1024;
+    private static readonly HashSet<string> SupportedOcrExtensions = [".jpg", ".jpeg", ".png", ".bmp"];
+    private static readonly HashSet<string> SupportedOcrContentTypes =
+    [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/bmp"
+    ];
+
+    [Parameter]
+    public int? TripId { get; set; }
 
     [SupplyParameterFromForm]
     private TripRecordDto? model { get; set; }
+    private bool IsEditMode => TripId.HasValue && TripId.Value > 0;
 
     private List<string> trainSuggestions = [];
     private List<string> stationSuggestions = [];
+    private List<string> segmentRouteNameSuggestions = [];
+    private List<string> segmentStationNameSuggestions = [];
+    private readonly Dictionary<string, List<RouteStationOption>> routeStationsCache =
+new(StringComparer.OrdinalIgnoreCase);
     private List<TrainStopInfo> stationStops = [];
     private HashSet<string> trainSuggestionSet = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? trainSuggestCts;
     private CancellationTokenSource? rollingStockCts;
+    private CancellationTokenSource? routePathCts;
+    private CancellationTokenSource? segmentRouteSuggestCts;
+    private CancellationTokenSource? segmentStationSuggestCts;
     private string? loadedStationsForTrain;
+    private string? routeHintMessage;
+    private IBrowserFile? ocrImageFile;
+    private string? ocrStatusMessage;
+    private bool ocrStatusIsError;
+    private bool isOcrProcessing;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         model ??= new();
+        await LoadSegmentSuggestionsAsync("route", string.Empty);
+        await LoadSegmentSuggestionsAsync("station", string.Empty);
+
+        if (IsEditMode)
+        {
+            await LoadTripForEditAsync();
+        }
+    }
+
+    private async Task LoadTripForEditAsync()
+    {
+        if (!IsEditMode || TripId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var existing = await HttpClient.GetFromJsonAsync<TripRecordDto>($"api/trips/{TripId.Value}");
+            if (existing is null)
+            {
+                Nav.NavigateTo("/my-trips");
+                return;
+            }
+
+            model = existing;
+            if (!string.IsNullOrWhiteSpace(model.TrainNumber))
+            {
+                var train = model.TrainNumber.Trim().ToUpperInvariant();
+                model.TrainNumber = train;
+                await LoadTrainSuggestionsAsync(train, useDebounce: false);
+                if (trainSuggestionSet.Contains(train))
+                {
+                    await LoadStationsByTrainAsync(train);
+                }
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            Nav.NavigateTo("/my-trips");
+        }
+        catch (Exception ex)
+        {
+            routeHintMessage = "加载记录失败，请稍后重试。";
+            Console.Error.WriteLine($"Failed to load trip for edit {TripId}: {ex}");
+        }
     }
 
     private async Task OnTrainInputChanged(ChangeEventArgs args)
@@ -206,6 +416,8 @@
         stationSuggestions = [];
         stationStops = [];
         model.RollingStock = string.Empty;
+        model.ViaRouteSegments = [];
+        routeHintMessage = null;
 
         await LoadTrainSuggestionsAsync(trainInput, useDebounce: true);
     }
@@ -257,7 +469,9 @@
         }
 
         model.FromStation = args.Value?.ToString()?.Trim() ?? string.Empty;
-        TryAutoFillTripDetails();
+        model.ViaRouteSegments = [];
+        routeHintMessage = null;
+        _ = TryAutoFillTripDetails();
         return Task.CompletedTask;
     }
 
@@ -269,14 +483,153 @@
         }
 
         model.ToStation = args.Value?.ToString()?.Trim() ?? string.Empty;
-        TryAutoFillTripDetails();
+        model.ViaRouteSegments = [];
+        routeHintMessage = null;
+        _ = TryAutoFillTripDetails();
         return Task.CompletedTask;
     }
 
-    private Task OnStationInputCompleted(FocusEventArgs _)
+    private async Task OnStationInputCompleted(FocusEventArgs _)
     {
         TryAutoFillTripDetails();
-        return Task.CompletedTask;
+        await InferViaRouteSegmentsFromTimetableAsync();
+    }
+
+    private async Task OnSegmentRouteChangedAsync(int index, string? routeName)
+    {
+        if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
+        {
+            return;
+        }
+
+        var segment = model.ViaRouteSegments[index];
+        segment.RouteName = routeName?.Trim() ?? string.Empty;
+        segment.MileageKm = 0;
+        await LoadSegmentSuggestionsAsync("route", segment.RouteName);
+        await EnsureRouteStationsLoadedAsync(segment.RouteName);
+        await TryRecalculateSegmentMileageAsync(index);
+    }
+
+    private async Task OnSegmentStationChangedAsync(int index, bool isFrom, string? stationName)
+    {
+        if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
+        {
+            return;
+        }
+
+        var segment = model.ViaRouteSegments[index];
+        if (isFrom)
+        {
+            segment.FromStation = stationName?.Trim() ?? string.Empty;
+        }
+        else
+        {
+            segment.ToStation = stationName?.Trim() ?? string.Empty;
+        }
+
+        await LoadSegmentSuggestionsAsync("station", stationName?.Trim() ?? string.Empty);
+        await TryRecalculateSegmentMileageAsync(index);
+    }
+
+    private async Task LoadSegmentSuggestionsAsync(string type, string keyword)
+    {
+        var cts = type == "route" ? segmentRouteSuggestCts : segmentStationSuggestCts;
+        cts?.Cancel();
+        cts = new CancellationTokenSource();
+        if (type == "route")
+        {
+            segmentRouteSuggestCts = cts;
+        }
+        else
+        {
+            segmentStationSuggestCts = cts;
+        }
+
+        var cancellationToken = cts.Token;
+
+        try
+        {
+            await Task.Delay(150, cancellationToken);
+            var url = $"{RouteSuggestApi}?type={Uri.EscapeDataString(type)}&keyword={Uri.EscapeDataString(keyword)}";
+            var suggestions = await HttpClient.GetFromJsonAsync<List<string>>(url, cancellationToken) ?? [];
+            if (type == "route")
+            {
+                segmentRouteNameSuggestions = suggestions;
+            }
+            else
+            {
+                segmentStationNameSuggestions = suggestions;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled requests caused by continuous typing.
+        }
+        catch
+        {
+            if (type == "route")
+            {
+                segmentRouteNameSuggestions = [];
+            }
+            else
+            {
+                segmentStationNameSuggestions = [];
+            }
+        }
+    }
+
+    private async Task EnsureRouteStationsLoadedAsync(string routeName)
+    {
+        var key = routeName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(key) || routeStationsCache.ContainsKey(key))
+        {
+            return;
+        }
+
+        try
+        {
+            var url = $"{RouteStationsApi}{Uri.EscapeDataString(key)}";
+            var stations = await HttpClient.GetFromJsonAsync<List<RouteStationOption>>(url) ?? [];
+            routeStationsCache[key] = stations;
+        }
+        catch
+        {
+            routeStationsCache[key] = [];
+        }
+    }
+
+    private async Task TryRecalculateSegmentMileageAsync(int index)
+    {
+        if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
+        {
+            return;
+        }
+
+        var segment = model.ViaRouteSegments[index];
+        segment.MileageKm = 0;
+        if (string.IsNullOrWhiteSpace(segment.RouteName) ||
+            string.IsNullOrWhiteSpace(segment.FromStation) ||
+            string.IsNullOrWhiteSpace(segment.ToStation))
+        {
+            return;
+        }
+
+        await EnsureRouteStationsLoadedAsync(segment.RouteName);
+        if (!routeStationsCache.TryGetValue(segment.RouteName, out var stations))
+        {
+            return;
+        }
+
+        var from = stations.FirstOrDefault(x => string.Equals(x.StationName, segment.FromStation,
+StringComparison.OrdinalIgnoreCase));
+        var to = stations.FirstOrDefault(x => string.Equals(x.StationName, segment.ToStation,
+StringComparison.OrdinalIgnoreCase));
+        if (from is null || to is null)
+        {
+            return;
+        }
+
+        segment.MileageKm = Math.Abs(to.Mileage - from.Mileage);
     }
 
     private async Task LoadTrainSuggestionsAsync(string keyword, bool useDebounce)
@@ -370,7 +723,7 @@
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             loadedStationsForTrain = train;
-            TryAutoFillTripDetails();
+            _ = TryAutoFillTripDetails();
         }
         catch (Exception ex)
         {
@@ -379,6 +732,216 @@
             stationStops = [];
             loadedStationsForTrain = null;
         }
+    }
+
+    private void OnOcrFileSelected(InputFileChangeEventArgs args)
+    {
+        ocrStatusMessage = null;
+        ocrStatusIsError = false;
+
+        ocrImageFile = args.FileCount > 0 ? args.File : null;
+        if (ocrImageFile is null)
+        {
+            return;
+        }
+
+        if (!IsSupportedOcrFile(ocrImageFile))
+        {
+            ocrImageFile = null;
+            SetOcrStatus("仅支持 JPG/JPEG/PNG/BMP 图片。", isError: true);
+            return;
+        }
+
+        if (ocrImageFile.Size > OcrMaxUploadBytes)
+        {
+            ocrImageFile = null;
+            SetOcrStatus($"图片过大，请上传不超过 {OcrMaxUploadBytes / 1024 / 1024}MB 的图片。", isError: true);
+        }
+    }
+
+    private async Task RecognizeTicketAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        if (ocrImageFile is null)
+        {
+            SetOcrStatus("请先选择车票图片。", isError: true);
+            return;
+        }
+
+        if (isOcrProcessing)
+        {
+            return;
+        }
+
+        isOcrProcessing = true;
+        SetOcrStatus("正在识别车票，请稍候...", isError: false);
+
+        try
+        {
+            using var fileStream = ocrImageFile.OpenReadStream(OcrMaxUploadBytes);
+            using var content = new MultipartFormDataContent();
+            using var streamContent = new StreamContent(fileStream);
+
+            if (!string.IsNullOrWhiteSpace(ocrImageFile.ContentType))
+            {
+                streamContent.Headers.ContentType = MediaTypeHeaderValue.Parse(ocrImageFile.ContentType);
+            }
+
+            content.Add(streamContent, "imageFile", ocrImageFile.Name);
+            using var response = await HttpClient.PostAsync(TrainTicketOcrApi, content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorMessage = await ReadApiErrorMessageAsync(response);
+                SetOcrStatus($"识别失败：{errorMessage}", isError: true);
+                return;
+            }
+
+            var ocrResult = await response.Content.ReadFromJsonAsync<TrainTicketOcrResponse>();
+            if (ocrResult is null)
+            {
+                SetOcrStatus("识别失败：返回结果为空。", isError: true);
+                return;
+            }
+
+            await ApplyOcrResultAsync(ocrResult);
+            SetOcrStatus("识别成功，已填充可识别字段。", isError: false);
+        }
+        catch (IOException)
+        {
+            SetOcrStatus("读取图片失败，请确认文件大小和格式后重试。", isError: true);
+        }
+        catch (HttpRequestException)
+        {
+            SetOcrStatus("网络异常，无法完成识别。", isError: true);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to recognize ticket: {ex}");
+            SetOcrStatus("识别失败，请稍后重试。", isError: true);
+        }
+        finally
+        {
+            isOcrProcessing = false;
+        }
+    }
+
+    private async Task ApplyOcrResultAsync(TrainTicketOcrResponse result)
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.TrainNumber))
+        {
+            model.TrainNumber = result.TrainNumber.Trim().ToUpperInvariant();
+        }
+
+        if (result.TravelDate.HasValue)
+        {
+            model.TravelDate = result.TravelDate.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.FromStation))
+        {
+            model.FromStation = result.FromStation.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.ToStation))
+        {
+            model.ToStation = result.ToStation.Trim();
+        }
+
+        if (result.DepartureTime.HasValue)
+        {
+            model.DepartureTime = result.DepartureTime.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.SeatType))
+        {
+            model.SeatType = result.SeatType.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.SeatNumber))
+        {
+            model.SeatNumber = result.SeatNumber.Trim();
+        }
+
+        if (result.Price is > 0)
+        {
+            model.Price = result.Price.Value;
+        }
+
+        model.ViaRouteSegments = [];
+        routeHintMessage = null;
+        loadedStationsForTrain = null;
+        stationSuggestions = [];
+        stationStops = [];
+
+        var train = model.TrainNumber.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(train))
+        {
+            model.TrainNumber = train;
+            await LoadTrainSuggestionsAsync(train, useDebounce: false);
+            if (trainSuggestionSet.Contains(train))
+            {
+                await LoadStationsByTrainAsync(train);
+                await TryLoadRollingStockAsync();
+            }
+        }
+
+        if (stationStops.Count > 0 &&
+            !string.IsNullOrWhiteSpace(model.FromStation) &&
+            !string.IsNullOrWhiteSpace(model.ToStation))
+        {
+            if (model.MileageKm <= 0)
+            {
+                _ = TryAutoFillTripDetails();
+            }
+
+            await InferViaRouteSegmentsFromTimetableAsync();
+        }
+    }
+
+    private static bool IsSupportedOcrFile(IBrowserFile file)
+    {
+        var extension = Path.GetExtension(file.Name);
+        var extensionAllowed = !string.IsNullOrWhiteSpace(extension) &&
+            SupportedOcrExtensions.Contains(extension);
+
+        var contentType = file.ContentType?.Trim() ?? string.Empty;
+        var contentTypeAllowed = !string.IsNullOrWhiteSpace(contentType) &&
+            SupportedOcrContentTypes.Contains(contentType);
+
+        return extensionAllowed || contentTypeAllowed;
+    }
+
+    private static async Task<string> ReadApiErrorMessageAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var payload = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+            if (!string.IsNullOrWhiteSpace(payload?.Message))
+            {
+                return payload.Message;
+            }
+        }
+        catch
+        {
+            // ignore parse failures
+        }
+
+        return $"HTTP {(int)response.StatusCode}";
+    }
+
+    private void SetOcrStatus(string message, bool isError)
+    {
+        ocrStatusMessage = message;
+        ocrStatusIsError = isError;
     }
 
     private static List<string> ExpandTrainNumbers(List<string>? source)
@@ -397,18 +960,18 @@
             .ToList();
     }
 
-    private void TryAutoFillTripDetails()
+    private bool TryAutoFillTripDetails()
     {
         if (model is null || stationStops.Count == 0)
         {
-            return;
+            return false;
         }
 
         var from = model.FromStation.Trim();
         var to = model.ToStation.Trim();
         if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
         {
-            return;
+            return false;
         }
 
         var fromStop = stationStops.FirstOrDefault(x => string.Equals(x.Station, from, StringComparison.OrdinalIgnoreCase));
@@ -416,12 +979,12 @@
 
         if (fromStop is null || toStop is null)
         {
-            return;
+            return false;
         }
 
         if (fromStop.Order >= toStop.Order)
         {
-            return;
+            return false;
         }
 
         if (TryParseTime(fromStop.Depart, out var departure))
@@ -438,12 +1001,351 @@
         if (mileage > 0)
         {
             model.MileageKm = mileage;
+            return true;
         }
+
+        return false;
     }
 
     private static bool TryParseTime(string? value, out TimeOnly result)
     {
         return TimeOnly.TryParse(value, out result);
+    }
+
+    private async Task InferViaRouteSegmentsFromTimetableAsync()
+    {
+        if (model is null || stationStops.Count == 0)
+        {
+            return;
+        }
+
+        var from = model.FromStation.Trim();
+        var to = model.ToStation.Trim();
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+        {
+            return;
+        }
+
+        var fromStop = stationStops.FirstOrDefault(x => string.Equals(x.Station, from, StringComparison.OrdinalIgnoreCase));
+        var toStop = stationStops.FirstOrDefault(x => string.Equals(x.Station, to, StringComparison.OrdinalIgnoreCase));
+        if (fromStop is null || toStop is null || fromStop.Order >= toStop.Order)
+        {
+            routeHintMessage = "区间站点无效，无法自动推断经由。";
+            return;
+        }
+
+        var intervalStops = stationStops
+            .Where(x => x.Order >= fromStop.Order && x.Order <= toStop.Order)
+            .OrderBy(x => x.Order)
+            .ToList();
+
+        if (intervalStops.Count < 2)
+        {
+            routeHintMessage = "区间停站不足，无法自动推断经由。";
+            return;
+        }
+
+        routePathCts?.Cancel();
+        routePathCts = new CancellationTokenSource();
+        var cancellationToken = routePathCts.Token;
+
+        try
+        {
+            var allSegments = new List<ViaRouteSegmentDto>();
+            var notices = new List<string>();
+
+            for (var i = 0; i < intervalStops.Count - 1;)
+            {
+                var current = intervalStops[i];
+                var next = intervalStops[i + 1];
+
+                // Missing mileage at the middle station: infer via by previous->next shortest path.
+                if ((!current.HasDistance || !next.HasDistance) &&
+                    i > 0 &&
+                    i + 1 < intervalStops.Count - 1 &&
+                    !intervalStops[i + 1].HasDistance)
+                {
+                    var prev = intervalStops[i];
+                    var mid = intervalStops[i + 1];
+                    var after = intervalStops[i + 2];
+                    var fallbackUri = BuildRoutePathRequestUri(prev.Station, after.Station, targetMileage: null, allowShortestFallback:
+true);
+                    var fallbackResult = await HttpClient.GetFromJsonAsync<RoutePathResponse>(fallbackUri, cancellationToken);
+                    if (fallbackResult is null || !fallbackResult.Found || fallbackResult.RouteSegments is null ||
+fallbackResult.RouteSegments.Count == 0)
+                    {
+                        routeHintMessage = $"站点 {mid.Station} 缺里程，且无法根据前后站推断最短经由。";
+                        return;
+                    }
+
+                    allSegments.AddRange(fallbackResult.RouteSegments.Select(segment => new ViaRouteSegmentDto
+                    {
+                        RouteName = segment.RouteName,
+                        FromStation = segment.FromStation,
+                        ToStation = segment.ToStation,
+                        MileageKm = segment.MileageKm
+                    }));
+                    notices.Add($"站点 {mid.Station} 无里程，已按 {prev.Station}->{after.Station} 最短经由推断。");
+                    i += 2;
+                    continue;
+                }
+
+                var sectionMileage = next.Distance - current.Distance;
+                if (!TryGetApproxIntegerMileage(sectionMileage, out var targetMileage))
+                {
+                    var fallbackUri = BuildRoutePathRequestUri(current.Station, next.Station, targetMileage: null, allowShortestFallback:
+true);
+                    var fallbackResult = await HttpClient.GetFromJsonAsync<RoutePathResponse>(fallbackUri, cancellationToken);
+                    if (fallbackResult is null || !fallbackResult.Found || fallbackResult.RouteSegments is null ||
+fallbackResult.RouteSegments.Count == 0)
+                    {
+                        routeHintMessage = $"区间 {current.Station} -> {next.Station} 无法自动推断经由。可改手动或点击“计算最短经由”。";
+                        return;
+                    }
+
+                    allSegments.AddRange(fallbackResult.RouteSegments.Select(segment => new ViaRouteSegmentDto
+                    {
+                        RouteName = segment.RouteName,
+                        FromStation = segment.FromStation,
+                        ToStation = segment.ToStation,
+                        MileageKm = segment.MileageKm
+                    }));
+                    notices.Add($"区间 {current.Station}->{next.Station} 里程缺失，已按最短经由推断。");
+                    i++;
+                    continue;
+                }
+
+                var requestUri = BuildRoutePathRequestUri(current.Station, next.Station, targetMileage, allowShortestFallback: false);
+                var result = await HttpClient.GetFromJsonAsync<RoutePathResponse>(requestUri, cancellationToken);
+                if (result is null || !result.Found || result.RouteSegments is null || result.RouteSegments.Count == 0)
+                {
+                    var fallbackUri = BuildRoutePathRequestUri(current.Station, next.Station, targetMileage: null, allowShortestFallback:
+true);
+                    var fallbackResult = await HttpClient.GetFromJsonAsync<RoutePathResponse>(fallbackUri, cancellationToken);
+                    if (fallbackResult is null || !fallbackResult.Found || fallbackResult.RouteSegments is null ||
+fallbackResult.RouteSegments.Count == 0)
+                    {
+                        routeHintMessage = $"区间 {current.Station} -> {next.Station} 未匹配到经由，且最短路径也不可用。";
+                        return;
+                    }
+
+                    allSegments.AddRange(fallbackResult.RouteSegments.Select(segment => new ViaRouteSegmentDto
+                    {
+                        RouteName = segment.RouteName,
+                        FromStation = segment.FromStation,
+                        ToStation = segment.ToStation,
+                        MileageKm = segment.MileageKm
+                    }));
+                    notices.Add($"区间 {current.Station}->{next.Station} 未匹配到目标经由，已改用最短路径。");
+                    i++;
+                    continue;
+                }
+
+                foreach (var segment in result.RouteSegments)
+                {
+                    allSegments.Add(new ViaRouteSegmentDto
+                    {
+                        RouteName = segment.RouteName,
+                        FromStation = segment.FromStation,
+                        ToStation = segment.ToStation,
+                        MileageKm = segment.MileageKm
+                    });
+                }
+
+                i++;
+            }
+
+            model.ViaRouteSegments = MergeConnectedSegments(allSegments);
+            routeHintMessage = notices.Count > 0
+                ? string.Join(" ", notices)
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled request caused by rapid input changes.
+        }
+        catch (Exception ex)
+        {
+            routeHintMessage = "自动推断经由失败，可手动编辑或点击“计算最短经由”。";
+            Console.Error.WriteLine($"Failed to infer via routes by timetable sections for {from} -> {to}: {ex}");
+        }
+    }
+
+    private async Task ComputeShortestViaRoutesAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        var from = model.FromStation.Trim();
+        var to = model.ToStation.Trim();
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+        {
+            routeHintMessage = "请先填写出发地和目的地。";
+            return;
+        }
+
+        routePathCts?.Cancel();
+        routePathCts = new CancellationTokenSource();
+        var cancellationToken = routePathCts.Token;
+
+        try
+        {
+            var requestUri = BuildRoutePathRequestUri(from, to, targetMileage: null, allowShortestFallback: true);
+            var result = await HttpClient.GetFromJsonAsync<RoutePathResponse>(requestUri, cancellationToken);
+            if (result is null || !result.Found || result.RouteSegments is null || result.RouteSegments.Count == 0)
+            {
+                routeHintMessage = "未找到可用经由线路。";
+                model.ViaRouteSegments = [];
+                return;
+            }
+
+            model.ViaRouteSegments = MergeConnectedSegments(result.RouteSegments.Select(x => new ViaRouteSegmentDto
+            {
+                RouteName = x.RouteName,
+                FromStation = x.FromStation,
+                ToStation = x.ToStation,
+                MileageKm = x.MileageKm
+            }));
+            routeHintMessage = null;
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled request caused by rapid input changes.
+        }
+        catch (Exception ex)
+        {
+            routeHintMessage = "计算最短经由失败，请稍后重试。";
+            Console.Error.WriteLine($"Failed to calculate shortest route path for {from} -> {to}: {ex}");
+        }
+    }
+
+    private void AddViaSegment()
+    {
+        model?.ViaRouteSegments.Add(new ViaRouteSegmentDto());
+    }
+
+    private void RemoveViaSegment(int index)
+    {
+        if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
+        {
+            return;
+        }
+
+        model.ViaRouteSegments.RemoveAt(index);
+    }
+
+    private static string BuildRoutePathRequestUri(string from, string to, int? targetMileage, bool allowShortestFallback)
+    {
+        var query =
+$"from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&allowShortestFallback={allowShortestFallback.ToString().ToLowerInvariant()}";
+        if (targetMileage.HasValue)
+        {
+            query += $"&targetMileage={targetMileage.Value}";
+        }
+
+        return $"{RoutePathApi}?{query}";
+    }
+
+    private static bool TryGetApproxIntegerMileage(decimal mileageKm, out int value)
+    {
+        value = 0;
+        if (mileageKm <= 0)
+        {
+            return false;
+        }
+
+        if (mileageKm > int.MaxValue)
+        {
+            return false;
+        }
+
+        var rounded = Math.Round(mileageKm);
+        if (Math.Abs(mileageKm - rounded) > 0.2m)
+        {
+            return false;
+        }
+
+        value = (int)rounded;
+        return value > 0;
+    }
+
+    private static List<ViaRouteSegmentDto> MergeConnectedSegments(IEnumerable<ViaRouteSegmentDto> segments)
+    {
+        var result = new List<ViaRouteSegmentDto>();
+        foreach (var raw in segments)
+        {
+            var current = new ViaRouteSegmentDto
+            {
+                RouteName = raw.RouteName?.Trim() ?? string.Empty,
+                FromStation = raw.FromStation?.Trim() ?? string.Empty,
+                ToStation = raw.ToStation?.Trim() ?? string.Empty,
+                MileageKm = raw.MileageKm
+            };
+
+            if (string.IsNullOrWhiteSpace(current.RouteName) ||
+                string.IsNullOrWhiteSpace(current.FromStation) ||
+                string.IsNullOrWhiteSpace(current.ToStation))
+            {
+                continue;
+            }
+
+            if (result.Count == 0)
+            {
+                result.Add(current);
+                continue;
+            }
+
+            var last = result[^1];
+            if (string.Equals(last.RouteName, current.RouteName, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(last.ToStation, current.FromStation, StringComparison.OrdinalIgnoreCase))
+            {
+                last.ToStation = current.ToStation;
+                last.MileageKm += current.MileageKm;
+                continue;
+            }
+
+            result.Add(current);
+        }
+
+        return result;
+    }
+
+    private bool ValidateViaRouteSegments()
+    {
+        if (model is null || model.ViaRouteSegments.Count == 0)
+        {
+            return true;
+        }
+
+        var first = model.ViaRouteSegments[0];
+        var last = model.ViaRouteSegments[^1];
+        if (!string.Equals(first.FromStation?.Trim(), model.FromStation?.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            routeHintMessage = "第一段起点必须与出发地一致。";
+            return false;
+        }
+
+        if (!string.Equals(last.ToStation?.Trim(), model.ToStation?.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            routeHintMessage = "最后一段终点必须与目的地一致。";
+            return false;
+        }
+
+        for (var i = 0; i < model.ViaRouteSegments.Count - 1; i++)
+        {
+            var current = model.ViaRouteSegments[i];
+            var next = model.ViaRouteSegments[i + 1];
+            if (!string.Equals(current.ToStation?.Trim(), next.FromStation?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                routeHintMessage = $"第 {i + 1} 段终点与第 {i + 2} 段起点不衔接。";
+                return false;
+            }
+        }
+
+        routeHintMessage = null;
+        return true;
     }
 
     private static List<TrainStopInfo> ExtractStationStops(JsonElement root)
@@ -478,11 +1380,13 @@
                     ? departElement.GetString()
                     : null;
                 var distance = 0m;
+                var hasDistance = false;
                 if (stop.TryGetProperty("distance", out var distanceElement))
                 {
                     if (distanceElement.ValueKind == JsonValueKind.Number && distanceElement.TryGetDecimal(out var km))
                     {
                         distance = km;
+                        hasDistance = true;
                     }
                     else if (distanceElement.ValueKind == JsonValueKind.String)
                     {
@@ -494,11 +1398,12 @@
                         else if (decimal.TryParse(text, out var parsedKm))
                         {
                             distance = parsedKm;
+                            hasDistance = true;
                         }
                     }
                 }
 
-                stations.Add(new TrainStopInfo(station, arrive, depart, distance, index));
+                stations.Add(new TrainStopInfo(station, arrive, depart, distance, hasDistance, index));
                 index++;
             }
         }
@@ -509,17 +1414,34 @@
             .ToList();
     }
 
-    private sealed record TrainStopInfo(string Station, string? Arrive, string? Depart, decimal Distance, int Order);
-    private sealed record TrainRollingStockResponse(string RollingStock);
-
     private async Task HandleSubmit()
     {
         if (model is not null)
         {
-            var response = await HttpClient.PostAsJsonAsync("api/trips", model);
+            if (!ValidateViaRouteSegments())
+            {
+                return;
+            }
+
+            var response = IsEditMode
+                ? await HttpClient.PutAsJsonAsync($"api/trips/{TripId!.Value}", model)
+                : await HttpClient.PostAsJsonAsync("api/trips", model);
             if (response.IsSuccessStatusCode)
             {
-                Nav.NavigateTo("/my-trips");
+                if (IsEditMode && TripId.HasValue)
+                {
+                    Nav.NavigateTo($"/trip-details/{TripId.Value}");
+                }
+                else
+                {
+                    Nav.NavigateTo("/my-trips");
+                }
+            }
+            else
+            {
+                routeHintMessage = IsEditMode
+                    ? "保存修改失败，请检查经由分段是否连通。"
+                    : "保存失败，请检查经由分段是否连通。";
             }
         }
     }

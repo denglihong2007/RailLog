@@ -5,12 +5,13 @@ using Microsoft.EntityFrameworkCore;
 using RailLog.Components;
 using RailLog.Components.Account;
 using RailLog.Data;
+using RailLog.Models;
 using RailLog.Profiles;
 using RailLog.Services;
 using RailLog.Shared.Models;
+using RailLog.Utilities;
 using System.Security.Claims;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,24 +32,34 @@ builder.Services.AddAuthentication(options =>
     })
     .AddIdentityCookies();
 
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.ExpireTimeSpan = TimeSpan.FromDays(15);
+    options.SlidingExpiration = true;
+    options.Cookie.Name = "RailLog.Identity";
+});
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
+    options.UseSqlite(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
-        options.SignIn.RequireConfirmedAccount = true;
+        options.SignIn.RequireConfirmedAccount = false;
         options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
         options.Password.RequireUppercase = false;       // 不强制要求大写字母
         options.Password.RequireNonAlphanumeric = false; // 不强制要求特殊字符（如 @, #, $）
+
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
 
-builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+builder.Services.AddTransient<IEmailSender<ApplicationUser>, EmailService>();
 builder.Services.AddScoped<TripService>();
+builder.Services.AddScoped<BaiduTrainTicketOcrService>();
+builder.Services.AddSingleton<RouteRoutingService>();
 builder.Services.AddScoped(sp => new HttpClient
 {
     BaseAddress = new Uri(builder.Configuration["FrontendUrl"] ?? "https://localhost:7157")
@@ -65,12 +76,29 @@ builder.Services.AddHttpClient("RailReApi", client =>
 {
     client.BaseAddress = new Uri("https://api.rail.re/");
 });
+builder.Services.AddHttpClient("BaiduOcrApi", client =>
+{
+    client.BaseAddress = new Uri("https://aip.baidubce.com/");
+});
 builder.Services.AddAutoMapper(cfg =>
 {
     cfg.AddProfile<MappingProfile>();
 });
 var app = builder.Build();
-
+// 自动执行数据库迁移
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<ApplicationDbContext>();
+        context.Database.Migrate(); // 如果表不存在，会自动创建
+    }
+    catch
+    {
+        // 可以在这里记录日志
+    }
+}
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -92,10 +120,15 @@ app.MapPost("/api/trips", async (TripRecordDto dto, TripService service, ClaimsP
 {
     var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+    if (!ViaRouteSegmentValidator.AreConnected(dto.ViaRouteSegments, dto.FromStation, dto.ToStation))
+    {
+        return Results.BadRequest(new { message = "经由线路分段不连通，请保证上一段终点等于下一段起点。" });
+    }
+
     var record = mapper.Map<TripRecord>(dto);
     record.UserId = userId;
     await service.SaveRecordAsync(record);
-    return Results.Ok();
+    return Results.Created($"/api/trips/{record.Id}", record);
 
 }).RequireAuthorization();
 app.MapGet("/api/trips", async (TripService service, ClaimsPrincipal user) =>
@@ -105,6 +138,71 @@ app.MapGet("/api/trips", async (TripService service, ClaimsPrincipal user) =>
 
     var trips = await service.GetUserTripsAsync(userId);
     return Results.Ok(trips); // 这会自动序列化为 JSON
+}).RequireAuthorization();
+app.MapGet("/api/trips/{id:int}", async (int id, TripService service, ClaimsPrincipal user) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var trip = await service.GetUserTripByIdAsync(userId, id);
+    return trip is null ? Results.NotFound() : Results.Ok(trip);
+}).RequireAuthorization();
+app.MapPut("/api/trips/{id:int}", async (int id, TripRecordDto dto, TripService service, ClaimsPrincipal user) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+    if (!ViaRouteSegmentValidator.AreConnected(dto.ViaRouteSegments, dto.FromStation, dto.ToStation))
+    {
+        return Results.BadRequest(new { message = "经由线路分段不连通，请保证上一段终点等于下一段起点。" });
+    }
+
+    var updated = await service.UpdateUserTripAsync(userId, id, dto);
+    return updated ? Results.NoContent() : Results.NotFound();
+}).RequireAuthorization();
+app.MapDelete("/api/trips/{id:int}", async (int id, TripService service, ClaimsPrincipal user) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var deleted = await service.DeleteUserTripAsync(userId, id);
+    return deleted ? Results.NoContent() : Results.NotFound();
+}).RequireAuthorization();
+
+app.MapGet("/api/routes/path", (string from, string to, int? targetMileage, bool? allowShortestFallback, RouteRoutingService routingService) =>
+{
+    if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+    {
+        return Results.BadRequest(new { message = "from and to are required" });
+    }
+
+    var fallback = allowShortestFallback ?? true;
+    var result = routingService.CalculatePath(from, to, targetMileage, fallback);
+    if (result is null)
+    {
+        return Results.Ok(new { found = false });
+    }
+
+    return Results.Ok(new
+    {
+        found = true,
+        isMileageMatch = result.IsMileageMatch,
+        totalMileageKm = result.TotalMileageKm,
+        stations = result.Stations,
+        routes = result.Routes,
+        routeSegments = result.RouteSegments,
+        stationsText = result.StationsText,
+        routesText = result.RoutesText
+    });
+}).RequireAuthorization();
+
+app.MapGet("/api/routes/suggest", (string type, string keyword, RouteRoutingService routingService) =>
+{
+    if (string.Equals(type, "route", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.Ok(routingService.SuggestRouteNames(keyword));
+    }
+
+    return Results.Ok(routingService.SuggestStationNames(keyword));
 }).RequireAuthorization();
 
 app.MapGet("/api/train/preselect", async (string keyword, IHttpClientFactory httpClientFactory) =>
@@ -169,7 +267,7 @@ app.MapGet("/api/train/rolling-stock", async (string train, DateOnly date, IHttp
         {
             await using var railGoStream = await railGoResponse.Content.ReadAsStreamAsync();
             using var railGoDoc = await JsonDocument.ParseAsync(railGoStream);
-            var railGoResult = ExtractRollingStockFromRailGo(railGoDoc.RootElement, normalizedTrain, date);
+            var railGoResult = RollingStockExtractor.ExtractFromRailGo(railGoDoc.RootElement, normalizedTrain, date);
             if (!string.IsNullOrWhiteSpace(railGoResult))
             {
                 return Results.Ok(new { rollingStock = railGoResult });
@@ -191,199 +289,39 @@ app.MapGet("/api/train/rolling-stock", async (string train, DateOnly date, IHttp
 
     await using var railReStream = await railReResponse.Content.ReadAsStreamAsync();
     using var railReDoc = await JsonDocument.ParseAsync(railReStream);
-    var rollingStock = ExtractRollingStockFromRailRe(railReDoc.RootElement, date);
+    var rollingStock = RollingStockExtractor.ExtractFromRailRe(railReDoc.RootElement, date);
     return Results.Ok(new { rollingStock });
 }).RequireAuthorization();
-
-static string ExtractRollingStockFromRailGo(JsonElement root, string train, DateOnly date)
+app.MapPost("/api/ocr/train-ticket", async (HttpRequest request, BaiduTrainTicketOcrService ocrService, CancellationToken cancellationToken) =>
 {
-    if (root.ValueKind != JsonValueKind.Object)
+    if (!request.HasFormContentType)
     {
-        return string.Empty;
+        return Results.BadRequest(new { message = "请使用 multipart/form-data 上传图片。" });
     }
 
-    if (!root.TryGetProperty("data", out var dataElement) || dataElement.ValueKind != JsonValueKind.Array)
+    var form = await request.ReadFormAsync(cancellationToken);
+    var imageFile = form.Files.GetFile("imageFile");
+    if (imageFile is null || imageFile.Length == 0)
     {
-        return string.Empty;
+        return Results.BadRequest(new { message = "请选择要识别的图片。" });
     }
 
-    var codes = new List<string>();
-    foreach (var item in dataElement.EnumerateArray())
+    if (imageFile.Length > BaiduTrainTicketOcrService.MaxImageBytes)
     {
-        if (item.ValueKind != JsonValueKind.Object)
-        {
-            continue;
-        }
-
-        var runDate = item.TryGetProperty("runDate", out var runDateElement)
-            ? ParseRunDate(runDateElement.GetString() ?? string.Empty)
-            : null;
-        if (runDate != date)
-        {
-            continue;
-        }
-
-        var trainNum = item.TryGetProperty("trainNum", out var trainNumElement)
-            ? trainNumElement.GetString()
-            : null;
-        if (!IsTrainMatch(train, trainNum))
-        {
-            continue;
-        }
-
-        var trainCode = item.TryGetProperty("trainCode", out var codeElement)
-            ? codeElement.GetString()
-            : null;
-        if (string.IsNullOrWhiteSpace(trainCode))
-        {
-            continue;
-        }
-
-        // RailGO already returns formatted model; only normalize coupling separator.
-        codes.Add(trainCode.Replace(" + ", " ", StringComparison.Ordinal).Trim());
+        return Results.BadRequest(new { message = $"图片大小不能超过 {BaiduTrainTicketOcrService.MaxImageBytes / 1024 / 1024}MB。" });
     }
 
-    return string.Join(" ", codes.Distinct(StringComparer.OrdinalIgnoreCase));
-}
+    using var memory = new MemoryStream();
+    await imageFile.CopyToAsync(memory, cancellationToken);
 
-static string ExtractRollingStockFromRailRe(JsonElement root, DateOnly date)
-{
-    if (root.ValueKind != JsonValueKind.Array)
+    var result = await ocrService.RecognizeAsync(memory.ToArray(), cancellationToken);
+    if (!result.Success || result.Data is null)
     {
-        return string.Empty;
+        return Results.BadRequest(new { message = result.Message });
     }
 
-    var emuNos = new List<string>();
-    foreach (var item in root.EnumerateArray())
-    {
-        if (item.ValueKind != JsonValueKind.Object)
-        {
-            continue;
-        }
-
-        if (!item.TryGetProperty("date", out var dateElement))
-        {
-            continue;
-        }
-
-        if (!item.TryGetProperty("emu_no", out var emuElement))
-        {
-            continue;
-        }
-
-        var rawDate = dateElement.GetString();
-        var rawEmuNo = emuElement.GetString();
-        if (string.IsNullOrWhiteSpace(rawDate) || string.IsNullOrWhiteSpace(rawEmuNo))
-        {
-            continue;
-        }
-
-        var runDate = ParseRunDate(rawDate);
-        if (runDate is null || runDate != date)
-        {
-            continue;
-        }
-
-        emuNos.Add(FormatEmuNo(rawEmuNo));
-    }
-
-    return string.Join(" ", emuNos.Distinct(StringComparer.OrdinalIgnoreCase));
-}
-
-static DateOnly? ParseRunDate(string rawDate)
-{
-    if (DateTime.TryParse(rawDate, out var dateTime))
-    {
-        return DateOnly.FromDateTime(dateTime);
-    }
-
-    if (rawDate.Length >= 10 && DateOnly.TryParse(rawDate[..10], out var dateOnly))
-    {
-        return dateOnly;
-    }
-
-    return null;
-}
-
-static bool IsTrainMatch(string requestedTrain, string? candidateTrain)
-{
-    if (string.IsNullOrWhiteSpace(candidateTrain))
-    {
-        return false;
-    }
-
-    var requested = requestedTrain.Trim().ToUpperInvariant();
-    var candidates = candidateTrain
-        .Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-        .Select(x => x.ToUpperInvariant());
-
-    return candidates.Contains(requested, StringComparer.OrdinalIgnoreCase);
-}
-
-static string FormatEmuNo(string raw)
-{
-    var value = raw.Trim().ToUpperInvariant();
-    var match = Regex.Match(value, @"^(CR(?:H)?\d{3}[A-Z]+)(\d{4})$");
-    if (!match.Success)
-    {
-        return value;
-    }
-
-    var prefix = match.Groups[1].Value;
-    var number = match.Groups[2].Value;
-    var formattedPrefix = FormatModelPrefix(prefix);
-    return $"{formattedPrefix}-{number}";
-}
-
-static string FormatModelPrefix(string prefix)
-{
-    var baseModels = new[]
-    {
-        "CR400AF",
-        "CR400BF",
-        "CR300AF",
-        "CR300BF",
-        "CR200J",
-        "CRH380A",
-        "CRH380B",
-        "CRH380C",
-        "CRH380D",
-        "CRH2G",
-        "CRH2E",
-        "CRH2C",
-        "CRH2B",
-        "CRH2A",
-        "CRH1E",
-        "CRH1B",
-        "CRH1A",
-        "CRH5A",
-        "CRH6A",
-        "CRH6F",
-        "CRH3C",
-        "CRH3A",
-        "CRH380AL",
-        "CRH380BL",
-        "CRH380CL",
-    };
-
-    foreach (var baseModel in baseModels)
-    {
-        if (!prefix.StartsWith(baseModel, StringComparison.Ordinal))
-        {
-            continue;
-        }
-
-        if (prefix.Length == baseModel.Length)
-        {
-            return prefix;
-        }
-
-        var variant = prefix[baseModel.Length..];
-        return $"{baseModel}-{variant}";
-    }
-
-    return prefix;
-}
+    return Results.Ok(result.Data);
+}).DisableAntiforgery().RequireAuthorization();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
@@ -395,3 +333,4 @@ app.MapRazorComponents<App>()
 app.MapAdditionalIdentityEndpoints();
 
 app.Run();
+

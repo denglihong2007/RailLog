@@ -1,0 +1,105 @@
+.trip-details-page {
+    --detail-bg: linear-gradient(130deg, #fff9ec 0%, #fff 100%);
+    --detail-border: #efd8ab;
+    --detail-accent: #c06b1f;
+    --detail-text: #30291d;
+    --detail-muted: #796f58;
+}
+
+.detail-card {
+    background: var(--detail-bg);
+    border: 1px solid var(--detail-border);
+    border-radius: 14px;
+}
+
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.detail-train {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--detail-accent);
+}
+
+.detail-date {
+    font-size: 0.92rem;
+    color: var(--detail-muted);
+}
+
+.detail-route {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.08rem;
+    color: var(--detail-text);
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.7rem;
+}
+
+.detail-item {
+    border: 1px solid #e7d7b9;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0.55rem 0.65rem;
+}
+
+.detail-item label {
+    display: block;
+    font-size: 0.8rem;
+    color: #7a6a49;
+    margin-bottom: 0.2rem;
+}
+
+.detail-item strong {
+    color: #453a2a;
+    font-size: 0.95rem;
+}
+
+.detail-section {
+    margin-top: 1rem;
+}
+
+.detail-section h3 {
+    font-size: 1rem;
+    color: #4d3e22;
+    margin-bottom: 0.45rem;
+}
+
+.via-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.via-chip {
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    border: 1px solid #e7d7b8;
+    background: #fff;
+    color: #5f4b2e;
+}
+
+.detail-notes {
+    margin: 0;
+    color: #5f5138;
+    line-height: 1.45;
+}
+
+@media (max-width: 576px) {
+    .detail-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

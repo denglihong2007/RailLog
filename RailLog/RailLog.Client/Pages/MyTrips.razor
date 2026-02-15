@@ -1,76 +1,207 @@
-﻿@page "/my-trips"
+@page "/my-trips"
 @using Microsoft.AspNetCore.Authorization
-@using System.Security.Claims
 @using RailLog.Shared.Models
 @attribute [Authorize]
 @rendermode InteractiveWebAssembly
 @inject HttpClient Http
 
-<PageTitle>我的运转日志</PageTitle>
+<PageTitle>我的运转日志 - 轨记</PageTitle>
 
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>🚄 我的运转日志</h3>
-        <a href="/add-trip" class="btn btn-success">新增行程</a>
-    </div>
+<PageHeader Title="我的运转日志" IconClass="bi bi-train-front" />
+
+<div class="my-trips-page container py-4">
 
     @if (trips == null)
     {
-        <div class="text-center">
+        <div class="text-center py-5">
             <div class="spinner-border text-primary" role="status"></div>
-            <p>正在努力加载你的行程记录...</p>
+            <p class="mt-3 mb-0 text-muted">正在努力加载你的行程记录...</p>
         </div>
-    }
-    else if (!trips.Any())
-    {
-        <div class="alert alert-info">你还没有录入过行程记录哦，快去添加一条吧！</div>
     }
     else
     {
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>日期</th>
-                        <th>车次</th>
-                        <th>区间</th>
-                        <th>里程</th>
-                        <th>席别</th>
-                        <th>票价</th>
-                        <th>备注</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var trip in trips)
-                    {
-                        <tr>
-                            <td>@trip.TravelDate.ToString("yyyy-MM-dd")</td>
-                            <td><span class="badge bg-primary">@trip.TrainNumber</span></td>
-                            <td>@trip.FromStation ➔ @trip.ToStation</td>
-                            <td>@trip.MileageKm km</td>
-                            <td>@trip.SeatNumber</td>
-                            <td>¥@trip.Price</td>
-                            <td class="text-muted small">@trip.Notes</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+        <section class="ticket-search card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-4 col-md-6">
+                        <label for="trip-keyword" class="form-label">关键字</label>
+                        <input id="trip-keyword" class="form-control" @bind="keyword" placeholder="车次 / 站点 / 席位 / 本务" />
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6">
+                        <label for="date-from" class="form-label">起始日期</label>
+                        <InputDate id="date-from" class="form-control" @bind-Value="dateFrom" />
+                    </div>
+                    <div class="col-lg-2 col-md-3 col-sm-6">
+                        <label for="date-to" class="form-label">截止日期</label>
+                        <InputDate id="date-to" class="form-control" @bind-Value="dateTo" />
+                    </div>
+                    <div class="col-lg-2 col-md-4 col-sm-6">
+                        <label for="seat-filter" class="form-label">席别</label>
+                        <InputSelect id="seat-filter" class="form-select" @bind-Value="seatTypeFilter">
+                            <option value="">全部</option>
+                            @foreach (var seat in seatTypeOptions)
+                            {
+                                <option value="@seat">@seat</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-lg-2 col-md-4 col-sm-6">
+                        <label for="sort-mode" class="form-label">排序</label>
+                        <InputSelect id="sort-mode" class="form-select" @bind-Value="sortMode">
+                            <option value="date_desc">日期新到旧</option>
+                            <option value="date_asc">日期旧到新</option>
+                            <option value="price_desc">票价高到低</option>
+                            <option value="price_asc">票价低到高</option>
+                        </InputSelect>
+                    </div>
+                    <div class="col-lg-12 col-md-4">
+                        <button class="btn btn-outline-secondary" @onclick="ResetFilters">重置筛选</button>
+                        <span class="ms-3 text-muted small">共 @filteredTrips.Count 张车票</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        @if (!trips.Any())
+        {
+            <div class="alert alert-info mb-0">你还没有录入过行程记录哦，快去添加一条吧！</div>
+        }
+        else if (!filteredTrips.Any())
+        {
+            <div class="alert alert-warning mb-0">没有匹配的运转记录，试试放宽筛选条件。</div>
+        }
+        else
+        {
+            <div class="ticket-grid">
+                @foreach (var trip in filteredTrips)
+                {
+                    <article class="trip-ticket">
+                        <div class="ticket-main">
+                            <div class="ticket-header">
+                                <span class="train-number">@trip.TrainNumber</span>
+                                <span class="travel-date">@trip.TravelDate.ToString("yyyy-MM-dd")</span>
+                            </div>
+
+                            <div class="ticket-route">
+                                <div class="station station-from">@trip.FromStation</div>
+                                <div class="route-line"><span></span></div>
+                                <div class="station station-to">@trip.ToStation</div>
+                            </div>
+
+                            <div class="ticket-meta">
+                                <span>发车 @FormatDepartureTime(trip.DepartureTime)</span>
+                                <span>席别 @(string.IsNullOrWhiteSpace(trip.SeatType) ? "未填" : trip.SeatType)</span>
+                                <span>席位 @(string.IsNullOrWhiteSpace(trip.SeatNumber) ? "未填" : trip.SeatNumber)</span>
+                                <span>本务 @(string.IsNullOrWhiteSpace(trip.RollingStock) ? "未填" : trip.RollingStock)</span>
+                            </div>
+
+                            <div class="ticket-actions">
+                                <a class="btn btn-sm btn-outline-primary" href="/trip-details/@trip.Id">详细信息</a>
+                            </div>
+                        </div>
+
+                        <aside class="ticket-stub">
+                            <span class="travel-date">@trip.TravelDate.ToString("yyyy-MM-dd")</span>
+                            <div class="stub-price">¥@trip.Price.ToString("0.##")</div>
+                        </aside>
+                    </article>
+                }
+            </div>
+        }
     }
 </div>
 
 @code {
     private List<TripRecordDto>? trips;
 
+    private string keyword = string.Empty;
+    private DateOnly? dateFrom;
+    private DateOnly? dateTo;
+    private string seatTypeFilter = string.Empty;
+    private string sortMode = "date_desc";
+
+    private List<string> seatTypeOptions = [];
+
+    private List<TripRecordDto> filteredTrips => ApplyFilters();
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            trips = await Http.GetFromJsonAsync<List<TripRecordDto>>("api/trips");
+            trips = await Http.GetFromJsonAsync<List<TripRecordDto>>("api/trips") ?? [];
+            seatTypeOptions = trips
+            .Where(x => !string.IsNullOrWhiteSpace(x.SeatType))
+            .Select(x => x.SeatType!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x)
+            .ToList();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"加载失败: {ex.Message}");
+            trips = [];
         }
+    }
+
+    private List<TripRecordDto> ApplyFilters()
+    {
+        if (trips is null)
+        {
+            return [];
+        }
+
+        IEnumerable<TripRecordDto> query = trips;
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var key = keyword.Trim();
+            query = query.Where(x =>
+                x.TrainNumber.Contains(key, StringComparison.OrdinalIgnoreCase) ||
+                x.FromStation.Contains(key, StringComparison.OrdinalIgnoreCase) ||
+                x.ToStation.Contains(key, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(x.SeatType) && x.SeatType.Contains(key, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(x.SeatNumber) && x.SeatNumber.Contains(key, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(x.RollingStock) && x.RollingStock.Contains(key, StringComparison.OrdinalIgnoreCase)) ||
+                !string.IsNullOrWhiteSpace(x.RollingStock) && x.RollingStock.Contains(key, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(x => x.TravelDate >= dateFrom.Value);
+        }
+
+        if (dateTo.HasValue)
+        {
+            query = query.Where(x => x.TravelDate <= dateTo.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(seatTypeFilter))
+        {
+            query = query.Where(x => string.Equals(x.SeatType?.Trim(), seatTypeFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        query = sortMode switch
+        {
+            "date_asc" => query.OrderBy(x => x.TravelDate).ThenBy(x => x.TrainNumber),
+            "price_desc" => query.OrderByDescending(x => x.Price).ThenByDescending(x => x.TravelDate),
+            "price_asc" => query.OrderBy(x => x.Price).ThenByDescending(x => x.TravelDate),
+            _ => query.OrderByDescending(x => x.TravelDate).ThenBy(x => x.TrainNumber)
+        };
+
+        return query.ToList();
+    }
+
+    private static string FormatDepartureTime(TimeOnly? departureTime)
+    {
+        return departureTime.HasValue ? departureTime.Value.ToString("HH:mm") : "未填";
+    }
+
+    private void ResetFilters()
+    {
+        keyword = string.Empty;
+        dateFrom = null;
+        dateTo = null;
+        seatTypeFilter = string.Empty;
+        sortMode = "date_desc";
     }
 }

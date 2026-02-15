@@ -1,0 +1,57 @@
+.ticket-ocr {
+    border: 1px solid #dce7f7;
+    border-radius: 14px;
+    background: linear-gradient(165deg, #f9fbff 0%, #f2f7ff 100%);
+    padding: 0.9rem;
+}
+
+.ticket-ocr__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.via-editor {
+    border: 1px solid #d9e2ef;
+    border-radius: 14px;
+    padding: 0.85rem 0.9rem;
+    background: linear-gradient(160deg, #f8fbff 0%, #f2f7ff 100%);
+}
+
+.via-editor__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.via-editor__empty {
+    border: 1px dashed #bfd0e6;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0.7rem 0.75rem;
+    color: #5d6a7b;
+    font-size: 0.85rem;
+}
+
+.via-segment {
+    border: 1px solid #d7e2f2;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0.6rem;
+}
+
+.via-segment__mileage {
+    min-height: 31px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d9e2ef;
+    border-radius: 6px;
+    background: #f7f9fc;
+    color: #2f4b6d;
+    font-weight: 600;
+    font-size: 0.86rem;
+}

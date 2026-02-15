@@ -1,0 +1,177 @@
+@page "/trip-details/{TripId:int}"
+@using Microsoft.AspNetCore.Authorization
+@using System.Net
+@using RailLog.Shared.Models
+@attribute [Authorize]
+@rendermode InteractiveWebAssembly
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>运转记录详情 - 轨记</PageTitle>
+
+<PageHeader Title="详细信息" IconClass="bi bi-ticket-detailed" />
+
+<div class="trip-details-page container py-4">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 mb-0 text-muted">正在加载详细信息...</p>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(loadError))
+    {
+        <div class="alert alert-danger">@loadError</div>
+        <a href="/my-trips" class="btn btn-outline-secondary">返回我的运转日志</a>
+    }
+    else if (trip is not null)
+    {
+        <section class="detail-toolbar d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <a href="/my-trips" class="btn btn-outline-secondary">返回</a>
+            <div class="d-flex gap-2">
+                <a href="/edit-trip/@trip.Id" class="btn btn-primary">编辑</a>
+                <button class="btn btn-outline-danger" @onclick="DeleteTripAsync" disabled="@isDeleting">
+                    @(isDeleting ? "删除中..." : "删除")
+                </button>
+            </div>
+        </section>
+
+        <article class="detail-card card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="detail-header">
+                   <div class="detail-train">@trip.TrainNumber</div>
+                    <div class="detail-date">@trip.TravelDate.ToString("yyyy-MM-dd")</div>
+                </div>
+
+                <div class="detail-route">
+                    <span>@trip.FromStation</span>
+                    <i class="bi bi-arrow-right"></i>
+                    <span>@trip.ToStation</span>
+                </div>
+
+                <div class="detail-grid">
+                    <div class="detail-item"><label>发车时间</label><strong>@FormatTime(trip.DepartureTime)</strong></div>
+                    <div class="detail-item"><label>到达时间</label><strong>@FormatTime(trip.ArrivalTime)</strong></div>
+                    <div class="detail-item"><label>席别</label><strong>@DisplayText(trip.SeatType, "未填写")</strong></div>
+                    <div class="detail-item"><label>席位</label><strong>@DisplayText(trip.SeatNumber, "未填写")</strong></div>
+                    <div class="detail-item"><label>票价</label><strong>¥@trip.Price.ToString("0.##")</strong></div>
+                    <div class="detail-item"><label>里程</label><strong>@trip.MileageKm km</strong></div>
+                    <div class="detail-item"><label>车底/本务</label><strong>@DisplayText(trip.RollingStock, "未填写")</strong></div>
+                </div>
+
+                @if (trip.ViaRouteSegments.Count > 0)
+                {
+                    <section class="detail-section">
+                        <h3>经由线路</h3>
+                        <div class="via-list">
+                            @foreach (var segment in trip.ViaRouteSegments)
+                            {
+                                <span class="via-chip">@($"{segment.RouteName} ({segment.FromStation}-{segment.ToStation}, {segment.MileageKm}km)")</span>
+                            }
+                        </div>
+                    </section>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(trip.Notes))
+                {
+                    <section class="detail-section">
+                        <h3>备注</h3>
+                        <p class="detail-notes">@trip.Notes</p>
+                    </section>
+                }
+            </div>
+        </article>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int TripId { get; set; }
+
+    private TripRecordDto? trip;
+    private bool isLoading = true;
+    private bool isDeleting;
+    private string? loadError;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadTripAsync();
+    }
+
+    private async Task LoadTripAsync()
+    {
+        isLoading = true;
+        loadError = null;
+
+        try
+        {
+            trip = await Http.GetFromJsonAsync<TripRecordDto>($"api/trips/{TripId}");
+            if (trip is null)
+            {
+                loadError = "未找到该记录。";
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            loadError = "记录不存在或你无权访问。";
+            trip = null;
+        }
+        catch (Exception ex)
+        {
+            loadError = "加载详细信息失败，请稍后重试。";
+            Console.Error.WriteLine($"Failed to load trip details {TripId}: {ex}");
+            trip = null;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteTripAsync()
+    {
+        if (trip is null || isDeleting)
+        {
+            return;
+        }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"确认删除 {trip.TrainNumber} {trip.TravelDate:yyyy-MM-dd} 这条记录？");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isDeleting = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"api/trips/{trip.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo("/my-trips");
+                return;
+            }
+
+            loadError = "删除失败，请稍后重试。";
+        }
+        catch (Exception ex)
+        {
+            loadError = "删除失败，请稍后重试。";
+            Console.Error.WriteLine($"Failed to delete trip {trip.Id}: {ex}");
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private static string DisplayText(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private static string FormatTime(TimeOnly? value)
+    {
+        return value.HasValue ? value.Value.ToString("HH:mm") : "未填写";
+    }
+}

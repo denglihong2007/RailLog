@@ -1,86 +1,215 @@
-.navbar-toggler {
-    appearance: none;
-    cursor: pointer;
-    width: 3.5rem;
-    height: 2.5rem;
-    color: white;
-    position: absolute;
-    top: 0.5rem;
-    right: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
-}
-
-.navbar-toggler:checked {
-    background-color: rgba(255, 255, 255, 0.5);
+:host {
+    --nav-bg-start: #f7fbff;
+    --nav-bg-end: #eef6ff;
+    --nav-panel: #f3f8ff;
+    --nav-panel-strong: #e7f1ff;
+    --nav-text: #1d2d3f;
+    --nav-muted: #607389;
+    --nav-brand: #2d7abf;
+    --nav-active-text: #114c7a;
+    color: var(--nav-text);
+    display: block;
+    background: linear-gradient(180deg, var(--nav-bg-start) 0%, var(--nav-bg-end) 100%);
 }
 
 .top-row {
-    min-height: 3.5rem;
-    background-color: rgba(0,0,0,0.4);
+    min-height: 4.5rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid #dce9f6;
+    background: linear-gradient(135deg, #ffffff, #f2f8ff);
 }
 
 .navbar-brand {
-    font-size: 1.1rem;
-}
-
-.nav-link {
-    display: flex; /* 开启弹性布局 */
-    align-items: center; /* 垂直方向强制居中对齐 */
-    line-height: 1.5;
-}
-
-/* 针对 CDN 引入的图标 i 标签 */
-.nav-link i {
-    font-size: 1.25rem; /* 统一图标大小 */
-    width: 1.5rem; /* 固定宽度，防止不同图标宽度不一导致文字对不齐 */
     display: inline-flex;
-    justify-content: center;
-    margin-right: 0.75rem; /* 图标和文字的间距 */
-    /* 不要写 top: -1px 了，flex 已经帮你居中了 */
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--nav-text);
+    text-decoration: none;
 }
 
-.nav-item {
-    font-size: 0.9rem;
-    padding-bottom: 0.5rem;
+.brand-mark img {
+    width: 2.25rem;
+    height: 2.25rem;
+    object-fit: contain;
 }
 
-    .nav-item:first-of-type {
-        padding-top: 1rem;
-    }
-
-    .nav-item:last-of-type {
-        padding-bottom: 1rem;
-    }
-
-    .nav-item ::deep .nav-link {
-        color: #d7d7d7;
-        background: none;
-        border: none;
-        border-radius: 4px;
-        height: 3rem;
-        display: flex;
-        align-items: center;
-        line-height: 3rem;
-        width: 100%;
-    }
-
-.nav-item ::deep a.active {
-    background-color: rgba(255,255,255,0.37);
-    color: white;
+.brand-text {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1.05;
 }
 
-.nav-item ::deep .nav-link:hover {
-    background-color: rgba(255,255,255,0.1);
-    color: white;
+.brand-text strong {
+    font-size: 1.08rem;
+    letter-spacing: 0.02em;
+}
+
+.brand-text small {
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--nav-muted);
+}
+
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 3.1rem;
+    height: 2.2rem;
+    position: absolute;
+    top: 1.05rem;
+    right: 1rem;
+    border: 1px solid #c4d9ee;
+    border-radius: 0.75rem;
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%2857, 95, 130, 0.9%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2.25' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.45rem #f5f9ff;
+    transition: all 180ms ease;
+}
+
+.navbar-toggler:hover {
+    background-color: #edf4ff;
+}
+
+.navbar-toggler:checked {
+    background-color: #e4f0ff;
+    border-color: #8eb8dd;
 }
 
 .nav-scrollable {
     display: none;
+    background: linear-gradient(180deg, var(--nav-bg-start) 0%, var(--nav-bg-end) 100%);
 }
 
-.navbar-toggler:checked ~ .nav-scrollable {
+.navbar-toggler:checked~.nav-scrollable {
     display: block;
+}
+
+.rail-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.95rem 0.7rem 1.25rem;
+}
+
+.nav-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.nav-section__title {
+    margin: 0.35rem 0.6rem 0.2rem;
+    color: var(--nav-muted);
+    font-size: 0.73rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.profile-card {
+    display: flex;
+    align-items: center;
+    gap: 0.68rem;
+    margin: 0 0.35rem;
+    padding: 0.72rem 0.8rem;
+    border: 1px solid #cfe0f2;
+    border-radius: 0.9rem;
+    background: linear-gradient(160deg, #eaf4ff, #f7fbff);
+}
+
+.profile-card__avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: #2d7abf;
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.93rem;
+    font-weight: 700;
+}
+
+.profile-card__meta {
+    display: inline-flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.profile-card__name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 10rem;
+}
+
+.profile-card__hint {
+    font-size: 0.75rem;
+    color: var(--nav-muted);
+}
+
+.nav-item {
+    padding: 0 0.35rem;
+}
+
+.nav-item ::deep .nav-link,
+.nav-item .nav-button {
+    width: 100%;
+    min-height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0 0.85rem;
+    border-radius: 0.8rem;
+    color: var(--nav-text);
+    background: transparent;
+    border: 1px solid transparent;
+    text-decoration: none;
+    font-size: 0.92rem;
+    transition: all 170ms ease;
+}
+
+.nav-item ::deep .nav-link i,
+.nav-item .nav-button i {
+    width: 1.1rem;
+    font-size: 1.05rem;
+    text-align: center;
+    color: var(--nav-brand);
+}
+
+.nav-item ::deep .nav-link:hover,
+.nav-item .nav-button:hover {
+    border-color: #d5e4f4;
+    background: var(--nav-panel);
+    color: #15293e;
+}
+
+.nav-item ::deep a.active {
+    background: linear-gradient(120deg, #d8ebff, #cbe3ff);
+    border-color: #b8d4f0;
+    color: var(--nav-active-text);
+    box-shadow: 0 6px 14px rgba(45, 122, 191, 0.16);
+}
+
+.nav-item ::deep a.active i {
+    color: var(--nav-active-text);
+}
+
+.logout-form {
+    margin: 0;
+}
+
+.nav-button {
+    cursor: pointer;
+}
+
+@media (max-width: 640.98px) {
+    .nav-scrollable {
+        max-height: calc(100vh - 4.5rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
 }
 
 @media (min-width: 641px) {
@@ -89,11 +218,8 @@
     }
 
     .nav-scrollable {
-        /* Never collapse the sidebar for wide screens */
         display: block;
-
-        /* Allow sidebar to scroll for tall menus */
-        height: calc(100vh - 3.5rem);
+        height: calc(100vh - 4.5rem);
         overflow-y: auto;
     }
 }

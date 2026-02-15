@@ -66,6 +66,9 @@ artifacts/
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 
+# Rail route cache generated from routes.json
+RailLog/RailLog/Assets/graph.bin
+
 # StyleCop
 StyleCopReport.xml
 
@@ -361,3 +364,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/RailLog/RailLog/raillog.db
+/RailLog/RailLog/raillog.db-shm
+/RailLog/RailLog/raillog.db-wal
+RailLog/RailLog/wwwroot/app/raillog.apk
+RailLog/RailLog/wwwroot/app/version.json

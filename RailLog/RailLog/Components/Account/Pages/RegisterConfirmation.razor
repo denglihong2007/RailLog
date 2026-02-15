@@ -16,17 +16,7 @@
 
 <StatusMessage Message="@statusMessage" />
 
-@if (emailConfirmationLink is not null)
-{
-    <p>
-        此应用目前未注册真实的电子邮件发送器，请参阅 <a href="https://aka.ms/aspaccountconf">这些文档</a> 了解如何配置真实的电子邮件发送器。
-        通常这会通过电子邮件发送：<a href="@emailConfirmationLink">点击此处确认您的账户</a>
-    </p>
-}
-else
-{
-    <p role="alert">请检查您的电子邮件以确认您的账户。</p>
-}
+<p role="alert">请检查您的电子邮件以确认您的账户（多半在垃圾信箱里...QAQ）。</p>
 
 @code {
     private string? emailConfirmationLink;
@@ -55,7 +45,7 @@ else
             HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             statusMessage = "无法找到指定电子邮件的用户";
         }
-        else if (EmailSender is IdentityNoOpEmailSender)
+        else if (EmailSender is EmailService)
         {
             // Once you add a real email sender, you should remove this code that lets you confirm the account
             var userId = await UserManager.GetUserIdAsync(user);

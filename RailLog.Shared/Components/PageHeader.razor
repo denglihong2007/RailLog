@@ -1,18 +1,29 @@
-﻿@namespace RailLog.Shared.Components
-<div class="bg-primary text-white p-3 rounded-3 mb-4 shadow-sm">
-    <h5 class="mb-0 d-flex align-items-center">
-        @if (!string.IsNullOrEmpty(IconClass))
+@namespace RailLog.Shared.Components
+<header class="page-header mb-4">
+    <div class="page-header__inner">
+        @if (!string.IsNullOrWhiteSpace(IconClass))
         {
-            <i class="@IconClass me-2" aria-hidden="true"></i>
+            <span class="page-header__icon" aria-hidden="true">
+                <i class="@IconClass"></i>
+            </span>
         }
-        <span>@Title</span>
-    </h5>
-</div>
+        <div class="page-header__text">
+            <h1 class="page-header__title">@Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <p class="page-header__subtitle">@Subtitle</p>
+            }
+        </div>
+    </div>
+</header>
 
 @code {
-    [Parameter] 
+    [Parameter]
     public string Title { get; set; } = "默认标题";
 
-    [Parameter] 
+    [Parameter]
     public string IconClass { get; set; } = "";
+
+    [Parameter]
+    public string? Subtitle { get; set; }
 }

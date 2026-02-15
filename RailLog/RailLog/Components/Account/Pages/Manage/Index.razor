@@ -1,6 +1,7 @@
-﻿@page "/Account/Manage"
+@page "/Account/Manage"
 
 @using System.ComponentModel.DataAnnotations
+@using Humanizer
 @using Microsoft.AspNetCore.Identity
 @using RailLog.Data
 
@@ -14,19 +15,46 @@
 <StatusMessage />
 
 <div class="row">
-    <div class="col-xl-6">
+    <div class="col-xl-7">
         <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
             <DataAnnotationsValidator />
             <ValidationSummary class="text-danger" role="alert" />
-            <div class="form-floating mb-3">
-                <input type="text" value="@username" id="username" class="form-control" placeholder="Choose your username." disabled />
-                <label for="username" class="form-label">用户名</label>
+
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="rounded-circle border bg-light d-inline-flex justify-content-center align-items-center overflow-hidden"
+                     style="width:72px;height:72px;">
+                    @if (!string.IsNullOrWhiteSpace(Input.AvatarUrl))
+                    {
+                        <img src="@Input.AvatarUrl" alt="头像预览" style="width:100%;height:100%;object-fit:cover;" />
+                    }
+                    else
+                    {
+                        <span class="fw-bold text-secondary">@GetAvatarInitial(Input.UserName)</span>
+                    }
+                </div>
+                <div class="text-muted small">
+                    设置头像链接后会显示在排行榜中。
+                </div>
             </div>
+
             <div class="form-floating mb-3">
-                <InputText @bind-Value="Input.PhoneNumber" id="Input.PhoneNumber" class="form-control" placeholder="Enter your phone number" />
-                <label for="Input.PhoneNumber" class="form-label">电话号码</label>
-                <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
+                <input type="text" value="@email" id="emailReadonly" class="form-control" placeholder="电子邮件" disabled />
+                <label for="emailReadonly" class="form-label">电子邮件</label>
             </div>
+
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.UserName" id="Input.UserName" class="form-control" placeholder="请输入用户名" />
+                <label for="Input.UserName" class="form-label">用户名</label>
+                <ValidationMessage For="() => Input.UserName" class="text-danger" />
+            </div>
+
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.AvatarUrl" id="Input.AvatarUrl" class="form-control"
+                           placeholder="https://example.com/avatar.jpg" />
+                <label for="Input.AvatarUrl" class="form-label">头像链接 (URL)</label>
+                <ValidationMessage For="() => Input.AvatarUrl" class="text-danger" />
+            </div>
+
             <button type="submit" class="w-100 btn btn-lg btn-primary">保存</button>
         </EditForm>
     </div>
@@ -34,8 +62,9 @@
 
 @code {
     private ApplicationUser? user;
-    private string? username;
-    private string? phoneNumber;
+    private string? email;
+    private string? displayName;
+    private string? avatarUrl;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -46,7 +75,6 @@
     protected override async Task OnInitializedAsync()
     {
         Input ??= new();
-
         user = await UserManager.GetUserAsync(HttpContext.User);
         if (user is null)
         {
@@ -54,10 +82,19 @@
             return;
         }
 
-        username = await UserManager.GetUserNameAsync(user);
-        phoneNumber = await UserManager.GetPhoneNumberAsync(user);
+        email = await UserManager.GetEmailAsync(user);
+        displayName = user.DisplayName?.Trim();
+        avatarUrl = NormalizeAvatarUrl(user.AvatarUrl);
 
-        Input.PhoneNumber ??= phoneNumber;
+        if (Input.UserName == "")
+        {
+            Input = new InputModel
+            {
+                UserName = displayName ?? "",
+                AvatarUrl = avatarUrl
+            };
+        }
+
     }
 
     private async Task OnValidSubmitAsync()
@@ -68,22 +105,73 @@
             return;
         }
 
-        if (Input.PhoneNumber != phoneNumber)
+        var normalizedUserName = Input.UserName.Trim();
+        var normalizedAvatarUrl = NormalizeAvatarUrl(Input.AvatarUrl);
+        var hasProfileChanges = false;
+
+        if (!string.Equals(normalizedUserName, displayName, StringComparison.Ordinal))
         {
-            var setPhoneResult = await UserManager.SetPhoneNumberAsync(user, Input.PhoneNumber);
-            if (!setPhoneResult.Succeeded)
+            user.DisplayName = normalizedUserName;
+            hasProfileChanges = true;
+        }
+
+        if (!string.Equals(normalizedAvatarUrl, avatarUrl, StringComparison.Ordinal))
+        {
+            user.AvatarUrl = normalizedAvatarUrl;
+            hasProfileChanges = true;
+        }
+
+        if (hasProfileChanges)
+        {
+            var updateResult = await UserManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
             {
-                RedirectManager.RedirectToCurrentPageWithStatus("错误：设置电话号码失败。", HttpContext);
+                RedirectManager.RedirectToCurrentPageWithStatus("错误：更新用户名或头像失败。", HttpContext);
                 return;
             }
+
+            displayName = user.DisplayName?.Trim();
+            avatarUrl = NormalizeAvatarUrl(user.AvatarUrl);
         }
+
 
         await SignInManager.RefreshSignInAsync(user);
         RedirectManager.RedirectToCurrentPageWithStatus("您的个人资料已更新", HttpContext);
     }
 
+    private static string? NormalizeAvatarUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
+    }
+
+    private static string GetAvatarInitial(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "轨";
+        }
+
+        return value.Trim()[0].ToString().ToUpperInvariant();
+    }
+
     private sealed class InputModel
     {
+        [Required(ErrorMessage = "请输入用户名")]
+        [RegularExpression(@".*\S.*", ErrorMessage = "用户名不能为空白字符")]
+        [StringLength(32, ErrorMessage = "用户名最多 32 个字符")]
+        [Display(Name = "用户名")]
+        public string UserName { get; set; } = "";
+
+        [StringLength(512, ErrorMessage = "头像链接长度不能超过 512 个字符")]
+        [Url(ErrorMessage = "头像链接格式不正确")]
+        [Display(Name = "头像链接")]
+        public string? AvatarUrl { get; set; }
+
         [Phone(ErrorMessage = "电话号码格式不正确")]
         [Display(Name = "电话号码")]
         public string? PhoneNumber { get; set; }

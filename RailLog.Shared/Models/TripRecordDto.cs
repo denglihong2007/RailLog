@@ -1,10 +1,12 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace RailLog.Shared.Models
 {
     public class TripRecordDto
     {
+        public int Id { get; set; }
+
         [Required(ErrorMessage = "请输入车次")]
         [Display(Name = "车次")]
         [RegularExpression(@"^[GDCKZTSL\d]\d{1,4}$", ErrorMessage = "车次格式不正确")]
@@ -35,6 +37,9 @@ namespace RailLog.Shared.Models
         [Range(0.0, 50000, ErrorMessage = "里程必须大于 0")]
         [Column(TypeName = "decimal(8, 1)")]
         public decimal MileageKm { get; set; }
+
+        [Display(Name = "经由线路")]
+        public List<ViaRouteSegmentDto> ViaRouteSegments { get; set; } = [];
 
         [Display(Name = "席别")]
         public string? SeatType { get; set; }

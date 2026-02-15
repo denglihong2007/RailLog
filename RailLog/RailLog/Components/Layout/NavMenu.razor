@@ -1,77 +1,103 @@
-﻿@implements IDisposable
+@implements IDisposable
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using RailLog.Data
 
 @inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
 
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">轨记</a>
-    </div>
+<div class="top-row">
+    <a class="navbar-brand" href="">
+        <span class="brand-mark" aria-hidden="true">
+            <img src="favicon.png" alt="轨记 Logo" />
+        </span>
+        <span class="brand-text">
+            <strong>轨记</strong>
+            <small>RailLog</small>
+        </span>
+    </a>
 </div>
 
 <input type="checkbox" title="导航菜单" class="navbar-toggler" />
 
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <i class="bi bi-house-door-fill"></i>
-                <span>首页</span>
-            </NavLink>
-        </div>
+    <nav class="rail-nav">
+        <section class="nav-section">
+            <p class="nav-section__title">导航</p>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="my-trips">
-                <i class="bi bi-train-front-fill"></i>
-                <span>运转日志</span>
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                    <i class="bi bi-house-door-fill"></i>
+                    <span>首页</span>
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="add-trip">
-                <i class="bi bi-pen"></i>
-                <span>记录行程</span>
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="my-trips">
+                    <i class="bi bi-train-front-fill"></i>
+                    <span>运转日志</span>
+                </NavLink>
+            </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="auth">
-                <i class="bi bi-lock"></i>
-                <span>需要认证</span>
-            </NavLink>
-        </div>
+            <div class="nav-item">
+                <NavLink class="nav-link" href="add-trip">
+                    <i class="bi bi-pen"></i>
+                    <span>记录行程</span>
+                </NavLink>
+            </div>
+        </section>
 
         <AuthorizeView>
             <Authorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="Account/Manage">
-                        <i class="bi bi-person-fill"></i>
-                        <span>@context.User.Identity?.Name</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <form action="Account/Logout" method="post">
-                        <AntiforgeryToken />
-                        <input type="hidden" name="ReturnUrl" value="@currentUrl" />
-                        <button type="submit" class="nav-link">
-                            <i class="bi bi-arrow-bar-left"></i>
-                            <span>退出登录</span>
-                        </button>
-                    </form>
-                </div>
+                <section class="profile-card" aria-label="当前用户信息">
+                    <span class="profile-card__avatar">@GetAvatarInitial(userDisplayName)</span>
+                    <span class="profile-card__meta">
+                        <span class="profile-card__name">@userDisplayName</span>
+                        <span class="profile-card__hint">已登录</span>
+                    </span>
+                </section>
+
+                <section class="nav-section">
+                    <p class="nav-section__title">账户</p>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="Account/Manage">
+                            <i class="bi bi-person-fill"></i>
+                            <span>个人资料</span>
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <form class="logout-form" action="Account/Logout" method="post">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                            <button type="submit" class="nav-button">
+                                <i class="bi bi-arrow-bar-left"></i>
+                                <span>退出登录</span>
+                            </button>
+                        </form>
+                    </div>
+                </section>
             </Authorized>
             <NotAuthorized>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="Account/Register">
-                        <i class="bi bi-person"></i>
-                        注册
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="Account/Login">
-                        <i class="bi bi-person-badge"></i>
-                        登录
-                    </NavLink>
-                </div>
+                <section class="nav-section">
+                    <p class="nav-section__title">账户</p>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="Account/Register">
+                            <i class="bi bi-person"></i>
+                            <span>注册</span>
+                        </NavLink>
+                    </div>
+
+                    <div class="nav-item">
+                        <NavLink class="nav-link" href="Account/Login">
+                            <i class="bi bi-person-badge"></i>
+                            <span>登录</span>
+                        </NavLink>
+                    </div>
+                </section>
             </NotAuthorized>
         </AuthorizeView>
     </nav>
@@ -79,6 +105,29 @@
 
 @code {
     private string? currentUrl;
+    private string? userDisplayName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var principal = authState.User;
+        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            userDisplayName = principal.Identity?.Name ?? "游客";
+            return;
+        }
+
+        await using var context = await DbContextFactory.CreateDbContextAsync();
+        userDisplayName = await context.Users
+            .AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => string.IsNullOrWhiteSpace(x.DisplayName) ? x.UserName : x.DisplayName)
+            .FirstOrDefaultAsync()
+            ?? principal.Identity?.Name
+            ?? "游客";
+    }
 
     protected override void OnInitialized()
     {
@@ -92,9 +141,18 @@
         StateHasChanged();
     }
 
+    private static string GetAvatarInitial(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return "轨";
+        }
+
+        return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
 }
-
