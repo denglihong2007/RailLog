@@ -205,6 +205,16 @@ app.MapGet("/api/routes/suggest", (string type, string keyword, RouteRoutingServ
     return Results.Ok(routingService.SuggestStationNames(keyword));
 }).RequireAuthorization();
 
+app.MapGet("/api/routes/stations", (string routeName, RouteRoutingService routingService) =>
+{
+    if (string.IsNullOrWhiteSpace(routeName))
+    {
+        return Results.Ok(Array.Empty<RouteStationOption>());
+    }
+
+    return Results.Ok(routingService.GetRouteStations(routeName));
+}).RequireAuthorization();
+
 app.MapGet("/api/train/preselect", async (string keyword, IHttpClientFactory httpClientFactory) =>
 {
     if (string.IsNullOrWhiteSpace(keyword))

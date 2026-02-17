@@ -2,6 +2,7 @@ using MessagePack;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RailLog.Models;
+using RailLog.Shared.Models;
 
 namespace RailLog.Services
 {
@@ -12,6 +13,8 @@ namespace RailLog.Services
         private readonly Dictionary<string, List<GraphEdge>> _adjacency;
         private readonly HashSet<string> _routeNames = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _stationNames = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, IReadOnlyList<RouteStationOption>> _routeStations =
+            new(StringComparer.OrdinalIgnoreCase);
 
         public RouteRoutingService(IWebHostEnvironment environment, ILogger<RouteRoutingService> logger)
         {
@@ -20,6 +23,7 @@ namespace RailLog.Services
             var routesJsonPath = Path.Combine(environment.ContentRootPath, "Assets", "routes.json");
             var graphCachePath = Path.Combine(environment.ContentRootPath, "Assets", "graph.bin");
             _adjacency = LoadOrBuildGraph(routesJsonPath, graphCachePath);
+            LoadRouteStations(routesJsonPath);
         }
 
         public RoutePathResult? CalculatePath(string start, string end, int? targetMileageKm = null, bool allowShortestFallback = true)
@@ -465,6 +469,17 @@ namespace RailLog.Services
             return SuggestFromSet(_stationNames, keyword, limit);
         }
 
+        public IReadOnlyList<RouteStationOption> GetRouteStations(string routeName)
+        {
+            var key = routeName?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return [];
+            }
+
+            return _routeStations.TryGetValue(key, out var stations) ? stations : [];
+        }
+
         private static IReadOnlyList<string> SuggestFromSet(HashSet<string> source, string keyword, int limit)
         {
             var key = keyword?.Trim() ?? string.Empty;
@@ -495,6 +510,50 @@ namespace RailLog.Services
                     {
                         _routeNames.Add(edge.RouteName);
                     }
+                }
+            }
+        }
+
+        private void LoadRouteStations(string routesJsonPath)
+        {
+            _routeStations.Clear();
+            if (!File.Exists(routesJsonPath))
+            {
+                return;
+            }
+
+            using var stream = File.OpenRead(routesJsonPath);
+            var routeData = JsonSerializer.Deserialize<RouteData>(stream) ?? new RouteData();
+
+            foreach (var route in routeData.Routes)
+            {
+                var routeName = route.RouteName?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(routeName) || route.Stations.Count == 0)
+                {
+                    continue;
+                }
+
+                var stations = new List<RouteStationOption>(route.Stations.Count);
+                var seenStations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var station in route.Stations)
+                {
+                    var stationName = NormalizeStationName(station.StationName);
+                    if (string.IsNullOrWhiteSpace(stationName) || !seenStations.Add(stationName))
+                    {
+                        continue;
+                    }
+
+                    stations.Add(new RouteStationOption(stationName, station.Mileage));
+                }
+
+                if (stations.Count == 0)
+                {
+                    continue;
+                }
+
+                if (!_routeStations.TryGetValue(routeName, out var existing) || stations.Count > existing.Count)
+                {
+                    _routeStations[routeName] = stations;
                 }
             }
         }
@@ -539,7 +598,6 @@ namespace RailLog.Services
             result.Add(new RouteSegment(currentRoute, segmentStart, segmentEnd, segmentMileage));
             return result;
         }
-
         private sealed record GraphEdge(string To, int Distance, string RouteName);
         private sealed record PreviousHop(string From, string RouteName, int Distance);
 
@@ -569,3 +627,4 @@ namespace RailLog.Services
 
     }
 }
+

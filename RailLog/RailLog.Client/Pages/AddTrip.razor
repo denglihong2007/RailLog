@@ -171,6 +171,10 @@
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="AddViaSegment">
                                 新增分段
                             </button>
+                            <button type="button" class="btn btn-outline-info btn-sm"
+                                    @onclick="FillMileageFromViaSegments">
+                                汇总里程
+                            </button>
                             <button type="button" class="btn btn-outline-primary btn-sm"
                                     @onclick="ComputeShortestViaRoutesAsync">
                                 计算最短经由
@@ -178,7 +182,7 @@
                         </div>
                     </div>
                     <div class="mt-2">
-                        @if (model!.ViaRouteSegments.Count == 0)
+                        @if (model?.ViaRouteSegments == null || model.ViaRouteSegments.Count == 0)
                         {
                             <div class="via-editor__empty">暂无经由分段</div>
                         }
@@ -189,6 +193,8 @@
                                 {
                                     var idx = i;
                                     var segment = model.ViaRouteSegments[i];
+                                    var segmentStationOptionsId = GetSegmentStationDatalistId(idx);
+                                    var segmentStationOptions = GetSegmentStationSuggestions(segment);
                                     <div class="via-segment">
                                         <div class="row g-2 align-items-end">
                                             <div class="col-md-3">
@@ -199,13 +205,13 @@
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label mb-1 small">该线起点</label>
-                                                <input class="form-control form-control-sm" list="segment-station-options"
+                                                <input class="form-control form-control-sm" list="@segmentStationOptionsId"
                                                        value="@segment.FromStation"
                                                        @oninput="async e => await OnSegmentStationChangedAsync(idx, true, e.Value?.ToString())" />
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label mb-1 small">该线终点</label>
-                                                <input class="form-control form-control-sm" list="segment-station-options"
+                                                <input class="form-control form-control-sm" list="@segmentStationOptionsId"
                                                        value="@segment.ToStation"
                                                        @oninput="async e => await OnSegmentStationChangedAsync(idx, false, e.Value?.ToString())" />
                                             </div>
@@ -220,6 +226,12 @@
                                                 </button>
                                             </div>
                                         </div>
+                                        <datalist id="@segmentStationOptionsId">
+                                            @foreach (var station in segmentStationOptions)
+                                            {
+                                                <option value="@station"></option>
+                                            }
+                                        </datalist>
                                     </div>
                                 }
                             </div>
@@ -229,12 +241,6 @@
                         @foreach (var route in segmentRouteNameSuggestions)
                         {
                             <option value="@route"></option>
-                        }
-                    </datalist>
-                    <datalist id="segment-station-options">
-                        @foreach (var station in segmentStationNameSuggestions)
-                        {
-                            <option value="@station"></option>
                         }
                     </datalist>
                 </div>
@@ -255,12 +261,33 @@
                 <div class="form-floating mb-3">
                     <InputSelect @bind-Value="model.SeatType" id="seatType" class="form-select">
                         <option value="">请选择...</option>
+                        <option value="硬座">硬座</option>
+                        <option value="软座">软座</option>
+                        <option value="硬卧">硬卧</option>
+                        <option value="软卧">软卧</option>
+                        <option value="包厢硬卧">包厢硬卧</option>
+                        <option value="高级软卧">高级软卧</option>
+                        <option value="一等软座">一等软座</option>
+                        <option value="二等软座">二等软座</option>
                         <option value="商务座">商务座</option>
+                        <option value="高级动卧">高级动卧</option>
+                        <option value="混编硬座">混编硬座</option>
+                        <option value="混编硬卧">混编硬卧</option>
+                        <option value="优选一等座">优选一等座</option>
+                        <option value="特等软座">特等软座</option>
+                        <option value="动卧">动卧</option>
+                        <option value="高级软卧">高级软卧</option>
+                        <option value="一人软包">一人软包</option>
+                        <option value="一等卧">一等卧</option>
+                        <option value="二等卧">二等卧</option>
+                        <option value="混编软座">混编软座</option>
+                        <option value="混编软卧">混编软卧</option>
                         <option value="一等座">一等座</option>
                         <option value="二等座">二等座</option>
-                        <option value="软卧">软卧</option>
-                        <option value="硬卧">硬卧</option>
-                        <option value="硬座">硬座</option>
+                        <option value="特等座">特等座</option>
+                        <option value="多功能座">多功能座</option>
+                        <option value="二等包座">二等包座</option>
+                        <option value="无座">无座</option>
                     </InputSelect>
                     <label for="seatType">席别</label>
                     <ValidationMessage For="@(() => model.SeatType)" class="text-danger small" />
@@ -391,6 +418,8 @@ new(StringComparer.OrdinalIgnoreCase);
                     await LoadStationsByTrainAsync(train);
                 }
             }
+
+            await EnsureRouteStationsLoadedForCurrentSegmentsAsync();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -578,6 +607,27 @@ new(StringComparer.OrdinalIgnoreCase);
         }
     }
 
+    private static string GetSegmentStationDatalistId(int index)
+    {
+        return $"segment-station-options-{index}";
+    }
+
+    private IReadOnlyList<string> GetSegmentStationSuggestions(ViaRouteSegmentDto segment)
+    {
+        var routeKey = segment.RouteName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(routeKey))
+        {
+            return segmentStationNameSuggestions;
+        }
+
+        if (!routeStationsCache.TryGetValue(routeKey, out var stations) || stations.Count == 0)
+        {
+            return segmentStationNameSuggestions;
+        }
+
+        return stations.Select(x => x.StationName).ToList();
+    }
+
     private async Task EnsureRouteStationsLoadedAsync(string routeName)
     {
         var key = routeName?.Trim() ?? string.Empty;
@@ -598,6 +648,44 @@ new(StringComparer.OrdinalIgnoreCase);
         }
     }
 
+    private async Task EnsureRouteStationsLoadedForCurrentSegmentsAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        var routeNames = model.ViaRouteSegments
+            .Select(x => x.RouteName?.Trim() ?? string.Empty)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var routeName in routeNames)
+        {
+            await EnsureRouteStationsLoadedAsync(routeName);
+        }
+    }
+
+    private void FillMileageFromViaSegments()
+    {
+        ApplyMileageFromViaSegments(overwriteWithZero: true);
+    }
+
+    private void ApplyMileageFromViaSegments(bool overwriteWithZero = false)
+    {
+        if (model is null || model.ViaRouteSegments.Count == 0)
+        {
+            return;
+        }
+
+        var total = model.ViaRouteSegments.Sum(x => x.MileageKm > 0 ? x.MileageKm : 0m);
+        if (overwriteWithZero || total > 0)
+        {
+            model.MileageKm = total;
+        }
+    }
+
     private async Task TryRecalculateSegmentMileageAsync(int index)
     {
         if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
@@ -611,12 +699,15 @@ new(StringComparer.OrdinalIgnoreCase);
             string.IsNullOrWhiteSpace(segment.FromStation) ||
             string.IsNullOrWhiteSpace(segment.ToStation))
         {
+            ApplyMileageFromViaSegments();
             return;
         }
 
-        await EnsureRouteStationsLoadedAsync(segment.RouteName);
-        if (!routeStationsCache.TryGetValue(segment.RouteName, out var stations))
+        var routeKey = segment.RouteName.Trim();
+        await EnsureRouteStationsLoadedAsync(routeKey);
+        if (!routeStationsCache.TryGetValue(routeKey, out var stations))
         {
+            ApplyMileageFromViaSegments();
             return;
         }
 
@@ -626,10 +717,12 @@ StringComparison.OrdinalIgnoreCase));
 StringComparison.OrdinalIgnoreCase));
         if (from is null || to is null)
         {
+            ApplyMileageFromViaSegments();
             return;
         }
 
         segment.MileageKm = Math.Abs(to.Mileage - from.Mileage);
+        ApplyMileageFromViaSegments();
     }
 
     private async Task LoadTrainSuggestionsAsync(string keyword, bool useDebounce)
@@ -1156,6 +1249,8 @@ fallbackResult.RouteSegments.Count == 0)
             }
 
             model.ViaRouteSegments = MergeConnectedSegments(allSegments);
+            await EnsureRouteStationsLoadedForCurrentSegmentsAsync();
+            ApplyMileageFromViaSegments();
             routeHintMessage = notices.Count > 0
                 ? string.Join(" ", notices)
                 : null;
@@ -1208,6 +1303,8 @@ fallbackResult.RouteSegments.Count == 0)
                 ToStation = x.ToStation,
                 MileageKm = x.MileageKm
             }));
+            await EnsureRouteStationsLoadedForCurrentSegmentsAsync();
+            ApplyMileageFromViaSegments();
             routeHintMessage = null;
         }
         catch (OperationCanceledException)
@@ -1224,6 +1321,7 @@ fallbackResult.RouteSegments.Count == 0)
     private void AddViaSegment()
     {
         model?.ViaRouteSegments.Add(new ViaRouteSegmentDto());
+        ApplyMileageFromViaSegments();
     }
 
     private void RemoveViaSegment(int index)
@@ -1234,6 +1332,7 @@ fallbackResult.RouteSegments.Count == 0)
         }
 
         model.ViaRouteSegments.RemoveAt(index);
+        ApplyMileageFromViaSegments();
     }
 
     private static string BuildRoutePathRequestUri(string from, string to, int? targetMileage, bool allowShortestFallback)

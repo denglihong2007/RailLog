@@ -9,7 +9,7 @@ namespace RailLog.Shared.Models
 
         [Required(ErrorMessage = "请输入车次")]
         [Display(Name = "车次")]
-        [RegularExpression(@"^[GDCKZTSL\d]\d{1,4}$", ErrorMessage = "车次格式不正确")]
+        [RegularExpression(@"^[GDCKYZTSL\d]\d{1,4}$", ErrorMessage = "车次格式不正确")]
         public string TrainNumber { get; set; } = string.Empty; // 例如：G1, D3202, K123
 
         [Required]

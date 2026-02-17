@@ -14,7 +14,6 @@ public partial class AddTrip
         string? SeatNumber,
         decimal? Price);
     private sealed record ApiErrorResponse(string? Message);
-    private sealed record RouteStationOption(string StationName, int Mileage);
     private sealed record RoutePathResponse(
         bool Found,
         bool IsMileageMatch,
@@ -22,3 +21,4 @@ public partial class AddTrip
         List<RouteSegmentResponse>? RouteSegments);
     private sealed record RouteSegmentResponse(string RouteName, string FromStation, string ToStation, decimal MileageKm);
 }
+
