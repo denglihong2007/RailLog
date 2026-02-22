@@ -81,6 +81,14 @@ namespace RailLog.Services
             return true;
         }
 
+        public async Task<TripRecord?> GetAnyTripByIdAsync(int id)
+        {
+            await using var context = await contextFactory.CreateDbContextAsync();
+            return await context.TripRecords
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == id);
+        }
+
         public async Task<GlobalLeaderboard> GetGlobalLeaderboardAsync(int top = 10)
         {
             top = Math.Clamp(top, 1, 50);
@@ -132,6 +140,26 @@ namespace RailLog.Services
                 })
                 .ToList();
 
+            var tripEntries = allTrips
+                .Select(trip =>
+                {
+                    userProfiles.TryGetValue(trip.UserId, out var profile);
+                    return new TripLeaderboardEntry
+                    {
+                        TripId = trip.Id,
+                        UserId = trip.UserId,
+                        DisplayName = ResolveDisplayName(profile?.DisplayName, profile?.UserName, profile?.Email),
+                        AvatarUrl = NormalizeAvatarUrl(profile?.AvatarUrl),
+                        TrainNumber = trip.TrainNumber,
+                        FromStation = trip.FromStation,
+                        ToStation = trip.ToStation,
+                        TravelDate = trip.TravelDate,
+                        Price = trip.Price,
+                        MileageKm = GetTripMileage(trip)
+                    };
+                })
+                .ToList();
+
             return new GlobalLeaderboard
             {
                 TopBySpend = entries
@@ -150,6 +178,20 @@ namespace RailLog.Services
                     .OrderByDescending(x => x.TotalMileageKm)
                     .ThenByDescending(x => x.TotalTrips)
                     .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .Take(top)
+                    .ToList(),
+                TopSingleBySpend = tripEntries
+                    .OrderByDescending(x => x.Price)
+                    .ThenByDescending(x => x.MileageKm)
+                    .ThenByDescending(x => x.TravelDate)
+                    .ThenBy(x => x.TripId)
+                    .Take(top)
+                    .ToList(),
+                TopSingleByMileage = tripEntries
+                    .OrderByDescending(x => x.MileageKm)
+                    .ThenByDescending(x => x.Price)
+                    .ThenByDescending(x => x.TravelDate)
+                    .ThenBy(x => x.TripId)
                     .Take(top)
                     .ToList()
             };
@@ -207,6 +249,10 @@ namespace RailLog.Services
             public List<LeaderboardEntry> TopByTrips { get; init; } = [];
 
             public List<LeaderboardEntry> TopByMileage { get; init; } = [];
+
+            public List<TripLeaderboardEntry> TopSingleBySpend { get; init; } = [];
+
+            public List<TripLeaderboardEntry> TopSingleByMileage { get; init; } = [];
         }
 
         public sealed class LeaderboardEntry
@@ -222,6 +268,29 @@ namespace RailLog.Services
             public int TotalTrips { get; init; }
 
             public decimal TotalMileageKm { get; init; }
+        }
+
+        public sealed class TripLeaderboardEntry
+        {
+            public int TripId { get; init; }
+
+            public required string UserId { get; init; }
+
+            public required string DisplayName { get; init; }
+
+            public string? AvatarUrl { get; init; }
+
+            public required string TrainNumber { get; init; }
+
+            public required string FromStation { get; init; }
+
+            public required string ToStation { get; init; }
+
+            public DateOnly TravelDate { get; init; }
+
+            public decimal Price { get; init; }
+
+            public decimal MileageKm { get; init; }
         }
 
         private sealed record UserTripStat(string UserId, int TotalTrips, decimal TotalSpend, decimal TotalMileageKm);

@@ -149,18 +149,43 @@
 
 .achievement-card__tier {
     font-size: 0.8rem;
-    color: #3b5672;
+    color: #214565;
 }
 
 .achievement-card__value,
 .achievement-card__next {
     font-size: 0.78rem;
-    color: #4a647d;
+    color: #214565;
 }
 
 .achievement-card.is-unlocked .achievement-card__icon {
     color: #fefdf7;
     background: linear-gradient(145deg, #e59a32 0%, #cf6f2f 100%);
+}
+
+.achievement-card.tier-1 .achievement-card__icon {
+    color: #f8fbff;
+    background: linear-gradient(145deg, #4c92de 0%, #2f74c4 100%);
+}
+
+.achievement-card.tier-2 .achievement-card__icon {
+    color: #f8fcff;
+    background: linear-gradient(145deg, #2eaab2 0%, #238291 100%);
+}
+
+.achievement-card.tier-3 .achievement-card__icon {
+    color: #fffdf8;
+    background: linear-gradient(145deg, #d6902d 0%, #bb6f1f 100%);
+}
+
+.achievement-card.tier-4 .achievement-card__icon {
+    color: #fffdf8;
+    background: linear-gradient(145deg, #c46ab5 0%, #9443a8 100%);
+}
+
+.achievement-card.tier-5 .achievement-card__icon {
+    color: #fffdf9;
+    background: linear-gradient(145deg, #db4f66 0%, #a82d5a 100%);
 }
 
 .achievement-card.is-locked {
@@ -201,6 +226,11 @@
     color: #233b54;
 }
 
+.leaderboard-card__empty {
+    color: #617b97;
+    font-size: 0.82rem;
+}
+
 .leaderboard-list {
     margin: 0;
     padding: 0;
@@ -215,7 +245,11 @@
     padding: 0.38rem 0;
 }
 
-.leaderboard-item + .leaderboard-item {
+.leaderboard-item--compact {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.leaderboard-list>li+li {
     border-top: 1px dashed #d8e5f2;
 }
 
@@ -258,6 +292,53 @@
     color: #1f4969;
     font-size: 0.82rem;
     font-weight: 700;
+}
+
+.leaderboard-item--link {
+    border-radius: 8px;
+    margin-inline: -0.2rem;
+    padding-inline: 0.2rem;
+    text-decoration: none;
+    color: inherit;
+}
+
+.leaderboard-item--link:hover {
+    background: #eef5fd;
+}
+
+.leaderboard-item__name--trip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.08rem;
+    overflow: visible;
+    white-space: normal;
+}
+
+.leaderboard-item__primary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.leaderboard-item__secondary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #5f7894;
+    font-size: 0.74rem;
+}
+
+.leaderboard-item__value--trip {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.08rem;
+}
+
+.leaderboard-item__hint {
+    font-size: 0.72rem;
+    color: #65809d;
+    font-weight: 500;
 }
 
 .dashboard-empty {

@@ -23,18 +23,21 @@
     else if (!string.IsNullOrWhiteSpace(loadError))
     {
         <div class="alert alert-danger">@loadError</div>
-        <a href="/my-trips" class="btn btn-outline-secondary">返回我的运转日志</a>
+        <a href="@BackUrl" class="btn btn-outline-secondary">@BackText</a>
     }
     else if (trip is not null)
     {
         <section class="detail-toolbar d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <a href="/my-trips" class="btn btn-outline-secondary">返回</a>
-            <div class="d-flex gap-2">
-                <a href="/edit-trip/@trip.Id" class="btn btn-primary">编辑</a>
-                <button class="btn btn-outline-danger" @onclick="DeleteTripAsync" disabled="@isDeleting">
-                    @(isDeleting ? "删除中..." : "删除")
-                </button>
-            </div>
+            <a href="@BackUrl" class="btn btn-outline-secondary">返回</a>
+            @if (!isPublicView)
+            {
+                <div class="d-flex gap-2">
+                    <a href="/edit-trip/@trip.Id" class="btn btn-primary">编辑</a>
+                    <button class="btn btn-outline-danger" @onclick="DeleteTripAsync" disabled="@isDeleting">
+                        @(isDeleting ? "删除中..." : "删除")
+                    </button>
+                </div>
+            }
         </section>
 
         <article class="detail-card card border-0 shadow-sm">
@@ -56,7 +59,7 @@
                     <div class="detail-item"><label>席别</label><strong>@DisplayText(trip.SeatType, "未填写")</strong></div>
                     <div class="detail-item"><label>席位</label><strong>@DisplayText(trip.SeatNumber, "未填写")</strong></div>
                     <div class="detail-item"><label>票价</label><strong>¥@trip.Price.ToString("0.##")</strong></div>
-                    <div class="detail-item"><label>里程</label><strong>@trip.MileageKm km</strong></div>
+                    <div class="detail-item"><label>里程</label><strong>@GetTripMileage(trip).ToString("N1") km</strong></div>
                     <div class="detail-item"><label>车底/本务</label><strong>@DisplayText(trip.RollingStock, "未填写")</strong></div>
                 </div>
 
@@ -89,10 +92,16 @@
     [Parameter]
     public int TripId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "public")]
+    public bool PublicView { get; set; }
+
     private TripRecordDto? trip;
     private bool isLoading = true;
     private bool isDeleting;
     private string? loadError;
+    private bool isPublicView => PublicView;
+    private string BackUrl => isPublicView ? "/leaderboard" : "/my-trips";
+    private string BackText => isPublicView ? "返回排行榜" : "返回我的运转日志";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -106,7 +115,8 @@
 
         try
         {
-            trip = await Http.GetFromJsonAsync<TripRecordDto>($"api/trips/{TripId}");
+            var endpoint = isPublicView ? $"api/leaderboard/trips/{TripId}" : $"api/trips/{TripId}";
+            trip = await Http.GetFromJsonAsync<TripRecordDto>(endpoint);
             if (trip is null)
             {
                 loadError = "未找到该记录。";
@@ -114,7 +124,7 @@
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            loadError = "记录不存在或你无权访问。";
+            loadError = isPublicView ? "该排行榜记录不存在。" : "记录不存在或你无权访问。";
             trip = null;
         }
         catch (Exception ex)
@@ -173,5 +183,16 @@
     private static string FormatTime(TimeOnly? value)
     {
         return value.HasValue ? value.Value.ToString("HH:mm") : "未填写";
+    }
+
+    private static decimal GetTripMileage(TripRecordDto source)
+    {
+        if (source.MileageKm > 0)
+        {
+            return source.MileageKm;
+        }
+
+        var segmentMileage = (source.ViaRouteSegments ?? []).Sum(x => x.MileageKm);
+        return segmentMileage > 0 ? segmentMileage : 0m;
     }
 }

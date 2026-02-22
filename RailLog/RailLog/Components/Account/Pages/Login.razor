@@ -2,6 +2,7 @@
 
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @using RailLog.Data
 @using RailLog.Shared.Components
 
@@ -30,18 +31,22 @@
                         <h2 class="h5 mb-3">使用本地账户登录</h2>
                         <ValidationSummary class="text-danger" role="alert" />
                         <div class="form-floating mb-3">
-                            <InputText @bind-Value="Input.Account" id="Input.Account" class="form-control" autocomplete="username webauthn" aria-required="true" placeholder="用户名或电子邮件" />
-                            <label for="Input.Account" class="form-label">电子邮件</label>
+                            <InputText @bind-Value="Input.Account" id="Input.Account" class="form-control"
+                                       autocomplete="username webauthn" aria-required="true" placeholder="用户名或电子邮件" />
+                            <label for="Input.Account" class="form-label">用户名或电子邮件</label>
                             <ValidationMessage For="() => Input.Account" class="text-danger" />
                         </div>
                         <div class="form-floating mb-3">
-                            <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+                            <InputText type="password" @bind-Value="Input.Password" id="Input.Password"
+                                       class="form-control" autocomplete="current-password" aria-required="true"
+                                       placeholder="password" />
                             <label for="Input.Password" class="form-label">密码</label>
                             <ValidationMessage For="() => Input.Password" class="text-danger" />
                         </div>
                         <div class="checkbox mb-3">
                             <label class="form-label">
-                                <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
+                                <InputCheckbox @bind-Value="Input.RememberMe"
+                                               class="darker-border-checkbox form-check-input" />
                                 记住我
                             </label>
                         </div>
@@ -51,7 +56,8 @@
                         <hr />
                         <div class="d-flex flex-column">
                             <span class="text-secondary mx-auto mt-2">或</span>
-                            <PasskeySubmit Operation="PasskeyOperation.Request" Name="Input.Passkey" EmailName="Input.Account" class="btn btn-link mx-auto">使用通行密钥登录</PasskeySubmit>
+                            <PasskeySubmit Operation="PasskeyOperation.Request" Name="Input.Passkey"
+                                           EmailName="Input.Account" class="btn btn-link mx-auto">使用通行密钥登录</PasskeySubmit>
                         </div>
                         <hr />
                         <div>
@@ -59,7 +65,8 @@
                                 <a href="Account/ForgotPassword">忘记密码？</a>
                             </p>
                             <p>
-                                <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">注册为新用户</a>
+                                <a
+                                href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">注册为新用户</a>
                             </p>
                             <p>
                                 <a href="Account/ResendEmailConfirmation">重发确认邮件</a>
@@ -108,18 +115,14 @@
                 return;
             }
 
-            var account = Input.Account.Trim();
-            var signInUserName = account;
-            if (account.Contains('@'))
+            var signInUserName = await ResolveSignInUserNameAsync(Input.Account);
+            if (string.IsNullOrEmpty(signInUserName))
             {
-                var emailMatchedUser = await UserManager.FindByEmailAsync(account);
-                if (emailMatchedUser is not null)
-                {
-                    signInUserName = await UserManager.GetUserNameAsync(emailMatchedUser) ?? account;
-                }
+                return;
             }
 
-            result = await SignInManager.PasswordSignInAsync(signInUserName, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+            result = await SignInManager.PasswordSignInAsync(signInUserName, Input.Password, Input.RememberMe, lockoutOnFailure:
+false);
         }
 
         if (result.Succeeded)
@@ -144,6 +147,31 @@
         }
     }
 
+    private async Task<string?> ResolveSignInUserNameAsync(string accountInput)
+    {
+        var account = accountInput.Trim();
+        if (string.IsNullOrEmpty(account))
+        {
+            return null;
+        }
+
+        var matchedUser = await UserManager.FindByEmailAsync(account);
+        if (matchedUser is null)
+        {
+            var normalizedDisplayName = account.ToUpperInvariant();
+            var displayNameMatchedUsers = await UserManager.Users
+                .Where(user => user.DisplayName != null && user.DisplayName.ToUpper() == normalizedDisplayName)
+                .Take(2)
+                .ToListAsync();
+
+            matchedUser = displayNameMatchedUsers.SingleOrDefault();
+        }
+
+        return matchedUser is null
+            ? account
+            : await UserManager.GetUserNameAsync(matchedUser) ?? account;
+    }
+
     private sealed class InputModel
     {
         [Required(ErrorMessage = "请输入用户名或电子邮件")]
@@ -159,4 +187,3 @@
         public PasskeyInputModel? Passkey { get; set; }
     }
 }
-

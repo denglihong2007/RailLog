@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using RailLog.Data;
 using System.Security.Claims;
@@ -60,7 +61,25 @@ namespace Microsoft.AspNetCore.Routing
             {
                 await antiforgery.ValidateRequestAsync(context);
 
-                var user = string.IsNullOrEmpty(username) ? null : await userManager.FindByNameAsync(username);
+                ApplicationUser? user = null;
+                if (!string.IsNullOrWhiteSpace(username))
+                {
+                    var account = username.Trim();
+                    user = await userManager.FindByEmailAsync(account);
+                    if (user is null)
+                    {
+                        var normalizedDisplayName = account.ToUpperInvariant();
+                        var displayNameMatchedUsers = await userManager.Users
+                            .Where(x => x.DisplayName != null && x.DisplayName.ToUpper() == normalizedDisplayName)
+                            .Take(2)
+                            .ToListAsync();
+
+                        if (displayNameMatchedUsers.Count == 1)
+                        {
+                            user = displayNameMatchedUsers[0];
+                        }
+                    }
+                }
                 var optionsJson = await signInManager.MakePasskeyRequestOptionsAsync(user);
                 return TypedResults.Content(optionsJson, contentType: "application/json");
             });

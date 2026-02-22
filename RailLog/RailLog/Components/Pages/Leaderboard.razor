@@ -1,0 +1,246 @@
+@page "/leaderboard"
+@using RailLog.Services
+@using RailLog.Shared.Components
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject TripService TripService
+
+<PageTitle>排行榜 - 轨记</PageTitle>
+<PageHeader Title="排行榜" Subtitle="用户排名与行程排名" IconClass="bi bi-trophy" />
+
+<div class="leaderboard-page container py-3">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="text-muted mt-3 mb-0">正在统计全站行程数据...</p>
+        </div>
+    }
+    else if (!isAuthenticated)
+    {
+        <section class="leaderboard-empty card border-0 shadow-sm">
+            <div class="card-body py-4">
+                <h2 class="h4 mb-2">登录后查看全站排行榜</h2>
+                <p class="text-muted mb-3">排行榜按所有用户的行程记录实时统计。</p>
+                <a href="Account/Login" class="btn btn-primary">去登录</a>
+            </div>
+        </section>
+    }
+    else if (!HasLeaderboardData)
+    {
+        <section class="leaderboard-empty card border-0 shadow-sm">
+            <div class="card-body py-4">
+                <h2 class="h4 mb-2">暂无排行榜数据</h2>
+                <p class="text-muted mb-0">还没有可参与统计的行程记录。</p>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="leaderboard-group mt-3">
+            <div class="leaderboard-group__header">
+                <h3 class="mb-0">用户排名</h3>
+                <span class="text-muted small">按用户累计值统计</span>
+            </div>
+            <div class="leaderboard-grid mt-3">
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">累计花费榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopBySpend.Count; i++)
+                        {
+                            var entry = leaderboard.TopBySpend[i];
+                            <li class="leaderboard-item">
+                                <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                <span class="leaderboard-item__avatar">
+                                    @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                    {
+                                        <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                    }
+                                    else
+                                    {
+                                        <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                    }
+                                </span>
+                                <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                <span class="leaderboard-item__value">¥@entry.TotalSpend.ToString("N2")</span>
+                            </li>
+                        }
+                    </ol>
+                </article>
+
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">累计行程榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopByTrips.Count; i++)
+                        {
+                            var entry = leaderboard.TopByTrips[i];
+                            <li class="leaderboard-item">
+                                <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                <span class="leaderboard-item__avatar">
+                                    @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                    {
+                                        <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                    }
+                                    else
+                                    {
+                                        <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                    }
+                                </span>
+                                <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                <span class="leaderboard-item__value">@entry.TotalTrips 次</span>
+                            </li>
+                        }
+                    </ol>
+                </article>
+
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">累计里程榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopByMileage.Count; i++)
+                        {
+                            var entry = leaderboard.TopByMileage[i];
+                            <li class="leaderboard-item">
+                                <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                <span class="leaderboard-item__avatar">
+                                    @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                    {
+                                        <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                    }
+                                    else
+                                    {
+                                        <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                    }
+                                </span>
+                                <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                <span class="leaderboard-item__value">@entry.TotalMileageKm.ToString("N1") km</span>
+                            </li>
+                        }
+                    </ol>
+                </article>
+            </div>
+        </section>
+
+        <section class="leaderboard-group mt-4">
+            <div class="leaderboard-group__header">
+                <h3 class="mb-0">行程排名</h3>
+                <span class="text-muted small">按单条行程记录统计，可点击查看详情</span>
+            </div>
+            <div class="leaderboard-grid mt-3">
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">单次消费榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopSingleBySpend.Count; i++)
+                        {
+                            var entry = leaderboard.TopSingleBySpend[i];
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link"
+                                       href="/trip-details/@entry.TripId?public=true">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name leaderboard-item__name--trip">
+                                        <span class="leaderboard-item__primary">@entry.DisplayName · @entry.TrainNumber</span>
+                                        <span class="leaderboard-item__secondary">@entry.FromStation → @entry.ToStation</span>
+                                    </span>
+                                    <span class="leaderboard-item__value leaderboard-item__value--trip">
+                                        <span>¥@entry.Price.ToString("N2")</span>
+                                        <span class="leaderboard-item__hint">@entry.TravelDate.ToString("yyyy-MM-dd")</span>
+                                    </span>
+                                </a>
+                            </li>
+                        }
+                    </ol>
+                </article>
+
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">单次里程榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopSingleByMileage.Count; i++)
+                        {
+                            var entry = leaderboard.TopSingleByMileage[i];
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link"
+                                       href="/trip-details/@entry.TripId?public=true">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name leaderboard-item__name--trip">
+                                        <span class="leaderboard-item__primary">@entry.DisplayName · @entry.TrainNumber</span>
+                                        <span class="leaderboard-item__secondary">@entry.FromStation → @entry.ToStation</span>
+                                    </span>
+                                    <span class="leaderboard-item__value leaderboard-item__value--trip">
+                                        <span>@entry.MileageKm.ToString("N1") km</span>
+                                        <span class="leaderboard-item__hint">@entry.TravelDate.ToString("yyyy-MM-dd")</span>
+                                    </span>
+                                </a>
+                            </li>
+                        }
+                    </ol>
+                </article>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated;
+    private TripService.GlobalLeaderboard leaderboard = TripService.GlobalLeaderboard.Empty;
+
+    private bool HasLeaderboardData =>
+        leaderboard.TopBySpend.Count > 0 ||
+        leaderboard.TopByTrips.Count > 0 ||
+        leaderboard.TopByMileage.Count > 0 ||
+        leaderboard.TopSingleBySpend.Count > 0 ||
+        leaderboard.TopSingleByMileage.Count > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        isAuthenticated = user.Identity?.IsAuthenticated == true;
+
+        if (isAuthenticated)
+        {
+            leaderboard = await TripService.GetGlobalLeaderboardAsync();
+        }
+
+        isLoading = false;
+    }
+
+    private static string GetAvatarInitial(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return "轨";
+        }
+
+        return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    private static string GetTopThreeRankClass(int rankIndex)
+    {
+        return rankIndex switch
+        {
+            0 => "leaderboard-item__rank--gold",
+            1 => "leaderboard-item__rank--silver",
+            2 => "leaderboard-item__rank--bronze",
+            _ => string.Empty
+        };
+    }
+}

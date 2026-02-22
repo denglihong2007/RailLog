@@ -147,6 +147,35 @@ app.MapGet("/api/trips/{id:int}", async (int id, TripService service, ClaimsPrin
     var trip = await service.GetUserTripByIdAsync(userId, id);
     return trip is null ? Results.NotFound() : Results.Ok(trip);
 }).RequireAuthorization();
+app.MapGet("/api/leaderboard/trips/{id:int}", async (int id, TripService service, ClaimsPrincipal user) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userId is null) return Results.Unauthorized();
+
+    var trip = await service.GetAnyTripByIdAsync(id);
+    if (trip is null)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.Ok(new TripRecordDto
+    {
+        Id = trip.Id,
+        TrainNumber = trip.TrainNumber,
+        TravelDate = trip.TravelDate,
+        RollingStock = trip.RollingStock,
+        FromStation = trip.FromStation,
+        ToStation = trip.ToStation,
+        DepartureTime = trip.DepartureTime,
+        ArrivalTime = trip.ArrivalTime,
+        MileageKm = trip.MileageKm,
+        ViaRouteSegments = trip.ViaRouteSegments ?? [],
+        SeatType = trip.SeatType,
+        SeatNumber = trip.SeatNumber,
+        Price = trip.Price,
+        Notes = trip.Notes
+    });
+}).RequireAuthorization();
 app.MapPut("/api/trips/{id:int}", async (int id, TripRecordDto dto, TripService service, ClaimsPrincipal user) =>
 {
     var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;

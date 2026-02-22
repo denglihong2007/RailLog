@@ -3264,11 +3264,6 @@
       ]
     },
     {
-      "route_name": "彩蛋列表",
-      "route_version_id": 654,
-      "stations": []
-    },
-    {
       "route_name": "成昆西环联络线",
       "route_version_id": 672,
       "stations": [
@@ -10423,77 +10418,6 @@
           "id": 2,
           "station_name": "南昌南",
           "mileage": 11
-        }
-      ]
-    },
-    {
-      "route_name": "环线列车终到站表",
-      "route_version_id": 766,
-      "stations": [
-        {
-          "id": 1,
-          "station_name": "济 南",
-          "mileage": 0
-        },
-        {
-          "id": 2,
-          "station_name": "济 南西",
-          "mileage": 1
-        },
-        {
-          "id": 3,
-          "station_name": "包头 东",
-          "mileage": 2
-        },
-        {
-          "id": 4,
-          "station_name": "成 都东",
-          "mileage": 3
-        },
-        {
-          "id": 5,
-          "station_name": "重 庆西",
-          "mileage": 4
-        },
-        {
-          "id": 6,
-          "station_name": "福州 南",
-          "mileage": 5
-        },
-        {
-          "id": 7,
-          "station_name": "贵 阳北",
-          "mileage": 6
-        },
-        {
-          "id": 8,
-          "station_name": "临 沂北",
-          "mileage": 7
-        },
-        {
-          "id": 9,
-          "station_name": "南 昌",
-          "mileage": 8
-        },
-        {
-          "id": 10,
-          "station_name": "青 岛北",
-          "mileage": 9
-        },
-        {
-          "id": 11,
-          "station_name": "厦 门",
-          "mileage": 10
-        },
-        {
-          "id": 12,
-          "station_name": "三 亚",
-          "mileage": 11
-        },
-        {
-          "id": 13,
-          "station_name": "海 口东",
-          "mileage": 12
         }
       ]
     },
@@ -27971,47 +27895,6 @@
           "id": 2,
           "station_name": "张家口南",
           "mileage": 6
-        }
-      ]
-    },
-    {
-      "route_name": "沈仙",
-      "route_version_id": 551,
-      "stations": [
-        {
-          "id": 1,
-          "station_name": "我是一个粉刷匠",
-          "mileage": 0
-        },
-        {
-          "id": 2,
-          "station_name": "粉刷本领强",
-          "mileage": 1
-        },
-        {
-          "id": 3,
-          "station_name": "我要把那火车厢",
-          "mileage": 2
-        },
-        {
-          "id": 4,
-          "station_name": "刷得绿又亮",
-          "mileage": 3
-        },
-        {
-          "id": 5,
-          "station_name": "刷了京哈郑沈上",
-          "mileage": 4
-        },
-        {
-          "id": 6,
-          "station_name": "又刷宁武广",
-          "mileage": 5
-        },
-        {
-          "id": 7,
-          "station_name": "也成邮政箱",
-          "mileage": 7
         }
       ]
     },

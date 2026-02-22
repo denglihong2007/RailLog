@@ -3,6 +3,7 @@
 @using System.ComponentModel.DataAnnotations
 @using Humanizer
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @using RailLog.Data
 
 @inject UserManager<ApplicationUser> UserManager
@@ -111,6 +112,18 @@
 
         if (!string.Equals(normalizedUserName, displayName, StringComparison.Ordinal))
         {
+            var normalizedDisplayName = normalizedUserName.ToUpperInvariant();
+            var displayNameExists = await UserManager.Users
+                .AnyAsync(x =>
+                    x.Id != user.Id &&
+                    x.DisplayName != null &&
+                    x.DisplayName.ToUpper() == normalizedDisplayName);
+            if (displayNameExists)
+            {
+                RedirectManager.RedirectToCurrentPageWithStatus("错误：该用户名已被占用，请更换后重试。", HttpContext);
+                return;
+            }
+
             user.DisplayName = normalizedUserName;
             hasProfileChanges = true;
         }

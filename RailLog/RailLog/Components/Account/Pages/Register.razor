@@ -4,6 +4,7 @@
 @using System.Text
 @using System.Text.Encodings.Web
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.WebUtilities
 @using RailLog.Data
 @using RailLog.Shared.Components
@@ -85,6 +86,23 @@ error.Description))}";
     {
         var user = CreateUser();
         var normalizedUserName = Input.UserName.Trim();
+        var normalizedDisplayName = normalizedUserName.ToUpperInvariant();
+
+        var displayNameExists = await UserManager.Users
+            .AnyAsync(x => x.DisplayName != null && x.DisplayName.ToUpper() == normalizedDisplayName);
+        if (displayNameExists)
+        {
+            identityErrors =
+            [
+                new IdentityError
+                {
+                    Code = "DuplicateDisplayName",
+                    Description = "该用户名已被占用，请更换后重试。"
+                }
+            ];
+            return;
+        }
+
         user.DisplayName = normalizedUserName;
 
         await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);

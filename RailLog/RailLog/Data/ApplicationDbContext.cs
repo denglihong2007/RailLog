@@ -14,6 +14,10 @@ namespace RailLog.Data
         {
             base.OnModelCreating(builder);
 
+            builder.Entity<ApplicationUser>()
+                .HasIndex(x => x.DisplayName)
+                .IsUnique();
+
             builder.Entity<TripRecord>()
                 .Property(x => x.ViaRouteSegments)
                 .HasColumnName("ViaRoutes")

@@ -28,14 +28,21 @@
 
             <div class="nav-item">
                 <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                    <i class="bi bi-house-door-fill"></i>
+                    <i class="bi bi-house-door"></i>
                     <span>首页</span>
                 </NavLink>
             </div>
 
             <div class="nav-item">
+                <NavLink class="nav-link" href="leaderboard">
+                    <i class="bi bi-trophy"></i>
+                    <span>排行榜</span>
+                </NavLink>
+            </div>
+
+            <div class="nav-item">
                 <NavLink class="nav-link" href="my-trips">
-                    <i class="bi bi-train-front-fill"></i>
+                    <i class="bi bi-train-front"></i>
                     <span>运转日志</span>
                 </NavLink>
             </div>
@@ -46,31 +53,34 @@
                     <span>记录行程</span>
                 </NavLink>
             </div>
+        </section>
 
+        <section class="nav-section">
+            <p class="nav-section__title">更多功能</p>
             <div class="nav-item">
-                <a class="nav-link" href="https://apps.microsoft.com/detail/9n4xhrrmph8v?referrer=raillog&hl=zh-CN" target="_blank" rel="noopener noreferrer">
+                <a class="nav-link" href="https://apps.microsoft.com/detail/9n4xhrrmph8v?referrer=raillog&hl=zh-CN"
+                       target="_blank" rel="noopener noreferrer">
                     <i class="bi bi-pc-display"></i>
                     <span>车站模拟</span>
+                </a>
+            </div>
+
+            <div class="nav-item">
+                <a class="nav-link" href="https://railgo.dev" target="_blank" rel="noopener noreferrer">
+                    <i class="bi bi-search-heart"></i>
+                    <span>铁路快查</span>
                 </a>
             </div>
         </section>
 
         <AuthorizeView>
             <Authorized>
-                <section class="profile-card" aria-label="当前用户信息">
-                    <span class="profile-card__avatar">@GetAvatarInitial(userDisplayName)</span>
-                    <span class="profile-card__meta">
-                        <span class="profile-card__name">@userDisplayName</span>
-                        <span class="profile-card__hint">已登录</span>
-                    </span>
-                </section>
-
                 <section class="nav-section">
                     <p class="nav-section__title">账户</p>
 
                     <div class="nav-item">
                         <NavLink class="nav-link" href="Account/Manage">
-                            <i class="bi bi-person-fill"></i>
+                            <i class="bi bi-person"></i>
                             <span>个人资料</span>
                         </NavLink>
                     </div>
@@ -85,6 +95,22 @@
                             </button>
                         </form>
                     </div>
+                </section>
+
+                <section class="profile-card profile-card--bottom" aria-label="当前用户信息">
+                    @if (string.IsNullOrWhiteSpace(userAvatarUrl))
+                    {
+                        <span class="profile-card__avatar">@GetAvatarInitial(userDisplayName)</span>
+                    }
+                    else
+                    {
+                        <img class="profile-card__avatar profile-card__avatar--image"                             src="@userAvatarUrl"
+                             alt="@(userDisplayName + " 的头像")"                             @onerror="OnAvatarImageError" />
+                    }
+                    <span class="profile-card__meta">
+                        <span class="profile-card__name">@userDisplayName</span>
+                        <span class="profile-card__hint">已登录</span>
+                    </span>
                 </section>
             </Authorized>
             <NotAuthorized>
@@ -113,6 +139,7 @@
 @code {
     private string? currentUrl;
     private string? userDisplayName;
+    private string? userAvatarUrl;
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,17 +150,24 @@
         if (string.IsNullOrWhiteSpace(userId))
         {
             userDisplayName = principal.Identity?.Name ?? "游客";
+            userAvatarUrl = null;
             return;
         }
 
         await using var context = await DbContextFactory.CreateDbContextAsync();
-        userDisplayName = await context.Users
+        var userProfile = await context.Users
             .AsNoTracking()
             .Where(x => x.Id == userId)
-            .Select(x => string.IsNullOrWhiteSpace(x.DisplayName) ? x.UserName : x.DisplayName)
-            .FirstOrDefaultAsync()
-            ?? principal.Identity?.Name
-            ?? "游客";
+            .Select(x => new
+            {
+                x.DisplayName,
+                x.UserName,
+                x.AvatarUrl
+            })
+            .FirstOrDefaultAsync();
+
+        userDisplayName = ResolveDisplayName(userProfile?.DisplayName, userProfile?.UserName, principal.Identity?.Name);
+        userAvatarUrl = NormalizeAvatarUrl(userProfile?.AvatarUrl);
     }
 
     protected override void OnInitialized()
@@ -156,6 +190,36 @@
         }
 
         return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    private void OnAvatarImageError(EventArgs _)
+    {
+        userAvatarUrl = null;
+    }
+
+    private static string ResolveDisplayName(string? displayName, string? userName, string? fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(userName))
+        {
+            return userName;
+        }
+
+        return fallback ?? "游客";
+    }
+
+    private static string? NormalizeAvatarUrl(string? avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl))
+        {
+            return null;
+        }
+
+        return avatarUrl.Trim();
     }
 
     public void Dispose()

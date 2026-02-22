@@ -96,108 +96,74 @@
                 <div class="achievement-grid mt-3">
                     @foreach (var achievement in achievements)
                     {
-                        <article class="achievement-card @(achievement.Unlocked ? "is-unlocked" : "is-locked")">
+                        <article class="@GetAchievementCardClass(achievement)">
                             <div class="achievement-card__icon">
                                 <i class="@achievement.IconClass"></i>
                             </div>
                             <div>
-                                <p class="achievement-card__name mb-1">@achievement.Name</p>
-                                <p class="achievement-card__tier mb-1">等级：@achievement.TierName</p>
+                                <p class="achievement-card__name mb-1">@achievement.TierName</p>
+                                <p class="achievement-card__tier mb-1">@achievement.NextLevelText</p>
                                 <p class="achievement-card__value mb-1">@achievement.CurrentText</p>
-                                <p class="achievement-card__next mb-0">@achievement.NextTargetText</p>
+                                <p class="achievement-card__next mb-0">@achievement.TargetText</p>
                             </div>
                         </article>
                     }
                 </div>
             </section>
-        }
 
-        @if (HasLeaderboardData)
-        {
             <section class="leaderboard mt-4">
                 <div class="achievement-wall__header">
-                    <h3 class="mb-0">全服排行榜</h3>
-                    <span class="text-muted small">按所有用户行程记录统计</span>
+                    <h3 class="mb-0">个人高频</h3>
+                    <span class="text-muted small">按你的行程记录统计</span>
                 </div>
-
                 <div class="leaderboard-grid mt-3">
                     <article class="leaderboard-card">
-                        <h4 class="leaderboard-card__title">花费榜</h4>
-                        <ol class="leaderboard-list">
-                            @for (var i = 0; i < leaderboard.TopBySpend.Count; i++)
-                            {
-                                var entry = leaderboard.TopBySpend[i];
-                                <li class="leaderboard-item">
-                                    <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__avatar">
-                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                        {
-                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                        }
-                                        else
-                                        {
-                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                        }
-                                    </span>
-                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
-                                    <span class="leaderboard-item__value">¥@entry.TotalSpend.ToString("N2")</span>
-                                </li>
-                            }
-                        </ol>
+                        <h4 class="leaderboard-card__title">去过线路</h4>
+                        @if (stats.TopRouteVisits.Count == 0)
+                        {
+                            <p class="leaderboard-card__empty mb-0">暂无可统计的线路记录</p>
+                        }
+                        else
+                        {
+                            <ol class="leaderboard-list">
+                                @for (var i = 0; i < stats.TopRouteVisits.Count; i++)
+                                {
+                                    var entry = stats.TopRouteVisits[i];
+                                    <li class="leaderboard-item leaderboard-item--compact">
+                                        <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
+                                        <span class="leaderboard-item__name">@entry.Name</span>
+                                        <span class="leaderboard-item__value">@entry.Count 次</span>
+                                    </li>
+                                }
+                            </ol>
+                        }
                     </article>
 
                     <article class="leaderboard-card">
-                        <h4 class="leaderboard-card__title">行程榜</h4>
-                        <ol class="leaderboard-list">
-                            @for (var i = 0; i < leaderboard.TopByTrips.Count; i++)
-                            {
-                                var entry = leaderboard.TopByTrips[i];
-                                <li class="leaderboard-item">
-                                    <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__avatar">
-                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                        {
-                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                        }
-                                        else
-                                        {
-                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                        }
-                                    </span>
-                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
-                                    <span class="leaderboard-item__value">@entry.TotalTrips 次</span>
-                                </li>
-                            }
-                        </ol>
-                    </article>
-
-                    <article class="leaderboard-card">
-                        <h4 class="leaderboard-card__title">里程榜</h4>
-                        <ol class="leaderboard-list">
-                            @for (var i = 0; i < leaderboard.TopByMileage.Count; i++)
-                            {
-                                var entry = leaderboard.TopByMileage[i];
-                                <li class="leaderboard-item">
-                                    <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__avatar">
-                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                        {
-                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                        }
-                                        else
-                                        {
-                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                        }
-                                    </span>
-                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
-                                    <span class="leaderboard-item__value">@entry.TotalMileageKm.ToString("N1") km</span>
-                                </li>
-                            }
-                        </ol>
+                        <h4 class="leaderboard-card__title">到访车站</h4>
+                        @if (stats.TopStationVisits.Count == 0)
+                        {
+                            <p class="leaderboard-card__empty mb-0">暂无可统计的车站记录</p>
+                        }
+                        else
+                        {
+                            <ol class="leaderboard-list">
+                                @for (var i = 0; i < stats.TopStationVisits.Count; i++)
+                                {
+                                    var entry = stats.TopStationVisits[i];
+                                    <li class="leaderboard-item leaderboard-item--compact">
+                                        <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
+                                        <span class="leaderboard-item__name">@entry.Name</span>
+                                        <span class="leaderboard-item__value">@entry.Count 次</span>
+                                    </li>
+                                }
+                            </ol>
+                        }
                     </article>
                 </div>
             </section>
         }
+
     }
 </div>
 
@@ -206,8 +172,6 @@
     private bool isAuthenticated;
     private DashboardStats stats = DashboardStats.Empty;
     private List<AchievementItem> achievements = [];
-    private TripService.GlobalLeaderboard leaderboard = TripService.GlobalLeaderboard.Empty;
-    private bool HasLeaderboardData => leaderboard.TopBySpend.Count > 0 || leaderboard.TopByTrips.Count > 0 || leaderboard.TopByMileage.Count > 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -220,8 +184,6 @@
             isLoading = false;
             return;
         }
-
-        leaderboard = await TripService.GetGlobalLeaderboardAsync();
 
         var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrWhiteSpace(userId))
@@ -275,15 +237,20 @@
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var topRouteVisits = BuildTopVisitItems(
+            trips.SelectMany(ExtractRouteVisitsForTrip),
+            8);
+        var topStationVisits = BuildTopVisitItems(
+            trips.SelectMany(ExtractStationVisitsForTrip),
+            8);
+
         var uniqueTrainNumbers = trips
             .Select(x => x.TrainNumber.Trim().ToUpperInvariant())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
 
         var uniqueStations = trips
-            .SelectMany(x => new[] { x.FromStation, x.ToStation })
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
+            .SelectMany(ExtractStationVisitsForTrip)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
 
@@ -305,6 +272,8 @@
             UniqueRollingStockTypes = rollingStockTypes.Count,
             RollingStockRecords = trips.Count(x => !string.IsNullOrWhiteSpace(x.RollingStock)),
             UniqueStations = uniqueStations,
+            TopRouteVisits = topRouteVisits,
+            TopStationVisits = topStationVisits,
             UniqueTrainNumbers = uniqueTrainNumbers,
             UniqueSeatTypes = uniqueSeatTypes,
             FirstTripDate = trips.Min(x => x.TravelDate),
@@ -317,16 +286,44 @@
     {
         return
         [
-            BuildCountAchievement("发车达人", "bi bi-ticket-perforated-fill", stats.TotalTrips, [10, 50, 120], "次"),
-            BuildCountAchievement("线路探索家", "bi bi-signpost-split-fill", stats.UniqueRoutes, [5, 20, 40], "条"),
-            BuildMileageAchievement("里程征服者", "bi bi-geo-alt-fill", stats.TotalMileageKm, [1000m, 5000m, 20000m]),
-            BuildCurrencyAchievement("票价记录员", "bi bi-cash-stack", stats.TotalSpend, [1000m, 5000m, 15000m]),
-            BuildCountAchievement("车型图鉴", "bi bi-train-front-fill", stats.UniqueRollingStockTypes, [3, 8, 15], "种")
+            BuildCountAchievement(
+                "发车达人",
+                "bi bi-ticket-perforated-fill",
+                stats.TotalTrips,
+                [20, 80, 200, 450, 900],
+                ["铁路新人", "发车达人", "运转狂魔", "铁道夜行者", "钢轨统御者"],
+                "次"),
+            BuildCountAchievement(
+                "线路探索家",
+                "bi bi-signpost-split-fill",
+                stats.UniqueRoutes,
+                [8, 25, 55, 95, 150],
+                ["站台访客", "路线侦察员", "线路探索家", "干线绘图师", "路网掌控者"],
+                "条"),
+            BuildMileageAchievement(
+                "里程征服者",
+                "bi bi-geo-alt-fill",
+                stats.TotalMileageKm,
+                [2000m, 10000m, 30000m, 70000m, 150000m],
+                ["短途乘客", "里程追踪者", "里程征服者", "干线穿越者", "万里轨迹王"]),
+            BuildCurrencyAchievement(
+                "票价记录员",
+                "bi bi-cash-stack",
+                stats.TotalSpend,
+                [2000m, 10000m, 30000m, 80000m, 180000m],
+                ["购票新手", "预算能手", "票价记录员", "舱位策略师", "票券收藏家"]),
+            BuildCountAchievement(
+                "车型图鉴",
+                "bi bi-train-front-fill",
+                stats.UniqueRollingStockTypes,
+                [5, 12, 24, 40, 65],
+                ["车型学徒", "编组观察者", "车型图鉴", "动车鉴赏家", "列车博物馆长"],
+                "种")
         ];
     }
 
-    private static AchievementItem BuildCountAchievement(string name, string iconClass, int current, int[] targets, string
-unit)
+    private static AchievementItem BuildCountAchievement(string name, string iconClass, int current, int[] targets, string[]
+tierTitles, string unit)
     {
         var tier = ResolveTier(current, targets);
         var nextTarget = targets.FirstOrDefault(x => x > current);
@@ -335,15 +332,21 @@ unit)
         {
             Name = name,
             IconClass = iconClass,
-            TierName = ResolveTierName(tier),
+            Tier = tier,
+            TierName = ResolveTierTitle(tier, tierTitles),
             Unlocked = tier > 0,
             CurrentText = $"当前：{current} {unit}",
-            NextTargetText = nextTarget > 0 ? $"下一档：{nextTarget} {unit}" : "已达最高档"
+            NextLevelText = nextTarget > 0
+                ? $"下一等级：{ResolveTierTitle(tier + 1, tierTitles)}"
+                : "下一等级：已达最高等级",
+            TargetText = nextTarget > 0
+                ? $"目标：{nextTarget} {unit}"
+                : "目标：已达成最高档"
         };
     }
 
     private static AchievementItem BuildMileageAchievement(string name, string iconClass, decimal current, decimal[]
-targets)
+targets, string[] tierTitles)
     {
         var tier = ResolveTier(current, targets);
         var nextTarget = targets.FirstOrDefault(x => x > current);
@@ -352,15 +355,21 @@ targets)
         {
             Name = name,
             IconClass = iconClass,
-            TierName = ResolveTierName(tier),
+            Tier = tier,
+            TierName = ResolveTierTitle(tier, tierTitles),
             Unlocked = tier > 0,
             CurrentText = $"当前：{current:N1} km",
-            NextTargetText = nextTarget > 0 ? $"下一档：{nextTarget:N0} km" : "已达最高档"
+            NextLevelText = nextTarget > 0
+                ? $"下一等级：{ResolveTierTitle(tier + 1, tierTitles)}"
+                : "下一等级：已达最高等级",
+            TargetText = nextTarget > 0
+                ? $"目标：{nextTarget:N0} km"
+                : "目标：已达成最高档"
         };
     }
 
     private static AchievementItem BuildCurrencyAchievement(string name, string iconClass, decimal current, decimal[]
-targets)
+targets, string[] tierTitles)
     {
         var tier = ResolveTier(current, targets);
         var nextTarget = targets.FirstOrDefault(x => x > current);
@@ -369,10 +378,16 @@ targets)
         {
             Name = name,
             IconClass = iconClass,
-            TierName = ResolveTierName(tier),
+            Tier = tier,
+            TierName = ResolveTierTitle(tier, tierTitles),
             Unlocked = tier > 0,
             CurrentText = $"当前：¥{current:N2}",
-            NextTargetText = nextTarget > 0 ? $"下一档：¥{nextTarget:N0}" : "已达最高档"
+            NextLevelText = nextTarget > 0
+                ? $"下一等级：{ResolveTierTitle(tier + 1, tierTitles)}"
+                : "下一等级：已达最高等级",
+            TargetText = nextTarget > 0
+                ? $"目标：¥{nextTarget:N0}"
+                : "目标：已达成最高档"
         };
     }
 
@@ -404,15 +419,24 @@ targets)
         return tier;
     }
 
-    private static string ResolveTierName(int tier)
+    private static string ResolveTierTitle(int tier, string[] tierTitles)
     {
-        return tier switch
+        if (tier <= 0)
         {
-            0 => "未点亮",
-            1 => "青铜",
-            2 => "白银",
-            _ => "黄金"
-        };
+            return "未点亮";
+        }
+
+        if (tier <= tierTitles.Length)
+        {
+            return tierTitles[tier - 1];
+        }
+
+        return tierTitles.Length == 0 ? "未点亮" : tierTitles[^1];
+    }
+
+    private static string GetAchievementCardClass(AchievementItem achievement)
+    {
+        return $"achievement-card {(achievement.Unlocked ? "is-unlocked" : "is-locked")} tier-{achievement.Tier}";
     }
 
     private static string ResolveExplorerLevel(decimal totalMileageKm)
@@ -470,14 +494,64 @@ StringSplitOptions.TrimEntries);
         return results;
     }
 
-    private static string GetAvatarInitial(string? displayName)
+    private static List<VisitRankItem> BuildTopVisitItems(IEnumerable<string> values, int top)
     {
-        if (string.IsNullOrWhiteSpace(displayName))
+        return values
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new VisitRankItem(g.First(), g.Count()))
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(top)
+            .ToList();
+    }
+
+    private static IEnumerable<string> ExtractRouteVisitsForTrip(TripRecord trip)
+    {
+        var routeNames = (trip.ViaRouteSegments ?? [])
+            .Select(x => x.RouteName?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (routeNames.Count > 0)
         {
-            return "轨";
+            return routeNames;
         }
 
-        return displayName.Trim()[0].ToString().ToUpperInvariant();
+        var from = trip.FromStation?.Trim();
+        var to = trip.ToStation?.Trim();
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+        {
+            return [];
+        }
+
+        return [$"{from} -> {to}"];
+    }
+
+    private static IEnumerable<string> ExtractStationVisitsForTrip(TripRecord trip)
+    {
+        var stations = new List<string>();
+        AddStation(stations, trip.FromStation);
+        AddStation(stations, trip.ToStation);
+
+        foreach (var segment in trip.ViaRouteSegments ?? [])
+        {
+            AddStation(stations, segment.FromStation);
+            AddStation(stations, segment.ToStation);
+        }
+
+        return stations.Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void AddStation(List<string> stations, string? station)
+    {
+        if (!string.IsNullOrWhiteSpace(station))
+        {
+            stations.Add(station.Trim());
+        }
     }
 
     private sealed class DashboardStats
@@ -504,6 +578,10 @@ StringSplitOptions.TrimEntries);
 
         public int UniqueStations { get; init; }
 
+        public List<VisitRankItem> TopRouteVisits { get; init; } = [];
+
+        public List<VisitRankItem> TopStationVisits { get; init; } = [];
+
         public int UniqueTrainNumbers { get; init; }
 
         public int UniqueSeatTypes { get; init; }
@@ -515,11 +593,26 @@ StringSplitOptions.TrimEntries);
         public string ExplorerLevel { get; init; } = "见习铁路迷";
     }
 
+    private sealed class VisitRankItem
+    {
+        public VisitRankItem(string name, int count)
+        {
+            Name = name;
+            Count = count;
+        }
+
+        public string Name { get; }
+
+        public int Count { get; }
+    }
+
     private sealed class AchievementItem
     {
         public string Name { get; init; } = string.Empty;
 
         public string IconClass { get; init; } = string.Empty;
+
+        public int Tier { get; init; }
 
         public string TierName { get; init; } = string.Empty;
 
@@ -527,6 +620,8 @@ StringSplitOptions.TrimEntries);
 
         public string CurrentText { get; init; } = string.Empty;
 
-        public string NextTargetText { get; init; } = string.Empty;
+        public string NextLevelText { get; init; } = string.Empty;
+
+        public string TargetText { get; init; } = string.Empty;
     }
 }
