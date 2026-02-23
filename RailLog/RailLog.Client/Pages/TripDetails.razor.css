@@ -12,6 +12,63 @@
     border-radius: 14px;
 }
 
+.trip-owner-card {
+    text-decoration: none;
+    color: inherit;
+    border: 1px solid rgba(34, 61, 92, 0.13);
+    border-radius: 14px;
+}
+
+.trip-owner-card:hover {
+    border-color: rgba(31, 85, 144, 0.42);
+    box-shadow: 0 10px 22px rgba(19, 40, 66, 0.14);
+}
+
+.profile-summary__main {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.profile-summary__avatar {
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 50%;
+    background: #dbe9f6;
+    color: #33516f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.profile-summary__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-summary__bio {
+    margin: 0;
+    color: #5c6f86;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.trip-owner-card__label {
+    color: #5f7894;
+    font-size: 0.8rem;
+}
+
+.trip-owner-card__arrow {
+    margin-left: auto;
+    color: #5f7894;
+    font-size: 0.95rem;
+}
+
 .detail-header {
     display: flex;
     justify-content: space-between;
@@ -101,5 +158,9 @@
     .detail-header {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .trip-owner-card__arrow {
+        display: none;
     }
 }

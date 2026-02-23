@@ -158,22 +158,31 @@ app.MapGet("/api/leaderboard/trips/{id:int}", async (int id, TripService service
         return Results.NotFound();
     }
 
-    return Results.Ok(new TripRecordDto
+    var owner = await service.GetUserProfileAsync(trip.UserId);
+
+    return Results.Ok(new PublicTripDetailsDto
     {
-        Id = trip.Id,
-        TrainNumber = trip.TrainNumber,
-        TravelDate = trip.TravelDate,
-        RollingStock = trip.RollingStock,
-        FromStation = trip.FromStation,
-        ToStation = trip.ToStation,
-        DepartureTime = trip.DepartureTime,
-        ArrivalTime = trip.ArrivalTime,
-        MileageKm = trip.MileageKm,
-        ViaRouteSegments = trip.ViaRouteSegments ?? [],
-        SeatType = trip.SeatType,
-        SeatNumber = trip.SeatNumber,
-        Price = trip.Price,
-        Notes = trip.Notes
+        Trip = new TripRecordDto
+        {
+            Id = trip.Id,
+            TrainNumber = trip.TrainNumber,
+            TravelDate = trip.TravelDate,
+            RollingStock = trip.RollingStock,
+            FromStation = trip.FromStation,
+            ToStation = trip.ToStation,
+            DepartureTime = trip.DepartureTime,
+            ArrivalTime = trip.ArrivalTime,
+            MileageKm = trip.MileageKm,
+            ViaRouteSegments = trip.ViaRouteSegments ?? [],
+            SeatType = trip.SeatType,
+            SeatNumber = trip.SeatNumber,
+            Price = trip.Price,
+            Notes = trip.Notes
+        },
+        OwnerUserId = trip.UserId,
+        OwnerDisplayName = owner?.DisplayName ?? "匿名旅客",
+        OwnerAvatarUrl = owner?.AvatarUrl,
+        OwnerBio = owner?.Bio
     });
 }).RequireAuthorization();
 app.MapPut("/api/trips/{id:int}", async (int id, TripRecordDto dto, TripService service, ClaimsPrincipal user) =>

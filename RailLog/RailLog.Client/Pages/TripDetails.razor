@@ -40,6 +40,32 @@
             }
         </section>
 
+        @if (isPublicView && publicTrip is not null)
+        {
+            <a class="trip-owner-card card border-0 shadow-sm mb-3" href="/profile/@publicTrip.OwnerUserId">
+                <div class="card-body">
+                    <div class="profile-summary__main">
+                        <span class="profile-summary__avatar">
+                            @if (!string.IsNullOrWhiteSpace(publicTrip.OwnerAvatarUrl))
+                            {
+                                <img src="@publicTrip.OwnerAvatarUrl" alt="@($"{publicTrip.OwnerDisplayName}头像")" />
+                            }
+                            else
+                            {
+                                <span>@GetAvatarInitial(publicTrip.OwnerDisplayName)</span>
+                            }
+                        </span>
+                        <div>
+                            <p class="trip-owner-card__label mb-1">行程归属</p>
+                            <h2 class="h6 mb-1">@publicTrip.OwnerDisplayName</h2>
+                            <p class="profile-summary__bio mb-0">@GetBioText(publicTrip.OwnerBio)</p>
+                        </div>
+                        <i class="bi bi-chevron-right trip-owner-card__arrow" aria-hidden="true"></i>
+                    </div>
+                </div>
+            </a>
+        }
+
         <article class="detail-card card border-0 shadow-sm">
             <div class="card-body">
                 <div class="detail-header">
@@ -96,6 +122,7 @@
     public bool PublicView { get; set; }
 
     private TripRecordDto? trip;
+    private PublicTripDetailsDto? publicTrip;
     private bool isLoading = true;
     private bool isDeleting;
     private string? loadError;
@@ -112,11 +139,21 @@
     {
         isLoading = true;
         loadError = null;
+        publicTrip = null;
+        trip = null;
 
         try
         {
-            var endpoint = isPublicView ? $"api/leaderboard/trips/{TripId}" : $"api/trips/{TripId}";
-            trip = await Http.GetFromJsonAsync<TripRecordDto>(endpoint);
+            if (isPublicView)
+            {
+                publicTrip = await Http.GetFromJsonAsync<PublicTripDetailsDto>($"api/leaderboard/trips/{TripId}");
+                trip = publicTrip?.Trip;
+            }
+            else
+            {
+                trip = await Http.GetFromJsonAsync<TripRecordDto>($"api/trips/{TripId}");
+            }
+
             if (trip is null)
             {
                 loadError = "未找到该记录。";
@@ -183,6 +220,23 @@
     private static string FormatTime(TimeOnly? value)
     {
         return value.HasValue ? value.Value.ToString("HH:mm") : "未填写";
+    }
+
+    private static string GetAvatarInitial(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return "轨";
+        }
+
+        return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    private static string GetBioText(string? bio)
+    {
+        return string.IsNullOrWhiteSpace(bio)
+            ? "这个人很神秘，还没有填写个人简介。"
+            : bio.Trim();
     }
 
     private static decimal GetTripMileage(TripRecordDto source)

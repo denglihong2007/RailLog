@@ -113,6 +113,166 @@ namespace RailLog.Services
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<PersonalOverlapSummary> GetPersonalOverlapSummaryAsync(string userId)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return PersonalOverlapSummary.Empty;
+            }
+
+            await using var context = await contextFactory.CreateDbContextAsync();
+
+            var myTrips = await context.TripRecords
+                .AsNoTracking()
+                .Where(x => x.UserId == userId)
+                .ToListAsync();
+
+            if (myTrips.Count == 0)
+            {
+                return PersonalOverlapSummary.Empty;
+            }
+
+            var trainDatesByKey = myTrips
+                .Select(x => new
+                {
+                    Key = NormalizeTrainNumber(x.TrainNumber),
+                    x.TravelDate
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+                .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    x => x.Key,
+                    x => x.Select(y => y.TravelDate)
+                        .Distinct()
+                        .OrderByDescending(y => y)
+                        .ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var stationVisitPairs = myTrips
+                .SelectMany(trip => ExtractTripStations(trip).Select(station => new
+                {
+                    StationName = station,
+                    Key = NormalizeStationName(station),
+                    trip.TravelDate
+                }))
+                .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+                .ToList();
+
+            var stationDatesByKey = stationVisitPairs
+                .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    x => x.Key,
+                    x => x.Select(y => y.TravelDate)
+                        .Distinct()
+                        .OrderByDescending(y => y)
+                        .ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var stationDisplayByKey = stationVisitPairs
+                .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    x => x.Key,
+                    x => x.Select(y => y.StationName.Trim())
+                        .FirstOrDefault(y => !string.IsNullOrWhiteSpace(y)) ?? x.Key,
+                    StringComparer.OrdinalIgnoreCase);
+
+            if (trainDatesByKey.Count == 0 && stationDatesByKey.Count == 0)
+            {
+                return PersonalOverlapSummary.Empty;
+            }
+
+            var otherTrips = await context.TripRecords
+                .AsNoTracking()
+                .Where(x => x.UserId != userId)
+                .OrderByDescending(x => x.TravelDate)
+                .ToListAsync();
+
+            if (otherTrips.Count == 0)
+            {
+                return PersonalOverlapSummary.Empty;
+            }
+
+            var otherUserIds = otherTrips
+                .Select(x => x.UserId)
+                .Distinct()
+                .ToList();
+
+            var userProfiles = await context.Users
+                .AsNoTracking()
+                .Where(x => otherUserIds.Contains(x.Id))
+                .Select(x => new UserProfile(
+                    Id: x.Id,
+                    DisplayName: x.DisplayName,
+                    UserName: x.UserName,
+                    Email: x.Email,
+                    AvatarUrl: x.AvatarUrl))
+                .ToDictionaryAsync(x => x.Id);
+
+            var trainOverlaps = new List<TrainOverlapEntry>();
+            var stationOverlaps = new List<StationOverlapEntry>();
+
+            foreach (var otherTrip in otherTrips)
+            {
+                userProfiles.TryGetValue(otherTrip.UserId, out var profile);
+
+                var displayName = ResolveDisplayName(profile?.DisplayName, profile?.UserName, profile?.Email);
+                var avatarUrl = NormalizeAvatarUrl(profile?.AvatarUrl);
+
+                var trainKey = NormalizeTrainNumber(otherTrip.TrainNumber);
+                if (!string.IsNullOrWhiteSpace(trainKey) && trainDatesByKey.TryGetValue(trainKey, out var myTrainDates))
+                {
+                    trainOverlaps.Add(new TrainOverlapEntry
+                    {
+                        UserId = otherTrip.UserId,
+                        DisplayName = displayName,
+                        AvatarUrl = avatarUrl,
+                        TrainNumber = otherTrip.TrainNumber?.Trim() ?? trainKey,
+                        OtherTravelDate = otherTrip.TravelDate,
+                        TripId = otherTrip.Id,
+                        MyTravelDates = [.. myTrainDates]
+                    });
+                }
+
+                foreach (var station in ExtractTripStations(otherTrip))
+                {
+                    var stationKey = NormalizeStationName(station);
+                    if (string.IsNullOrWhiteSpace(stationKey) || !stationDatesByKey.TryGetValue(stationKey, out var myVisitDates))
+                    {
+                        continue;
+                    }
+
+                    stationOverlaps.Add(new StationOverlapEntry
+                    {
+                        UserId = otherTrip.UserId,
+                        DisplayName = displayName,
+                        AvatarUrl = avatarUrl,
+                        StationName = stationDisplayByKey.TryGetValue(stationKey, out var stationName)
+                            ? stationName
+                            : station.Trim(),
+                        OtherTravelDate = otherTrip.TravelDate,
+                        TripId = otherTrip.Id,
+                        MyVisitDates = [.. myVisitDates]
+                    });
+                }
+            }
+
+            return new PersonalOverlapSummary
+            {
+                TrainOverlaps = trainOverlaps
+                    .OrderByDescending(x => x.OtherTravelDate)
+                    .ThenBy(x => x.TrainNumber, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.TripId)
+                    .ToList(),
+                StationOverlaps = stationOverlaps
+                    .OrderByDescending(x => x.OtherTravelDate)
+                    .ThenBy(x => x.StationName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.TripId)
+                    .ToList()
+            };
+        }
+
         public async Task<GlobalLeaderboard> GetGlobalLeaderboardAsync(int top = 10)
         {
             top = Math.Clamp(top, 1, 50);
@@ -232,6 +392,43 @@ namespace RailLog.Services
             return segmentMileage > 0 ? segmentMileage : 0m;
         }
 
+        private static string NormalizeTrainNumber(string? trainNumber)
+        {
+            if (string.IsNullOrWhiteSpace(trainNumber))
+            {
+                return string.Empty;
+            }
+
+            return trainNumber.Trim().ToUpperInvariant();
+        }
+
+        private static string NormalizeStationName(string? stationName)
+        {
+            if (string.IsNullOrWhiteSpace(stationName))
+            {
+                return string.Empty;
+            }
+
+            return stationName.Trim();
+        }
+
+        private static IEnumerable<string> ExtractTripStations(TripRecord trip)
+        {
+            var stations = new List<string>();
+            AddStation(stations, trip.FromStation);
+            AddStation(stations, trip.ToStation);
+
+            return stations.Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static void AddStation(List<string> stations, string? station)
+        {
+            if (!string.IsNullOrWhiteSpace(station))
+            {
+                stations.Add(station.Trim());
+            }
+        }
+
         private static string ResolveDisplayName(string? displayName, string? userName, string? email)
         {
             if (!string.IsNullOrWhiteSpace(displayName))
@@ -342,6 +539,49 @@ namespace RailLog.Services
             public decimal Price { get; init; }
 
             public decimal MileageKm { get; init; }
+        }
+
+        public sealed class PersonalOverlapSummary
+        {
+            public static PersonalOverlapSummary Empty { get; } = new();
+
+            public List<TrainOverlapEntry> TrainOverlaps { get; init; } = [];
+
+            public List<StationOverlapEntry> StationOverlaps { get; init; } = [];
+        }
+
+        public sealed class TrainOverlapEntry
+        {
+            public required string UserId { get; init; }
+
+            public required string DisplayName { get; init; }
+
+            public string? AvatarUrl { get; init; }
+
+            public required string TrainNumber { get; init; }
+
+            public DateOnly OtherTravelDate { get; init; }
+
+            public int TripId { get; init; }
+
+            public List<DateOnly> MyTravelDates { get; init; } = [];
+        }
+
+        public sealed class StationOverlapEntry
+        {
+            public required string UserId { get; init; }
+
+            public required string DisplayName { get; init; }
+
+            public string? AvatarUrl { get; init; }
+
+            public required string StationName { get; init; }
+
+            public DateOnly OtherTravelDate { get; init; }
+
+            public int TripId { get; init; }
+
+            public List<DateOnly> MyVisitDates { get; init; } = [];
         }
 
         private sealed record UserTripStat(string UserId, int TotalTrips, decimal TotalSpend, decimal TotalMileageKm);

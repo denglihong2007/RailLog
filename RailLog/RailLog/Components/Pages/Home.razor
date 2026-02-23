@@ -27,8 +27,109 @@
     }
     else
     {
-        <ProfileDashboardPanel Stats="stats"                               Achievements="achievements"                               IsOwnerView="true"                               SubjectName="你"
+        <ProfileDashboardPanel Stats="stats" Achievements="achievements" IsOwnerView="true" SubjectName="你"
                                AddFirstTripUrl="/add-trip" />
+
+        <section class="home-overlap mt-4">
+            <div class="home-overlap__header mb-3">
+                <h3 class="mb-0">同行交集</h3>
+                <span class="text-muted small">根据你的历史记录自动匹配</span>
+            </div>
+
+            <div class="overlap-grid">
+                <article class="overlap-panel card border-0 shadow-sm">
+                    <div class="card-body">
+                        <h4 class="overlap-panel__title mb-3">同车次</h4>
+                        @if (trainOverlapCards.Count == 0)
+                        {
+                            <p class="text-muted mb-0">还没有找到与你同乘车次的用户。</p>
+                        }
+                        else
+                        {
+                            <div class="overlap-card-list">
+                                @foreach (var card in trainOverlapCards)
+                                {
+                                    <article class="overlap-card-item">
+                                        <div class="overlap-card-item__header">
+                                            <h5 class="mb-0">@card.Title</h5>
+                                            <span>@card.Visitors.Count 条交集</span>
+                                        </div>
+                                        <p class="overlap-card-item__mine mb-2">
+                                            你去过日期：@FormatDateList(card.MyVisitDates)
+                                        </p>
+                                        <div class="overlap-avatar-list">
+                                            @foreach (var visitor in card.Visitors)
+                                            {
+                                                <a class="overlap-avatar-link"
+                                                   href="/trip-details/@visitor.LatestTripId?public=true"
+                                                   title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
+                                                    <span class="overlap-avatar">
+                                                        @if (!string.IsNullOrWhiteSpace(visitor.AvatarUrl))
+                                                        {
+                                                            <img src="@visitor.AvatarUrl" alt="@($"{visitor.DisplayName}头像")" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@GetAvatarInitial(visitor.DisplayName)</span>
+                                                        }
+                                                    </span>
+                                                </a>
+                                            }
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </div>
+                </article>
+
+                <article class="overlap-panel card border-0 shadow-sm">
+                    <div class="card-body">
+                        <h4 class="overlap-panel__title mb-3">同车站</h4>
+                        @if (stationOverlapCards.Count == 0)
+                        {
+                            <p class="text-muted mb-0">还没有找到与你同访车站的用户。</p>
+                        }
+                        else
+                        {
+                            <div class="overlap-card-list">
+                                @foreach (var card in stationOverlapCards)
+                                {
+                                    <article class="overlap-card-item">
+                                        <div class="overlap-card-item__header">
+                                            <h5 class="mb-0">@card.Title</h5>
+                                            <span>@card.Visitors.Count 条交集</span>
+                                        </div>
+                                        <p class="overlap-card-item__mine mb-2">
+                                            你去过日期：@FormatDateList(card.MyVisitDates)
+                                        </p>
+                                        <div class="overlap-avatar-list">
+                                            @foreach (var visitor in card.Visitors)
+                                            {
+                                                <a class="overlap-avatar-link"
+                                                   href="/trip-details/@visitor.LatestTripId?public=true"
+                                                   title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
+                                                    <span class="overlap-avatar">
+                                                        @if (!string.IsNullOrWhiteSpace(visitor.AvatarUrl))
+                                                        {
+                                                            <img src="@visitor.AvatarUrl" alt="@($"{visitor.DisplayName}头像")" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>@GetAvatarInitial(visitor.DisplayName)</span>
+                                                        }
+                                                    </span>
+                                                </a>
+                                            }
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </div>
+                </article>
+            </div>
+        </section>
     }
 </div>
 
@@ -37,6 +138,9 @@
     private bool isAuthenticated;
     private DashboardStats stats = DashboardStats.Empty;
     private List<AchievementItem> achievements = [];
+    private TripService.PersonalOverlapSummary overlapSummary = TripService.PersonalOverlapSummary.Empty;
+    private IReadOnlyList<OverlapCard> trainOverlapCards = [];
+    private IReadOnlyList<OverlapCard> stationOverlapCards = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -60,7 +164,152 @@
         var trips = await TripService.GetUserTripsAsync(userId);
         stats = ProfileDashboardBuilder.BuildDashboardStats(trips);
         achievements = ProfileDashboardBuilder.BuildAchievementItems(stats);
+        overlapSummary = await TripService.GetPersonalOverlapSummaryAsync(userId);
+        trainOverlapCards = BuildTrainOverlapCards(overlapSummary.TrainOverlaps);
+        stationOverlapCards = BuildStationOverlapCards(overlapSummary.StationOverlaps);
 
         isLoading = false;
     }
+
+    private static string FormatDateList(IReadOnlyCollection<DateOnly> dates)
+    {
+        if (dates.Count == 0)
+        {
+            return "未知日期";
+        }
+
+        var ordered = dates
+            .Distinct()
+            .OrderByDescending(x => x)
+            .ToList();
+
+        var preview = ordered
+            .Take(5)
+            .Select(x => x.ToString("yyyy-MM-dd"));
+
+        return ordered.Count > 5
+            ? $"{string.Join("、", preview)} 等更多日期"
+            : string.Join("、", preview);
+    }
+
+    private static string GetAvatarInitial(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return "轨";
+        }
+
+        return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    private static IReadOnlyList<OverlapCard> BuildTrainOverlapCards(IReadOnlyList<TripService.TrainOverlapEntry> entries)
+    {
+        return entries
+            .GroupBy(x => x.TrainNumber?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var myVisitDates = group
+                    .SelectMany(x => x.MyTravelDates)
+                    .Distinct()
+                    .OrderByDescending(x => x)
+                    .ToList();
+
+                return new OverlapCard
+                {
+                    Title = group.First().TrainNumber?.Trim() ?? "未知车次",
+                    MyVisitDates = myVisitDates,
+                    Visitors = BuildVisitors(group.Select(x => new OverlapRawVisit(
+                        x.UserId,
+                        x.DisplayName,
+                        x.AvatarUrl,
+                        x.OtherTravelDate,
+                        x.TripId,
+                        null,
+                        null)))
+                };
+            })
+            .OrderByDescending(x => x.Visitors.Count)
+            .ThenBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<OverlapCard> BuildStationOverlapCards(IReadOnlyList<TripService.StationOverlapEntry>
+entries)
+    {
+        return entries
+            .GroupBy(x => x.StationName?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var myVisitDates = group
+                    .SelectMany(x => x.MyVisitDates)
+                    .Distinct()
+                    .OrderByDescending(x => x)
+                    .ToList();
+
+                return new OverlapCard
+                {
+                    Title = group.First().StationName?.Trim() ?? "未知车站",
+                    MyVisitDates = myVisitDates,
+                    Visitors = BuildVisitors(group.Select(x => new OverlapRawVisit(
+                        x.UserId,
+                        x.DisplayName,
+                        x.AvatarUrl,
+                        x.OtherTravelDate,
+                        x.TripId,
+                        null,
+                        null)))
+                };
+            })
+            .OrderByDescending(x => x.Visitors.Count)
+            .ThenBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<OverlapVisitor> BuildVisitors(IEnumerable<OverlapRawVisit> visits)
+    {
+        return visits
+            .Select(x => new OverlapVisitor
+            {
+                UserId = x.UserId,
+                DisplayName = x.DisplayName,
+                AvatarUrl = x.AvatarUrl,
+                LatestTripId = x.TripId,
+                TravelDate = x.TravelDate
+            })
+            .OrderByDescending(x => x.TravelDate)
+            .ThenByDescending(x => x.LatestTripId)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private sealed class OverlapCard
+    {
+        public required string Title { get; init; }
+
+        public required List<DateOnly> MyVisitDates { get; init; }
+
+        public required IReadOnlyList<OverlapVisitor> Visitors { get; init; }
+    }
+
+    private sealed class OverlapVisitor
+    {
+        public required string UserId { get; init; }
+
+        public required string DisplayName { get; init; }
+
+        public string? AvatarUrl { get; init; }
+
+        public required int LatestTripId { get; init; }
+
+        public required DateOnly TravelDate { get; init; }
+    }
+
+    private sealed record OverlapRawVisit(
+        string UserId,
+        string DisplayName,
+        string? AvatarUrl,
+        DateOnly TravelDate,
+        int TripId,
+        string? FromStation,
+        string? ToStation);
 }

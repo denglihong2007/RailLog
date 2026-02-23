@@ -333,12 +333,6 @@ namespace RailLog.Services
             AddStation(stations, trip.FromStation);
             AddStation(stations, trip.ToStation);
 
-            foreach (var segment in trip.ViaRouteSegments ?? [])
-            {
-                AddStation(stations, segment.FromStation);
-                AddStation(stations, segment.ToStation);
-            }
-
             return stations.Distinct(StringComparer.OrdinalIgnoreCase);
         }
 
