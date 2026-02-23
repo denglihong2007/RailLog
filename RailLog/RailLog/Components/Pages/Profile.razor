@@ -1,0 +1,145 @@
+@page "/profile/{UserId}"
+@rendermode InteractiveServer
+@using RailLog.Components
+@using RailLog.Services
+@using RailLog.Shared.Components
+@using RailLog.Shared.Models
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject TripService TripService
+
+<PageTitle>个人主页 - 轨记</PageTitle>
+<PageHeader Title="个人主页" Subtitle="整合成就总览与全部行程记录" IconClass="bi bi-person-vcard" />
+
+<div class="profile-page container pb-3">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="text-muted mt-3 mb-0">正在加载该用户主页...</p>
+        </div>
+    }
+    else if (!isAuthenticated)
+    {
+        <section class="dashboard-empty card border-0 shadow-sm">
+            <div class="card-body py-4">
+                <h2 class="h4 mb-2">登录后查看用户个人主页</h2>
+                <p class="text-muted mb-3">个人主页包含成就概览与全部行程记录。</p>
+                <a href="/Account/Login" class="btn btn-primary">去登录</a>
+            </div>
+        </section>
+    }
+    else if (profile is null)
+    {
+        <section class="dashboard-empty card border-0 shadow-sm">
+            <div class="card-body py-4">
+                <h2 class="h4 mb-2">未找到该用户</h2>
+                <p class="text-muted mb-3">请返回排行榜重新选择用户。</p>
+                <a href="/leaderboard" class="btn btn-outline-primary">返回排行榜</a>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="profile-summary card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="profile-summary__main">
+                    <span class="profile-summary__avatar">
+                        @if (!string.IsNullOrWhiteSpace(profile.AvatarUrl))
+                        {
+                            <img src="@profile.AvatarUrl" alt="@($"{profile.DisplayName}头像")" />
+                        }
+                        else
+                        {
+                            <span>@GetAvatarInitial(profile.DisplayName)</span>
+                        }
+                    </span>
+                    <div>
+                        <h2 class="h4 mb-1">@profile.DisplayName</h2>
+                        <p class="profile-summary__bio mb-1">@GetBioText(profile.Bio)</p>
+                        @if (profile.ShowEmail)
+                        {
+                            <p class="profile-summary__contact mb-0">邮箱：@(string.IsNullOrWhiteSpace(profile.Email) ? "未设置" : profile.Email)</p>
+                        }
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="mt-3">
+                <ProfileDashboardPanel Stats="stats" Achievements="achievements" IsOwnerView="false"
+                                       SubjectName="@profile.DisplayName" />
+            </div>
+
+            <section class="profile-trips mt-4">
+                <div class="achievement-wall__header mb-3">
+                    <h3 class="mb-0">全部行程</h3>
+                    <span class="text-muted small">已按他人视角展示</span>
+                </div>
+                <TripTicketPanel Trips="trips" LoadingText="正在加载该用户行程记录..." EmptyText="该用户还没有录入行程记录。"
+                                 EmptyFilterText="该筛选条件下暂无行程记录。" TicketCountUnit="条记录" DetailButtonText="查看详情" UsePublicTripDetails="true" />
+            </section>
+        }
+    </div>
+
+@code {
+    [Parameter]
+    public string UserId { get; set; } = string.Empty;
+
+    private bool isLoading = true;
+    private bool isAuthenticated;
+    private TripService.PublicUserProfile? profile;
+    private DashboardStats stats = DashboardStats.Empty;
+    private List<AchievementItem> achievements = [];
+    private List<TripRecordDto>? trips;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        isAuthenticated = false;
+        profile = null;
+        stats = DashboardStats.Empty;
+        achievements = [];
+        trips = [];
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        isAuthenticated = user.Identity?.IsAuthenticated == true;
+
+        if (!isAuthenticated || string.IsNullOrWhiteSpace(UserId))
+        {
+            isLoading = false;
+            return;
+        }
+
+        profile = await TripService.GetUserProfileAsync(UserId);
+        if (profile is null)
+        {
+            isLoading = false;
+            return;
+        }
+
+        var tripRecords = await TripService.GetUserTripsAsync(UserId);
+        stats = ProfileDashboardBuilder.BuildDashboardStats(tripRecords);
+        achievements = ProfileDashboardBuilder.BuildAchievementItems(stats);
+        trips = [.. tripRecords.Cast<TripRecordDto>()];
+
+        isLoading = false;
+    }
+
+    private static string GetAvatarInitial(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return "轨";
+        }
+
+        return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    private static string GetBioText(string? bio)
+    {
+        return string.IsNullOrWhiteSpace(bio)
+            ? "这个人很神秘，还没有填写个人简介。"
+            : bio.Trim();
+    }
+}

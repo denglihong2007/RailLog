@@ -104,8 +104,8 @@
                     }
                     else
                     {
-                        <img class="profile-card__avatar profile-card__avatar--image"                             src="@userAvatarUrl"
-                             alt="@(userDisplayName + " 的头像")"                             @onerror="OnAvatarImageError" />
+                        <img class="profile-card__avatar profile-card__avatar--image" src="@userAvatarUrl"
+                             alt="@(userDisplayName + " 的头像")" @onerror="OnAvatarImageError" />
                     }
                     <span class="profile-card__meta">
                         <span class="profile-card__name">@userDisplayName</span>
@@ -138,6 +138,7 @@
 
 @code {
     private string? currentUrl;
+    private string? currentUserId;
     private string? userDisplayName;
     private string? userAvatarUrl;
 
@@ -149,10 +150,13 @@
 
         if (string.IsNullOrWhiteSpace(userId))
         {
+            currentUserId = null;
             userDisplayName = principal.Identity?.Name ?? "游客";
             userAvatarUrl = null;
             return;
         }
+
+        currentUserId = userId;
 
         await using var context = await DbContextFactory.CreateDbContextAsync();
         var userProfile = await context.Users

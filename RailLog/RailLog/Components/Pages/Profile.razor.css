@@ -1,0 +1,68 @@
+.profile-summary {
+    border-radius: 16px;
+}
+
+.profile-summary__main {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.profile-summary__avatar {
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 50%;
+    background: #dbe9f6;
+    color: #33516f;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.profile-summary__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-summary__contact {
+    color: #5f7894;
+    font-size: 0.86rem;
+}
+
+.profile-summary__bio {
+    margin: 0;
+    color: #5c6f86;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.profile-trips {
+    border-radius: 16px;
+    border: 1px solid rgba(34, 61, 92, 0.13);
+    background: #ffffff;
+    box-shadow: 0 10px 22px rgba(19, 40, 66, 0.1);
+    padding: 1rem;
+}
+
+.achievement-wall__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dashboard-empty {
+    border-radius: 16px;
+}
+
+@media (max-width: 767px) {
+    .achievement-wall__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

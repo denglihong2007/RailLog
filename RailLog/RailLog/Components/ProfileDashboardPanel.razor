@@ -1,0 +1,174 @@
+@using RailLog.Services
+
+@if (Stats.TotalTrips == 0)
+{
+    <section class="dashboard-empty card border-0 shadow-sm">
+        <div class="card-body py-4">
+            <h2 class="h4 mb-2">还没有可展示的成就</h2>
+            @if (IsOwnerView)
+            {
+                <p class="text-muted mb-3">先记录第一条行程，成就墙会自动点亮。</p>
+                <a href="@AddFirstTripUrl" class="btn btn-success">记录第一条行程</a>
+            }
+            else
+            {
+                <p class="text-muted mb-0">该用户暂未录入可统计的行程记录。</p>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <section class="dashboard-hero">
+        <div>
+            <p class="dashboard-hero__eyebrow mb-1">铁路生涯总览</p>
+            <h2 class="dashboard-hero__title mb-2">@HeroTitle</h2>
+            <p class="dashboard-hero__meta mb-0">
+                记录时间：@Stats.FirstTripDate?.ToString("yyyy-MM-dd") 至 @Stats.LatestTripDate?.ToString("yyyy-MM-dd")
+            </p>
+        </div>
+        <div class="dashboard-rank">
+            <div class="dashboard-rank__label">当前称号</div>
+            <div class="dashboard-rank__name">@Stats.ExplorerLevel</div>
+            <div class="dashboard-rank__mileage">@Stats.TotalMileageKm.ToString("N1") km</div>
+        </div>
+    </section>
+
+    <section class="stats-grid">
+        <article class="stat-card">
+            <p class="stat-card__label">去过线路</p>
+            <p class="stat-card__value">@Stats.UniqueRoutes</p>
+            <p class="stat-card__hint">@Stats.RouteStatHint</p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-card__label">乘车次数</p>
+            <p class="stat-card__value">@Stats.TotalTrips</p>
+            <p class="stat-card__hint">覆盖 @Stats.UniqueTrainNumbers 个车次</p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-card__label">累计花费</p>
+            <p class="stat-card__value">¥@Stats.TotalSpend.ToString("N2")</p>
+            <p class="stat-card__hint">单次最高 ¥@Stats.HighestFare.ToString("N2")</p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-card__label">累计里程</p>
+            <p class="stat-card__value">@Stats.TotalMileageKm.ToString("N1") km</p>
+            <p class="stat-card__hint">单次最长 @Stats.LongestTripMileageKm.ToString("N1") km</p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-card__label">车型种类</p>
+            <p class="stat-card__value">@Stats.UniqueRollingStockTypes</p>
+            <p class="stat-card__hint">有记录车型 @Stats.RollingStockRecords 次</p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-card__label">到访车站</p>
+            <p class="stat-card__value">@Stats.UniqueStations</p>
+            <p class="stat-card__hint">席别覆盖 @Stats.UniqueSeatTypes 种</p>
+        </article>
+    </section>
+
+    <section class="achievement-wall mt-4">
+        <div class="achievement-wall__header">
+            <h3 class="mb-0">成就墙</h3>
+            <span class="text-muted small">按当前记录自动解锁</span>
+        </div>
+        <div class="achievement-grid mt-3">
+            @foreach (var achievement in Achievements)
+            {
+                <article class="@GetAchievementCardClass(achievement)">
+                    <div class="achievement-card__icon">
+                        <i class="@achievement.IconClass"></i>
+                    </div>
+                    <div>
+                        <p class="achievement-card__name mb-1">@achievement.TierName</p>
+                        <p class="achievement-card__tier mb-1">@achievement.NextLevelText</p>
+                        <p class="achievement-card__value mb-1">@achievement.CurrentText</p>
+                        <p class="achievement-card__next mb-0">@achievement.TargetText</p>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="leaderboard mt-4">
+        <div class="achievement-wall__header">
+            <h3 class="mb-0">个人高频</h3>
+            <span class="text-muted small">@FrequencySubtitle</span>
+        </div>
+        <div class="leaderboard-grid mt-3">
+            <article class="leaderboard-card">
+                <h4 class="leaderboard-card__title">去过线路</h4>
+                @if (Stats.TopRouteVisits.Count == 0)
+                {
+                    <p class="leaderboard-card__empty mb-0">暂无可统计的线路记录</p>
+                }
+                else
+                {
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < Stats.TopRouteVisits.Count; i++)
+                        {
+                            var entry = Stats.TopRouteVisits[i];
+                            <li class="leaderboard-item leaderboard-item--compact">
+                                <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
+                                <span class="leaderboard-item__name">@entry.Name</span>
+                                <span class="leaderboard-item__value">@entry.Count 次</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </article>
+
+            <article class="leaderboard-card">
+                <h4 class="leaderboard-card__title">到访车站</h4>
+                @if (Stats.TopStationVisits.Count == 0)
+                {
+                    <p class="leaderboard-card__empty mb-0">暂无可统计的车站记录</p>
+                }
+                else
+                {
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < Stats.TopStationVisits.Count; i++)
+                        {
+                            var entry = Stats.TopStationVisits[i];
+                            <li class="leaderboard-item leaderboard-item--compact">
+                                <span class="leaderboard-item__rank">@($"{i + 1:00}")</span>
+                                <span class="leaderboard-item__name">@entry.Name</span>
+                                <span class="leaderboard-item__value">@entry.Count 次</span>
+                            </li>
+                        }
+                    </ol>
+                }
+            </article>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public DashboardStats Stats { get; set; } = DashboardStats.Empty;
+
+    [Parameter]
+    public IReadOnlyList<AchievementItem> Achievements { get; set; } = [];
+
+    [Parameter]
+    public bool IsOwnerView { get; set; }
+
+    [Parameter]
+    public string SubjectName { get; set; } = "该用户";
+
+    [Parameter]
+    public string AddFirstTripUrl { get; set; } = "/add-trip";
+
+    private string HeroTitle => IsOwnerView
+        ? $"你已累计出发 {Stats.TotalTrips} 次"
+        : $"{SubjectName} 已累计出发 {Stats.TotalTrips} 次";
+
+    private string FrequencySubtitle => IsOwnerView
+        ? "按你的行程记录统计"
+        : "按该用户行程记录统计";
+
+    private static string GetAchievementCardClass(AchievementItem achievement)
+    {
+        return $"achievement-card {(achievement.Unlocked ? "is-unlocked" : "is-locked")} tier-{achievement.Tier}";
+    }
+}

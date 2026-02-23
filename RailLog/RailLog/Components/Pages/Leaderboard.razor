@@ -7,7 +7,7 @@
 <PageTitle>排行榜 - 轨记</PageTitle>
 <PageHeader Title="排行榜" Subtitle="用户排名与行程排名" IconClass="bi bi-trophy" />
 
-<div class="leaderboard-page container py-3">
+<div class="leaderboard-page container pb-3">
     @if (isLoading)
     {
         <div class="text-center py-5">
@@ -36,10 +36,10 @@
     }
     else
     {
-        <section class="leaderboard-group mt-3">
+        <section class="leaderboard-group">
             <div class="leaderboard-group__header">
                 <h3 class="mb-0">用户排名</h3>
-                <span class="text-muted small">按用户累计值统计</span>
+                <span class="text-muted small">按用户累计值统计，可点击进入个人主页</span>
             </div>
             <div class="leaderboard-grid mt-3">
                 <article class="leaderboard-card">
@@ -48,20 +48,22 @@
                         @for (var i = 0; i < leaderboard.TopBySpend.Count; i++)
                         {
                             var entry = leaderboard.TopBySpend[i];
-                            <li class="leaderboard-item">
-                                <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                <span class="leaderboard-item__avatar">
-                                    @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                    {
-                                        <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                    }
-                                    else
-                                    {
-                                        <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                    }
-                                </span>
-                                <span class="leaderboard-item__name">@entry.DisplayName</span>
-                                <span class="leaderboard-item__value">¥@entry.TotalSpend.ToString("N2")</span>
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link" href="/profile/@entry.UserId">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                    <span class="leaderboard-item__value">¥@entry.TotalSpend.ToString("N2")</span>
+                                </a>
                             </li>
                         }
                     </ol>
@@ -73,20 +75,22 @@
                         @for (var i = 0; i < leaderboard.TopByTrips.Count; i++)
                         {
                             var entry = leaderboard.TopByTrips[i];
-                            <li class="leaderboard-item">
-                                <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                <span class="leaderboard-item__avatar">
-                                    @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                    {
-                                        <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                    }
-                                    else
-                                    {
-                                        <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                    }
-                                </span>
-                                <span class="leaderboard-item__name">@entry.DisplayName</span>
-                                <span class="leaderboard-item__value">@entry.TotalTrips 次</span>
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link" href="/profile/@entry.UserId">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                    <span class="leaderboard-item__value">@entry.TotalTrips 次</span>
+                                </a>
                             </li>
                         }
                     </ol>
@@ -98,20 +102,22 @@
                         @for (var i = 0; i < leaderboard.TopByMileage.Count; i++)
                         {
                             var entry = leaderboard.TopByMileage[i];
-                            <li class="leaderboard-item">
-                                <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                <span class="leaderboard-item__avatar">
-                                    @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                    {
-                                        <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                    }
-                                    else
-                                    {
-                                        <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                    }
-                                </span>
-                                <span class="leaderboard-item__name">@entry.DisplayName</span>
-                                <span class="leaderboard-item__value">@entry.TotalMileageKm.ToString("N1") km</span>
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link" href="/profile/@entry.UserId">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                    <span class="leaderboard-item__value">@entry.TotalMileageKm.ToString("N1") km</span>
+                                </a>
                             </li>
                         }
                     </ol>

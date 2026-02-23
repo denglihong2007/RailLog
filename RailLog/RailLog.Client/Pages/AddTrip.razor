@@ -15,8 +15,6 @@
 
 <PageHeader Title="@(IsEditMode ? "编辑运转记录" : "新增运转记录")" IconClass="bi bi-pen" />
 
-<hr />
-
 <EditForm class="mb-4" Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
     <DataAnnotationsValidator />
     <div class="mb-4">
@@ -259,7 +257,7 @@
         <div class="row g-3">
             <div class="col-md-4">
                 <div class="form-floating mb-3">
-                    <InputSelect @bind-Value="model.SeatType" id="seatType" class="form-select">
+                    <InputSelect @bind-Value="model!.SeatType" id="seatType" class="form-select">
                         <option value="">请选择...</option>
                         <option value="硬座">硬座</option>
                         <option value="软座">软座</option>

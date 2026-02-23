@@ -89,6 +89,30 @@ namespace RailLog.Services
                 .FirstOrDefaultAsync(t => t.Id == id);
         }
 
+        public async Task<PublicUserProfile?> GetUserProfileAsync(string userId)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return null;
+            }
+
+            await using var context = await contextFactory.CreateDbContextAsync();
+            return await context.Users
+                .AsNoTracking()
+                .Where(x => x.Id == userId)
+                .Select(x => new PublicUserProfile
+                {
+                    UserId = x.Id,
+                    DisplayName = ResolveDisplayName(x.DisplayName, x.UserName, x.Email),
+                    UserName = x.UserName,
+                    Email = x.Email,
+                    AvatarUrl = NormalizeAvatarUrl(x.AvatarUrl),
+                    Bio = NormalizeBio(x.Bio),
+                    ShowEmail = x.ShowEmailOnProfile
+                })
+                .FirstOrDefaultAsync();
+        }
+
         public async Task<GlobalLeaderboard> GetGlobalLeaderboardAsync(int top = 10)
         {
             top = Math.Clamp(top, 1, 50);
@@ -240,6 +264,16 @@ namespace RailLog.Services
             return avatarUrl.Trim();
         }
 
+        private static string? NormalizeBio(string? bio)
+        {
+            if (string.IsNullOrWhiteSpace(bio))
+            {
+                return null;
+            }
+
+            return bio.Trim();
+        }
+
         public sealed class GlobalLeaderboard
         {
             public static GlobalLeaderboard Empty { get; } = new();
@@ -268,6 +302,23 @@ namespace RailLog.Services
             public int TotalTrips { get; init; }
 
             public decimal TotalMileageKm { get; init; }
+        }
+
+        public sealed class PublicUserProfile
+        {
+            public required string UserId { get; init; }
+
+            public required string DisplayName { get; init; }
+
+            public string? UserName { get; init; }
+
+            public string? Email { get; init; }
+
+            public string? AvatarUrl { get; init; }
+
+            public string? Bio { get; init; }
+
+            public bool ShowEmail { get; init; }
         }
 
         public sealed class TripLeaderboardEntry

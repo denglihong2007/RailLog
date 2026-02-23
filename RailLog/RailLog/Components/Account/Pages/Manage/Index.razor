@@ -1,7 +1,6 @@
 @page "/Account/Manage"
 
 @using System.ComponentModel.DataAnnotations
-@using Humanizer
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @using RailLog.Data
@@ -56,6 +55,21 @@
                 <ValidationMessage For="() => Input.AvatarUrl" class="text-danger" />
             </div>
 
+            <div class="mb-3">
+                <label for="Input.Bio" class="form-label">个人简介</label>
+                <InputTextArea @bind-Value="Input.Bio" id="Input.Bio" class="form-control" rows="3"
+                               placeholder="一句话介绍自己（最多 200 字）" />
+                <ValidationMessage For="() => Input.Bio" class="text-danger" />
+            </div>
+
+            <div class="form-check mb-4">
+                <InputCheckbox @bind-Value="Input.ShowEmailOnProfile" id="Input.ShowEmailOnProfile"
+                               class="form-check-input" />
+                <label for="Input.ShowEmailOnProfile" class="form-check-label">
+                    在个人主页公开显示邮箱
+                </label>
+            </div>
+
             <button type="submit" class="w-100 btn btn-lg btn-primary">保存</button>
         </EditForm>
     </div>
@@ -66,6 +80,8 @@
     private string? email;
     private string? displayName;
     private string? avatarUrl;
+    private string? bio;
+    private bool showEmailOnProfile;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -86,13 +102,17 @@
         email = await UserManager.GetEmailAsync(user);
         displayName = user.DisplayName?.Trim();
         avatarUrl = NormalizeAvatarUrl(user.AvatarUrl);
+        bio = NormalizeBio(user.Bio);
+        showEmailOnProfile = user.ShowEmailOnProfile;
 
         if (Input.UserName == "")
         {
             Input = new InputModel
             {
                 UserName = displayName ?? "",
-                AvatarUrl = avatarUrl
+                AvatarUrl = avatarUrl,
+                Bio = bio,
+                ShowEmailOnProfile = showEmailOnProfile
             };
         }
 
@@ -108,6 +128,8 @@
 
         var normalizedUserName = Input.UserName.Trim();
         var normalizedAvatarUrl = NormalizeAvatarUrl(Input.AvatarUrl);
+        var normalizedBio = NormalizeBio(Input.Bio);
+        var normalizedShowEmailOnProfile = Input.ShowEmailOnProfile;
         var hasProfileChanges = false;
 
         if (!string.Equals(normalizedUserName, displayName, StringComparison.Ordinal))
@@ -134,17 +156,31 @@
             hasProfileChanges = true;
         }
 
+        if (!string.Equals(normalizedBio, bio, StringComparison.Ordinal))
+        {
+            user.Bio = normalizedBio;
+            hasProfileChanges = true;
+        }
+
+        if (normalizedShowEmailOnProfile != showEmailOnProfile)
+        {
+            user.ShowEmailOnProfile = normalizedShowEmailOnProfile;
+            hasProfileChanges = true;
+        }
+
         if (hasProfileChanges)
         {
             var updateResult = await UserManager.UpdateAsync(user);
             if (!updateResult.Succeeded)
             {
-                RedirectManager.RedirectToCurrentPageWithStatus("错误：更新用户名或头像失败。", HttpContext);
+                RedirectManager.RedirectToCurrentPageWithStatus("错误：更新个人资料失败。", HttpContext);
                 return;
             }
 
             displayName = user.DisplayName?.Trim();
             avatarUrl = NormalizeAvatarUrl(user.AvatarUrl);
+            bio = NormalizeBio(user.Bio);
+            showEmailOnProfile = user.ShowEmailOnProfile;
         }
 
 
@@ -153,6 +189,16 @@
     }
 
     private static string? NormalizeAvatarUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim();
+    }
+
+    private static string? NormalizeBio(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -185,8 +231,11 @@
         [Display(Name = "头像链接")]
         public string? AvatarUrl { get; set; }
 
-        [Phone(ErrorMessage = "电话号码格式不正确")]
-        [Display(Name = "电话号码")]
-        public string? PhoneNumber { get; set; }
+        [StringLength(200, ErrorMessage = "个人简介不能超过 200 个字符")]
+        [Display(Name = "个人简介")]
+        public string? Bio { get; set; }
+
+        [Display(Name = "展示邮箱")]
+        public bool ShowEmailOnProfile { get; set; }
     }
 }
