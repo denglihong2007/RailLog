@@ -7,7 +7,7 @@
 @using System.Text.Json
 @using RailLog.Shared.Models
 @attribute [Authorize]
-@rendermode InteractiveWebAssembly
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @inject NavigationManager Nav
 @inject HttpClient HttpClient
 

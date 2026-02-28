@@ -1,11 +1,9 @@
 @page "/profile/{UserId}"
-@rendermode InteractiveServer
-@using RailLog.Components
-@using RailLog.Services
-@using RailLog.Shared.Components
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using System.Net
 @using RailLog.Shared.Models
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject TripService TripService
+@inject HttpClient HttpClient
 
 <PageTitle>个人主页 - 轨记</PageTitle>
 <PageHeader Title="个人主页" Subtitle="整合成就总览与全部行程记录" IconClass="bi bi-person-vcard" />
@@ -58,8 +56,9 @@
                         <p class="profile-summary__bio mb-1">@GetBioText(profile.Bio)</p>
                         @if (profile.ShowEmail)
                         {
-                            <p class="profile-summary__contact mb-0">邮箱：@(string.IsNullOrWhiteSpace(profile.Email) ? "未设置" : profile.Email)</p>
-                        }
+                            <p class="profile-summary__contact mb-0">邮箱：@(string.IsNullOrWhiteSpace(profile.Email) ? "未设置" :
+                                                                                                                        profile.Email)</p>
+                            }
                         </div>
                     </div>
                 </div>
@@ -87,9 +86,9 @@
 
     private bool isLoading = true;
     private bool isAuthenticated;
-    private TripService.PublicUserProfile? profile;
-    private DashboardStats stats = DashboardStats.Empty;
-    private List<AchievementItem> achievements = [];
+    private PublicUserProfileDto? profile;
+    private DashboardStatsDto stats = DashboardStatsDto.Empty;
+    private List<AchievementItemDto> achievements = [];
     private List<TripRecordDto>? trips;
 
     protected override async Task OnParametersSetAsync()
@@ -97,7 +96,7 @@
         isLoading = true;
         isAuthenticated = false;
         profile = null;
-        stats = DashboardStats.Empty;
+        stats = DashboardStatsDto.Empty;
         achievements = [];
         trips = [];
 
@@ -111,17 +110,29 @@
             return;
         }
 
-        profile = await TripService.GetUserProfileAsync(UserId);
-        if (profile is null)
+        try
         {
-            isLoading = false;
-            return;
-        }
+            var response = await HttpClient.GetFromJsonAsync<ProfilePageDto>($"api/profile/{Uri.EscapeDataString(UserId)}");
+            if (response is null)
+            {
+                isLoading = false;
+                return;
+            }
 
-        var tripRecords = await TripService.GetUserTripsAsync(UserId);
-        stats = ProfileDashboardBuilder.BuildDashboardStats(tripRecords);
-        achievements = ProfileDashboardBuilder.BuildAchievementItems(stats);
-        trips = [.. tripRecords.Cast<TripRecordDto>()];
+            profile = response.Profile;
+            stats = response.Stats;
+            achievements = response.Achievements;
+            trips = response.Trips;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            profile = null;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load profile page for user {UserId}: {ex}");
+            profile = null;
+        }
 
         isLoading = false;
     }

@@ -137,7 +137,7 @@ app.MapGet("/api/trips", async (TripService service, ClaimsPrincipal user) =>
     if (userId == null) return Results.Unauthorized();
 
     var trips = await service.GetUserTripsAsync(userId);
-    return Results.Ok(trips); // 这会自动序列化为 JSON
+    return Results.Ok(trips.Select(x => x.ToDto()).ToList());
 }).RequireAuthorization();
 app.MapGet("/api/trips/{id:int}", async (int id, TripService service, ClaimsPrincipal user) =>
 {
@@ -145,7 +145,7 @@ app.MapGet("/api/trips/{id:int}", async (int id, TripService service, ClaimsPrin
     if (userId is null) return Results.Unauthorized();
 
     var trip = await service.GetUserTripByIdAsync(userId, id);
-    return trip is null ? Results.NotFound() : Results.Ok(trip);
+    return trip is null ? Results.NotFound() : Results.Ok(trip.ToDto());
 }).RequireAuthorization();
 app.MapGet("/api/leaderboard/trips/{id:int}", async (int id, TripService service, ClaimsPrincipal user) =>
 {
@@ -162,27 +162,73 @@ app.MapGet("/api/leaderboard/trips/{id:int}", async (int id, TripService service
 
     return Results.Ok(new PublicTripDetailsDto
     {
-        Trip = new TripRecordDto
-        {
-            Id = trip.Id,
-            TrainNumber = trip.TrainNumber,
-            TravelDate = trip.TravelDate,
-            RollingStock = trip.RollingStock,
-            FromStation = trip.FromStation,
-            ToStation = trip.ToStation,
-            DepartureTime = trip.DepartureTime,
-            ArrivalTime = trip.ArrivalTime,
-            MileageKm = trip.MileageKm,
-            ViaRouteSegments = trip.ViaRouteSegments ?? [],
-            SeatType = trip.SeatType,
-            SeatNumber = trip.SeatNumber,
-            Price = trip.Price,
-            Notes = trip.Notes
-        },
+        Trip = trip.ToDto(),
         OwnerUserId = trip.UserId,
         OwnerDisplayName = owner?.DisplayName ?? "匿名旅客",
         OwnerAvatarUrl = owner?.AvatarUrl,
         OwnerBio = owner?.Bio
+    });
+}).RequireAuthorization();
+app.MapGet("/api/dashboard/home", async (TripService service, ClaimsPrincipal user) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var trips = await service.GetUserTripsAsync(userId);
+    var stats = ProfileDashboardBuilder.BuildDashboardStats(trips);
+    var achievements = ProfileDashboardBuilder.BuildAchievementItems(stats);
+    var overlapSummary = await service.GetPersonalOverlapSummaryAsync(userId);
+
+    return Results.Ok(new HomeDashboardDto
+    {
+        Stats = stats.ToDto(),
+        Achievements = achievements.Select(x => x.ToDto()).ToList(),
+        OverlapSummary = overlapSummary.ToDto()
+    });
+}).RequireAuthorization();
+app.MapGet("/api/leaderboard", async (int? top, TripService service, ClaimsPrincipal user) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var leaderboard = await service.GetGlobalLeaderboardAsync(top ?? 10);
+    return Results.Ok(leaderboard.ToDto());
+}).RequireAuthorization();
+app.MapGet("/api/profile/{userId}", async (string userId, TripService service, ClaimsPrincipal user) =>
+{
+    var currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(currentUserId))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.BadRequest(new { message = "userId is required" });
+    }
+
+    var profile = await service.GetUserProfileAsync(userId);
+    if (profile is null)
+    {
+        return Results.NotFound();
+    }
+
+    var tripRecords = await service.GetUserTripsAsync(userId);
+    var stats = ProfileDashboardBuilder.BuildDashboardStats(tripRecords);
+    var achievements = ProfileDashboardBuilder.BuildAchievementItems(stats);
+
+    return Results.Ok(new ProfilePageDto
+    {
+        Profile = profile.ToDto(),
+        Stats = stats.ToDto(),
+        Achievements = achievements.Select(x => x.ToDto()).ToList(),
+        Trips = tripRecords.Select(x => x.ToDto()).ToList()
     });
 }).RequireAuthorization();
 app.MapPut("/api/trips/{id:int}", async (int id, TripRecordDto dto, TripService service, ClaimsPrincipal user) =>

@@ -2,7 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using RailLog.Shared.Models
 @attribute [Authorize]
-@rendermode InteractiveWebAssembly
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @inject HttpClient Http
 
 <PageTitle>我的运转日志 - 轨记</PageTitle>
@@ -10,12 +10,8 @@
 <PageHeader Title="我的运转日志" IconClass="bi bi-train-front" />
 
 <div class="my-trips-page container pb-4">
-    <TripTicketPanel Trips="trips"
-                     LoadingText="正在努力加载你的行程记录..."
-                     EmptyText="你还没有录入过行程记录哦，快去添加一条吧！"
-                     EmptyFilterText="没有匹配的运转记录，试试放宽筛选条件。"
-                     TicketCountUnit="张车票"
-                     DetailButtonText="详细信息"
+    <TripTicketPanel Trips="trips"         LoadingText="正在努力加载你的行程记录..."                  EmptyText="你还没有录入过行程记录哦，快去添加一条吧！"
+                     EmptyFilterText="没有匹配的运转记录，试试放宽筛选条件。"            TicketCountUnit="张车票"                     DetailButtonText="详细信息"
                      UsePublicTripDetails="false" />
 </div>
 

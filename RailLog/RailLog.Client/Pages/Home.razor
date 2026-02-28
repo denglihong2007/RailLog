@@ -1,9 +1,9 @@
 @page "/"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @using System.Security.Claims
-@using RailLog.Components
-@using RailLog.Services
+@using RailLog.Shared.Models
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject TripService TripService
+@inject HttpClient HttpClient
 
 <PageTitle>首页 - 轨记</PageTitle>
 
@@ -60,9 +60,8 @@
                                         <div class="overlap-avatar-list">
                                             @foreach (var visitor in card.Visitors)
                                             {
-                                                <a class="overlap-avatar-link"
-                                                   href="/trip-details/@visitor.LatestTripId?public=true"
-                                                   title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
+                                                <a class="overlap-avatar-link" href="/trip-details/@visitor.LatestTripId?public=true"
+                                                       title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
                                                     <span class="overlap-avatar">
                                                         @if (!string.IsNullOrWhiteSpace(visitor.AvatarUrl))
                                                         {
@@ -106,9 +105,8 @@
                                         <div class="overlap-avatar-list">
                                             @foreach (var visitor in card.Visitors)
                                             {
-                                                <a class="overlap-avatar-link"
-                                                   href="/trip-details/@visitor.LatestTripId?public=true"
-                                                   title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
+                                                <a class="overlap-avatar-link" href="/trip-details/@visitor.LatestTripId?public=true"
+                                                       title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
                                                     <span class="overlap-avatar">
                                                         @if (!string.IsNullOrWhiteSpace(visitor.AvatarUrl))
                                                         {
@@ -136,9 +134,9 @@
 @code {
     private bool isLoading = true;
     private bool isAuthenticated;
-    private DashboardStats stats = DashboardStats.Empty;
-    private List<AchievementItem> achievements = [];
-    private TripService.PersonalOverlapSummary overlapSummary = TripService.PersonalOverlapSummary.Empty;
+    private DashboardStatsDto stats = DashboardStatsDto.Empty;
+    private List<AchievementItemDto> achievements = [];
+    private PersonalOverlapSummaryDto overlapSummary = PersonalOverlapSummaryDto.Empty;
     private IReadOnlyList<OverlapCard> trainOverlapCards = [];
     private IReadOnlyList<OverlapCard> stationOverlapCards = [];
 
@@ -153,20 +151,22 @@
             isLoading = false;
             return;
         }
-
-        var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrWhiteSpace(userId))
+        try
         {
-            isLoading = false;
-            return;
+            var response = await HttpClient.GetFromJsonAsync<HomeDashboardDto>("api/dashboard/home");
+            if (response is not null)
+            {
+                stats = response.Stats;
+                achievements = response.Achievements;
+                overlapSummary = response.OverlapSummary;
+                trainOverlapCards = BuildTrainOverlapCards(overlapSummary.TrainOverlaps);
+                stationOverlapCards = BuildStationOverlapCards(overlapSummary.StationOverlaps);
+            }
         }
-
-        var trips = await TripService.GetUserTripsAsync(userId);
-        stats = ProfileDashboardBuilder.BuildDashboardStats(trips);
-        achievements = ProfileDashboardBuilder.BuildAchievementItems(stats);
-        overlapSummary = await TripService.GetPersonalOverlapSummaryAsync(userId);
-        trainOverlapCards = BuildTrainOverlapCards(overlapSummary.TrainOverlaps);
-        stationOverlapCards = BuildStationOverlapCards(overlapSummary.StationOverlaps);
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load home dashboard: {ex}");
+        }
 
         isLoading = false;
     }
@@ -202,7 +202,7 @@
         return displayName.Trim()[0].ToString().ToUpperInvariant();
     }
 
-    private static IReadOnlyList<OverlapCard> BuildTrainOverlapCards(IReadOnlyList<TripService.TrainOverlapEntry> entries)
+    private static IReadOnlyList<OverlapCard> BuildTrainOverlapCards(IReadOnlyList<TrainOverlapEntryDto> entries)
     {
         return entries
             .GroupBy(x => x.TrainNumber?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -223,9 +223,7 @@
                         x.DisplayName,
                         x.AvatarUrl,
                         x.OtherTravelDate,
-                        x.TripId,
-                        null,
-                        null)))
+                        x.TripId)))
                 };
             })
             .OrderByDescending(x => x.Visitors.Count)
@@ -233,8 +231,7 @@
             .ToList();
     }
 
-    private static IReadOnlyList<OverlapCard> BuildStationOverlapCards(IReadOnlyList<TripService.StationOverlapEntry>
-entries)
+    private static IReadOnlyList<OverlapCard> BuildStationOverlapCards(IReadOnlyList<StationOverlapEntryDto> entries)
     {
         return entries
             .GroupBy(x => x.StationName?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -255,9 +252,7 @@ entries)
                         x.DisplayName,
                         x.AvatarUrl,
                         x.OtherTravelDate,
-                        x.TripId,
-                        null,
-                        null)))
+                        x.TripId)))
                 };
             })
             .OrderByDescending(x => x.Visitors.Count)
@@ -309,7 +304,5 @@ entries)
         string DisplayName,
         string? AvatarUrl,
         DateOnly TravelDate,
-        int TripId,
-        string? FromStation,
-        string? ToStation);
+        int TripId);
 }

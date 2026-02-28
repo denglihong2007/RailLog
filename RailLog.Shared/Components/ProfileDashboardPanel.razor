@@ -1,4 +1,5 @@
-@using RailLog.Services
+@namespace RailLog.Shared.Components
+@using RailLog.Shared.Models
 
 @if (Stats.TotalTrips == 0)
 {
@@ -145,10 +146,10 @@ else
 
 @code {
     [Parameter]
-    public DashboardStats Stats { get; set; } = DashboardStats.Empty;
+    public DashboardStatsDto Stats { get; set; } = DashboardStatsDto.Empty;
 
     [Parameter]
-    public IReadOnlyList<AchievementItem> Achievements { get; set; } = [];
+    public IReadOnlyList<AchievementItemDto> Achievements { get; set; } = [];
 
     [Parameter]
     public bool IsOwnerView { get; set; }
@@ -167,7 +168,7 @@ else
         ? "按你的行程记录统计"
         : "按该用户行程记录统计";
 
-    private static string GetAchievementCardClass(AchievementItem achievement)
+    private static string GetAchievementCardClass(AchievementItemDto achievement)
     {
         return $"achievement-card {(achievement.Unlocked ? "is-unlocked" : "is-locked")} tier-{achievement.Tier}";
     }

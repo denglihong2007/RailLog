@@ -1,8 +1,8 @@
 @page "/leaderboard"
-@using RailLog.Services
-@using RailLog.Shared.Components
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@using RailLog.Shared.Models
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject TripService TripService
+@inject HttpClient HttpClient
 
 <PageTitle>排行榜 - 轨记</PageTitle>
 <PageHeader Title="排行榜" Subtitle="用户排名与行程排名" IconClass="bi bi-trophy" />
@@ -206,7 +206,7 @@
 @code {
     private bool isLoading = true;
     private bool isAuthenticated;
-    private TripService.GlobalLeaderboard leaderboard = TripService.GlobalLeaderboard.Empty;
+    private GlobalLeaderboardDto leaderboard = GlobalLeaderboardDto.Empty;
 
     private bool HasLeaderboardData =>
         leaderboard.TopBySpend.Count > 0 ||
@@ -223,7 +223,16 @@
 
         if (isAuthenticated)
         {
-            leaderboard = await TripService.GetGlobalLeaderboardAsync();
+            try
+            {
+                leaderboard = await HttpClient.GetFromJsonAsync<GlobalLeaderboardDto>("api/leaderboard")
+                    ?? GlobalLeaderboardDto.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to load leaderboard: {ex}");
+                leaderboard = GlobalLeaderboardDto.Empty;
+            }
         }
 
         isLoading = false;

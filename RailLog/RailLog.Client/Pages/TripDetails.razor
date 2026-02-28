@@ -3,7 +3,7 @@
 @using System.Net
 @using RailLog.Shared.Models
 @attribute [Authorize]
-@rendermode InteractiveWebAssembly
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject IJSRuntime JS
