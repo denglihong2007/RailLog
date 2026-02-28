@@ -1,6 +1,7 @@
-@namespace RailLog.Shared.Components
+@namespace RailLog.Client.Components
 @using Microsoft.AspNetCore.Components.Forms
 @using RailLog.Shared.Models
+@inject NavigationManager NavigationManager
 
 <div class="trip-ticket-panel">
     @if (Trips == null)
@@ -67,41 +68,60 @@
             <div class="ticket-grid">
                 @foreach (var trip in filteredTrips)
                 {
-                    <article class="trip-ticket">
-                        <div class="ticket-main">
-                            <div class="ticket-header">
-                                <span class="train-number">@trip.TrainNumber</span>
-                                <span class="travel-date">@trip.TravelDate.ToString("yyyy-MM-dd")</span>
-                            </div>
+                    <a class="trip-ticket" href="@BuildTripDetailsUrl(trip.Id)">
+                        <span class="ticket-bump ticket-bump-left-top" aria-hidden="true"></span>
+                        <span class="ticket-bump ticket-bump-left-bottom" aria-hidden="true"></span>
+                        <span class="ticket-bump ticket-bump-right-top" aria-hidden="true"></span>
+                        <span class="ticket-bump ticket-bump-right-bottom" aria-hidden="true"></span>
 
-                            <div class="ticket-route">
-                                <div class="station station-from">@trip.FromStation</div>
-                                <div class="route-line"><span></span></div>
-                                <div class="station station-to">@trip.ToStation</div>
-                            </div>
-
-                            <div class="ticket-meta">
-                                <span>发车 @FormatDepartureTime(trip.DepartureTime)</span>
-                                <span>席别 @(string.IsNullOrWhiteSpace(trip.SeatType) ? "未填" : trip.SeatType)</span>
-                                <span>席位 @(string.IsNullOrWhiteSpace(trip.SeatNumber) ? "未填" : trip.SeatNumber)</span>
-                                <span>本务 @(string.IsNullOrWhiteSpace(trip.RollingStock) ? "未填" : trip.RollingStock)</span>
-                            </div>
-
-                            <div class="ticket-actions">
-                                <a class="btn btn-sm btn-outline-primary" href="@BuildTripDetailsUrl(trip.Id)">@DetailButtonText</a>
-                            </div>
+                        <div class="ticket-id-row">
+                            <span class="trip-id">@FormatTripId(trip.Id)</span>
                         </div>
 
-                        <aside class="ticket-stub">
-                            <span class="travel-date">@trip.TravelDate.ToString("yyyy-MM-dd")</span>
-                            <div class="stub-price">¥@trip.Price.ToString("0.##")</div>
-                        </aside>
-                    </article>
+                        <div class="ticket-route">
+                            <div class="station station-from">@trip.FromStation</div>
+                            <div class="route-arrow">
+                                <span class="train-number">@trip.TrainNumber</span>
+                                <span class="route-line" aria-hidden="true"></span>
+                            </div>
+                            <div class="station station-to">@trip.ToStation</div>
+                        </div>
+
+                        <div class="ticket-row">
+                            <div class="ticket-left">
+                                <span class="field-value">@trip.TravelDate.ToString("yyyy年MM月dd日")
+                                    @(trip.DepartureTime.HasValue? FormatDepartureTime(trip.DepartureTime) +"开" : "")</span>
+                                </div>
+                                <div class="ticket-right">
+                                    <span class="field-value">@(string.IsNullOrWhiteSpace(trip.SeatNumber) ? "未填" :
+                                                                                                                                                                                                                                                                                                                trip.SeatNumber)</span>
+                                    </div>
+                                </div>
+
+                                <div class="ticket-row">
+                                    <div class="ticket-left">
+                                        <span class="field-value">¥@trip.Price.ToString("0.##")元</span>
+                                    </div>
+                                    <div class="ticket-right">
+                                        <span class="field-value">@(string.IsNullOrWhiteSpace(trip.SeatType) ? "未填" : trip.SeatType)</span>
+                                    </div>
+                                </div>
+
+                                <div class="ticket-bottom">
+                                    <div class="ticket-passenger">
+                                        <div class="passenger-name">@GetPassengerName()</div>
+                                        <div class="ticket-note-box">@GetNoteText(trip.Notes)</div>
+                                    </div>
+                                    <div class="ticket-qr">
+                                        <img src="@BuildQrCodeImageUrl(trip.Id)" alt="行程详情二维码" loading="lazy" />
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    </div>
                 }
-            </div>
-        }
-    }
-</div>
+            }
+        </div>
 
 @code {
     [Parameter]
@@ -124,6 +144,9 @@
 
     [Parameter]
     public bool UsePublicTripDetails { get; set; }
+
+    [Parameter]
+    public string? PassengerName { get; set; }
 
     private string keyword = string.Empty;
     private DateOnly? dateFrom;
@@ -201,10 +224,18 @@
 
         query = sortMode switch
         {
-            "date_asc" => query.OrderBy(x => x.TravelDate).ThenBy(x => x.TrainNumber),
+            "date_asc" => query
+                .OrderBy(x => x.TravelDate)
+                .ThenByDescending(x => x.DepartureTime.HasValue)
+                .ThenBy(x => x.DepartureTime)
+                .ThenBy(x => x.TrainNumber),
             "price_desc" => query.OrderByDescending(x => x.Price).ThenByDescending(x => x.TravelDate),
             "price_asc" => query.OrderBy(x => x.Price).ThenByDescending(x => x.TravelDate),
-            _ => query.OrderByDescending(x => x.TravelDate).ThenBy(x => x.TrainNumber)
+            _ => query
+                .OrderByDescending(x => x.TravelDate)
+                .ThenByDescending(x => x.DepartureTime.HasValue)
+                .ThenByDescending(x => x.DepartureTime)
+                .ThenBy(x => x.TrainNumber)
         };
 
         return query.ToList();
@@ -220,6 +251,30 @@
         return UsePublicTripDetails
             ? $"/trip-details/{tripId}?public=true"
             : $"/trip-details/{tripId}";
+    }
+
+    private string BuildTripDetailsAbsoluteUrl(int tripId)
+    {
+        var absolute = NavigationManager.ToAbsoluteUri(BuildTripDetailsUrl(tripId));
+        return absolute.ToString();
+    }
+
+    private string BuildQrCodeImageUrl(int tripId)
+    {
+        var target = Uri.EscapeDataString(BuildTripDetailsAbsoluteUrl(tripId));
+        return $"https://quickchart.io/qr?size=120&margin=0&dark=1A3B58&light=0000&text={target}";
+    }
+
+    private static string FormatTripId(int tripId) => tripId.ToString("D7");
+
+    private string GetPassengerName()
+    {
+        return string.IsNullOrWhiteSpace(PassengerName) ? "RailLog用户" : PassengerName.Trim();
+    }
+
+    private static string GetNoteText(string? note)
+    {
+        return string.IsNullOrWhiteSpace(note) ? "无备注" : note.Trim();
     }
 
     private void ResetFilters()

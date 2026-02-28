@@ -1,5 +1,5 @@
 @page "/profile/{UserId}"
-@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@rendermode InteractiveWebAssembly
 @using System.Net
 @using RailLog.Shared.Models
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -44,20 +44,20 @@
                     <span class="profile-summary__avatar">
                         @if (!string.IsNullOrWhiteSpace(profile.AvatarUrl))
                         {
-                            <img src="@profile.AvatarUrl" alt="@($"{profile.DisplayName}头像")" />
+                            <img src="@profile.AvatarUrl" alt="@($"{GetProfileDisplayName(profile)}头像")" />
                         }
                         else
                         {
-                            <span>@GetAvatarInitial(profile.DisplayName)</span>
+                            <span>@GetAvatarInitial(GetProfileDisplayName(profile))</span>
                         }
                     </span>
                     <div>
-                        <h2 class="h4 mb-1">@profile.DisplayName</h2>
+                        <h2 class="h4 mb-1">@GetProfileDisplayName(profile)</h2>
                         <p class="profile-summary__bio mb-1">@GetBioText(profile.Bio)</p>
                         @if (profile.ShowEmail)
                         {
                             <p class="profile-summary__contact mb-0">邮箱：@(string.IsNullOrWhiteSpace(profile.Email) ? "未设置" :
-                                                                                                                        profile.Email)</p>
+                                                                                                                                                                                                                                                                                                                        profile.Email)</p>
                             }
                         </div>
                     </div>
@@ -66,7 +66,7 @@
 
             <div class="mt-3">
                 <ProfileDashboardPanel Stats="stats" Achievements="achievements" IsOwnerView="false"
-                                       SubjectName="@profile.DisplayName" />
+                                       SubjectName="@GetProfileDisplayName(profile)" />
             </div>
 
             <section class="profile-trips mt-4">
@@ -75,7 +75,8 @@
                     <span class="text-muted small">已按他人视角展示</span>
                 </div>
                 <TripTicketPanel Trips="trips" LoadingText="正在加载该用户行程记录..." EmptyText="该用户还没有录入行程记录。"
-                                 EmptyFilterText="该筛选条件下暂无行程记录。" TicketCountUnit="条记录" DetailButtonText="查看详情" UsePublicTripDetails="true" />
+                                 EmptyFilterText="该筛选条件下暂无行程记录。" TicketCountUnit="条记录" DetailButtonText="查看详情" UsePublicTripDetails="true"
+                                 PassengerName="@GetProfileDisplayName(profile)" />
             </section>
         }
     </div>
@@ -86,6 +87,7 @@
 
     private bool isLoading = true;
     private bool isAuthenticated;
+    private bool isOwnerProfile;
     private PublicUserProfileDto? profile;
     private DashboardStatsDto stats = DashboardStatsDto.Empty;
     private List<AchievementItemDto> achievements = [];
@@ -93,6 +95,10 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (!OperatingSystem.IsBrowser())
+        {
+            return;
+        }
         isLoading = true;
         isAuthenticated = false;
         profile = null;
@@ -103,6 +109,7 @@
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
         isAuthenticated = user.Identity?.IsAuthenticated == true;
+        isOwnerProfile = string.Equals(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, UserId, StringComparison.Ordinal);
 
         if (!isAuthenticated || string.IsNullOrWhiteSpace(UserId))
         {
@@ -152,5 +159,17 @@
         return string.IsNullOrWhiteSpace(bio)
             ? "这个人很神秘，还没有填写个人简介。"
             : bio.Trim();
+    }
+
+    private string GetProfileDisplayName(PublicUserProfileDto source)
+    {
+        if (isOwnerProfile && !string.IsNullOrWhiteSpace(source.UserName))
+        {
+            return source.UserName.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(source.DisplayName)
+            ? "匿名旅客"
+            : source.DisplayName.Trim();
     }
 }

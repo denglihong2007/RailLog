@@ -62,6 +62,10 @@
     padding: 0.38rem 0;
 }
 
+.leaderboard-item--compact {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .leaderboard-item__rank {
     min-width: 2rem;
     min-height: 1.45rem;

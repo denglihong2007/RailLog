@@ -338,6 +338,7 @@ namespace RailLog.Services
                         FromStation = trip.FromStation,
                         ToStation = trip.ToStation,
                         TravelDate = trip.TravelDate,
+                        CreatedAt = trip.CreatedAt,
                         Price = trip.Price,
                         MileageKm = GetTripMileage(trip)
                     };
@@ -377,8 +378,63 @@ namespace RailLog.Services
                     .ThenByDescending(x => x.TravelDate)
                     .ThenBy(x => x.TripId)
                     .Take(top)
-                    .ToList()
+                    .ToList(),
+                TopSingleLatest = tripEntries
+                    .OrderByDescending(x => x.CreatedAt)
+                    .ThenBy(x => x.TripId)
+                    .Take(top)
+                    .ToList(),
+                TopStationsByVisits = BuildTopElementEntries(
+                    allTrips.SelectMany(ExtractTripStations),
+                    top),
+                TopTrainsByTrips = BuildTopElementEntries(
+                    allTrips.Select(x => x.TrainNumber),
+                    top),
+                TopRoutesByTrips = BuildTopElementEntries(
+                    allTrips.SelectMany(ExtractRouteVisitsForTrip),
+                    top)
             };
+        }
+
+        private static List<ElementLeaderboardEntry> BuildTopElementEntries(IEnumerable<string?> values, int top)
+        {
+            return values
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x!.Trim())
+                .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new ElementLeaderboardEntry
+                {
+                    Name = g.First(),
+                    Count = g.Count()
+                })
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .Take(top)
+                .ToList();
+        }
+
+        private static IEnumerable<string> ExtractRouteVisitsForTrip(TripRecord trip)
+        {
+            var routeNames = (trip.ViaRouteSegments ?? [])
+                .Select(x => x.RouteName?.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (routeNames.Count > 0)
+            {
+                return routeNames;
+            }
+
+            var from = trip.FromStation?.Trim();
+            var to = trip.ToStation?.Trim();
+            if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+            {
+                return [];
+            }
+
+            return [$"{from} -> {to}"];
         }
 
         private static decimal GetTripMileage(TripRecord trip)
@@ -484,6 +540,14 @@ namespace RailLog.Services
             public List<TripLeaderboardEntry> TopSingleBySpend { get; init; } = [];
 
             public List<TripLeaderboardEntry> TopSingleByMileage { get; init; } = [];
+
+            public List<TripLeaderboardEntry> TopSingleLatest { get; init; } = [];
+
+            public List<ElementLeaderboardEntry> TopStationsByVisits { get; init; } = [];
+
+            public List<ElementLeaderboardEntry> TopTrainsByTrips { get; init; } = [];
+
+            public List<ElementLeaderboardEntry> TopRoutesByTrips { get; init; } = [];
         }
 
         public sealed class LeaderboardEntry
@@ -536,9 +600,18 @@ namespace RailLog.Services
 
             public DateOnly TravelDate { get; init; }
 
+            public DateTime CreatedAt { get; init; }
+
             public decimal Price { get; init; }
 
             public decimal MileageKm { get; init; }
+        }
+
+        public sealed class ElementLeaderboardEntry
+        {
+            public required string Name { get; init; }
+
+            public int Count { get; init; }
         }
 
         public sealed class PersonalOverlapSummary

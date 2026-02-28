@@ -7,7 +7,7 @@
 @using System.Text.Json
 @using RailLog.Shared.Models
 @attribute [Authorize]
-@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@rendermode InteractiveWebAssembly
 @inject NavigationManager Nav
 @inject HttpClient HttpClient
 
@@ -24,13 +24,8 @@
                 <div class="col-lg-8 ticket-ocr__actions">
                     <InputFile id="ocr-file-input" class="d-none" OnChange="OnOcrFileSelected"
                                accept=".jpg,.jpeg,.png,.bmp,image/jpeg,image/png,image/bmp,image/jpg" />
-                    <InputFile id="ocr-camera-input" class="d-none" OnChange="OnOcrFileSelected" accept="image/*"
-                               capture="environment" />
                     <label for="ocr-file-input" class="btn btn-outline-secondary mb-0">
-                        <i class="bi bi-folder2-open me-1"></i>选择文件
-                    </label>
-                    <label for="ocr-camera-input" class="btn btn-outline-secondary mb-0">
-                        <i class="bi bi-camera me-1"></i>打开相机
+                        <i class="bi bi-folder2-open me-1"></i>选择图片
                     </label>
                     <div class="form-text w-100">
                         可选择本地图片，或在移动端直接调用相机拍照后识别。

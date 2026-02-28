@@ -77,10 +77,15 @@
     justify-content: center;
     text-decoration: none;
     border-radius: 50%;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .overlap-avatar-link:hover {
     transform: translateY(-1px);
+}
+
+.overlap-avatar-link--same-day {
+    box-shadow: 0 0 0 2px #ffd66b, 0 0 0 4px rgba(255, 214, 107, 0.35);
 }
 
 .overlap-avatar {

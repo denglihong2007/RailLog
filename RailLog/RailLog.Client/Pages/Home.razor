@@ -1,5 +1,5 @@
 @page "/"
-@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@rendermode InteractiveWebAssembly
 @using System.Security.Claims
 @using RailLog.Shared.Models
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -60,7 +60,7 @@
                                         <div class="overlap-avatar-list">
                                             @foreach (var visitor in card.Visitors)
                                             {
-                                                <a class="overlap-avatar-link" href="/trip-details/@visitor.LatestTripId?public=true"
+                                                <a class="@GetOverlapAvatarLinkClass(card, visitor)" href="/trip-details/@visitor.LatestTripId?public=true"
                                                        title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
                                                     <span class="overlap-avatar">
                                                         @if (!string.IsNullOrWhiteSpace(visitor.AvatarUrl))
@@ -105,7 +105,7 @@
                                         <div class="overlap-avatar-list">
                                             @foreach (var visitor in card.Visitors)
                                             {
-                                                <a class="overlap-avatar-link" href="/trip-details/@visitor.LatestTripId?public=true"
+                                                <a class="@GetOverlapAvatarLinkClass(card, visitor)" href="/trip-details/@visitor.LatestTripId?public=true"
                                                        title="@($"{visitor.DisplayName} · {visitor.TravelDate:yyyy-MM-dd}")">
                                                     <span class="overlap-avatar">
                                                         @if (!string.IsNullOrWhiteSpace(visitor.AvatarUrl))
@@ -142,6 +142,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!OperatingSystem.IsBrowser())
+        {
+            return;
+        }
+
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
         isAuthenticated = user.Identity?.IsAuthenticated == true;
@@ -200,6 +205,13 @@
         }
 
         return displayName.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    private static string GetOverlapAvatarLinkClass(OverlapCard card, OverlapVisitor visitor)
+    {
+        return card.MyVisitDates.Contains(visitor.TravelDate)
+            ? "overlap-avatar-link overlap-avatar-link--same-day"
+            : "overlap-avatar-link";
     }
 
     private static IReadOnlyList<OverlapCard> BuildTrainOverlapCards(IReadOnlyList<TrainOverlapEntryDto> entries)
@@ -306,3 +318,4 @@
         DateOnly TravelDate,
         int TripId);
 }
+

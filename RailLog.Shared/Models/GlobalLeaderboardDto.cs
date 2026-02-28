@@ -13,6 +13,14 @@ public sealed class GlobalLeaderboardDto
     public List<TripLeaderboardEntryDto> TopSingleBySpend { get; init; } = [];
 
     public List<TripLeaderboardEntryDto> TopSingleByMileage { get; init; } = [];
+
+    public List<TripLeaderboardEntryDto> TopSingleLatest { get; init; } = [];
+
+    public List<ElementLeaderboardEntryDto> TopStationsByVisits { get; init; } = [];
+
+    public List<ElementLeaderboardEntryDto> TopTrainsByTrips { get; init; } = [];
+
+    public List<ElementLeaderboardEntryDto> TopRoutesByTrips { get; init; } = [];
 }
 
 public sealed class LeaderboardEntryDto
@@ -48,7 +56,16 @@ public sealed class TripLeaderboardEntryDto
 
     public DateOnly TravelDate { get; init; }
 
+    public DateTime CreatedAt { get; init; }
+
     public decimal Price { get; init; }
 
     public decimal MileageKm { get; init; }
+}
+
+public sealed class ElementLeaderboardEntryDto
+{
+    public string Name { get; init; } = string.Empty;
+
+    public int Count { get; init; }
 }

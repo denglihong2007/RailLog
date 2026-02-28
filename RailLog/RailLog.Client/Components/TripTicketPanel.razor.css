@@ -1,0 +1,264 @@
+.trip-ticket-panel {
+    --ticket-blue-top: #edf7ff;
+    --ticket-blue-bottom: #dcebfb;
+    --ticket-border: #8cb4d6;
+    --ticket-text: #143048;
+    --ticket-subtle: #33526b;
+    --ticket-red: #d73f58;
+}
+
+.ticket-search {
+    background: linear-gradient(150deg, #f7fbff 0%, #f0f6ff 100%);
+}
+
+.ticket-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.trip-ticket {
+    display: block;
+    background: linear-gradient(170deg, var(--ticket-blue-top) 0%, var(--ticket-blue-bottom) 100%);
+    border: 1px solid var(--ticket-border);
+    border-radius: 13px;
+    box-shadow: 0 7px 18px rgba(23, 64, 104, 0.14);
+    color: var(--ticket-text);
+    padding: 0.8rem;
+    text-decoration: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+    width: 100%;
+    position: relative;
+    overflow: visible;
+}
+
+.trip-ticket:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(23, 64, 104, 0.2);
+    text-decoration: none;
+}
+
+.trip-ticket:focus-visible {
+    outline: 2px solid #0d6efd;
+    outline-offset: 2px;
+}
+
+.ticket-bump {
+    width: 9px;
+    height: 18px;
+    border: 1px solid var(--ticket-border);
+    background: linear-gradient(170deg, var(--ticket-blue-top) 0%, var(--ticket-blue-bottom) 100%);
+    position: absolute;
+    top: 0;
+    pointer-events: none;
+}
+
+.ticket-bump-left-top {
+    left: -8px;
+    top: 24%;
+    clip-path: polygon(100% 0, 100% 100%, 0 78%, 0 22%);
+}
+
+.ticket-bump-left-bottom {
+    left: -8px;
+    top: 68%;
+    clip-path: polygon(100% 0, 100% 100%, 0 78%, 0 22%);
+}
+
+.ticket-bump-right-top {
+    right: -8px;
+    top: 24%;
+    clip-path: polygon(0 0, 0 100%, 100% 78%, 100% 22%);
+}
+
+.ticket-bump-right-bottom {
+    right: -8px;
+    top: 68%;
+    clip-path: polygon(0 0, 0 100%, 100% 78%, 100% 22%);
+}
+
+.ticket-id-row {
+    margin-bottom: 0.2rem;
+}
+
+.trip-id {
+    font-size: 1.34rem;
+    line-height: 1;
+    letter-spacing: 1.1px;
+    color: var(--ticket-red);
+    font-weight: 700;
+    font-family: "Consolas", "Courier New", monospace;
+}
+
+.ticket-route {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.5rem;
+    align-items: end;
+    margin-bottom: 0.62rem;
+}
+
+.station {
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: var(--ticket-text);
+    line-height: 1.2;
+}
+
+.station-to {
+    text-align: right;
+}
+
+.route-arrow {
+    width: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.train-number {
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.route-line {
+    width: 100%;
+    display: block;
+    height: 2px;
+    background: #1f4f7a;
+    position: relative;
+}
+
+.route-line::after {
+    content: "";
+    position: absolute;
+    right: -2px;
+    top: -4px;
+    border-style: solid;
+    border-width: 5px 0 5px 9px;
+    border-color: transparent transparent transparent #1f4f7a;
+}
+
+.ticket-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+}
+
+.ticket-left,
+.ticket-right {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+}
+
+.ticket-right {
+    text-align: right;
+}
+
+.field-value {
+    font-size: 0.92rem;
+    font-weight: 650;
+    line-height: 1.22;
+}
+
+.ticket-bottom {
+    margin-top: 0.4rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.85rem;
+    align-items: end;
+}
+
+.ticket-passenger {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.passenger-name {
+    font-size: 0.9rem;
+    font-weight: 650;
+}
+
+.ticket-note-box {
+    min-height: 2.5rem;
+    padding: 0.36rem 0.45rem;
+    border: 1px dashed rgba(31, 79, 122, 0.55);
+    border-radius: 4px;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: #1a3b58;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.ticket-qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.ticket-qr img {
+    width: 62px;
+    height: 62px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    object-fit: cover;
+}
+
+@media (max-width: 576px) {
+    .ticket-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .trip-ticket {
+        padding: 0.72rem;
+    }
+
+    .trip-id {
+        font-size: 1.2rem;
+    }
+
+    .station {
+        font-size: 0.98rem;
+    }
+
+    .route-arrow {
+        width: 74px;
+    }
+
+    .train-number {
+        font-size: 0.88rem;
+    }
+
+    .field-value {
+        font-size: 0.86rem;
+    }
+
+    .ticket-bottom {
+        grid-template-columns: 1fr;
+    }
+
+    .ticket-qr {
+        align-items: flex-start;
+    }
+
+    .ticket-qr img {
+        width: 58px;
+        height: 58px;
+    }
+}
+
+@media (max-width: 900px) {
+    .ticket-grid {
+        grid-template-columns: 1fr;
+    }
+}

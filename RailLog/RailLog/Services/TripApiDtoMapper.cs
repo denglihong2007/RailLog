@@ -135,7 +135,11 @@ public static class TripApiDtoMapper
             TopByTrips = source.TopByTrips.Select(x => x.ToDto()).ToList(),
             TopByMileage = source.TopByMileage.Select(x => x.ToDto()).ToList(),
             TopSingleBySpend = source.TopSingleBySpend.Select(x => x.ToDto()).ToList(),
-            TopSingleByMileage = source.TopSingleByMileage.Select(x => x.ToDto()).ToList()
+            TopSingleByMileage = source.TopSingleByMileage.Select(x => x.ToDto()).ToList(),
+            TopSingleLatest = source.TopSingleLatest.Select(x => x.ToDto()).ToList(),
+            TopStationsByVisits = source.TopStationsByVisits.Select(x => x.ToDto()).ToList(),
+            TopTrainsByTrips = source.TopTrainsByTrips.Select(x => x.ToDto()).ToList(),
+            TopRoutesByTrips = source.TopRoutesByTrips.Select(x => x.ToDto()).ToList()
         };
     }
 
@@ -164,8 +168,18 @@ public static class TripApiDtoMapper
             FromStation = source.FromStation,
             ToStation = source.ToStation,
             TravelDate = source.TravelDate,
+            CreatedAt = source.CreatedAt,
             Price = source.Price,
             MileageKm = source.MileageKm
+        };
+    }
+
+    private static ElementLeaderboardEntryDto ToDto(this TripService.ElementLeaderboardEntry source)
+    {
+        return new ElementLeaderboardEntryDto
+        {
+            Name = source.Name,
+            Count = source.Count
         };
     }
 }
