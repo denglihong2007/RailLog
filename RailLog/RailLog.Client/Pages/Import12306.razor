@@ -1,0 +1,932 @@
+@page "/import-12306"
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using Microsoft.AspNetCore.Authorization
+@using RailLog.Shared.Models
+@attribute [Authorize]
+@implements IAsyncDisposable
+@rendermode InteractiveWebAssembly
+@inject HttpClient HttpClient
+@inject IJSRuntime JS
+
+<PageTitle>从12306导入 - 轨记</PageTitle>
+
+<PageHeader Title="从12306导入" IconClass="bi bi-qr-code-scan" />
+
+<div class="import12306">
+    <div class="alert alert-warning import12306__intro">
+        <div class="fw-semibold">导入说明</div>
+        <div>由于 CORS 限制，请求将由 RailLog 服务端转发并维持 12306 登录会话。</div>
+        <div class="mt-1">导入仅包含票面基础信息，<strong>经由线路和车底/本务不会自动导入</strong>，请导入后手动补充。</div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(pageStatusMessage))
+    {
+        <div class="alert @(pageStatusIsError ? "alert-danger" : "alert-success") py-2">@pageStatusMessage</div>
+    }
+
+    <section class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-3 align-items-start justify-content-between">
+                <div>
+                    <h5 class="mb-1">1. 扫码登录 12306</h5>
+                    <p class="text-muted mb-2">点击“获取二维码”后，用 12306 App 扫码并确认登录。</p>
+                    <button class="btn btn-primary"                            type="button"                            disabled="@isStartingQrLogin"
+                            @onclick="StartQrLoginAsync">
+                        @if (isStartingQrLogin)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>生成中...</span>
+                        }
+                        else
+                        {
+                            <span><i class="bi bi-arrow-repeat me-1"></i>获取二维码</span>
+                        }
+                    </button>
+                    @if (!string.IsNullOrWhiteSpace(qrStatusMessage))
+                    {
+                        <div class="alert @(qrStatusIsError ? "alert-danger" : "alert-info") py-2 mt-3 mb-0">
+                            @qrStatusMessage
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(qrImageBase64))
+                {
+                    <div class="import12306__qr">
+                        <img src="@qrImageBase64" alt="12306 登录二维码" />
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+
+    <section class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <h5 class="mb-3">2. 查询可导入行程</h5>
+            <div class="d-grid d-md-flex gap-2 align-items-center">
+                <button class="btn btn-outline-primary"                        type="button"                        disabled="@(!CanQueryOrders)"
+                        @onclick="QueryOrdersAsync">
+                    @if (isQueryingOrders)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        <span>查询中...</span>
+                    }
+                    else
+                    {
+                        <span><i class="bi bi-search me-1"></i>查询行程</span>
+                    }
+                </button>
+                <span class="text-muted small">只显示近 30 天行程（包含今日待出行）。</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">3. 选择行程并导入</h5>
+                <button class="btn btn-success"                        type="button"                        disabled="@(isImporting || selectedTicketIds.Count == 0)"
+                        @onclick="ImportSelectedAsync">
+                    @if (isImporting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        <span>导入中...</span>
+                    }
+                    else
+                    {
+                        <span><i class="bi bi-cloud-arrow-down me-1"></i>导入选中行程 (@selectedTicketIds.Count)</span>
+                    }
+                </button>
+            </div>
+
+            @if (tickets.Count == 0)
+            {
+                <div class="text-muted">暂无可导入行程。请先完成扫码登录并查询。</div>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input"                               type="checkbox"                               id="selectAllTickets"                               checked="@IsAllSelected"
+                               @onchange="OnSelectAllChanged" />
+                        <label class="form-check-label" for="selectAllTickets">
+                            全选（@selectedTicketIds.Count/@tickets.Count）
+                        </label>
+                    </div>
+                    <span class="text-muted small">状态字段会作为默认备注导入。</span>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle import12306__table">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;">选择</th>
+                                <th>行程</th>
+                                <th>乘车人</th>
+                                <th>席别</th>
+                                <th>里程</th>
+                                <th>价格</th>
+                                <th>状态</th>
+                                <th style="width: 90px;">导入</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ticket in tickets)
+                            {
+                                <tr class="@GetTicketRowClass(ticket)">
+                                    <td>
+                                        <input class="form-check-input"                                               type="checkbox"                                               disabled="@ticket.IsImported"
+                                               checked="@selectedTicketIds.Contains(ticket.Id)"
+                                               @onchange="e => OnTicketSelectionChanged(ticket.Id, e)" />
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold">@ticket.JourneyLine</div>
+                                        <div class="text-muted small">@ticket.DepartureDisplay -> @ticket.ArrivalDisplay</div>
+                                    </td>
+                                    <td>@ticket.PassengerName</td>
+                                    <td>@ticket.SeatDisplay</td>
+                                    <td>@ticket.MileageDisplay</td>
+                                    <td>@ticket.PriceDisplay</td>
+                                    <td>@ticket.StatusText</td>
+                                    <td>
+                                        @if (ticket.IsImported)
+                                        {
+                                            <span class="badge text-bg-success">已导入</span>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(ticket.ImportError))
+                                        {
+                                            <span class="badge text-bg-danger" title="@ticket.ImportError">失败</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-secondary">待导入</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private static readonly CultureInfo ZhCnCulture = CultureInfo.GetCultureInfo("zh-CN");
+    private static readonly string[] DateTimeFormats =
+    [
+        "yyyy-MM-dd HH:mm",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy/MM/dd HH:mm",
+        "yyyy/MM/dd HH:mm:ss",
+        "yyyy-MM-ddTHH:mm",
+        "yyyy-MM-ddTHH:mm:ss"
+    ];
+
+    private CancellationTokenSource? qrPollingCts;
+    private bool isStartingQrLogin;
+    private bool isFinalizingLogin;
+    private bool isQueryingOrders;
+    private bool isImporting;
+    private bool qrStatusIsError;
+    private bool pageStatusIsError;
+    private string? sessionId;
+    private string? qrImageBase64;
+    private string? qrStatusMessage;
+    private string? loggedInUsername;
+    private string? pageStatusMessage;
+    private List<ImportedTicket> tickets = [];
+    private HashSet<string> selectedTicketIds = [];
+
+    private bool IsAllSelected => tickets.Count > 0 && tickets.All(ticket => selectedTicketIds.Contains(ticket.Id) ||
+ticket.IsImported);
+
+    private bool CanQueryOrders => !isStartingQrLogin
+        && !isFinalizingLogin
+        && !isQueryingOrders
+        && !string.IsNullOrWhiteSpace(sessionId)
+        && !string.IsNullOrWhiteSpace(loggedInUsername);
+
+    private async Task StartQrLoginAsync()
+    {
+        isStartingQrLogin = true;
+        qrStatusIsError = false;
+        qrStatusMessage = null;
+        pageStatusMessage = null;
+        pageStatusIsError = false;
+        sessionId = null;
+        loggedInUsername = null;
+        qrImageBase64 = null;
+        tickets = [];
+        selectedTicketIds.Clear();
+        CancelQrPolling();
+
+        try
+        {
+            var qrResult = await PostProxyAsync<QrCodeResult>("api/12306/create-qr", body: null);
+            if (string.IsNullOrWhiteSpace(qrResult.SessionId) ||
+                string.IsNullOrWhiteSpace(qrResult.Uuid) ||
+                string.IsNullOrWhiteSpace(qrResult.Image))
+            {
+                throw new InvalidOperationException("未获取到有效二维码。");
+            }
+
+            sessionId = qrResult.SessionId;
+            qrImageBase64 = qrResult.Image.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase)
+                ? qrResult.Image
+                : $"data:image/png;base64,{qrResult.Image}";
+            qrStatusMessage = "二维码已生成，请使用 12306 App 扫码并确认登录。";
+
+            qrPollingCts = new CancellationTokenSource();
+            _ = PollQrStatusAsync(qrResult.Uuid, qrPollingCts.Token);
+        }
+        catch (Exception ex)
+        {
+            qrStatusIsError = true;
+            qrStatusMessage = $"获取二维码失败：{ex.Message}";
+        }
+        finally
+        {
+            isStartingQrLogin = false;
+        }
+    }
+
+    private async Task PollQrStatusAsync(string uuid, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    qrStatusIsError = true;
+                    qrStatusMessage = "登录会话丢失，请重新获取二维码。";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                var status = await PostProxyAsync<QrStatusResult>(
+                    "api/12306/check-qr",
+                    new CheckQrProxyRequest
+                    {
+                        SessionId = sessionId,
+                        Uuid = uuid
+                    },
+                    cancellationToken);
+
+                var code = status.ResultCode?.Trim();
+                qrStatusIsError = false;
+                qrStatusMessage = string.IsNullOrWhiteSpace(status.ResultMessage)
+                    ? "等待扫码确认..."
+                    : status.ResultMessage;
+                await InvokeAsync(StateHasChanged);
+
+                if (string.Equals(code, "2", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.IsNullOrWhiteSpace(status.Uamtk))
+                    {
+                        throw new InvalidOperationException("扫码成功但未获得登录票据 (uamtk)。");
+                    }
+
+                    await FinalizeLoginAsync(status.Uamtk, cancellationToken);
+                    return;
+                }
+
+                if (string.Equals(code, "3", StringComparison.OrdinalIgnoreCase))
+                {
+                    qrStatusIsError = true;
+                    qrStatusMessage = "二维码已过期，请重新获取。";
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled polling.
+        }
+        catch (Exception ex)
+        {
+            qrStatusIsError = true;
+            qrStatusMessage = $"轮询登录状态失败：{ex.Message}";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task FinalizeLoginAsync(string uamtk, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            qrStatusIsError = true;
+            qrStatusMessage = "登录会话已失效，请重新获取二维码。";
+            return;
+        }
+
+        isFinalizingLogin = true;
+        qrStatusIsError = false;
+        qrStatusMessage = "正在完成登录校验...";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await PostProxyAsync<CompleteLoginResult>(
+                "api/12306/complete-login",
+                new CompleteLoginProxyRequest
+                {
+                    SessionId = sessionId,
+                    Uamtk = uamtk
+                },
+                cancellationToken);
+            loggedInUsername = result.Username;
+            qrStatusMessage = $"登录成功，当前账号：{loggedInUsername}";
+            await QueryOrdersAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore canceled operation.
+        }
+        catch (Exception ex)
+        {
+            qrStatusIsError = true;
+            qrStatusMessage = $"登录流程失败：{ex.Message}";
+        }
+        finally
+        {
+            isFinalizingLogin = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task QueryOrdersAsync()
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(loggedInUsername))
+        {
+            pageStatusIsError = true;
+            pageStatusMessage = "请先扫码登录 12306。";
+            return;
+        }
+
+        isQueryingOrders = true;
+        pageStatusMessage = null;
+        pageStatusIsError = false;
+        selectedTicketIds.Clear();
+
+        try
+        {
+            var orderTickets = await PostProxyAsync<List<OrderTicketResult>>(
+                "api/12306/query-orders",
+                new QueryOrdersProxyRequest
+                {
+                    SessionId = sessionId
+                });
+
+            tickets = (orderTickets ?? [])
+                .Select(MapTicket)
+                .OrderByDescending(x => x.TravelDate)
+                .ThenByDescending(x => x.DepartureTime ?? TimeOnly.MinValue)
+                .ToList();
+
+            pageStatusIsError = false;
+            pageStatusMessage = tickets.Count == 0
+                ? "查询完成，当前时间范围内没有可导入行程。"
+                : $"查询完成，共找到 {tickets.Count} 条行程。";
+        }
+        catch (Exception ex)
+        {
+            pageStatusIsError = true;
+            pageStatusMessage = $"查询订单失败：{ex.Message}";
+        }
+        finally
+        {
+            isQueryingOrders = false;
+        }
+    }
+
+    private async Task ImportSelectedAsync()
+    {
+        if (selectedTicketIds.Count == 0)
+        {
+            return;
+        }
+
+        var confirmMessage = "导入提醒：不会自动导入经由线路和车底/本务，导入后请手动补充。是否继续导入所选行程？";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isImporting = true;
+        pageStatusMessage = null;
+        pageStatusIsError = false;
+
+        var imported = 0;
+        var failed = 0;
+        var selectedTickets = tickets.Where(x => selectedTicketIds.Contains(x.Id)).ToList();
+
+        foreach (var ticket in selectedTickets)
+        {
+            ticket.ImportError = null;
+            if (!TryBuildTripRecordDto(ticket, out var dto, out var validationError))
+            {
+                ticket.ImportError = validationError;
+                failed++;
+                continue;
+            }
+
+            try
+            {
+                using var response = await HttpClient.PostAsJsonAsync("api/trips", dto);
+                if (response.IsSuccessStatusCode)
+                {
+                    ticket.IsImported = true;
+                    selectedTicketIds.Remove(ticket.Id);
+                    imported++;
+                }
+                else
+                {
+                    ticket.ImportError = await ReadApiErrorMessageAsync(response);
+                    failed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                ticket.ImportError = $"请求失败：{ex.Message}";
+                failed++;
+            }
+        }
+
+        isImporting = false;
+        pageStatusIsError = failed > 0;
+        pageStatusMessage = failed == 0
+            ? $"导入完成，共导入 {imported} 条。"
+            : $"导入完成：成功 {imported} 条，失败 {failed} 条。";
+    }
+
+    private void OnSelectAllChanged(ChangeEventArgs e)
+    {
+        var isChecked = ReadCheckboxValue(e.Value);
+        if (isChecked)
+        {
+            selectedTicketIds = tickets
+                .Where(ticket => !ticket.IsImported)
+                .Select(ticket => ticket.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            return;
+        }
+
+        selectedTicketIds.Clear();
+    }
+
+    private void OnTicketSelectionChanged(string ticketId, ChangeEventArgs e)
+    {
+        var isChecked = ReadCheckboxValue(e.Value);
+        if (isChecked)
+        {
+            selectedTicketIds.Add(ticketId);
+            return;
+        }
+
+        selectedTicketIds.Remove(ticketId);
+    }
+
+    private static bool TryBuildTripRecordDto(ImportedTicket ticket, out TripRecordDto dto, out string error)
+    {
+        dto = new TripRecordDto();
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(ticket.TrainCode) ||
+            string.IsNullOrWhiteSpace(ticket.FromStation) ||
+            string.IsNullOrWhiteSpace(ticket.ToStation))
+        {
+            error = "缺少车次或站点信息。";
+            return false;
+        }
+
+        dto = new TripRecordDto
+        {
+            IsRailTrip = true,
+            TrainNumber = ticket.TrainCode,
+            TravelDate = ticket.TravelDate,
+            FromStation = ticket.FromStation,
+            ToStation = ticket.ToStation,
+            DepartureTime = ticket.DepartureTime,
+            ArrivalTime = ticket.ArrivalTime,
+            MileageKm = ticket.MileageKm,
+            SeatType = ticket.SeatType,
+            SeatNumber = ticket.SeatNumber,
+            Price = ticket.Price,
+            Notes = string.IsNullOrWhiteSpace(ticket.StatusText)
+                ? null
+                : ticket.StatusText.Trim()
+        };
+
+        return true;
+    }
+
+    private static ImportedTicket MapTicket(OrderTicketResult source)
+    {
+        var startText = (source.StartTime ?? string.Empty).Trim();
+        var arriveText = (source.ArriveTime ?? string.Empty).Trim();
+        var travelDate = DateOnly.FromDateTime(DateTime.Today);
+        TimeOnly? departureTime = null;
+        TimeOnly? arrivalTime = null;
+
+        if (TryParseDateTime(startText, out var parsedTravelDate, out var parsedDeparture))
+        {
+            travelDate = parsedTravelDate;
+            departureTime = parsedDeparture;
+        }
+
+        if (TryParseDateTime(arriveText, out _, out var parsedArrival))
+        {
+            arrivalTime = parsedArrival;
+        }
+
+        var seatDisplay = BuildSeatDisplay(source.SeatDisplay, source.SeatType, source.CoachName, source.SeatName);
+
+        return new ImportedTicket
+        {
+            Id = BuildTicketId(source),
+            DepartureDisplay = startText,
+            ArrivalDisplay = arriveText,
+            JourneyLine = $"{source.TrainCode} {source.FromStation} -> {source.ToStation}".Trim(),
+            PassengerName = string.IsNullOrWhiteSpace(source.PassengerName) ? "-" : source.PassengerName.Trim(),
+            SeatDisplay = seatDisplay,
+            SeatType = source.SeatType?.Trim(),
+            SeatNumber = BuildSeatNumber(source.CoachName, source.SeatName),
+            MileageDisplay = string.IsNullOrWhiteSpace(source.Distance) ? "-" : source.Distance.Trim(),
+            PriceDisplay = string.IsNullOrWhiteSpace(source.PriceText) ? "-" : source.PriceText.Trim(),
+            StatusText = string.IsNullOrWhiteSpace(source.StatusText) ? "-" : source.StatusText.Trim(),
+            TrainCode = source.TrainCode?.Trim() ?? string.Empty,
+            FromStation = source.FromStation?.Trim() ?? string.Empty,
+            ToStation = source.ToStation?.Trim() ?? string.Empty,
+            TravelDate = travelDate,
+            DepartureTime = departureTime,
+            ArrivalTime = arrivalTime,
+            MileageKm = ParseDecimalOrZero(source.Distance),
+            Price = ParseDecimalOrZero(source.PriceText)
+        };
+    }
+
+    private static string BuildTicketId(OrderTicketResult source)
+    {
+        if (!string.IsNullOrWhiteSpace(source.Id))
+        {
+            return source.Id.Trim();
+        }
+
+        var parts = new[]
+        {
+            source.SequenceNo?.Trim() ?? string.Empty,
+            source.StartTime?.Trim() ?? string.Empty,
+            source.TrainCode?.Trim() ?? string.Empty,
+            source.FromStation?.Trim() ?? string.Empty,
+            source.ToStation?.Trim() ?? string.Empty,
+            source.PassengerName?.Trim() ?? string.Empty
+        };
+
+        return string.Join("|", parts);
+    }
+
+    private static string BuildSeatDisplay(string? sourceSeatDisplay, string? seatType, string? coachName, string? seatName)
+    {
+        if (!string.IsNullOrWhiteSpace(sourceSeatDisplay))
+        {
+            return sourceSeatDisplay.Trim();
+        }
+
+        var type = seatType?.Trim();
+        var number = BuildSeatNumber(coachName, seatName);
+        if (!string.IsNullOrWhiteSpace(type) && !string.IsNullOrWhiteSpace(number))
+        {
+            return $"{type} {number}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            return type;
+        }
+
+        return string.IsNullOrWhiteSpace(number) ? "-" : number;
+    }
+
+    private static string? BuildSeatNumber(string? coachName, string? seatName)
+    {
+        var coach = coachName?.Trim();
+        var seat = seatName?.Trim();
+        if (string.IsNullOrWhiteSpace(coach) && string.IsNullOrWhiteSpace(seat))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(coach) && !string.IsNullOrWhiteSpace(seat))
+        {
+            return $"{coach}车{seat}";
+        }
+
+        return string.IsNullOrWhiteSpace(coach) ? seat : $"{coach}车";
+    }
+
+    private static bool TryParseDateTime(string? input, out DateOnly date, out TimeOnly time)
+    {
+        date = default;
+        time = default;
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return false;
+        }
+
+        var value = input.Trim();
+        if (DateTime.TryParseExact(value, DateTimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ||
+            DateTime.TryParse(value, ZhCnCulture, DateTimeStyles.None, out parsed) ||
+            DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+        {
+            date = DateOnly.FromDateTime(parsed);
+            time = TimeOnly.FromDateTime(parsed);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static decimal ParseDecimalOrZero(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return 0m;
+        }
+
+        var normalized = new string(input
+            .Trim()
+            .Where(ch => char.IsDigit(ch) || ch == '.' || ch == '-')
+            .ToArray());
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return 0m;
+        }
+
+        if (decimal.TryParse(normalized, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+CultureInfo.InvariantCulture, out var value))
+        {
+            return value >= 0 ? value : 0m;
+        }
+
+        if (decimal.TryParse(normalized, NumberStyles.Any, ZhCnCulture, out value))
+        {
+            return value >= 0 ? value : 0m;
+        }
+
+        return 0m;
+    }
+
+    private async Task<TResponse> PostProxyAsync<TResponse>(string url, object? body, CancellationToken cancellationToken =
+default)
+    {
+        using var response = body is null
+            ? await HttpClient.PostAsync(url, content: null, cancellationToken)
+            : await HttpClient.PostAsJsonAsync(url, body, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await ReadApiErrorMessageAsync(response);
+            throw new InvalidOperationException(error);
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken);
+        return result ?? throw new InvalidOperationException("服务返回空响应。");
+    }
+
+    private void CancelQrPolling()
+    {
+        if (qrPollingCts is null)
+        {
+            return;
+        }
+
+        qrPollingCts.Cancel();
+        qrPollingCts.Dispose();
+        qrPollingCts = null;
+    }
+
+    private static bool ReadCheckboxValue(object? value)
+    {
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string text when bool.TryParse(text, out var boolValue) => boolValue,
+            _ => false
+        };
+    }
+
+    private static string GetTicketRowClass(ImportedTicket ticket)
+    {
+        if (ticket.IsImported)
+        {
+            return "table-success";
+        }
+
+        return string.IsNullOrWhiteSpace(ticket.ImportError) ? string.Empty : "table-danger";
+    }
+
+    private static async Task<string> ReadApiErrorMessageAsync(HttpResponseMessage response)
+    {
+        var prefix = $"请求失败 ({(int)response.StatusCode})";
+        string body;
+
+        try
+        {
+            body = await response.Content.ReadAsStringAsync();
+        }
+        catch
+        {
+            return prefix;
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return prefix;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<ApiErrorResponse>(body);
+            if (!string.IsNullOrWhiteSpace(parsed?.Message))
+            {
+                return $"{prefix}：{parsed.Message}";
+            }
+        }
+        catch
+        {
+            // Ignore parse failure and fallback to raw body.
+        }
+
+        return $"{prefix}：{body}";
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        CancelQrPolling();
+        return ValueTask.CompletedTask;
+    }
+
+    private sealed class ImportedTicket
+    {
+        public required string Id { get; init; }
+
+        public required string JourneyLine { get; init; }
+
+        public required string DepartureDisplay { get; init; }
+
+        public required string ArrivalDisplay { get; init; }
+
+        public required string PassengerName { get; init; }
+
+        public required string SeatDisplay { get; init; }
+
+        public required string MileageDisplay { get; init; }
+
+        public required string PriceDisplay { get; init; }
+
+        public required string StatusText { get; init; }
+
+        public required string TrainCode { get; init; }
+
+        public required string FromStation { get; init; }
+
+        public required string ToStation { get; init; }
+
+        public required DateOnly TravelDate { get; init; }
+
+        public TimeOnly? DepartureTime { get; init; }
+
+        public TimeOnly? ArrivalTime { get; init; }
+
+        public decimal MileageKm { get; init; }
+
+        public decimal Price { get; init; }
+
+        public string? SeatType { get; init; }
+
+        public string? SeatNumber { get; init; }
+
+        public bool IsImported { get; set; }
+
+        public string? ImportError { get; set; }
+    }
+
+    private sealed class QrCodeResult
+    {
+        [JsonPropertyName("sessionId")]
+        public string? SessionId { get; set; }
+
+        [JsonPropertyName("uuid")]
+        public string? Uuid { get; set; }
+
+        [JsonPropertyName("image")]
+        public string? Image { get; set; }
+    }
+
+    private sealed class QrStatusResult
+    {
+        [JsonPropertyName("resultCode")]
+        public string? ResultCode { get; set; }
+
+        [JsonPropertyName("resultMessage")]
+        public string? ResultMessage { get; set; }
+
+        [JsonPropertyName("uamtk")]
+        public string? Uamtk { get; set; }
+    }
+
+    private sealed class CompleteLoginResult
+    {
+        [JsonPropertyName("username")]
+        public string? Username { get; set; }
+    }
+
+    private sealed class ApiErrorResponse
+    {
+        [JsonPropertyName("message")]
+        public string? Message { get; set; }
+    }
+
+    private sealed class OrderTicketResult
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("sequenceNo")]
+        public string? SequenceNo { get; set; }
+
+        [JsonPropertyName("startTime")]
+        public string? StartTime { get; set; }
+
+        [JsonPropertyName("arriveTime")]
+        public string? ArriveTime { get; set; }
+
+        [JsonPropertyName("trainCode")]
+        public string? TrainCode { get; set; }
+
+        [JsonPropertyName("fromStation")]
+        public string? FromStation { get; set; }
+
+        [JsonPropertyName("toStation")]
+        public string? ToStation { get; set; }
+
+        [JsonPropertyName("distance")]
+        public string? Distance { get; set; }
+
+        [JsonPropertyName("passengerName")]
+        public string? PassengerName { get; set; }
+
+        [JsonPropertyName("seatType")]
+        public string? SeatType { get; set; }
+
+        [JsonPropertyName("coachName")]
+        public string? CoachName { get; set; }
+
+        [JsonPropertyName("seatName")]
+        public string? SeatName { get; set; }
+
+        [JsonPropertyName("seatDisplay")]
+        public string? SeatDisplay { get; set; }
+
+        [JsonPropertyName("priceText")]
+        public string? PriceText { get; set; }
+
+        [JsonPropertyName("statusText")]
+        public string? StatusText { get; set; }
+    }
+
+    private sealed class CheckQrProxyRequest
+    {
+        [JsonPropertyName("sessionId")]
+        public required string SessionId { get; init; }
+
+        [JsonPropertyName("uuid")]
+        public required string Uuid { get; init; }
+    }
+
+    private sealed class CompleteLoginProxyRequest
+    {
+        [JsonPropertyName("sessionId")]
+        public required string SessionId { get; init; }
+
+        [JsonPropertyName("uamtk")]
+        public required string Uamtk { get; init; }
+    }
+
+    private sealed class QueryOrdersProxyRequest
+    {
+        [JsonPropertyName("sessionId")]
+        public required string SessionId { get; init; }
+    }
+}

@@ -13,9 +13,11 @@ namespace RailLog.Services
 
             var overallTotalTrips = trips.Count;
             var overallTotalMileage = trips.Sum(GetTripMileage);
+            var overallTotalSpend = trips.Sum(x => x.Price);
             var nonRailTrips = trips.Where(x => !x.IsRailTrip).ToList();
             var nonRailTripCount = nonRailTrips.Count;
             var nonRailMileage = nonRailTrips.Sum(GetTripMileage);
+            var nonRailSpend = nonRailTrips.Sum(x => x.Price);
             var firstTripDate = trips.Min(x => x.TravelDate);
             var latestTripDate = trips.Max(x => x.TravelDate);
 
@@ -26,8 +28,10 @@ namespace RailLog.Services
                 {
                     OverallTotalTrips = overallTotalTrips,
                     OverallTotalMileageKm = overallTotalMileage,
+                    OverallTotalSpend = overallTotalSpend,
                     NonRailTrips = nonRailTripCount,
                     NonRailMileageKm = nonRailMileage,
+                    NonRailSpend = nonRailSpend,
                     FirstTripDate = firstTripDate,
                     LatestTripDate = latestTripDate,
                     ExplorerLevel = ResolveExplorerLevel(overallTotalMileage)
@@ -92,8 +96,10 @@ namespace RailLog.Services
             {
                 OverallTotalTrips = overallTotalTrips,
                 OverallTotalMileageKm = overallTotalMileage,
+                OverallTotalSpend = overallTotalSpend,
                 NonRailTrips = nonRailTripCount,
                 NonRailMileageKm = nonRailMileage,
+                NonRailSpend = nonRailSpend,
                 TotalTrips = totalTrips,
                 TotalSpend = totalSpend,
                 HighestFare = highestFare,
@@ -380,9 +386,13 @@ namespace RailLog.Services
 
         public decimal OverallTotalMileageKm { get; init; }
 
+        public decimal OverallTotalSpend { get; init; }
+
         public int NonRailTrips { get; init; }
 
         public decimal NonRailMileageKm { get; init; }
+
+        public decimal NonRailSpend { get; init; }
 
         public int TotalTrips { get; init; }
 

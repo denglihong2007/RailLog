@@ -41,8 +41,10 @@ public static class TripApiDtoMapper
         {
             OverallTotalTrips = source.OverallTotalTrips,
             OverallTotalMileageKm = source.OverallTotalMileageKm,
+            OverallTotalSpend = source.OverallTotalSpend,
             NonRailTrips = source.NonRailTrips,
             NonRailMileageKm = source.NonRailMileageKm,
+            NonRailSpend = source.NonRailSpend,
             TotalTrips = source.TotalTrips,
             TotalSpend = source.TotalSpend,
             HighestFare = source.HighestFare,

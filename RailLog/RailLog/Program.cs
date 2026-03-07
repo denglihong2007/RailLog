@@ -59,6 +59,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.AddTransient<IEmailSender<ApplicationUser>, EmailService>();
 builder.Services.AddScoped<TripService>();
 builder.Services.AddScoped<BaiduTrainTicketOcrService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<Ticket12306ProxyService>();
 builder.Services.AddSingleton<RouteRoutingService>();
 builder.Services.AddScoped(sp => new HttpClient
 {
@@ -416,6 +418,83 @@ app.MapPost("/api/ocr/train-ticket", async (HttpRequest request, BaiduTrainTicke
 
     return Results.Ok(result.Data);
 }).DisableAntiforgery().RequireAuthorization();
+
+var ticket12306Group = app.MapGroup("/api/12306").RequireAuthorization();
+ticket12306Group.MapPost("/create-qr", async (Ticket12306ProxyService proxyService, ClaimsPrincipal user, CancellationToken cancellationToken) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var result = await proxyService.CreateQrCodeAsync(userId, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+ticket12306Group.MapPost("/check-qr", async (CheckQrRequest request, Ticket12306ProxyService proxyService, ClaimsPrincipal user, CancellationToken cancellationToken) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var result = await proxyService.CheckQrStatusAsync(userId, request.SessionId, request.Uuid, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+ticket12306Group.MapPost("/complete-login", async (CompleteLoginRequest request, Ticket12306ProxyService proxyService, ClaimsPrincipal user, CancellationToken cancellationToken) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var result = await proxyService.CompleteLoginAsync(userId, request.SessionId, request.Uamtk, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+ticket12306Group.MapPost("/query-orders", async (QueryOrdersRequest request, Ticket12306ProxyService proxyService, ClaimsPrincipal user, CancellationToken cancellationToken) =>
+{
+    var userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var result = await proxyService.QueryOrdersAsync(userId, request.SessionId, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

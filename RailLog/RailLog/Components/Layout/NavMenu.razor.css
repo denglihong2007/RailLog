@@ -117,8 +117,15 @@
     background: linear-gradient(160deg, #eaf4ff, #f7fbff);
 }
 
+.profile-logout-form {
+    margin: 0;
+}
+
 .profile-card--bottom {
     margin-top: auto;
+    width: calc(100% - 0.7rem);
+    margin-left: 0.35rem;
+    margin-right: 0.35rem;
 }
 
 .profile-card__avatar {
@@ -160,6 +167,43 @@
 .profile-card__hint {
     font-size: 0.75rem;
     color: var(--nav-muted);
+}
+
+.profile-card__actions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.profile-card__icon-btn {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid #bed5ec;
+    border-radius: 999px;
+    background: linear-gradient(160deg, #ffffff, #ebf4ff);
+    color: #2d7abf;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 170ms ease;
+}
+
+.profile-card__icon-btn i {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.profile-card__icon-btn:hover {
+    border-color: #9dc2e4;
+    box-shadow: 0 6px 12px rgba(45, 122, 191, 0.2);
+    transform: translateY(-1px);
+}
+
+.profile-card__icon-btn:focus-visible {
+    outline: 2px solid #7eb1df;
+    outline-offset: 2px;
 }
 
 .nav-item {
@@ -207,10 +251,6 @@
 
 .nav-item ::deep a.active i {
     color: var(--nav-active-text);
-}
-
-.logout-form {
-    margin: 0;
 }
 
 .nav-button {

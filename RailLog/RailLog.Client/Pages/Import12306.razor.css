@@ -1,0 +1,35 @@
+.import12306__intro {
+    border-left: 4px solid #f59e0b;
+}
+
+.import12306__qr {
+    width: 184px;
+    min-width: 184px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+    padding: 12px;
+}
+
+.import12306__qr img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.import12306__table th,
+.import12306__table td {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.import12306__table td:nth-child(2) {
+    min-width: 260px;
+}
+
+@media (max-width: 991.98px) {
+    .import12306__qr {
+        width: 160px;
+        min-width: 160px;
+    }
+}

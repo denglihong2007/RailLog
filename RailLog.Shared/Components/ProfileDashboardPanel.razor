@@ -28,13 +28,13 @@ else
                 记录时间：@Stats.FirstTripDate?.ToString("yyyy-MM-dd") 至 @Stats.LatestTripDate?.ToString("yyyy-MM-dd")
             </p>
             <p class="dashboard-hero__note mb-0">
-                含非铁路：@Stats.NonRailTrips 次 · @Stats.NonRailMileageKm.ToString("N1") km
+                含非铁路：@Stats.NonRailTrips 次 · @Stats.NonRailMileageKm.ToString("N1") km · @Stats.NonRailSpend.ToString("N2") 元
             </p>
         </div>
         <div class="dashboard-rank">
             <div class="dashboard-rank__label">当前称号</div>
             <div class="dashboard-rank__name">@Stats.ExplorerLevel</div>
-            <div class="dashboard-rank__mileage">@Stats.OverallTotalMileageKm.ToString("N1") km</div>
+            <div class="dashboard-rank__mileage">@Stats.OverallTotalMileageKm.ToString("N1") km · @Stats.OverallTotalSpend.ToString("N2") 元</div>
         </div>
     </section>
 

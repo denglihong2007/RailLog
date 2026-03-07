@@ -1,0 +1,177 @@
+.about-page {
+    max-width: 900px;
+}
+
+.about-hero,
+.about-panel {
+    border-radius: 1.1rem;
+}
+
+.about-hero {
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 85% 20%, rgba(45, 122, 191, 0.18), transparent 42%),
+        linear-gradient(145deg, #f8fcff, #edf6ff);
+}
+
+.about-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(125deg, transparent 40%, rgba(45, 122, 191, 0.07));
+}
+
+.about-hero .card-body {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.2rem;
+}
+
+.about-hero__content {
+    flex: 1;
+}
+
+.about-hero__title {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.about-logo {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    border-radius: 1rem;
+    background: #ffffff;
+    padding: 0.65rem;
+    box-shadow: 0 10px 20px rgba(29, 78, 128, 0.16);
+}
+
+.about-kicker {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #4d6884;
+    font-weight: 700;
+}
+
+.about-hero__art img {
+    width: 110px;
+    height: 110px;
+    object-fit: contain;
+    filter: drop-shadow(0 10px 18px rgba(45, 122, 191, 0.22));
+    opacity: 0.9;
+}
+
+.about-badge-list {
+    margin-top: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+.about-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.32rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid #c6ddf3;
+    background: rgba(255, 255, 255, 0.75);
+    color: #1f4668;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.about-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9rem;
+}
+
+.about-dev-list {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.about-dev {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    text-decoration: none;
+    color: #153857;
+    padding: 0.6rem 0.7rem;
+    border-radius: 0.8rem;
+    border: 1px solid #d6e5f4;
+    background: linear-gradient(145deg, #f8fcff, #f2f8ff);
+    transition: all 160ms ease;
+}
+
+.about-dev:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 15px rgba(33, 85, 133, 0.14);
+}
+
+.about-dev img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.about-links {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: 0.7rem;
+}
+
+.about-links li {
+    display: flex;
+    align-items: center;
+    gap: 0.58rem;
+    color: #36516b;
+}
+
+.about-links li i {
+    color: #2d7abf;
+}
+
+.about-links a {
+    color: #1b5a8f;
+    text-decoration: none;
+}
+
+.about-links a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 576px) {
+    .about-hero .card-body {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .about-hero__art {
+        align-self: center;
+    }
+
+    .about-logo {
+        width: 62px;
+        height: 62px;
+    }
+
+    .about-hero__art img {
+        width: 88px;
+        height: 88px;
+    }
+
+    .about-grid {
+        grid-template-columns: 1fr;
+    }
+}

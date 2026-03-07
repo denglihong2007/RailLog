@@ -1,17 +1,3 @@
-.ticket-ocr {
-    border: 1px solid #dce7f7;
-    border-radius: 14px;
-    background: linear-gradient(165deg, #f9fbff 0%, #f2f7ff 100%);
-    padding: 0.9rem;
-}
-
-.ticket-ocr__actions {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
 .via-editor {
     border: 1px solid #d9e2ef;
     border-radius: 14px;

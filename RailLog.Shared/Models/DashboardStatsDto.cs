@@ -8,9 +8,13 @@ public sealed class DashboardStatsDto
 
     public decimal OverallTotalMileageKm { get; init; }
 
+    public decimal OverallTotalSpend { get; init; }
+
     public int NonRailTrips { get; init; }
 
     public decimal NonRailMileageKm { get; init; }
+
+    public decimal NonRailSpend { get; init; }
 
     public int TotalTrips { get; init; }
 
