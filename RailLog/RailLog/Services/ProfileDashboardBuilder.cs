@@ -11,15 +11,38 @@ namespace RailLog.Services
                 return DashboardStats.Empty;
             }
 
-            var totalTrips = trips.Count;
-            var totalSpend = trips.Sum(x => x.Price);
-            var highestFare = trips.Max(x => x.Price);
+            var overallTotalTrips = trips.Count;
+            var overallTotalMileage = trips.Sum(GetTripMileage);
+            var nonRailTrips = trips.Where(x => !x.IsRailTrip).ToList();
+            var nonRailTripCount = nonRailTrips.Count;
+            var nonRailMileage = nonRailTrips.Sum(GetTripMileage);
+            var firstTripDate = trips.Min(x => x.TravelDate);
+            var latestTripDate = trips.Max(x => x.TravelDate);
 
-            var tripMileageList = trips.Select(GetTripMileage).ToList();
+            var railTrips = trips.Where(x => x.IsRailTrip).ToList();
+            if (railTrips.Count == 0)
+            {
+                return new DashboardStats
+                {
+                    OverallTotalTrips = overallTotalTrips,
+                    OverallTotalMileageKm = overallTotalMileage,
+                    NonRailTrips = nonRailTripCount,
+                    NonRailMileageKm = nonRailMileage,
+                    FirstTripDate = firstTripDate,
+                    LatestTripDate = latestTripDate,
+                    ExplorerLevel = ResolveExplorerLevel(overallTotalMileage)
+                };
+            }
+
+            var totalTrips = railTrips.Count;
+            var totalSpend = railTrips.Sum(x => x.Price);
+            var highestFare = railTrips.Max(x => x.Price);
+
+            var tripMileageList = railTrips.Select(GetTripMileage).ToList();
             var totalMileage = tripMileageList.Sum();
             var longestTripMileage = tripMileageList.Max();
 
-            var uniqueRoutesByVia = trips
+            var uniqueRoutesByVia = railTrips
                 .SelectMany(x => x.ViaRouteSegments ?? [])
                 .Select(x => x.RouteName?.Trim())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -30,36 +53,36 @@ namespace RailLog.Services
             var uniqueRoutes = uniqueRoutesByVia;
             if (uniqueRoutes == 0)
             {
-                uniqueRoutes = trips
+                uniqueRoutes = railTrips
                     .Select(x => $"{x.FromStation.Trim()} -> {x.ToStation.Trim()}")
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count();
                 routeStatHint = "无经由数据时按区间统计";
             }
 
-            var rollingStockTypes = trips
+            var rollingStockTypes = railTrips
                 .SelectMany(x => ExtractRollingStockTypes(x.RollingStock))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             var topRouteVisits = BuildTopVisitItems(
-                trips.SelectMany(ExtractRouteVisitsForTrip),
+                railTrips.SelectMany(ExtractRouteVisitsForTrip),
                 8);
             var topStationVisits = BuildTopVisitItems(
-                trips.SelectMany(ExtractStationVisitsForTrip),
+                railTrips.SelectMany(ExtractStationVisitsForTrip),
                 8);
 
-            var uniqueTrainNumbers = trips
+            var uniqueTrainNumbers = railTrips
                 .Select(x => x.TrainNumber.Trim().ToUpperInvariant())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
 
-            var uniqueStations = trips
+            var uniqueStations = railTrips
                 .SelectMany(ExtractStationVisitsForTrip)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
 
-            var uniqueSeatTypes = trips
+            var uniqueSeatTypes = railTrips
                 .Where(x => !string.IsNullOrWhiteSpace(x.SeatType))
                 .Select(x => x.SeatType!.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -67,6 +90,10 @@ namespace RailLog.Services
 
             return new DashboardStats
             {
+                OverallTotalTrips = overallTotalTrips,
+                OverallTotalMileageKm = overallTotalMileage,
+                NonRailTrips = nonRailTripCount,
+                NonRailMileageKm = nonRailMileage,
                 TotalTrips = totalTrips,
                 TotalSpend = totalSpend,
                 HighestFare = highestFare,
@@ -75,15 +102,15 @@ namespace RailLog.Services
                 UniqueRoutes = uniqueRoutes,
                 RouteStatHint = routeStatHint,
                 UniqueRollingStockTypes = rollingStockTypes.Count,
-                RollingStockRecords = trips.Count(x => !string.IsNullOrWhiteSpace(x.RollingStock)),
+                RollingStockRecords = railTrips.Count(x => !string.IsNullOrWhiteSpace(x.RollingStock)),
                 UniqueStations = uniqueStations,
                 TopRouteVisits = topRouteVisits,
                 TopStationVisits = topStationVisits,
                 UniqueTrainNumbers = uniqueTrainNumbers,
                 UniqueSeatTypes = uniqueSeatTypes,
-                FirstTripDate = trips.Min(x => x.TravelDate),
-                LatestTripDate = trips.Max(x => x.TravelDate),
-                ExplorerLevel = ResolveExplorerLevel(totalMileage)
+                FirstTripDate = firstTripDate,
+                LatestTripDate = latestTripDate,
+                ExplorerLevel = ResolveExplorerLevel(overallTotalMileage)
             };
         }
 
@@ -348,6 +375,14 @@ namespace RailLog.Services
     public sealed class DashboardStats
     {
         public static DashboardStats Empty { get; } = new();
+
+        public int OverallTotalTrips { get; init; }
+
+        public decimal OverallTotalMileageKm { get; init; }
+
+        public int NonRailTrips { get; init; }
+
+        public decimal NonRailMileageKm { get; init; }
 
         public int TotalTrips { get; init; }
 

@@ -10,6 +10,7 @@ public static class TripApiDtoMapper
         return new TripRecordDto
         {
             Id = source.Id,
+            IsRailTrip = source.IsRailTrip,
             TrainNumber = source.TrainNumber,
             TravelDate = source.TravelDate,
             RollingStock = source.RollingStock,
@@ -38,6 +39,10 @@ public static class TripApiDtoMapper
     {
         return new DashboardStatsDto
         {
+            OverallTotalTrips = source.OverallTotalTrips,
+            OverallTotalMileageKm = source.OverallTotalMileageKm,
+            NonRailTrips = source.NonRailTrips,
+            NonRailMileageKm = source.NonRailMileageKm,
             TotalTrips = source.TotalTrips,
             TotalSpend = source.TotalSpend,
             HighestFare = source.HighestFare,
@@ -134,9 +139,11 @@ public static class TripApiDtoMapper
             TopBySpend = source.TopBySpend.Select(x => x.ToDto()).ToList(),
             TopByTrips = source.TopByTrips.Select(x => x.ToDto()).ToList(),
             TopByMileage = source.TopByMileage.Select(x => x.ToDto()).ToList(),
+            TopByNonRailMileage = source.TopByNonRailMileage.Select(x => x.ToDto()).ToList(),
             TopSingleBySpend = source.TopSingleBySpend.Select(x => x.ToDto()).ToList(),
             TopSingleByMileage = source.TopSingleByMileage.Select(x => x.ToDto()).ToList(),
-            TopSingleLatest = source.TopSingleLatest.Select(x => x.ToDto()).ToList(),
+            TopSingleByCostPerformance = source.TopSingleByCostPerformance.Select(x => x.ToDto()).ToList(),
+            TopSingleByLuxury = source.TopSingleByLuxury.Select(x => x.ToDto()).ToList(),
             TopStationsByVisits = source.TopStationsByVisits.Select(x => x.ToDto()).ToList(),
             TopTrainsByTrips = source.TopTrainsByTrips.Select(x => x.ToDto()).ToList(),
             TopRoutesByTrips = source.TopRoutesByTrips.Select(x => x.ToDto()).ToList()
@@ -168,9 +175,9 @@ public static class TripApiDtoMapper
             FromStation = source.FromStation,
             ToStation = source.ToStation,
             TravelDate = source.TravelDate,
-            CreatedAt = source.CreatedAt,
             Price = source.Price,
-            MileageKm = source.MileageKm
+            MileageKm = source.MileageKm,
+            PricePerKm = source.PricePerKm
         };
     }
 

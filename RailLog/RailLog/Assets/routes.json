@@ -37537,6 +37537,99 @@
           "mileage": 60
         }
       ]
+    },
+    {
+      "route_name": "粤海轮渡",
+      "route_version_id": 1360,
+      "stations": [
+        {
+          "id": 1,
+          "station_name": "海安南",
+          "mileage": 0
+        },
+        {
+          "id": 2,
+          "station_name": "海口",
+          "mileage": 180
+        }
+      ]
+    },
+    {
+      "route_name": "康山联络线",
+      "route_version_id": 1361,
+      "stations": [
+        {
+          "id": 1,
+          "station_name": "康山所",
+          "mileage": 0
+        },
+        {
+          "id": 2,
+          "station_name": "妙西镇所",
+          "mileage": 4
+        }
+      ]
+    },
+    {
+      "route_name": "沪苏湖高速铁路",
+      "route_version_id": 1362,
+      "stations": [
+        {
+          "id": 1,
+          "station_name": "上海虹桥",
+          "mileage": 0
+        },
+        {
+          "id": 2,
+          "station_name": "七宝南所",
+          "mileage": 0
+        },
+        {
+          "id": 3,
+          "station_name": "春申南所",
+          "mileage": 14
+        },
+        {
+          "id": 4,
+          "station_name": "上海松江",
+          "mileage": 31
+        },
+        {
+          "id": 5,
+          "station_name": "练塘",
+          "mileage": 50
+        },
+        {
+          "id": 6,
+          "station_name": "苏州南",
+          "mileage": 74
+        },
+        {
+          "id": 7,
+          "station_name": "盛泽",
+          "mileage": 104
+        },
+        {
+          "id": 8,
+          "station_name": "湖州南浔",
+          "mileage": 122
+        },
+        {
+          "id": 9,
+          "station_name": "湖州东",
+          "mileage": 144
+        },
+        {
+          "id": 10,
+          "station_name": "康山所",
+          "mileage": 157
+        },
+        {
+          "id": 11,
+          "station_name": "湖州",
+          "mileage": 164
+        }
+      ]
     }
   ]
 }

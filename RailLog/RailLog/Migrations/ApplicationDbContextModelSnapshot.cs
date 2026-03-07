@@ -268,6 +268,9 @@ namespace RailLog.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsRailTrip")
+                        .HasColumnType("INTEGER");
+
                     b.Property<decimal>("MileageKm")
                         .HasColumnType("decimal(8, 1)");
 

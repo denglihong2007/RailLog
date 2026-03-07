@@ -4,6 +4,14 @@ public sealed class DashboardStatsDto
 {
     public static DashboardStatsDto Empty { get; } = new();
 
+    public int OverallTotalTrips { get; init; }
+
+    public decimal OverallTotalMileageKm { get; init; }
+
+    public int NonRailTrips { get; init; }
+
+    public decimal NonRailMileageKm { get; init; }
+
     public int TotalTrips { get; init; }
 
     public decimal TotalSpend { get; init; }

@@ -57,7 +57,7 @@
                         @if (profile.ShowEmail)
                         {
                             <p class="profile-summary__contact mb-0">邮箱：@(string.IsNullOrWhiteSpace(profile.Email) ? "未设置" :
-                                                                                                                                                                                                                                                                                                                        profile.Email)</p>
+                                                                                                                                                                                                                                                                                                                                                                                                                        profile.Email)</p>
                             }
                         </div>
                     </div>
@@ -72,7 +72,6 @@
             <section class="profile-trips mt-4">
                 <div class="achievement-wall__header mb-3">
                     <h3 class="mb-0">全部行程</h3>
-                    <span class="text-muted small">已按他人视角展示</span>
                 </div>
                 <TripTicketPanel Trips="trips" LoadingText="正在加载该用户行程记录..." EmptyText="该用户还没有录入行程记录。"
                                  EmptyFilterText="该筛选条件下暂无行程记录。" TicketCountUnit="条记录" DetailButtonText="查看详情" UsePublicTripDetails="true"
@@ -109,7 +108,8 @@
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
         isAuthenticated = user.Identity?.IsAuthenticated == true;
-        isOwnerProfile = string.Equals(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, UserId, StringComparison.Ordinal);
+        isOwnerProfile = string.Equals(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, UserId,
+StringComparison.Ordinal);
 
         if (!isAuthenticated || string.IsNullOrWhiteSpace(UserId))
         {

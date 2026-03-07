@@ -17,19 +17,30 @@
 
 <EditForm class="mb-4" Model="model" OnValidSubmit="HandleSubmit" FormName="AddTripForm">
     <DataAnnotationsValidator />
+    <div class="alert alert-warning py-2">
+        你录入的行程对所有人可见。为了保护您的隐私，建议在出行后再录入。
+    </div>
     <div class="mb-4">
         <SectionHeader Title="车票识别" />
         <div class="ticket-ocr">
             <div class="row g-3 align-items-center">
                 <div class="col-lg-8 ticket-ocr__actions">
                     <InputFile id="ocr-file-input" class="d-none" OnChange="OnOcrFileSelected"
+                               disabled="@(!IsRailTripEnabled)"
                                accept=".jpg,.jpeg,.png,.bmp,image/jpeg,image/png,image/bmp,image/jpg" />
-                    <label for="ocr-file-input" class="btn btn-outline-secondary mb-0">
+                    <label for="ocr-file-input"
+                           class="@(IsRailTripEnabled ? "btn btn-outline-secondary mb-0" : "btn btn-outline-secondary mb-0 disabled")">
                         <i class="bi bi-folder2-open me-1"></i>选择图片
                     </label>
                     <div class="form-text w-100">
                         可选择本地图片，或在移动端直接调用相机拍照后识别。
                     </div>
+                    @if (!IsRailTripEnabled)
+                    {
+                        <div class="form-text text-muted w-100">
+                            当前为非铁路行程，已关闭自动识别与自动填充。
+                        </div>
+                    }
                     @if (ocrImageFile is not null)
                     {
                         <div class="small text-muted mt-1">
@@ -39,7 +50,7 @@
                 </div>
                 <div class="col-lg-4">
                     <button type="button" class="btn btn-outline-primary w-100" @onclick="RecognizeTicketAsync"
-                            disabled="@(isOcrProcessing || ocrImageFile is null)">
+                            disabled="@(isOcrProcessing || ocrImageFile is null || !IsRailTripEnabled)">
                         @if (isOcrProcessing)
                         {
                             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -64,6 +75,18 @@
     <div class="mb-4">
         <SectionHeader Title="基本信息" />
         <div class="row g-3">
+            <div class="col-12">
+                <div class="form-check form-switch mt-1">
+                    <input class="form-check-input" type="checkbox" id="isRailTrip" checked="@model!.IsRailTrip"
+                           @onchange="OnRailTripToggleChanged" />
+                    <label class="form-check-label" for="isRailTrip">
+                        铁路行程
+                    </label>
+                </div>
+                <div class="form-text">
+                    关闭后将禁用自动识别、自动联想和自动推断功能，且该行程不计入铁路统计与铁路排行榜。
+                </div>
+            </div>
             <div class="col-md-4">
                 <div class="form-floating mb-3">
                     <input type="text" id="trainNumber" class="form-control" placeholder="如: G89"
@@ -165,11 +188,11 @@
                                 新增分段
                             </button>
                             <button type="button" class="btn btn-outline-info btn-sm"
-                                    @onclick="FillMileageFromViaSegments">
+                                    @onclick="FillMileageFromViaSegments" disabled="@(!IsRailTripEnabled)">
                                 汇总里程
                             </button>
                             <button type="button" class="btn btn-outline-primary btn-sm"
-                                    @onclick="ComputeShortestViaRoutesAsync">
+                                    @onclick="ComputeShortestViaRoutesAsync" disabled="@(!IsRailTripEnabled)">
                                 计算最短经由
                             </button>
                         </div>
@@ -351,6 +374,7 @@
     [SupplyParameterFromForm]
     private TripRecordDto? model { get; set; }
     private bool IsEditMode => TripId.HasValue && TripId.Value > 0;
+    private bool IsRailTripEnabled => model?.IsRailTrip ?? true;
 
     private List<string> trainSuggestions = [];
     private List<string> stationSuggestions = [];
@@ -401,7 +425,7 @@ new(StringComparer.OrdinalIgnoreCase);
             }
 
             model = existing;
-            if (!string.IsNullOrWhiteSpace(model.TrainNumber))
+            if (model.IsRailTrip && !string.IsNullOrWhiteSpace(model.TrainNumber))
             {
                 var train = model.TrainNumber.Trim().ToUpperInvariant();
                 model.TrainNumber = train;
@@ -434,6 +458,11 @@ new(StringComparer.OrdinalIgnoreCase);
 
         var trainInput = args.Value?.ToString()?.Trim().ToUpperInvariant() ?? string.Empty;
         model.TrainNumber = trainInput;
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         loadedStationsForTrain = null;
         stationSuggestions = [];
         stationStops = [];
@@ -453,6 +482,10 @@ new(StringComparer.OrdinalIgnoreCase);
 
         var train = model.TrainNumber.Trim().ToUpperInvariant();
         model.TrainNumber = train;
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(train))
         {
@@ -480,6 +513,11 @@ new(StringComparer.OrdinalIgnoreCase);
 
     private Task OnTravelDateChanged()
     {
+        if (!IsRailTripEnabled)
+        {
+            return Task.CompletedTask;
+        }
+
         return TryLoadRollingStockAsync();
     }
 
@@ -493,7 +531,10 @@ new(StringComparer.OrdinalIgnoreCase);
         model.FromStation = args.Value?.ToString()?.Trim() ?? string.Empty;
         model.ViaRouteSegments = [];
         routeHintMessage = null;
-        _ = TryAutoFillTripDetails();
+        if (IsRailTripEnabled)
+        {
+            _ = TryAutoFillTripDetails();
+        }
         return Task.CompletedTask;
     }
 
@@ -507,18 +548,72 @@ new(StringComparer.OrdinalIgnoreCase);
         model.ToStation = args.Value?.ToString()?.Trim() ?? string.Empty;
         model.ViaRouteSegments = [];
         routeHintMessage = null;
-        _ = TryAutoFillTripDetails();
+        if (IsRailTripEnabled)
+        {
+            _ = TryAutoFillTripDetails();
+        }
         return Task.CompletedTask;
     }
 
     private async Task OnStationInputCompleted(FocusEventArgs _)
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         TryAutoFillTripDetails();
         await InferViaRouteSegmentsFromTimetableAsync();
     }
 
+    private Task OnRailTripToggleChanged(ChangeEventArgs args)
+    {
+        if (model is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var isRailTrip = args.Value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out var parsed) => parsed,
+            _ => true
+        };
+
+        model.IsRailTrip = isRailTrip;
+        if (isRailTrip)
+        {
+            return Task.CompletedTask;
+        }
+
+        trainSuggestCts?.Cancel();
+        rollingStockCts?.Cancel();
+        routePathCts?.Cancel();
+        segmentRouteSuggestCts?.Cancel();
+        segmentStationSuggestCts?.Cancel();
+        trainSuggestions = [];
+        trainSuggestionSet.Clear();
+        stationSuggestions = [];
+        stationStops = [];
+        model.ViaRouteSegments = [];
+        loadedStationsForTrain = null;
+        segmentRouteNameSuggestions = [];
+        segmentStationNameSuggestions = [];
+        routeHintMessage = null;
+        ocrImageFile = null;
+        ocrStatusMessage = null;
+        ocrStatusIsError = false;
+        isOcrProcessing = false;
+        return Task.CompletedTask;
+    }
+
     private async Task OnSegmentRouteChangedAsync(int index, string? routeName)
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
         {
             return;
@@ -534,6 +629,11 @@ new(StringComparer.OrdinalIgnoreCase);
 
     private async Task OnSegmentStationChangedAsync(int index, bool isFrom, string? stationName)
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
         {
             return;
@@ -662,6 +762,11 @@ new(StringComparer.OrdinalIgnoreCase);
 
     private void FillMileageFromViaSegments()
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         ApplyMileageFromViaSegments(overwriteWithZero: true);
     }
 
@@ -681,6 +786,11 @@ new(StringComparer.OrdinalIgnoreCase);
 
     private async Task TryRecalculateSegmentMileageAsync(int index)
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         if (model is null || index < 0 || index >= model.ViaRouteSegments.Count)
         {
             return;
@@ -720,6 +830,11 @@ StringComparison.OrdinalIgnoreCase));
 
     private async Task LoadTrainSuggestionsAsync(string keyword, bool useDebounce)
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         trainSuggestCts?.Cancel();
         trainSuggestCts = new CancellationTokenSource();
         var cancellationToken = trainSuggestCts.Token;
@@ -759,6 +874,11 @@ StringComparison.OrdinalIgnoreCase));
 
     private async Task TryLoadRollingStockAsync()
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         if (model is null)
         {
             return;
@@ -793,6 +913,11 @@ StringComparison.OrdinalIgnoreCase));
 
     private async Task LoadStationsByTrainAsync(string train)
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         if (loadedStationsForTrain == train)
         {
             return;
@@ -847,6 +972,12 @@ StringComparison.OrdinalIgnoreCase));
 
     private async Task RecognizeTicketAsync()
     {
+        if (!IsRailTripEnabled)
+        {
+            SetOcrStatus("当前为非铁路行程，已关闭车票识别。", isError: true);
+            return;
+        }
+
         if (model is null)
         {
             return;
@@ -1048,6 +1179,11 @@ StringComparison.OrdinalIgnoreCase));
 
     private bool TryAutoFillTripDetails()
     {
+        if (!IsRailTripEnabled)
+        {
+            return false;
+        }
+
         if (model is null || stationStops.Count == 0)
         {
             return false;
@@ -1100,6 +1236,11 @@ StringComparison.OrdinalIgnoreCase));
 
     private async Task InferViaRouteSegmentsFromTimetableAsync()
     {
+        if (!IsRailTripEnabled)
+        {
+            return;
+        }
+
         if (model is null || stationStops.Count == 0)
         {
             return;
@@ -1261,6 +1402,12 @@ fallbackResult.RouteSegments.Count == 0)
 
     private async Task ComputeShortestViaRoutesAsync()
     {
+        if (!IsRailTripEnabled)
+        {
+            routeHintMessage = "当前为非铁路行程，已关闭最短经由自动计算。";
+            return;
+        }
+
         if (model is null)
         {
             return;
@@ -1406,6 +1553,12 @@ $"from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&allowShortestF
 
     private bool ValidateViaRouteSegments()
     {
+        if (!IsRailTripEnabled)
+        {
+            routeHintMessage = null;
+            return true;
+        }
+
         if (model is null || model.ViaRouteSegments.Count == 0)
         {
             return true;

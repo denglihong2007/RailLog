@@ -27,6 +27,12 @@
     color: rgba(231, 243, 255, 0.9);
 }
 
+.dashboard-hero__note {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: rgba(231, 243, 255, 0.82);
+}
+
 .dashboard-rank {
     min-width: 13rem;
     padding: 0.85rem 1rem;

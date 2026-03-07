@@ -5,7 +5,7 @@
 @inject HttpClient HttpClient
 
 <PageTitle>排行榜 - 轨记</PageTitle>
-<PageHeader Title="排行榜" Subtitle="用户排名、行程排名与要素排名" IconClass="bi bi-trophy" />
+<PageHeader Title="排行榜" Subtitle="用户排名、行程排名（铁路）与要素排名" IconClass="bi bi-trophy" />
 
 <div class="leaderboard-page container pb-3">
     @if (isLoading)
@@ -122,13 +122,40 @@
                         }
                     </ol>
                 </article>
+
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">非铁路行程里程榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopByNonRailMileage.Count; i++)
+                        {
+                            var entry = leaderboard.TopByNonRailMileage[i];
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link" href="/profile/@entry.UserId">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name">@entry.DisplayName</span>
+                                    <span class="leaderboard-item__value">@entry.TotalMileageKm.ToString("N1") km</span>
+                                </a>
+                            </li>
+                        }
+                    </ol>
+                </article>
             </div>
         </section>
 
         <section class="leaderboard-group mt-4">
             <div class="leaderboard-group__header">
                 <h3 class="mb-0">行程排名</h3>
-                <span class="text-muted small">按单条行程记录统计，可点击查看详情</span>
+                <span class="text-muted small">按单条铁路行程记录统计，可点击查看详情</span>
             </div>
             <div class="leaderboard-grid mt-3">
                 <article class="leaderboard-card">
@@ -200,11 +227,11 @@
                 </article>
 
                 <article class="leaderboard-card">
-                    <h4 class="leaderboard-card__title">最新行程榜</h4>
+                    <h4 class="leaderboard-card__title">性价比榜</h4>
                     <ol class="leaderboard-list">
-                        @for (var i = 0; i < leaderboard.TopSingleLatest.Count; i++)
+                        @for (var i = 0; i < leaderboard.TopSingleByCostPerformance.Count; i++)
                         {
-                            var entry = leaderboard.TopSingleLatest[i];
+                            var entry = leaderboard.TopSingleByCostPerformance[i];
                             <li>
                                 <a class="leaderboard-item leaderboard-item--link"
                                        href="/trip-details/@entry.TripId?public=true">
@@ -224,8 +251,42 @@
                                         <span class="leaderboard-item__secondary">@entry.FromStation → @entry.ToStation</span>
                                     </span>
                                     <span class="leaderboard-item__value leaderboard-item__value--trip">
-                                        <span>@entry.CreatedAt.ToString("HH:mm:ss")</span>
-                                        <span class="leaderboard-item__hint">@entry.CreatedAt.ToString("yyyy-MM-dd")</span>
+                                        <span>@entry.PricePerKm.ToString("N3") ¥/km</span>
+                                        <span class="leaderboard-item__hint">¥@entry.Price.ToString("N2") · @entry.MileageKm.ToString("N1") km</span>
+                                    </span>
+                                </a>
+                            </li>
+                        }
+                    </ol>
+                </article>
+
+                <article class="leaderboard-card">
+                    <h4 class="leaderboard-card__title">土豪榜</h4>
+                    <ol class="leaderboard-list">
+                        @for (var i = 0; i < leaderboard.TopSingleByLuxury.Count; i++)
+                        {
+                            var entry = leaderboard.TopSingleByLuxury[i];
+                            <li>
+                                <a class="leaderboard-item leaderboard-item--link"
+                                       href="/trip-details/@entry.TripId?public=true">
+                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                    <span class="leaderboard-item__avatar">
+                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                        {
+                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                        }
+                                    </span>
+                                    <span class="leaderboard-item__name leaderboard-item__name--trip">
+                                        <span class="leaderboard-item__primary">@entry.DisplayName · @entry.TrainNumber</span>
+                                        <span class="leaderboard-item__secondary">@entry.FromStation → @entry.ToStation</span>
+                                    </span>
+                                    <span class="leaderboard-item__value leaderboard-item__value--trip">
+                                        <span>@entry.PricePerKm.ToString("N3") ¥/km</span>
+                                        <span class="leaderboard-item__hint">¥@entry.Price.ToString("N2") · @entry.MileageKm.ToString("N1") km</span>
                                     </span>
                                 </a>
                             </li>
@@ -305,9 +366,11 @@
         leaderboard.TopBySpend.Count > 0 ||
         leaderboard.TopByTrips.Count > 0 ||
         leaderboard.TopByMileage.Count > 0 ||
+        leaderboard.TopByNonRailMileage.Count > 0 ||
         leaderboard.TopSingleBySpend.Count > 0 ||
         leaderboard.TopSingleByMileage.Count > 0 ||
-        leaderboard.TopSingleLatest.Count > 0 ||
+        leaderboard.TopSingleByCostPerformance.Count > 0 ||
+        leaderboard.TopSingleByLuxury.Count > 0 ||
         leaderboard.TopStationsByVisits.Count > 0 ||
         leaderboard.TopTrainsByTrips.Count > 0 ||
         leaderboard.TopRoutesByTrips.Count > 0;

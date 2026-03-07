@@ -1,7 +1,7 @@
 @namespace RailLog.Shared.Components
 @using RailLog.Shared.Models
 
-@if (Stats.TotalTrips == 0)
+@if (Stats.OverallTotalTrips == 0)
 {
     <section class="dashboard-empty card border-0 shadow-sm">
         <div class="card-body py-4">
@@ -22,16 +22,19 @@ else
 {
     <section class="dashboard-hero">
         <div>
-            <p class="dashboard-hero__eyebrow mb-1">铁路生涯总览</p>
+            <p class="dashboard-hero__eyebrow mb-1">交通生涯总览</p>
             <h2 class="dashboard-hero__title mb-2">@HeroTitle</h2>
             <p class="dashboard-hero__meta mb-0">
                 记录时间：@Stats.FirstTripDate?.ToString("yyyy-MM-dd") 至 @Stats.LatestTripDate?.ToString("yyyy-MM-dd")
+            </p>
+            <p class="dashboard-hero__note mb-0">
+                含非铁路：@Stats.NonRailTrips 次 · @Stats.NonRailMileageKm.ToString("N1") km
             </p>
         </div>
         <div class="dashboard-rank">
             <div class="dashboard-rank__label">当前称号</div>
             <div class="dashboard-rank__name">@Stats.ExplorerLevel</div>
-            <div class="dashboard-rank__mileage">@Stats.TotalMileageKm.ToString("N1") km</div>
+            <div class="dashboard-rank__mileage">@Stats.OverallTotalMileageKm.ToString("N1") km</div>
         </div>
     </section>
 
@@ -71,7 +74,7 @@ else
     <section class="achievement-wall mt-4">
         <div class="achievement-wall__header">
             <h3 class="mb-0">成就墙</h3>
-            <span class="text-muted small">按当前记录自动解锁</span>
+            <span class="text-muted small">按铁路行程记录自动解锁</span>
         </div>
         <div class="achievement-grid mt-3">
             @foreach (var achievement in Achievements)
@@ -161,8 +164,8 @@ else
     public string AddFirstTripUrl { get; set; } = "/add-trip";
 
     private string HeroTitle => IsOwnerView
-        ? $"你已累计出发 {Stats.TotalTrips} 次"
-        : $"{SubjectName} 已累计出发 {Stats.TotalTrips} 次";
+        ? $"你已累计出发 {Stats.OverallTotalTrips} 次"
+        : $"{SubjectName} 已累计出发 {Stats.OverallTotalTrips} 次";
 
     private string FrequencySubtitle => IsOwnerView
         ? "按你的行程记录统计"

@@ -68,7 +68,7 @@
             <div class="ticket-grid">
                 @foreach (var trip in filteredTrips)
                 {
-                    <a class="trip-ticket" href="@BuildTripDetailsUrl(trip.Id)">
+                    <a class="@GetTicketClass(trip)" href="@BuildTripDetailsUrl(trip.Id)">
                         <span class="ticket-bump ticket-bump-left-top" aria-hidden="true"></span>
                         <span class="ticket-bump ticket-bump-left-bottom" aria-hidden="true"></span>
                         <span class="ticket-bump ticket-bump-right-top" aria-hidden="true"></span>
@@ -94,7 +94,7 @@
                                 </div>
                                 <div class="ticket-right">
                                     <span class="field-value">@(string.IsNullOrWhiteSpace(trip.SeatNumber) ? "未填" :
-                                                                                                                                                                                                                                                                                                                trip.SeatNumber)</span>
+                                                                                                                                                                                                                                                                                                                                                                                                trip.SeatNumber)</span>
                                     </div>
                                 </div>
 
@@ -262,10 +262,19 @@
     private string BuildQrCodeImageUrl(int tripId)
     {
         var target = Uri.EscapeDataString(BuildTripDetailsAbsoluteUrl(tripId));
+        if (!target.EndsWith($"?public=true", StringComparison.OrdinalIgnoreCase))
+        {
+            target += "?public=true";
+        }
         return $"https://quickchart.io/qr?size=120&margin=0&dark=1A3B58&light=0000&text={target}";
     }
 
     private static string FormatTripId(int tripId) => tripId.ToString("D7");
+
+    private static string GetTicketClass(TripRecordDto trip)
+    {
+        return trip.IsRailTrip ? "trip-ticket" : "trip-ticket trip-ticket-non-rail";
+    }
 
     private string GetPassengerName()
     {

@@ -7,6 +7,9 @@ namespace RailLog.Shared.Models
     {
         public int Id { get; set; }
 
+        [Display(Name = "铁路行程")]
+        public bool IsRailTrip { get; set; } = true;
+
         [Required(ErrorMessage = "请输入车次")]
         [Display(Name = "车次")]
         public string TrainNumber { get; set; } = string.Empty; // 例如：G1, D3202, K123
