@@ -1,0 +1,491 @@
+@page "/statistics"
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using RailLog.Shared.Models
+@attribute [Authorize]
+@rendermode InteractiveWebAssembly
+@inject HttpClient Http
+
+<PageTitle>统计 - 轨记</PageTitle>
+<PageHeader Title="统计" Subtitle="按时间范围查看铁路与非铁路行程出行趋势" IconClass="bi bi-bar-chart-line" />
+
+<div class="statistics-page container pb-4">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="text-muted mt-3 mb-0">正在计算你的出行统计...</p>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(loadErrorMessage))
+    {
+        <div class="alert alert-danger mb-0">@loadErrorMessage</div>
+    }
+    else if (trips.Count == 0)
+    {
+        <section class="statistics-empty card border-0 shadow-sm">
+            <div class="card-body py-4">
+                <h2 class="h4 mb-2">暂无可统计的行程</h2>
+                <p class="text-muted mb-0">先去记录一条行程，再回来查看趋势图。</p>
+            </div>
+        </section>
+    }
+    else
+    {
+        var (rangeStart, rangeEnd) = GetNormalizedDateRange();
+        var tripsInRange = GetTripsInRange(rangeStart, rangeEnd);
+        var buckets = BuildAggregatedBuckets(rangeStart, rangeEnd, tripsInRange);
+        var mileageChart = BuildChartData(MetricType.Mileage, buckets);
+        var tripCountChart = BuildChartData(MetricType.TripCount, buckets);
+        var spendChart = BuildChartData(MetricType.Spend, buckets);
+        var metricCards = new[]
+        {
+            new MetricCardDescriptor("里程统计", "单位：km", MetricType.Mileage, mileageChart),
+            new MetricCardDescriptor("次数统计", "单位：次", MetricType.TripCount, tripCountChart),
+            new MetricCardDescriptor("花费统计", "单位：元", MetricType.Spend, spendChart)
+        };
+
+        <section class="statistics-filter card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-lg-2 col-md-4 col-sm-6">
+                        <label for="statistics-date-from" class="form-label">起始日期</label>
+                        <InputDate id="statistics-date-from" class="form-control" @bind-Value="dateFrom" />
+                    </div>
+
+                    <div class="col-lg-2 col-md-4 col-sm-6">
+                        <label for="statistics-date-to" class="form-label">截止日期</label>
+                        <InputDate id="statistics-date-to" class="form-control" @bind-Value="dateTo" />
+                    </div>
+
+                    <div class="col-lg-2 col-md-4 col-sm-6">
+                        <label for="statistics-axis" class="form-label">横轴坐标</label>
+                        <InputSelect id="statistics-axis" class="form-select" @bind-Value="axisMode">
+                            <option value="@TimeAxisMode.Week">周</option>
+                            <option value="@TimeAxisMode.Month">月</option>
+                            <option value="@TimeAxisMode.Year">年</option>
+                        </InputSelect>
+                    </div>
+
+                    <div class="col-lg-6 col-md-12">
+                        <label class="form-label d-block">行程类型</label>
+                        <div class="statistics-filter__type-toggle">
+                            <label class="form-check form-check-inline statistics-filter__checkbox mb-0" for="statistics-type-rail">
+                                <input id="statistics-type-rail" class="form-check-input" type="checkbox" @bind="includeRailTrips" />
+                                <span class="form-check-label">铁路行程</span>
+                            </label>
+
+                            <label class="form-check form-check-inline statistics-filter__checkbox mb-0" for="statistics-type-nonrail">
+                                <input id="statistics-type-nonrail" class="form-check-input" type="checkbox" @bind="includeNonRailTrips" />
+                                <span class="form-check-label">非铁路行程</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="statistics-filter__summary mt-3">
+                    <span>当前范围：@rangeStart.ToString("yyyy-MM-dd") 至 @rangeEnd.ToString("yyyy-MM-dd")</span>
+                    <span>共 @tripsInRange.Count 条记录</span>
+                </div>
+            </div>
+        </section>
+
+        @if (!HasAnyTripTypeSelected)
+        {
+            <div class="alert alert-warning mb-0">请至少勾选一种行程类型。</div>
+        }
+        else if (tripsInRange.Count == 0)
+        {
+            <div class="alert alert-warning mb-0">当前日期范围内没有行程记录。</div>
+        }
+        else if (!metricCards.Any(x => x.Chart.HasData))
+        {
+            <div class="alert alert-warning mb-0">当前筛选条件下没有可展示的数据。</div>
+        }
+        else
+        {
+            <div class="statistics-chart-grid">
+                @foreach (var card in metricCards)
+                {
+                    <section class="statistics-chart card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="statistics-chart__header">
+                                <div>
+                                    <h3 class="statistics-chart__title">@card.Title</h3>
+                                    <p class="statistics-chart__subtitle mb-0">@card.Subtitle</p>
+                                </div>
+                                <div class="statistics-chart__legend">
+                                    <span class="statistics-chart__legend-item">
+                                        <i class="statistics-chart__legend-swatch statistics-chart__legend-swatch--rail"></i>
+                                        铁路
+                                    </span>
+                                    <span class="statistics-chart__legend-item">
+                                        <i class="statistics-chart__legend-swatch statistics-chart__legend-swatch--nonrail"></i>
+                                        非铁路行程
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="statistics-chart__body">
+                                <div class="statistics-chart__y-axis">
+                                    @foreach (var tick in GetScaleTicks(card.Chart.MaxValue))
+                                    {
+                                        <span>@FormatAxisTick(card.MetricType, tick)</span>
+                                    }
+                                </div>
+
+                                <div class="statistics-chart__plot-scroll">
+                                    <div class="statistics-chart__plot" style="@BuildPlotWidthStyle(card.Chart.Points.Count)">
+                                        @foreach (var ratio in ScaleRatios)
+                                        {
+                                            <span class="statistics-chart__grid-line" style="@BuildBottomStyle(ratio)"></span>
+                                        }
+
+                                        <div class="statistics-chart__bars">
+                                            @for (var pointIndex = 0; pointIndex < card.Chart.Points.Count; pointIndex++)
+                                            {
+                                                var point = card.Chart.Points[pointIndex];
+                                                <div class="statistics-chart__bar-group" style="@($"--bar-index:{pointIndex};")">
+                                                    <div class="statistics-chart__bar-stack" title="@BuildBarTitle(card.MetricType, point)">
+                                                        @if (point.RailValue > 0)
+                                                        {
+                                                            <span class="statistics-chart__bar-segment statistics-chart__bar-segment--rail"
+                                                                  style="@BuildHeightStyle(point.RailValue, card.Chart.MaxValue)"></span>
+                                                        }
+
+                                                        @if (point.NonRailValue > 0)
+                                                        {
+                                                            <span class="statistics-chart__bar-segment statistics-chart__bar-segment--nonrail"
+                                                                  style="@BuildHeightStyle(point.NonRailValue, card.Chart.MaxValue)"></span>
+                                                        }
+                                                    </div>
+
+                                                    <span class="statistics-chart__x-label">@point.Label</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private static readonly decimal[] ScaleRatios = [1m, 0.75m, 0.5m, 0.25m, 0m];
+
+    private readonly List<TripRecordDto> trips = [];
+
+    private DateOnly dateFrom = DateOnly.FromDateTime(DateTime.Today).AddMonths(-11);
+    private DateOnly dateTo = DateOnly.FromDateTime(DateTime.Today);
+    private bool includeRailTrips = true;
+    private bool includeNonRailTrips = true;
+    private TimeAxisMode axisMode = TimeAxisMode.Month;
+
+    private bool isLoading = true;
+    private string? loadErrorMessage;
+
+    private bool HasAnyTripTypeSelected => includeRailTrips || includeNonRailTrips;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!OperatingSystem.IsBrowser())
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<TripRecordDto>>("api/trips") ?? [];
+            trips.Clear();
+            trips.AddRange(response);
+            InitializeDefaultRange();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load statistics data: {ex}");
+            loadErrorMessage = "加载统计数据失败，请稍后重试。";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void InitializeDefaultRange()
+    {
+        if (trips.Count == 0)
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            dateFrom = today.AddMonths(-11);
+            dateTo = today;
+            axisMode = TimeAxisMode.Month;
+            return;
+        }
+
+        var minDate = trips.Min(x => x.TravelDate);
+        var maxDate = trips.Max(x => x.TravelDate);
+        dateFrom = minDate;
+        dateTo = maxDate;
+
+        var spanDays = Math.Abs(maxDate.DayNumber - minDate.DayNumber);
+        axisMode = spanDays switch
+        {
+            > 365 * 3 => TimeAxisMode.Year,
+            > 120 => TimeAxisMode.Month,
+            _ => TimeAxisMode.Week
+        };
+    }
+
+    private (DateOnly Start, DateOnly End) GetNormalizedDateRange()
+    {
+        return dateFrom <= dateTo ? (dateFrom, dateTo) : (dateTo, dateFrom);
+    }
+
+    private List<TripRecordDto> GetTripsInRange(DateOnly start, DateOnly end)
+    {
+        return trips
+            .Where(x => x.TravelDate >= start && x.TravelDate <= end)
+            .ToList();
+    }
+
+    private List<StatsBucket> BuildAggregatedBuckets(DateOnly rangeStart, DateOnly rangeEnd, IReadOnlyCollection<TripRecordDto> tripsInRange)
+    {
+        var buckets = BuildBucketFrames(rangeStart, rangeEnd);
+        var lookup = buckets.ToDictionary(x => x.Start, x => x);
+
+        foreach (var trip in tripsInRange)
+        {
+            var bucketStart = AlignToBucketStart(trip.TravelDate, axisMode);
+            if (!lookup.TryGetValue(bucketStart, out var bucket))
+            {
+                continue;
+            }
+
+            if (trip.IsRailTrip)
+            {
+                bucket.RailMileage += trip.MileageKm;
+                bucket.RailTripCount += 1;
+                bucket.RailSpend += trip.Price;
+            }
+            else
+            {
+                bucket.NonRailMileage += trip.MileageKm;
+                bucket.NonRailTripCount += 1;
+                bucket.NonRailSpend += trip.Price;
+            }
+        }
+
+        return buckets;
+    }
+
+    private List<StatsBucket> BuildBucketFrames(DateOnly rangeStart, DateOnly rangeEnd)
+    {
+        var first = AlignToBucketStart(rangeStart, axisMode);
+        var last = AlignToBucketStart(rangeEnd, axisMode);
+
+        var buckets = new List<StatsBucket>();
+        for (var cursor = first; cursor <= last; cursor = MoveToNextBucket(cursor, axisMode))
+        {
+            buckets.Add(new StatsBucket(cursor, BuildBucketLabel(cursor, axisMode)));
+        }
+
+        return buckets;
+    }
+
+    private MetricChartData BuildChartData(MetricType metricType, IReadOnlyList<StatsBucket> buckets)
+    {
+        var points = buckets
+            .Select(bucket =>
+            {
+                var railValue = includeRailTrips ? GetMetricValue(bucket, metricType, isRail: true) : 0m;
+                var nonRailValue = includeNonRailTrips ? GetMetricValue(bucket, metricType, isRail: false) : 0m;
+                return new ChartPoint(bucket.Label, railValue, nonRailValue, railValue + nonRailValue);
+            })
+            .ToList();
+
+        var maxValue = points.Count == 0 ? 1m : points.Max(x => x.TotalValue);
+        if (maxValue <= 0m)
+        {
+            maxValue = 1m;
+        }
+
+        return new MetricChartData(points, maxValue);
+    }
+
+    private static decimal GetMetricValue(StatsBucket bucket, MetricType metricType, bool isRail)
+    {
+        return metricType switch
+        {
+            MetricType.Mileage => isRail ? bucket.RailMileage : bucket.NonRailMileage,
+            MetricType.TripCount => isRail ? bucket.RailTripCount : bucket.NonRailTripCount,
+            MetricType.Spend => isRail ? bucket.RailSpend : bucket.NonRailSpend,
+            _ => 0m
+        };
+    }
+
+    private static IReadOnlyList<decimal> GetScaleTicks(decimal maxValue)
+    {
+        return ScaleRatios
+            .Select(ratio => maxValue * ratio)
+            .ToList();
+    }
+
+    private static string FormatAxisTick(MetricType metricType, decimal value)
+    {
+        return metricType switch
+        {
+            MetricType.Spend when value >= 10000m => $"{value / 10000m:N1}万",
+            MetricType.TripCount => value.ToString("N0"),
+            _ => value.ToString("N1")
+        };
+    }
+
+    private static string BuildBottomStyle(decimal ratio)
+    {
+        var percent = ratio * 100m;
+        return FormattableString.Invariant($"bottom: {percent:0.###}%;");
+    }
+
+    private static string BuildHeightStyle(decimal value, decimal maxValue)
+    {
+        if (value <= 0m || maxValue <= 0m)
+        {
+            return "height: 0;";
+        }
+
+        var percent = Math.Clamp(value / maxValue * 100m, 0m, 100m);
+        return FormattableString.Invariant($"height: {percent:0.###}%;");
+    }
+
+    private static string BuildPlotWidthStyle(int pointCount)
+    {
+        var minWidth = Math.Max(320, pointCount * 36);
+        return FormattableString.Invariant($"min-width: {minWidth}px;");
+    }
+
+    private static string BuildBarTitle(MetricType metricType, ChartPoint point)
+    {
+        return $"{point.Label} | 铁路行程 {FormatMetricValue(metricType, point.RailValue)} | 非铁路行程 {FormatMetricValue(metricType, point.NonRailValue)} | 合计 {FormatMetricValue(metricType, point.TotalValue)}";
+    }
+
+    private static string FormatMetricValue(MetricType metricType, decimal value)
+    {
+        return metricType switch
+        {
+            MetricType.Mileage => $"{value:N1} km",
+            MetricType.TripCount => $"{Math.Round(value, MidpointRounding.AwayFromZero):N0} 次",
+            MetricType.Spend => $"¥{value:N2}",
+            _ => value.ToString("N2")
+        };
+    }
+
+    private static DateOnly AlignToBucketStart(DateOnly date, TimeAxisMode mode)
+    {
+        return mode switch
+        {
+            TimeAxisMode.Week => StartOfWeek(date),
+            TimeAxisMode.Month => new DateOnly(date.Year, date.Month, 1),
+            TimeAxisMode.Year => new DateOnly(date.Year, 1, 1),
+            _ => date
+        };
+    }
+
+    private static DateOnly MoveToNextBucket(DateOnly date, TimeAxisMode mode)
+    {
+        return mode switch
+        {
+            TimeAxisMode.Week => date.AddDays(7),
+            TimeAxisMode.Month => date.AddMonths(1),
+            TimeAxisMode.Year => date.AddYears(1),
+            _ => date
+        };
+    }
+
+    private static string BuildBucketLabel(DateOnly date, TimeAxisMode mode)
+    {
+        return mode switch
+        {
+            TimeAxisMode.Week => BuildIsoWeekLabel(date),
+            TimeAxisMode.Month => date.ToString("yyyy-MM"),
+            TimeAxisMode.Year => date.ToString("yyyy"),
+            _ => date.ToString("yyyy-MM-dd")
+        };
+    }
+
+    private static string BuildIsoWeekLabel(DateOnly date)
+    {
+        var dateTime = date.ToDateTime(TimeOnly.MinValue);
+        var isoYear = ISOWeek.GetYear(dateTime);
+        var isoWeek = ISOWeek.GetWeekOfYear(dateTime);
+        return $"{isoYear}-W{isoWeek:00}";
+    }
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        var offset = ((int)date.DayOfWeek + 6) % 7;
+        return date.AddDays(-offset);
+    }
+
+    private enum TimeAxisMode
+    {
+        Week,
+        Month,
+        Year
+    }
+
+    private enum MetricType
+    {
+        Mileage,
+        TripCount,
+        Spend
+    }
+
+    private sealed class StatsBucket
+    {
+        public StatsBucket(DateOnly start, string label)
+        {
+            Start = start;
+            Label = label;
+        }
+
+        public DateOnly Start { get; }
+
+        public string Label { get; }
+
+        public decimal RailMileage { get; set; }
+
+        public decimal NonRailMileage { get; set; }
+
+        public int RailTripCount { get; set; }
+
+        public int NonRailTripCount { get; set; }
+
+        public decimal RailSpend { get; set; }
+
+        public decimal NonRailSpend { get; set; }
+    }
+
+    private sealed record ChartPoint(string Label, decimal RailValue, decimal NonRailValue, decimal TotalValue);
+
+    private sealed class MetricChartData
+    {
+        public MetricChartData(IReadOnlyList<ChartPoint> points, decimal maxValue)
+        {
+            Points = points;
+            MaxValue = maxValue;
+        }
+
+        public IReadOnlyList<ChartPoint> Points { get; }
+
+        public decimal MaxValue { get; }
+
+        public bool HasData => Points.Any(x => x.TotalValue > 0m);
+    }
+
+    private sealed record MetricCardDescriptor(string Title, string Subtitle, MetricType MetricType, MetricChartData Chart);
+}

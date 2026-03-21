@@ -36,6 +36,42 @@
     }
     else
     {
+        <section class="leaderboard-overview mb-4">
+            <div class="leaderboard-overview__header">
+                <h2 class="leaderboard-overview__heading mb-0">全站数据速览</h2>
+            </div>
+            <div class="leaderboard-overview__grid mt-3">
+                <article class="leaderboard-overview__card">
+                    <h2 class="leaderboard-overview__title">累计</h2>
+                    <p class="leaderboard-overview__value mb-0">
+                        <strong>@leaderboard.CumulativeTotalMileageKm.ToString("N1") km</strong>
+                        <span> · @leaderboard.CumulativeTotalTrips 次</span>
+                    </p>
+                </article>
+                <article class="leaderboard-overview__card">
+                    <h2 class="leaderboard-overview__title">本年</h2>
+                    <p class="leaderboard-overview__value mb-0">
+                        <strong>@leaderboard.CurrentYearTotalMileageKm.ToString("N1") km</strong>
+                        <span> · @leaderboard.CurrentYearTotalTrips 次</span>
+                    </p>
+                </article>
+                <article class="leaderboard-overview__card">
+                    <h2 class="leaderboard-overview__title">本月</h2>
+                    <p class="leaderboard-overview__value mb-0">
+                        <strong>@leaderboard.CurrentMonthTotalMileageKm.ToString("N1") km</strong>
+                        <span> · @leaderboard.CurrentMonthTotalTrips 次</span>
+                    </p>
+                </article>
+                <article class="leaderboard-overview__card">
+                    <h2 class="leaderboard-overview__title">本周</h2>
+                    <p class="leaderboard-overview__value mb-0">
+                        <strong>@leaderboard.CurrentWeekTotalMileageKm.ToString("N1") km</strong>
+                        <span> · @leaderboard.CurrentWeekTotalTrips 次</span>
+                    </p>
+                </article>
+            </div>
+        </section>
+
         <section class="leaderboard-group">
             <div class="leaderboard-group__header">
                 <h3 class="mb-0">用户排名</h3>
@@ -252,110 +288,112 @@
                                     </span>
                                     <span class="leaderboard-item__value leaderboard-item__value--trip">
                                         <span>@entry.PricePerKm.ToString("N3") ¥/km</span>
-                                        <span class="leaderboard-item__hint">¥@entry.Price.ToString("N2") · @entry.MileageKm.ToString("N1") km</span>
-                                    </span>
-                                </a>
-                            </li>
-                        }
-                    </ol>
-                </article>
+                                        <span class="leaderboard-item__hint">¥@entry.Price.ToString("N2") ·
+                                            @entry.MileageKm.ToString("N1") km</span>
+                                        </span>
+                                    </a>
+                                </li>
+                            }
+                        </ol>
+                    </article>
 
-                <article class="leaderboard-card">
-                    <h4 class="leaderboard-card__title">土豪榜</h4>
-                    <ol class="leaderboard-list">
-                        @for (var i = 0; i < leaderboard.TopSingleByLuxury.Count; i++)
-                        {
-                            var entry = leaderboard.TopSingleByLuxury[i];
-                            <li>
-                                <a class="leaderboard-item leaderboard-item--link"
-                                       href="/trip-details/@entry.TripId?public=true">
-                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__avatar">
-                                        @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
-                                        {
-                                            <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
-                                        }
-                                        else
-                                        {
-                                            <span>@GetAvatarInitial(entry.DisplayName)</span>
-                                        }
-                                    </span>
-                                    <span class="leaderboard-item__name leaderboard-item__name--trip">
-                                        <span class="leaderboard-item__primary">@entry.DisplayName · @entry.TrainNumber</span>
-                                        <span class="leaderboard-item__secondary">@entry.FromStation → @entry.ToStation</span>
-                                    </span>
-                                    <span class="leaderboard-item__value leaderboard-item__value--trip">
-                                        <span>@entry.PricePerKm.ToString("N3") ¥/km</span>
-                                        <span class="leaderboard-item__hint">¥@entry.Price.ToString("N2") · @entry.MileageKm.ToString("N1") km</span>
-                                    </span>
-                                </a>
-                            </li>
-                        }
-                    </ol>
-                </article>
-            </div>
-        </section>
+                    <article class="leaderboard-card">
+                        <h4 class="leaderboard-card__title">土豪榜</h4>
+                        <ol class="leaderboard-list">
+                            @for (var i = 0; i < leaderboard.TopSingleByLuxury.Count; i++)
+                            {
+                                var entry = leaderboard.TopSingleByLuxury[i];
+                                <li>
+                                    <a class="leaderboard-item leaderboard-item--link"
+                                           href="/trip-details/@entry.TripId?public=true">
+                                        <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                        <span class="leaderboard-item__avatar">
+                                            @if (!string.IsNullOrWhiteSpace(entry.AvatarUrl))
+                                            {
+                                                <img src="@entry.AvatarUrl" alt="@($"{entry.DisplayName}头像")" />
+                                            }
+                                            else
+                                            {
+                                                <span>@GetAvatarInitial(entry.DisplayName)</span>
+                                            }
+                                        </span>
+                                        <span class="leaderboard-item__name leaderboard-item__name--trip">
+                                            <span class="leaderboard-item__primary">@entry.DisplayName · @entry.TrainNumber</span>
+                                            <span class="leaderboard-item__secondary">@entry.FromStation → @entry.ToStation</span>
+                                        </span>
+                                        <span class="leaderboard-item__value leaderboard-item__value--trip">
+                                            <span>@entry.PricePerKm.ToString("N3") ¥/km</span>
+                                            <span class="leaderboard-item__hint">¥@entry.Price.ToString("N2") ·
+                                                @entry.MileageKm.ToString("N1") km</span>
+                                            </span>
+                                        </a>
+                                    </li>
+                                }
+                            </ol>
+                        </article>
+                    </div>
+                </section>
 
-        <section class="leaderboard-group mt-4">
-            <div class="leaderboard-group__header">
-                <h3 class="mb-0">要素排名</h3>
-                <span class="text-muted small">按被探访次数统计（车站 / 车次 / 线路）</span>
-            </div>
-            <div class="leaderboard-grid mt-3">
-                <article class="leaderboard-card">
-                    <h4 class="leaderboard-card__title">被探访最多的车站</h4>
-                    <ol class="leaderboard-list">
-                        @for (var i = 0; i < leaderboard.TopStationsByVisits.Count; i++)
-                        {
-                            var entry = leaderboard.TopStationsByVisits[i];
-                            <li>
-                                <div class="leaderboard-item leaderboard-item--compact">
-                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__name">@entry.Name</span>
-                                    <span class="leaderboard-item__value">@entry.Count 次</span>
-                                </div>
-                            </li>
-                        }
-                    </ol>
-                </article>
+                <section class="leaderboard-group mt-4">
+                    <div class="leaderboard-group__header">
+                        <h3 class="mb-0">要素排名</h3>
+                        <span class="text-muted small">按被探访次数统计（车站 / 车次 / 线路）</span>
+                    </div>
+                    <div class="leaderboard-grid mt-3">
+                        <article class="leaderboard-card">
+                            <h4 class="leaderboard-card__title">被探访最多的车站</h4>
+                            <ol class="leaderboard-list">
+                                @for (var i = 0; i < leaderboard.TopStationsByVisits.Count; i++)
+                                {
+                                    var entry = leaderboard.TopStationsByVisits[i];
+                                    <li>
+                                        <div class="leaderboard-item leaderboard-item--compact">
+                                            <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                            <span class="leaderboard-item__name">@entry.Name</span>
+                                            <span class="leaderboard-item__value">@entry.Count 次</span>
+                                        </div>
+                                    </li>
+                                }
+                            </ol>
+                        </article>
 
-                <article class="leaderboard-card">
-                    <h4 class="leaderboard-card__title">被探访最多的车次</h4>
-                    <ol class="leaderboard-list">
-                        @for (var i = 0; i < leaderboard.TopTrainsByTrips.Count; i++)
-                        {
-                            var entry = leaderboard.TopTrainsByTrips[i];
-                            <li>
-                                <div class="leaderboard-item leaderboard-item--compact">
-                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__name">@entry.Name</span>
-                                    <span class="leaderboard-item__value">@entry.Count 次</span>
-                                </div>
-                            </li>
-                        }
-                    </ol>
-                </article>
+                        <article class="leaderboard-card">
+                            <h4 class="leaderboard-card__title">被探访最多的车次</h4>
+                            <ol class="leaderboard-list">
+                                @for (var i = 0; i < leaderboard.TopTrainsByTrips.Count; i++)
+                                {
+                                    var entry = leaderboard.TopTrainsByTrips[i];
+                                    <li>
+                                        <div class="leaderboard-item leaderboard-item--compact">
+                                            <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                            <span class="leaderboard-item__name">@entry.Name</span>
+                                            <span class="leaderboard-item__value">@entry.Count 次</span>
+                                        </div>
+                                    </li>
+                                }
+                            </ol>
+                        </article>
 
-                <article class="leaderboard-card">
-                    <h4 class="leaderboard-card__title">被探访最多的线路</h4>
-                    <ol class="leaderboard-list">
-                        @for (var i = 0; i < leaderboard.TopRoutesByTrips.Count; i++)
-                        {
-                            var entry = leaderboard.TopRoutesByTrips[i];
-                            <li>
-                                <div class="leaderboard-item leaderboard-item--compact">
-                                    <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
-                                    <span class="leaderboard-item__name">@entry.Name</span>
-                                    <span class="leaderboard-item__value">@entry.Count 次</span>
-                                </div>
-                            </li>
-                        }
-                    </ol>
-                </article>
-            </div>
-        </section>
-    }
-</div>
+                        <article class="leaderboard-card">
+                            <h4 class="leaderboard-card__title">被探访最多的线路</h4>
+                            <ol class="leaderboard-list">
+                                @for (var i = 0; i < leaderboard.TopRoutesByTrips.Count; i++)
+                                {
+                                    var entry = leaderboard.TopRoutesByTrips[i];
+                                    <li>
+                                        <div class="leaderboard-item leaderboard-item--compact">
+                                            <span class="leaderboard-item__rank @GetTopThreeRankClass(i)">@($"{i + 1:00}")</span>
+                                            <span class="leaderboard-item__name">@entry.Name</span>
+                                            <span class="leaderboard-item__value">@entry.Count 次</span>
+                                        </div>
+                                    </li>
+                                }
+                            </ol>
+                        </article>
+                    </div>
+                </section>
+            }
+        </div>
 
 @code {
     private bool isLoading = true;

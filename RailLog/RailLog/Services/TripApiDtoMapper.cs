@@ -138,6 +138,14 @@ public static class TripApiDtoMapper
     {
         return new GlobalLeaderboardDto
         {
+            CumulativeTotalTrips = source.CumulativeTotalTrips,
+            CumulativeTotalMileageKm = source.CumulativeTotalMileageKm,
+            CurrentYearTotalTrips = source.CurrentYearTotalTrips,
+            CurrentYearTotalMileageKm = source.CurrentYearTotalMileageKm,
+            CurrentMonthTotalTrips = source.CurrentMonthTotalTrips,
+            CurrentMonthTotalMileageKm = source.CurrentMonthTotalMileageKm,
+            CurrentWeekTotalTrips = source.CurrentWeekTotalTrips,
+            CurrentWeekTotalMileageKm = source.CurrentWeekTotalMileageKm,
             TopBySpend = source.TopBySpend.Select(x => x.ToDto()).ToList(),
             TopByTrips = source.TopByTrips.Select(x => x.ToDto()).ToList(),
             TopByMileage = source.TopByMileage.Select(x => x.ToDto()).ToList(),

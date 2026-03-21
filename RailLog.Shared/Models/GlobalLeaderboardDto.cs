@@ -4,6 +4,22 @@ public sealed class GlobalLeaderboardDto
 {
     public static GlobalLeaderboardDto Empty { get; } = new();
 
+    public int CumulativeTotalTrips { get; init; }
+
+    public decimal CumulativeTotalMileageKm { get; init; }
+
+    public int CurrentYearTotalTrips { get; init; }
+
+    public decimal CurrentYearTotalMileageKm { get; init; }
+
+    public int CurrentMonthTotalTrips { get; init; }
+
+    public decimal CurrentMonthTotalMileageKm { get; init; }
+
+    public int CurrentWeekTotalTrips { get; init; }
+
+    public decimal CurrentWeekTotalMileageKm { get; init; }
+
     public List<LeaderboardEntryDto> TopBySpend { get; init; } = [];
 
     public List<LeaderboardEntryDto> TopByTrips { get; init; } = [];

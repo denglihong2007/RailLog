@@ -112,7 +112,7 @@
                         <input class="form-check-input"                               type="checkbox"                               id="selectAllTickets"                               checked="@IsAllSelected"
                                @onchange="OnSelectAllChanged" />
                         <label class="form-check-label" for="selectAllTickets">
-                            全选（@selectedTicketIds.Count/@tickets.Count）
+                            全选（@selectedTicketIds.Count/@SelectableTicketCount）
                         </label>
                     </div>
                     <span class="text-muted small">状态字段会作为默认备注导入。</span>
@@ -137,7 +137,7 @@
                             {
                                 <tr class="@GetTicketRowClass(ticket)">
                                     <td>
-                                        <input class="form-check-input"                                               type="checkbox"                                               disabled="@ticket.IsImported"
+                                        <input class="form-check-input"                                               type="checkbox"                                               disabled="@IsTicketSelectionDisabled(ticket)"
                                                checked="@selectedTicketIds.Contains(ticket.Id)"
                                                @onchange="e => OnTicketSelectionChanged(ticket.Id, e)" />
                                     </td>
@@ -176,6 +176,7 @@
 
 @code {
     private static readonly CultureInfo ZhCnCulture = CultureInfo.GetCultureInfo("zh-CN");
+    private static readonly string[] NonSelectableStatusKeywords = ["退票", "改签", "变更到站"];
     private static readonly string[] DateTimeFormats =
     [
         "yyyy-MM-dd HH:mm",
@@ -201,8 +202,11 @@
     private List<ImportedTicket> tickets = [];
     private HashSet<string> selectedTicketIds = [];
 
-    private bool IsAllSelected => tickets.Count > 0 && tickets.All(ticket => selectedTicketIds.Contains(ticket.Id) ||
-ticket.IsImported);
+    private int SelectableTicketCount => tickets.Count(ticket => !IsTicketSelectionDisabled(ticket));
+
+    private bool IsAllSelected => SelectableTicketCount > 0 &&
+        tickets.Where(ticket => !IsTicketSelectionDisabled(ticket))
+            .All(ticket => selectedTicketIds.Contains(ticket.Id));
 
     private bool CanQueryOrders => !isStartingQrLogin
         && !isFinalizingLogin
@@ -474,7 +478,7 @@ ticket.IsImported);
         if (isChecked)
         {
             selectedTicketIds = tickets
-                .Where(ticket => !ticket.IsImported)
+                .Where(ticket => !IsTicketSelectionDisabled(ticket))
                 .Select(ticket => ticket.Id)
                 .ToHashSet(StringComparer.Ordinal);
             return;
@@ -485,6 +489,13 @@ ticket.IsImported);
 
     private void OnTicketSelectionChanged(string ticketId, ChangeEventArgs e)
     {
+        var ticket = tickets.FirstOrDefault(x => string.Equals(x.Id, ticketId, StringComparison.Ordinal));
+        if (ticket is null || IsTicketSelectionDisabled(ticket))
+        {
+            selectedTicketIds.Remove(ticketId);
+            return;
+        }
+
         var isChecked = ReadCheckboxValue(e.Value);
         if (isChecked)
         {
@@ -733,7 +744,29 @@ default)
             return "table-success";
         }
 
+        if (IsBlockedByStatus(ticket.StatusText))
+        {
+            return "table-warning";
+        }
+
         return string.IsNullOrWhiteSpace(ticket.ImportError) ? string.Empty : "table-danger";
+    }
+
+    private static bool IsTicketSelectionDisabled(ImportedTicket ticket)
+    {
+        return ticket.IsImported || IsBlockedByStatus(ticket.StatusText);
+    }
+
+    private static bool IsBlockedByStatus(string? statusText)
+    {
+        if (string.IsNullOrWhiteSpace(statusText))
+        {
+            return false;
+        }
+
+        var normalized = statusText.Trim();
+        return NonSelectableStatusKeywords.Any(keyword =>
+            normalized.Contains(keyword, StringComparison.Ordinal));
     }
 
     private static async Task<string> ReadApiErrorMessageAsync(HttpResponseMessage response)

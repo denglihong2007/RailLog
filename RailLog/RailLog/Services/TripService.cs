@@ -296,6 +296,27 @@ namespace RailLog.Services
                 return GlobalLeaderboard.Empty;
             }
 
+            var allTrips = railTrips
+                .Concat(nonRailTrips)
+                .ToList();
+
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var yearStart = new DateOnly(today.Year, 1, 1);
+            var nextYearStart = yearStart.AddYears(1);
+            var monthStart = GetCurrentMonthStart();
+            var nextMonthStart = monthStart.AddMonths(1);
+            var currentMonthTrips = allTrips
+                .Where(x => x.TravelDate >= monthStart && x.TravelDate < nextMonthStart)
+                .ToList();
+            var weekStart = GetCurrentWeekStart(today);
+            var nextWeekStart = weekStart.AddDays(7);
+            var currentWeekTrips = allTrips
+                .Where(x => x.TravelDate >= weekStart && x.TravelDate < nextWeekStart)
+                .ToList();
+            var currentYearTrips = allTrips
+                .Where(x => x.TravelDate >= yearStart && x.TravelDate < nextYearStart)
+                .ToList();
+
             var userTripStats = railTrips
                 .GroupBy(x => x.UserId)
                 .Select(g => new UserTripStat(
@@ -386,6 +407,14 @@ namespace RailLog.Services
 
             return new GlobalLeaderboard
             {
+                CumulativeTotalTrips = allTrips.Count,
+                CumulativeTotalMileageKm = allTrips.Sum(GetTripMileage),
+                CurrentYearTotalTrips = currentYearTrips.Count,
+                CurrentYearTotalMileageKm = currentYearTrips.Sum(GetTripMileage),
+                CurrentMonthTotalTrips = currentMonthTrips.Count,
+                CurrentMonthTotalMileageKm = currentMonthTrips.Sum(GetTripMileage),
+                CurrentWeekTotalTrips = currentWeekTrips.Count,
+                CurrentWeekTotalMileageKm = currentWeekTrips.Sum(GetTripMileage),
                 TopBySpend = entries
                     .OrderByDescending(x => x.TotalSpend)
                     .ThenByDescending(x => x.TotalTrips)
@@ -465,6 +494,19 @@ namespace RailLog.Services
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .Take(top)
                 .ToList();
+        }
+
+        private static DateOnly GetCurrentMonthStart()
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            return new DateOnly(today.Year, today.Month, 1);
+        }
+
+        private static DateOnly GetCurrentWeekStart(DateOnly date)
+        {
+            var dayOfWeek = (int)date.DayOfWeek;
+            var offset = dayOfWeek == 0 ? 6 : dayOfWeek - 1;
+            return date.AddDays(-offset);
         }
 
         private static IEnumerable<string> ExtractRouteVisitsForTrip(TripRecord trip)
@@ -594,6 +636,22 @@ namespace RailLog.Services
         public sealed class GlobalLeaderboard
         {
             public static GlobalLeaderboard Empty { get; } = new();
+
+            public int CumulativeTotalTrips { get; init; }
+
+            public decimal CumulativeTotalMileageKm { get; init; }
+
+            public int CurrentYearTotalTrips { get; init; }
+
+            public decimal CurrentYearTotalMileageKm { get; init; }
+
+            public int CurrentMonthTotalTrips { get; init; }
+
+            public decimal CurrentMonthTotalMileageKm { get; init; }
+
+            public int CurrentWeekTotalTrips { get; init; }
+
+            public decimal CurrentWeekTotalMileageKm { get; init; }
 
             public List<LeaderboardEntry> TopBySpend { get; init; } = [];
 
