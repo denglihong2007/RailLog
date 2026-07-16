@@ -10,6 +10,7 @@ class DashboardTripEntry {
     required this.departureTime,
     required this.arrivalTime,
     required this.mileageKm,
+    this.rollingStock,
     required this.seatType,
     required this.seatNumber,
     required this.price,
@@ -26,6 +27,7 @@ class DashboardTripEntry {
       departureTime: trip.departureTime,
       arrivalTime: trip.arrivalTime,
       mileageKm: trip.mileageKm,
+      rollingStock: trip.rollingStock,
       seatType: trip.seatType,
       seatNumber: trip.seatNumber,
       price: trip.price,
@@ -41,6 +43,7 @@ class DashboardTripEntry {
   final DateTime departureTime;
   final DateTime? arrivalTime;
   final double mileageKm;
+  final String? rollingStock;
   final String? seatType;
   final String? seatNumber;
   final double price;
@@ -52,5 +55,17 @@ class DashboardTripEntry {
     final arrival = arrivalTime;
     if (arrival == null || arrival.isBefore(departureTime)) return null;
     return arrival.difference(departureTime);
+  }
+
+  bool matchesSearch(String query) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return true;
+    return [
+      trainNumber,
+      fromStation,
+      toStation,
+      seatType ?? '',
+      rollingStock ?? '',
+    ].any((value) => value.toLowerCase().contains(normalizedQuery));
   }
 }
