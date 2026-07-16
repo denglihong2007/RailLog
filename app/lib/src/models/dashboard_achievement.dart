@@ -23,6 +23,9 @@ enum DashboardAchievementKind {
   railFerry,
   hundredThousandKilometers,
   fTrain,
+  axleOverheat,
+  advantageIsMine,
+  platformSubsidence,
 }
 
 class DashboardAchievement {
