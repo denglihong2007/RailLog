@@ -522,14 +522,52 @@ class _IntersectionCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text('交集', style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: intersection.trips
-                  .map((trip) => _IntersectionAvatar(trip: trip))
-                  .toList(growable: false),
-            ),
+            _IntersectionAvatarList(trips: intersection.trips),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IntersectionAvatarList extends StatefulWidget {
+  const _IntersectionAvatarList({required this.trips});
+
+  final List<IntersectionTrip> trips;
+
+  @override
+  State<_IntersectionAvatarList> createState() =>
+      _IntersectionAvatarListState();
+}
+
+class _IntersectionAvatarListState extends State<_IntersectionAvatarList> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 104),
+      child: Scrollbar(
+        controller: _scrollController,
+        thumbVisibility: true,
+        interactive: true,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          primary: false,
+          padding: const EdgeInsets.only(right: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: widget.trips
+                .map((trip) => _IntersectionAvatar(trip: trip))
+                .toList(growable: false),
+          ),
         ),
       ),
     );
