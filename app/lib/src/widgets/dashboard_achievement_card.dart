@@ -107,6 +107,10 @@ IconData dashboardAchievementIcon(DashboardAchievementKind kind) =>
       DashboardAchievementKind.hundredThousandKilometers =>
         Icons.gps_fixed_outlined,
       DashboardAchievementKind.fTrain => Icons.u_turn_left_outlined,
+      DashboardAchievementKind.axleOverheat => Icons.device_thermostat_outlined,
+      DashboardAchievementKind.advantageIsMine => Icons.flag_outlined,
+      DashboardAchievementKind.platformSubsidence =>
+        Icons.vertical_align_bottom_outlined,
     };
 
 String _trainLabel(String value) {

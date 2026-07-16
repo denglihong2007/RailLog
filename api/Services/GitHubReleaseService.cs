@@ -38,7 +38,7 @@ public sealed class GitHubReleaseService(
             NormalizeVersion(tagName),
             tagName,
             OptionalString(root, "name") ?? tagName,
-            DateTime.Parse(RequiredString(root, "published_at")).ToUniversalTime(),
+            DateTime.Parse(RequiredString(root, "published_at")),
             OptionalString(root, "body"),
             releaseUrl,
             SelectWindowsAsset(assets)?.Url,

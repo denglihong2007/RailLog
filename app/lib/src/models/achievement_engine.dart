@@ -206,6 +206,29 @@ List<DashboardAchievement> buildDashboardAchievements(
         ).hasMatch(trip.trainNumber.trim()),
       ),
     ),
+    _achievement(
+      DashboardAchievementKind.axleOverheat,
+      '轴温过高',
+      '搭乘 CR400BF-5033 车型',
+      _firstWhere(
+        railTrips,
+        (trip) => _rollingStockMatches(trip.rollingStock, const {
+          'CR400BF-5033',
+        }).isNotEmpty,
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.advantageIsMine,
+      '优势在我',
+      '探访徐州站或徐州东站',
+      _firstStationVisit(railTrips, const {'徐州', '徐州东'}),
+    ),
+    _achievement(
+      DashboardAchievementKind.platformSubsidence,
+      '站台沉降',
+      '探访杭州东站',
+      _firstStationVisit(railTrips, const {'杭州东'}),
+    ),
   ]);
 }
 
@@ -337,6 +360,17 @@ TripRecord? _firstStationCompletion(List<TripRecord> trips, int target) {
   return null;
 }
 
+TripRecord? _firstStationVisit(
+  List<TripRecord> trips,
+  Set<String> targetStations,
+) => _firstWhere(trips, (trip) {
+  if (targetStations.contains(_normalizedStation(trip.fromStation))) {
+    return true;
+  }
+  return trip.arrivalTime != null &&
+      targetStations.contains(_normalizedStation(trip.toStation));
+});
+
 TripRecord? _firstMileageCompletion(List<TripRecord> trips, double target) {
   var mileage = 0.0;
   for (final trip in trips) {
@@ -368,6 +402,9 @@ void _addStation(Set<String> stations, String value) {
   final station = value.trim();
   if (station.isNotEmpty) stations.add(station);
 }
+
+String _normalizedStation(String value) =>
+    value.trim().replaceFirst(RegExp(r'站$'), '');
 
 Duration _validDuration(TripRecord trip) {
   final arrival = trip.arrivalTime;

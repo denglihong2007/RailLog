@@ -810,8 +810,8 @@ public sealed class RailLogDatabase
         value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-    private static string ToDb(DateTime value) => value.ToUniversalTime().ToString("O");
-    private static DateTime FromDb(string value) => DateTime.Parse(value).ToUniversalTime();
+    private static string ToDb(DateTime value) => value.ToString("O");
+    private static DateTime FromDb(string value) => DateTime.Parse(value);
     private static object DbValue(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     private static object DbValue(DateTime? value) => value is null ? DBNull.Value : ToDb(value.Value);
     private static string? NullableString(SqliteDataReader reader, int ordinal) =>
@@ -820,7 +820,7 @@ public sealed class RailLogDatabase
         reader.IsDBNull(ordinal) ? null : FromDb(reader.GetString(ordinal));
 
     private static DateTime ChinaTravelDay(StatisticsTrip trip) =>
-        (trip.Trip.DepartureTime ?? trip.TravelDate).ToUniversalTime().AddHours(8).Date;
+        (trip.Trip.DepartureTime ?? trip.TravelDate).AddHours(8).Date;
 
     private static double? ValidDurationSeconds(PublicTrip trip)
     {
