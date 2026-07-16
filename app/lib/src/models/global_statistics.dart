@@ -1,5 +1,5 @@
+import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
-import 'package:raillog/src/models/trip_record.dart';
 
 class GlobalStatistics {
   const GlobalStatistics({
@@ -146,18 +146,17 @@ class TripRankingEntry {
   });
 
   factory TripRankingEntry.fromJson(Map<String, dynamic> json) {
-    final user = PublicUser.fromJson(json['user'] as Map<String, dynamic>);
     return TripRankingEntry(
       rank: (json['rank'] as num).toInt(),
-      user: user,
-      trip: publicTripFromJson(json['trip'] as Map<String, dynamic>, user.id),
+      user: PublicUser.fromJson(json['user'] as Map<String, dynamic>),
+      trip: _tripSummary(json['trip'] as Map<String, dynamic>),
       value: (json['value'] as num).toDouble(),
     );
   }
 
   final int rank;
   final PublicUser user;
-  final TripRecord trip;
+  final DashboardTripEntry trip;
   final double value;
 }
 
@@ -238,3 +237,26 @@ List<ElementRankingEntry> _elements(Object? value) =>
     (value as List<dynamic>? ?? const [])
         .map((row) => ElementRankingEntry.fromJson(row as Map<String, dynamic>))
         .toList(growable: false);
+
+DashboardTripEntry _tripSummary(Map<String, dynamic> json) {
+  final ticketId = (json['ticketId'] as num).toInt();
+  final createdAt = DateTime.parse(json['createdAt'] as String).toLocal();
+  return DashboardTripEntry(
+    id: -ticketId,
+    ticketId: ticketId,
+    trainNumber: json['trainNumber'] as String,
+    fromStation: json['fromStation'] as String,
+    toStation: json['toStation'] as String,
+    departureTime: json['departureTime'] is String
+        ? DateTime.parse(json['departureTime'] as String).toLocal()
+        : createdAt,
+    arrivalTime: json['arrivalTime'] is String
+        ? DateTime.parse(json['arrivalTime'] as String).toLocal()
+        : null,
+    mileageKm: (json['mileageKm'] as num).toDouble(),
+    seatType: json['seatType'] as String?,
+    seatNumber: json['seatNumber'] as String?,
+    price: (json['price'] as num).toDouble(),
+    isRailTrip: json['isRailTrip'] as bool? ?? true,
+  );
+}

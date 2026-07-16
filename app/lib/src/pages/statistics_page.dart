@@ -602,10 +602,7 @@ class _TripRankingRow extends StatelessWidget {
       onTap: () => Navigator.of(context).push(
         m3PageRoute(
           builder: (_) => TripRecordDetailsPage.public(
-            trip: trip,
-            ownerName: entry.user.displayName,
-            ownerAvatarUrl: entry.user.avatarUrl,
-            ownerBio: entry.user.bio,
+            ticketId: trip.ticketId!,
             onOwnerTap: () => Navigator.of(context).push(
               m3PageRoute(
                 builder: (_) => PublicUserPage(userId: entry.user.id),

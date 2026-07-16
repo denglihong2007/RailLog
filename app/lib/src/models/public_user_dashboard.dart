@@ -23,14 +23,6 @@ class PublicUserDashboard {
 
   final PublicUser user;
   final List<TripRecord> trips;
-
-  TripRecord? tripByTicketId(int? ticketId) {
-    if (ticketId == null) return null;
-    for (final trip in trips) {
-      if (trip.ticketId == ticketId) return trip;
-    }
-    return null;
-  }
 }
 
 class PublicUser {
@@ -55,6 +47,21 @@ class PublicUser {
   final String? avatarUrl;
   final String? bio;
   final String? email;
+}
+
+class PublicTripDetails {
+  const PublicTripDetails({required this.user, required this.trip});
+
+  factory PublicTripDetails.fromJson(Map<String, dynamic> json) {
+    final user = PublicUser.fromJson(json['user'] as Map<String, dynamic>);
+    return PublicTripDetails(
+      user: user,
+      trip: publicTripFromJson(json['trip'] as Map<String, dynamic>, user.id),
+    );
+  }
+
+  final PublicUser user;
+  final TripRecord trip;
 }
 
 TripRecord publicTripFromJson(Map<String, dynamic> json, String userId) {

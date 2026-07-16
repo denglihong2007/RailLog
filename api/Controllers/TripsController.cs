@@ -11,6 +11,13 @@ namespace RailLog.API.Controllers;
 [Route("api/trips")]
 public sealed class TripsController(RailLogDatabase database) : ControllerBase
 {
+    [HttpGet("{ticketId:long}")]
+    public async Task<ActionResult<PublicTripDetailsResponse>> Get(long ticketId)
+    {
+        var details = await database.GetPublicTripDetailsAsync(ticketId);
+        return details is null ? NotFound() : Ok(details);
+    }
+
     [HttpPost("sync")]
     public async Task<ActionResult<SyncResponse>> Sync(SyncRequest request)
     {
