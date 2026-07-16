@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 class ApiClient {
   ApiClient._();
@@ -6,7 +7,9 @@ class ApiClient {
   static final ApiClient instance = ApiClient._();
   static const baseUrl = String.fromEnvironment(
     'RAILLOG_API_URL',
-    defaultValue: 'http://localhost:5149',
+    defaultValue: kReleaseMode
+        ? 'https://api.raillog.top'
+        : 'http://localhost:5149',
   );
 
   final Dio dio = Dio(

@@ -29,7 +29,8 @@ cd app
 flutter run -d windows
 ```
 
-The client defaults to `http://localhost:5149`. Override it for another host:
+Debug and profile builds default to `http://localhost:5149`; release builds
+default to `https://api.raillog.top`. Override it for another host:
 
 ```powershell
 flutter run --dart-define=RAILLOG_API_URL=http://192.168.1.10:5149
