@@ -165,7 +165,9 @@ public sealed record TripLeaderboards(
     IReadOnlyList<TripRankingEntry> MileageKm,
     IReadOnlyList<TripRankingEntry> DurationSeconds,
     IReadOnlyList<TripRankingEntry> BestValueYuanPerKm,
-    IReadOnlyList<TripRankingEntry> LuxuryYuanPerKm);
+    IReadOnlyList<TripRankingEntry> LuxuryYuanPerKm,
+    IReadOnlyList<TripRankingEntry> SlowestAverageSpeedKmh,
+    IReadOnlyList<TripRankingEntry> FastestAverageSpeedKmh);
 
 public sealed record ElementRankingEntry(
     int Rank,

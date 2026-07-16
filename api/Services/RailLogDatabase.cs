@@ -706,12 +706,21 @@ public sealed class RailLogDatabase
             .Select(trip => (Trip: trip, Duration: ValidDurationSeconds(trip.Trip)))
             .Where(item => item.Duration is not null).ToList();
         var ratioTrips = trips.Where(trip => trip.Trip.MileageKm > 0).ToList();
+        var pricedRatioTrips = ratioTrips.Where(trip => trip.Trip.Price > 0).ToList();
+        var speedTrips = durationTrips
+            .Where(item => item.Trip.Trip.MileageKm > 0)
+            .Select(item => (
+                item.Trip,
+                Speed: item.Trip.Trip.MileageKm * 3600 / item.Duration!.Value))
+            .ToList();
         var tripBoards = new TripLeaderboards(
             RankTrips(trips.Select(item => (item, item.Trip.Price)), descending: true),
             RankTrips(trips.Select(item => (item, item.Trip.MileageKm)), descending: true),
             RankTrips(durationTrips.Select(item => (item.Trip, item.Duration!.Value)), descending: true),
-            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: false),
-            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: true));
+            RankTrips(pricedRatioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: false),
+            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: true),
+            RankTrips(speedTrips.Select(item => (item.Trip, item.Speed)), descending: false),
+            RankTrips(speedTrips.Select(item => (item.Trip, item.Speed)), descending: true));
 
         var stationCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var routeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
