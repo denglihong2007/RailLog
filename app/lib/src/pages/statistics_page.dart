@@ -11,7 +11,15 @@ import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 enum _UserMetric { spending, trips, duration, mileage }
 
-enum _TripMetric { spending, mileage, duration, bestValue, luxury }
+enum _TripMetric {
+  spending,
+  mileage,
+  duration,
+  bestValue,
+  luxury,
+  turtle,
+  highSpeed,
+}
 
 enum _ElementMetric { stations, routes, trains }
 
@@ -428,6 +436,8 @@ class _TripLeaderboardViewState extends State<_TripLeaderboardView> {
     _TripMetric.duration => widget.leaderboards.durationSeconds,
     _TripMetric.bestValue => widget.leaderboards.bestValueYuanPerKm,
     _TripMetric.luxury => widget.leaderboards.luxuryYuanPerKm,
+    _TripMetric.turtle => widget.leaderboards.slowestAverageSpeedKmh,
+    _TripMetric.highSpeed => widget.leaderboards.fastestAverageSpeedKmh,
   };
 
   @override
@@ -900,11 +910,13 @@ String _userMetricLabel(_UserMetric metric) => switch (metric) {
 };
 
 String _tripMetricLabel(_TripMetric metric) => switch (metric) {
-  _TripMetric.spending => '单次花费',
-  _TripMetric.mileage => '单次里程',
-  _TripMetric.duration => '单次时长',
+  _TripMetric.spending => '花费',
+  _TripMetric.mileage => '里程',
+  _TripMetric.duration => '时长',
   _TripMetric.bestValue => '性价比',
   _TripMetric.luxury => '土豪',
+  _TripMetric.turtle => '低速',
+  _TripMetric.highSpeed => '高速',
 };
 
 String _elementMetricLabel(_ElementMetric metric) => switch (metric) {
@@ -926,6 +938,8 @@ String _formatTripValue(_TripMetric metric, double value) => switch (metric) {
   _TripMetric.duration => _formatSeconds(value),
   _TripMetric.bestValue ||
   _TripMetric.luxury => '¥${value.toStringAsFixed(2)}/km',
+  _TripMetric.turtle ||
+  _TripMetric.highSpeed => '${value.toStringAsFixed(1)} km/h',
 };
 
 String _formatSeconds(double value) {

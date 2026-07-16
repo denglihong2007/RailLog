@@ -167,6 +167,8 @@ class TripLeaderboards {
     required this.durationSeconds,
     required this.bestValueYuanPerKm,
     required this.luxuryYuanPerKm,
+    required this.slowestAverageSpeedKmh,
+    required this.fastestAverageSpeedKmh,
   });
 
   factory TripLeaderboards.fromJson(Map<String, dynamic> json) =>
@@ -176,6 +178,8 @@ class TripLeaderboards {
         durationSeconds: _trips(json['durationSeconds']),
         bestValueYuanPerKm: _trips(json['bestValueYuanPerKm']),
         luxuryYuanPerKm: _trips(json['luxuryYuanPerKm']),
+        slowestAverageSpeedKmh: _trips(json['slowestAverageSpeedKmh']),
+        fastestAverageSpeedKmh: _trips(json['fastestAverageSpeedKmh']),
       );
 
   final List<TripRankingEntry> singleSpending;
@@ -183,6 +187,8 @@ class TripLeaderboards {
   final List<TripRankingEntry> durationSeconds;
   final List<TripRankingEntry> bestValueYuanPerKm;
   final List<TripRankingEntry> luxuryYuanPerKm;
+  final List<TripRankingEntry> slowestAverageSpeedKmh;
+  final List<TripRankingEntry> fastestAverageSpeedKmh;
 }
 
 class ElementRankingEntry {
