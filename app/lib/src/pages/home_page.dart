@@ -15,8 +15,9 @@ import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/intersection_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
 import 'package:raillog/src/services/session_service.dart';
-import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 const _dashboardMaxWidth = 1200.0;
 const _cardRadius = 8.0;
@@ -341,30 +342,12 @@ class _PublicProfileAvatar extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    final url = user.avatarUrl?.trim() ?? '';
-    final fallback = Center(
-      child: Text(
-        user.displayName.isEmpty ? '?' : user.displayName[0].toUpperCase(),
-        style: Theme.of(context).textTheme.headlineSmall,
-      ),
-    );
-    return ClipOval(
-      child: ColoredBox(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: SizedBox.square(
-          dimension: size,
-          child: url.isEmpty
-              ? fallback
-              : Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => fallback,
-                ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CachedAvatar(
+    name: user.displayName,
+    imageUrl: user.avatarUrl,
+    size: size,
+    textStyle: Theme.of(context).textTheme.headlineSmall,
+  );
 }
 
 class _OnlineIntersectionsSection extends StatelessWidget {
@@ -551,22 +534,28 @@ class _IntersectionAvatarListState extends State<_IntersectionAvatarList> {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 104),
-      child: Scrollbar(
-        controller: _scrollController,
-        thumbVisibility: true,
-        interactive: true,
-        child: SingleChildScrollView(
+    return SizedBox(
+      width: double.infinity,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 160),
+        child: Scrollbar(
           controller: _scrollController,
-          primary: false,
-          padding: const EdgeInsets.only(right: 12),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: widget.trips
-                .map((trip) => _IntersectionAvatar(trip: trip))
-                .toList(growable: false),
+          thumbVisibility: true,
+          interactive: true,
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            primary: false,
+            padding: const EdgeInsets.only(right: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: widget.trips
+                    .map((trip) => _IntersectionAvatar(trip: trip))
+                    .toList(growable: false),
+              ),
+            ),
           ),
         ),
       ),
@@ -582,12 +571,7 @@ class _IntersectionAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final url = trip.avatarUrl?.trim() ?? '';
-    final fallback = Center(
-      child: Text(
-        trip.displayName.isEmpty ? '?' : trip.displayName[0].toUpperCase(),
-      ),
-    );
+    final avatarPadding = trip.isStrict ? 2.0 : 4.0;
     return Tooltip(
       message:
           '${trip.displayName} · ${_formatDate(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}',
@@ -611,7 +595,7 @@ class _IntersectionAvatar extends StatelessWidget {
           child: Container(
             width: 48,
             height: 48,
-            padding: EdgeInsets.all(trip.isStrict ? 2 : 4),
+            padding: EdgeInsets.all(avatarPadding),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
@@ -619,17 +603,11 @@ class _IntersectionAvatar extends StatelessWidget {
                 width: trip.isStrict ? 3 : 1,
               ),
             ),
-            child: ClipOval(
-              child: ColoredBox(
-                color: colors.secondaryContainer,
-                child: url.isEmpty
-                    ? fallback
-                    : Image.network(
-                        url,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => fallback,
-                      ),
-              ),
+            child: CachedAvatar(
+              name: trip.displayName,
+              imageUrl: trip.avatarUrl,
+              size: 48 - avatarPadding * 2,
+              backgroundColor: colors.secondaryContainer,
             ),
           ),
         ),

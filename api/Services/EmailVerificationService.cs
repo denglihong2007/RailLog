@@ -33,7 +33,7 @@ public sealed class EmailVerificationService(
             email,
             PurposeValue(purpose));
         var cooldown = TimeSpan.FromSeconds(_options.ResendCooldownSeconds);
-        if (lastCreatedAt is not null && DateTime.UtcNow - lastCreatedAt.Value < cooldown)
+        if (lastCreatedAt is not null && DateTime.Now - lastCreatedAt.Value < cooldown)
             throw new VerificationException("验证码发送过于频繁，请稍后再试");
 
         var code = RandomNumberGenerator.GetInt32(100000, 1000000)
@@ -44,7 +44,7 @@ public sealed class EmailVerificationService(
             email,
             PurposeValue(purpose),
             Hash(email, purpose, code),
-            DateTime.UtcNow.AddMinutes(_options.CodeLifetimeMinutes));
+            DateTime.Now.AddMinutes(_options.CodeLifetimeMinutes));
         try
         {
             await emailSender.SendVerificationCodeAsync(
@@ -74,7 +74,7 @@ public sealed class EmailVerificationService(
         var stored = await database.GetLatestVerificationCodeAsync(
             email,
             PurposeValue(purpose));
-        if (stored is null || stored.ExpiresAt <= DateTime.UtcNow ||
+        if (stored is null || stored.ExpiresAt <= DateTime.Now ||
             stored.AttemptCount >= _options.MaxAttempts)
             return false;
 

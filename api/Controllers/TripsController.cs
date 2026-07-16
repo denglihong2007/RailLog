@@ -24,7 +24,7 @@ public sealed class TripsController(RailLogDatabase database) : ControllerBase
         if (request.Trips.Count > 10_000)
             return BadRequest(new MessageResponse("单次同步的行程数量过多"));
         var trips = await database.SyncTripsAsync(UserId, request.Trips);
-        return Ok(new SyncResponse(trips, DateTime.UtcNow));
+        return Ok(new SyncResponse(trips, DateTime.Now));
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;

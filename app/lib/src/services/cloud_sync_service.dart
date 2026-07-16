@@ -96,15 +96,15 @@ class CloudSyncService extends ChangeNotifier {
   Map<String, dynamic> _toCloudJson(TripRecord trip) => {
     'ticketId': trip.ticketId,
     'clientId': trip.clientId,
-    'createdAt': trip.createdAt.toUtc().toIso8601String(),
+    'createdAt': trip.createdAt.toIso8601String(),
     'trainNumber': trip.trainNumber,
-    'travelDate': trip.departureTime.toUtc().toIso8601String(),
+    'travelDate': trip.departureTime.toIso8601String(),
     'rollingStock': trip.rollingStock,
     'companyName': trip.companyName,
     'fromStation': trip.fromStation,
     'toStation': trip.toStation,
-    'departureTime': trip.departureTime.toUtc().toIso8601String(),
-    'arrivalTime': trip.arrivalTime?.toUtc().toIso8601String(),
+    'departureTime': trip.departureTime.toIso8601String(),
+    'arrivalTime': trip.arrivalTime?.toIso8601String(),
     'mileageKm': trip.mileageKm,
     'viaRoutes': jsonEncode(
       trip.viaRouteSegments.map((segment) => segment.toJson()).toList(),
@@ -114,8 +114,8 @@ class CloudSyncService extends ChangeNotifier {
     'price': trip.price,
     'notes': trip.notes,
     'isRailTrip': trip.isRailTrip,
-    'updatedAt': trip.updatedAt.toUtc().toIso8601String(),
-    'deletedAt': trip.deletedAt?.toUtc().toIso8601String(),
+    'updatedAt': trip.updatedAt.toIso8601String(),
+    'deletedAt': trip.deletedAt?.toIso8601String(),
   };
 
   TripRecord _fromCloudJson(Map<String, dynamic> row) {

@@ -92,7 +92,7 @@ public sealed class RailLogDatabase
         await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
         await ExecuteAsync(connection, $"""
             UPDATE AspNetUsers
-            SET CreatedAt = '{ToDb(DateTime.UtcNow)}'
+            SET CreatedAt = '{ToDb(DateTime.Now)}'
             WHERE CreatedAt IS NULL OR CreatedAt = '';
             UPDATE TripRecords
             SET ClientId = lower(hex(randomblob(16)))
@@ -134,7 +134,7 @@ public sealed class RailLogDatabase
         command.Parameters.AddWithValue("$name", displayName);
         command.Parameters.AddWithValue("$email", email);
         command.Parameters.AddWithValue("$hash", IdentityPasswordHasher.HashPassword(request.Password));
-        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.UtcNow));
+        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.Now));
         try
         {
             await command.ExecuteNonQueryAsync();
@@ -213,9 +213,9 @@ public sealed class RailLogDatabase
         command.Parameters.AddWithValue("$email", email);
         command.Parameters.AddWithValue("$purpose", purpose);
         command.Parameters.AddWithValue("$hash", codeHash);
-        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.UtcNow));
+        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.Now));
         command.Parameters.AddWithValue("$expiresAt", ToDb(expiresAt));
-        command.Parameters.AddWithValue("$cleanupBefore", ToDb(DateTime.UtcNow.AddDays(-1)));
+        command.Parameters.AddWithValue("$cleanupBefore", ToDb(DateTime.Now.AddDays(-1)));
         await command.ExecuteNonQueryAsync();
     }
 
@@ -279,7 +279,7 @@ public sealed class RailLogDatabase
             WHERE Id = $id AND ConsumedAt IS NULL;
             """;
         command.Parameters.AddWithValue("$id", id);
-        command.Parameters.AddWithValue("$consumedAt", ToDb(DateTime.UtcNow));
+        command.Parameters.AddWithValue("$consumedAt", ToDb(DateTime.Now));
         return await command.ExecuteNonQueryAsync() == 1;
     }
 
@@ -321,7 +321,7 @@ public sealed class RailLogDatabase
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT UserId FROM AuthTokens WHERE TokenHash = $hash AND ExpiresAt > $now LIMIT 1;";
         command.Parameters.AddWithValue("$hash", HashToken(token));
-        command.Parameters.AddWithValue("$now", ToDb(DateTime.UtcNow));
+        command.Parameters.AddWithValue("$now", ToDb(DateTime.Now));
         return await command.ExecuteScalarAsync() as string;
     }
 
@@ -658,7 +658,7 @@ public sealed class RailLogDatabase
                 publicTrip, user, FromDb(reader.GetString(3)), ParseRouteNames(reader.GetString(11))));
         }
 
-        var chinaNow = DateTime.UtcNow.AddHours(8);
+        var chinaNow = DateTime.Now.AddHours(8);
         var today = chinaNow.Date;
         var weekStart = today.AddDays(-((7 + (int)today.DayOfWeek - (int)DayOfWeek.Monday) % 7));
         var yearTrips = trips
@@ -784,7 +784,7 @@ public sealed class RailLogDatabase
     {
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        var expiresAt = DateTime.UtcNow.AddDays(30);
+        var expiresAt = DateTime.Now.AddDays(30);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO AuthTokens (TokenHash, UserId, ExpiresAt) VALUES ($hash, $userId, $expiresAt);

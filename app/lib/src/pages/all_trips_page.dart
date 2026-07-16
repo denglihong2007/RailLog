@@ -29,10 +29,18 @@ class AllTripsPage extends StatefulWidget {
 }
 
 class _AllTripsPageState extends State<AllTripsPage> {
+  final TextEditingController _searchController = TextEditingController();
   _TripSortField _sortField = _TripSortField.departureTime;
   bool _descending = true;
   DateTimeRange? _dateRange;
   _TripKindFilter _kindFilter = _TripKindFilter.all;
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   bool get _hasFilters =>
       _dateRange != null ||
@@ -40,6 +48,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
 
   List<DashboardTripEntry> get _visibleTrips {
     final trips = widget.trips.where((trip) {
+      if (!trip.matchesSearch(_searchQuery)) return false;
       if (_kindFilter == _TripKindFilter.rail && !trip.isRailTrip) {
         return false;
       }
@@ -276,23 +285,75 @@ class _AllTripsPageState extends State<AllTripsPage> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${trips.length} / ${widget.trips.length} 趟行程',
-                      style: Theme.of(context).textTheme.titleMedium,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final status = Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${trips.length} / ${widget.trips.length} 趟行程',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      Text(
+                        '${_sortFieldLabel(_sortField)} · '
+                        '${_descending ? '降序' : '升序'}',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  );
+                  final search = SizedBox(
+                    height: 44,
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value),
+                      decoration: InputDecoration(
+                        hintText: '搜索',
+                        isDense: true,
+                        filled: true,
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLow,
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        prefixIconConstraints: const BoxConstraints(
+                          minWidth: 44,
+                        ),
+                        suffixIcon: _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: '清除搜索',
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                                icon: const Icon(Icons.close, size: 20),
+                              ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${_sortFieldLabel(_sortField)} · '
-                    '${_descending ? '降序' : '升序'}',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+                  );
+
+                  if (constraints.maxWidth < 720) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [status, const SizedBox(height: 10), search],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: status),
+                      const SizedBox(width: 20),
+                      SizedBox(width: 360, child: search),
+                    ],
+                  );
+                },
               ),
             ),
             Expanded(

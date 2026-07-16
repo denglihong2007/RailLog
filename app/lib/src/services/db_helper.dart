@@ -117,7 +117,7 @@ class DbHelper {
     final db = await database;
     final values = trip.toMap()
       ..remove('id')
-      ..['updated_at'] = DateTime.now().toUtc().toIso8601String();
+      ..['updated_at'] = DateTime.now().toIso8601String();
     final result = await db.update(
       'trip_records',
       values,
@@ -131,7 +131,7 @@ class DbHelper {
   Future<int> deleteTrip(int id) async {
     final db = await database;
     final userId = activeUserId?.call();
-    final now = DateTime.now().toUtc().toIso8601String();
+    final now = DateTime.now().toIso8601String();
     final result = await db.update(
       'trip_records',
       {'deleted_at': now, 'updated_at': now},

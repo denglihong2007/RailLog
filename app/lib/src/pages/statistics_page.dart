@@ -6,6 +6,7 @@ import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/statistics_service.dart';
+import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 enum _UserMetric { spending, trips, duration, mileage }
@@ -777,27 +778,11 @@ class _StatisticsAvatar extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    final url = user.avatarUrl?.trim() ?? '';
-    final fallback = Center(
-      child: Text(user.displayName.isEmpty ? '?' : user.displayName[0]),
-    );
-    return ClipOval(
-      child: ColoredBox(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: SizedBox.square(
-          dimension: size,
-          child: url.isEmpty
-              ? fallback
-              : Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => fallback,
-                ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CachedAvatar(
+    name: user.displayName,
+    imageUrl: user.avatarUrl,
+    size: size,
+  );
 }
 
 class _EmptyLeaderboard extends StatelessWidget {
