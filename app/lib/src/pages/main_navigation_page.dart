@@ -104,10 +104,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           label: '设置',
         ),
       ],
-      body: (_) => M3FadeThroughSwitcher(
-        child: KeyedSubtree(
-          key: ValueKey(_currentIdx),
-          child: _pages[_currentIdx],
+      body: (_) => SafeArea(
+        child: M3FadeThroughSwitcher(
+          child: KeyedSubtree(
+            key: ValueKey(_currentIdx),
+            child: _pages[_currentIdx],
+          ),
         ),
       ),
     );

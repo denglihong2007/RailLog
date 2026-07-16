@@ -98,7 +98,7 @@ class _HomePageState extends State<HomePage> {
                             const SizedBox(height: 16),
                           ],
                           M3Reveal(
-                            child: _OverviewCard(
+                            child: _OverviewSection(
                               stats: stats,
                               onChanged: _refresh,
                             ),
@@ -212,7 +212,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                           children: [
                             _PublicProfileCard(user: dashboard.user),
                             const SizedBox(height: 24),
-                            _OverviewCard(
+                            _OverviewSection(
                               stats: stats,
                               onChanged: _refresh,
                               openTrip: openTrip,
@@ -769,8 +769,8 @@ class _SignInBanner extends StatelessWidget {
   }
 }
 
-class _OverviewCard extends StatelessWidget {
-  const _OverviewCard({
+class _OverviewSection extends StatelessWidget {
+  const _OverviewSection({
     required this.stats,
     required this.onChanged,
     this.openTrip,
@@ -784,11 +784,6 @@ class _OverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final dateRange = stats.firstRecordAt == null
-        ? '添加行程后开始记录'
-        : '${_formatDate(stats.firstRecordAt!)} 至 ${_formatDate(stats.lastRecordAt!)}';
-
     Future<void> openAllTrips() async {
       final changed = await Navigator.of(context).push<bool>(
         m3PageRoute(
@@ -798,6 +793,50 @@ class _OverviewCard extends StatelessWidget {
       );
       if (changed == true) await onChanged();
     }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _SectionHeading(title: '铁路行程总览')),
+            TextButton.icon(
+              onPressed: stats.allTrips.isEmpty
+                  ? null
+                  : () => Navigator.of(context).push(
+                      m3PageRoute(
+                        builder: (_) => TripChartPage(trips: stats.allTrips),
+                      ),
+                    ),
+              icon: const Icon(Icons.show_chart, size: 18),
+              label: const Text('趋势'),
+            ),
+            TextButton.icon(
+              onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
+              icon: const Icon(Icons.format_list_bulleted, size: 18),
+              label: const Text('全部'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _OverviewCard(stats: stats, subject: subject),
+      ],
+    );
+  }
+}
+
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({required this.stats, required this.subject});
+
+  final TripDashboardStats stats;
+  final String subject;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final dateRange = stats.firstRecordAt == null
+        ? '添加行程后开始记录'
+        : '${_formatDate(stats.firstRecordAt!)} 至 ${_formatDate(stats.lastRecordAt!)}';
 
     return Card.filled(
       margin: EdgeInsets.zero,
@@ -810,38 +849,6 @@ class _OverviewCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '铁路行程总览',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colors.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '行程趋势',
-                  onPressed: stats.allTrips.isEmpty
-                      ? null
-                      : () => Navigator.of(context).push(
-                          m3PageRoute(
-                            builder: (_) =>
-                                TripChartPage(trips: stats.allTrips),
-                          ),
-                        ),
-                  icon: const Icon(Icons.show_chart),
-                  color: colors.onPrimaryContainer,
-                ),
-                IconButton(
-                  tooltip: '查看全部行程',
-                  onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
-                  icon: const Icon(Icons.format_list_bulleted),
-                  color: colors.onPrimaryContainer,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
             Text(
               '$subject已累计出发 ${stats.tripCount} 次',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
