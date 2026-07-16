@@ -17,6 +17,10 @@ h1 { margin:0; display:flex; flex-wrap:wrap; column-gap:.22em; font-size:clamp(4
 .primary-action:hover,.download-card a:hover { background:var(--brand-dark); }
 .platform-note { margin-left:16px; color:var(--muted); font-size:14px; }
 .download-section { padding:72px max(24px,calc((100vw - 1180px)/2)); background:var(--surface-low); scroll-margin-top:68px; }
+.upgrade-alert { margin:0 0 32px; padding:18px 20px; display:grid; grid-template-columns:auto minmax(0,1fr); gap:14px; align-items:start; border:2px solid var(--brand); border-radius:8px; background:color-mix(in srgb,var(--brand) 9%,var(--surface)); color:var(--ink); }
+.upgrade-alert>svg { margin-top:1px; color:var(--brand); }
+.upgrade-alert strong { display:block; margin-bottom:4px; color:var(--brand-dark); font-size:18px; }
+.upgrade-alert p { margin:0; line-height:1.65; overflow-wrap:anywhere; }
 .section-heading { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:28px; }
 .section-kicker { font-size:14px; margin-bottom:6px; }
 h2 { margin:0; font-size:clamp(28px,4vw,42px); letter-spacing:0; }
@@ -49,10 +53,11 @@ footer a { display:inline-flex; align-items:center; gap:5px; color:var(--ink); }
   h1 { font-size:clamp(46px,14vw,58px); } .intro-copy { font-size:17px; }
   .primary-action { width:100%; } .platform-note { display:block; margin:12px 0 0; text-align:center; }
   .download-section { width:100%; max-width:100vw; overflow:hidden; padding:52px 16px; } .section-heading { align-items:start; flex-direction:column; }
+  .upgrade-alert { margin-bottom:28px; padding:16px; }
   .download-grid,.product-band { grid-template-columns:1fr; } .download-card { min-height:195px; }
   .download-actions { display:grid; grid-template-columns:1fr; } .product-band { padding:48px 20px; }
   footer { align-items:flex-start; flex-direction:column; gap:8px; } footer p { margin:6px 0; }
 }
 @media (prefers-color-scheme: dark) {
-  .primary-action,.windows-card a:not(.secondary-download) { color:#5c0a05; } .android-card a:not(.secondary-download) { color:#082d53; } .release-status.ready { color:#8bd49c; }
+  .primary-action,.windows-card a:not(.secondary-download) { color:#5c0a05; } .android-card a:not(.secondary-download) { color:#082d53; } .release-status.ready { color:#8bd49c; } .upgrade-alert strong { color:var(--brand); }
 }
