@@ -1,0 +1,574 @@
+import 'dart:io';
+import 'dart:isolate';
+
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path_util;
+import 'package:raillog/src/models/route_resolution.dart';
+import 'package:raillog/src/models/station_pair_distance.dart';
+import 'package:raillog/src/models/via_route_segment.dart';
+import 'package:sqflite/sqflite.dart';
+
+class RouteService {
+  RouteService._();
+
+  static Future<_RouteGraph>? _graphFuture;
+
+  static Future<List<String>> getRouteNames() async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return graph.routeNames;
+  }
+
+  static Future<List<String>> getStationsForRoute(String routeName) async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return graph.stationsForRoute(routeName);
+  }
+
+  static Future<RouteResolution> resolveShortestJourney(
+    String fromStation,
+    String toStation,
+  ) async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(() {
+      final result = graph.findPath(
+        fromStation,
+        toStation,
+        targetDistance: null,
+      );
+      if (result == null) {
+        return RouteResolution(
+          segments: const [],
+          usedShortestPath: true,
+          unresolvedSections: ['$fromStation-$toStation'],
+        );
+      }
+      return RouteResolution(
+        segments: _mergeEdges(result.edges),
+        usedShortestPath: true,
+        unresolvedSections: const [],
+      );
+    });
+  }
+
+  static Future<double?> getDistanceOnRoute(
+    String routeName,
+    String fromStation,
+    String toStation,
+  ) async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(
+      () => graph.distanceOnRoute(routeName, fromStation, toStation),
+    );
+  }
+
+  static Future<RouteResolution> resolveJourney(
+    List<StationPairDistance> sections,
+  ) async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(() => _resolveJourney(graph, sections));
+  }
+
+  static RouteResolution _resolveJourney(
+    _RouteGraph graph,
+    List<StationPairDistance> sections,
+  ) {
+    final allEdges = <_RouteEdge>[];
+    final unresolved = <String>[];
+    var usedShortestPath = false;
+
+    for (final section in sections) {
+      final result = graph.findPath(
+        section.fromStation,
+        section.toStation,
+        targetDistance: section.distanceKm,
+      );
+      if (result == null) {
+        unresolved.add('${section.fromStation}-${section.toStation}');
+        continue;
+      }
+      allEdges.addAll(result.edges);
+      usedShortestPath = usedShortestPath || result.usedShortestPath;
+    }
+
+    return RouteResolution(
+      segments: _mergeEdges(allEdges),
+      usedShortestPath: usedShortestPath,
+      unresolvedSections: unresolved,
+    );
+  }
+
+  static Future<_RouteGraph> _loadGraph() async {
+    final data = await rootBundle.load('assets/db/routes.db');
+    final databasesPath = await getDatabasesPath();
+    final databasePath = path_util.join(databasesPath, 'routes_reference.db');
+    await Directory(databasesPath).create(recursive: true);
+    await File(databasePath).writeAsBytes(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      flush: true,
+    );
+
+    final database = await openDatabase(databasePath, readOnly: true);
+    try {
+      final rows = await database.rawQuery('''
+        SELECT
+          r.route_name,
+          s.route_version_id,
+          s.station_index,
+          s.station_name,
+          s.mileage
+        FROM stations s
+        JOIN routes r ON r.route_version_id = s.route_version_id
+        ORDER BY s.route_version_id, s.station_index
+      ''');
+      return _RouteGraph.fromRows(rows);
+    } finally {
+      await database.close();
+    }
+  }
+
+  static List<ViaRouteSegment> _mergeEdges(List<_RouteEdge> edges) {
+    if (edges.isEmpty) return const [];
+    final segments = <ViaRouteSegment>[];
+    var routeName = edges.first.routeName;
+    var fromStation = edges.first.fromStation;
+    var toStation = edges.first.toStation;
+    var mileage = edges.first.distanceKm;
+
+    for (final edge in edges.skip(1)) {
+      if (edge.routeName == routeName && edge.fromStation == toStation) {
+        toStation = edge.toStation;
+        mileage += edge.distanceKm;
+        continue;
+      }
+      segments.add(
+        ViaRouteSegment(
+          routeName: routeName,
+          fromStation: fromStation,
+          toStation: toStation,
+          mileageKm: mileage,
+        ),
+      );
+      routeName = edge.routeName;
+      fromStation = edge.fromStation;
+      toStation = edge.toStation;
+      mileage = edge.distanceKm;
+    }
+    segments.add(
+      ViaRouteSegment(
+        routeName: routeName,
+        fromStation: fromStation,
+        toStation: toStation,
+        mileageKm: mileage,
+      ),
+    );
+    return segments;
+  }
+}
+
+class _RouteGraph {
+  _RouteGraph(this.adjacency, this.routeStationIndexes);
+
+  final Map<String, List<_RouteEdge>> adjacency;
+  final Map<String, Map<String, int>> routeStationIndexes;
+
+  List<String> get routeNames {
+    final names = adjacency.values
+        .expand((edges) => edges)
+        .map((edge) => edge.routeName)
+        .toSet()
+        .toList();
+    names.sort();
+    return names;
+  }
+
+  List<String> stationsForRoute(String routeName) {
+    final stations = routeStationIndexes[routeName];
+    if (stations == null) return const [];
+    final entries = stations.entries.toList()
+      ..sort((first, second) {
+        final indexComparison = first.value.compareTo(second.value);
+        return indexComparison != 0
+            ? indexComparison
+            : first.key.compareTo(second.key);
+      });
+    return entries.map((entry) => entry.key).toList(growable: false);
+  }
+
+  factory _RouteGraph.fromRows(List<Map<String, Object?>> rows) {
+    final adjacency = <String, List<_RouteEdge>>{};
+    final routeStationIndexes = <String, Map<String, int>>{};
+    String? currentRouteId;
+    String? previousStation;
+    double? previousMileage;
+
+    for (final row in rows) {
+      final routeId = row['route_version_id']?.toString();
+      final routeName = row['route_name']?.toString().trim() ?? '';
+      final station = row['station_name']?.toString().trim() ?? '';
+      final mileage = (row['mileage'] as num?)?.toDouble();
+      final stationIndex = (row['station_index'] as num?)?.toInt();
+      if (routeId == null ||
+          routeName.isEmpty ||
+          station.isEmpty ||
+          mileage == null ||
+          stationIndex == null) {
+        continue;
+      }
+
+      final stationIndexes = routeStationIndexes.putIfAbsent(
+        routeName,
+        () => {},
+      );
+      final existingIndex = stationIndexes[station];
+      if (existingIndex == null || stationIndex < existingIndex) {
+        stationIndexes[station] = stationIndex;
+      }
+
+      if (routeId != currentRouteId) {
+        currentRouteId = routeId;
+        previousStation = null;
+        previousMileage = null;
+      }
+      if (previousStation != null && previousStation != station) {
+        final distance = (mileage - previousMileage!).abs();
+        final forward = _RouteEdge(
+          fromStation: previousStation,
+          toStation: station,
+          routeName: routeName,
+          distanceKm: distance,
+        );
+        final backward = forward.reversed();
+        adjacency.putIfAbsent(previousStation, () => []).add(forward);
+        adjacency.putIfAbsent(station, () => []).add(backward);
+      }
+      previousStation = station;
+      previousMileage = mileage;
+      adjacency.putIfAbsent(station, () => []);
+    }
+    return _RouteGraph(adjacency, routeStationIndexes);
+  }
+
+  _PathResult? findPath(
+    String fromStation,
+    String toStation, {
+    required double? targetDistance,
+  }) {
+    final start = _resolveStationName(fromStation);
+    final end = _resolveStationName(toStation);
+    if (start == null || end == null) return null;
+    if (start == end) {
+      return const _PathResult(edges: [], usedShortestPath: false);
+    }
+
+    final shortest = _shortestPath(start, end);
+    if (shortest == null) return null;
+    if (targetDistance == null) {
+      return _PathResult(edges: shortest, usedShortestPath: true);
+    }
+    final exact = _distanceMatchingPath(start, end, targetDistance);
+    return _PathResult(
+      edges: exact ?? shortest,
+      usedShortestPath: exact == null,
+    );
+  }
+
+  double? distanceOnRoute(
+    String routeName,
+    String fromStation,
+    String toStation,
+  ) {
+    final start = _resolveStationName(fromStation);
+    final end = _resolveStationName(toStation);
+    if (start == null || end == null) return null;
+    if (start == end) return 0;
+    final edges = _shortestPath(start, end, routeName: routeName);
+    if (edges == null) return null;
+    return edges.fold<double>(0, (sum, edge) => sum + edge.distanceKm);
+  }
+
+  String? _resolveStationName(String value) {
+    final normalized = value.trim();
+    if (adjacency.containsKey(normalized)) return normalized;
+    if (normalized.endsWith('站')) {
+      final withoutSuffix = normalized.substring(0, normalized.length - 1);
+      if (adjacency.containsKey(withoutSuffix)) return withoutSuffix;
+    } else if (adjacency.containsKey('$normalized站')) {
+      return '$normalized站';
+    }
+    return null;
+  }
+
+  List<_RouteEdge>? _shortestPath(
+    String start,
+    String end, {
+    String? routeName,
+  }) {
+    final queue = _MinHeap<_SearchNode>();
+    final distances = <String, double>{start: 0};
+    final previous = <String, _PreviousStep>{};
+    queue.add(_SearchNode(station: start, distance: 0), 0);
+
+    while (queue.isNotEmpty) {
+      final current = queue.removeFirst();
+      if (current.distance > (distances[current.station] ?? double.infinity)) {
+        continue;
+      }
+      if (current.station == end) return _reconstruct(previous, start, end);
+
+      for (final edge in adjacency[current.station] ?? const []) {
+        if (routeName != null && edge.routeName != routeName) continue;
+        final nextDistance = current.distance + edge.distanceKm;
+        if (nextDistance >= (distances[edge.toStation] ?? double.infinity)) {
+          continue;
+        }
+        distances[edge.toStation] = nextDistance;
+        previous[edge.toStation] = _PreviousStep(current.station, edge);
+        queue.add(
+          _SearchNode(station: edge.toStation, distance: nextDistance),
+          nextDistance,
+        );
+      }
+    }
+    return null;
+  }
+
+  List<_RouteEdge>? _distanceMatchingPath(
+    String start,
+    String end,
+    double targetDistance,
+  ) {
+    final lowerBounds = _shortestDistancesFrom(end);
+    final startLowerBound = lowerBounds[start];
+    if (startLowerBound == null ||
+        startLowerBound > targetDistance + _distanceTolerance) {
+      return null;
+    }
+
+    final queue = _MinHeap<_ExactSearchNode>();
+    final startNode = _ExactSearchNode(
+      station: start,
+      distance: 0,
+      previous: null,
+      incomingEdge: null,
+      usedRouteNames: const {},
+    );
+    final routePriorityBand = targetDistance + _distanceTolerance + 1;
+    queue.add(startNode, startLowerBound);
+    final visited = <String>{startNode.stateKey};
+    var exploredStates = 0;
+
+    while (queue.isNotEmpty && exploredStates < _maxExactSearchStates) {
+      final current = queue.removeFirst();
+      exploredStates++;
+      if (current.station == end &&
+          (current.distance - targetDistance).abs() <= _distanceTolerance) {
+        return current.edges;
+      }
+
+      for (final edge in adjacency[current.station] ?? const []) {
+        if (current.containsStation(edge.toStation)) continue;
+        final nextDistance = current.distance + edge.distanceKm;
+        final lowerBound = lowerBounds[edge.toStation];
+        if (lowerBound == null ||
+            nextDistance > targetDistance + _distanceTolerance ||
+            nextDistance + lowerBound > targetDistance + _distanceTolerance) {
+          continue;
+        }
+        final next = _ExactSearchNode(
+          station: edge.toStation,
+          distance: nextDistance,
+          previous: current,
+          incomingEdge: edge,
+          usedRouteNames: {...current.usedRouteNames, edge.routeName},
+        );
+        if (!visited.add(next.stateKey)) continue;
+        queue.add(
+          next,
+          next.usedRouteNames.length * routePriorityBand +
+              nextDistance +
+              lowerBound,
+        );
+      }
+    }
+    return null;
+  }
+
+  Map<String, double> _shortestDistancesFrom(String start) {
+    final queue = _MinHeap<_SearchNode>();
+    final distances = <String, double>{start: 0};
+    queue.add(_SearchNode(station: start, distance: 0), 0);
+    while (queue.isNotEmpty) {
+      final current = queue.removeFirst();
+      if (current.distance > (distances[current.station] ?? double.infinity)) {
+        continue;
+      }
+      for (final edge in adjacency[current.station] ?? const []) {
+        final nextDistance = current.distance + edge.distanceKm;
+        if (nextDistance >= (distances[edge.toStation] ?? double.infinity)) {
+          continue;
+        }
+        distances[edge.toStation] = nextDistance;
+        queue.add(
+          _SearchNode(station: edge.toStation, distance: nextDistance),
+          nextDistance,
+        );
+      }
+    }
+    return distances;
+  }
+
+  List<_RouteEdge> _reconstruct(
+    Map<String, _PreviousStep> previous,
+    String start,
+    String end,
+  ) {
+    final edges = <_RouteEdge>[];
+    var current = end;
+    while (current != start) {
+      final step = previous[current];
+      if (step == null) return const [];
+      edges.add(step.edge);
+      current = step.station;
+    }
+    return edges.reversed.toList();
+  }
+}
+
+class _RouteEdge {
+  const _RouteEdge({
+    required this.fromStation,
+    required this.toStation,
+    required this.routeName,
+    required this.distanceKm,
+  });
+
+  final String fromStation;
+  final String toStation;
+  final String routeName;
+  final double distanceKm;
+
+  _RouteEdge reversed() => _RouteEdge(
+    fromStation: toStation,
+    toStation: fromStation,
+    routeName: routeName,
+    distanceKm: distanceKm,
+  );
+}
+
+class _PathResult {
+  const _PathResult({required this.edges, required this.usedShortestPath});
+
+  final List<_RouteEdge> edges;
+  final bool usedShortestPath;
+}
+
+class _SearchNode {
+  const _SearchNode({required this.station, required this.distance});
+
+  final String station;
+  final double distance;
+}
+
+class _PreviousStep {
+  const _PreviousStep(this.station, this.edge);
+
+  final String station;
+  final _RouteEdge edge;
+}
+
+class _ExactSearchNode {
+  const _ExactSearchNode({
+    required this.station,
+    required this.distance,
+    required this.previous,
+    required this.incomingEdge,
+    required this.usedRouteNames,
+  });
+
+  final String station;
+  final double distance;
+  final _ExactSearchNode? previous;
+  final _RouteEdge? incomingEdge;
+  final Set<String> usedRouteNames;
+
+  bool containsStation(String value) {
+    _ExactSearchNode? node = this;
+    while (node != null) {
+      if (node.station == value) return true;
+      node = node.previous;
+    }
+    return false;
+  }
+
+  List<_RouteEdge> get edges {
+    final result = <_RouteEdge>[];
+    _ExactSearchNode? node = this;
+    while (node?.incomingEdge != null) {
+      result.add(node!.incomingEdge!);
+      node = node.previous;
+    }
+    return result.reversed.toList();
+  }
+
+  String get stateKey {
+    final visitedStations = <String>[];
+    _ExactSearchNode? node = this;
+    while (node != null) {
+      visitedStations.add(node.station);
+      node = node.previous;
+    }
+    visitedStations.sort();
+    final routes = usedRouteNames.toList()..sort();
+    return '$station:${(distance * 10).round()}:${visitedStations.join('|')}:${routes.join('|')}';
+  }
+}
+
+class _HeapEntry<T> {
+  const _HeapEntry(this.value, this.priority);
+
+  final T value;
+  final double priority;
+}
+
+class _MinHeap<T> {
+  final List<_HeapEntry<T>> _items = [];
+
+  bool get isNotEmpty => _items.isNotEmpty;
+
+  void add(T value, double priority) {
+    _items.add(_HeapEntry(value, priority));
+    var index = _items.length - 1;
+    while (index > 0) {
+      final parent = (index - 1) ~/ 2;
+      if (_items[parent].priority <= priority) break;
+      _items[index] = _items[parent];
+      index = parent;
+    }
+    _items[index] = _HeapEntry(value, priority);
+  }
+
+  T removeFirst() {
+    final first = _items.first.value;
+    final last = _items.removeLast();
+    if (_items.isEmpty) return first;
+
+    var index = 0;
+    while (true) {
+      final left = index * 2 + 1;
+      if (left >= _items.length) break;
+      final right = left + 1;
+      var child = left;
+      if (right < _items.length &&
+          _items[right].priority < _items[left].priority) {
+        child = right;
+      }
+      if (_items[child].priority >= last.priority) break;
+      _items[index] = _items[child];
+      index = child;
+    }
+    _items[index] = last;
+    return first;
+  }
+}
+
+const _distanceTolerance = 0.55;
+const _maxExactSearchStates = 150000;

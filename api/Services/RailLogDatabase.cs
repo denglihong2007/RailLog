@@ -1,0 +1,925 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using RailLog.API.Models;
+
+namespace RailLog.API.Services;
+
+public sealed class RailLogDatabase
+{
+    private readonly string _connectionString;
+
+    public RailLogDatabase(IConfiguration configuration, IWebHostEnvironment environment)
+    {
+        var configured = configuration.GetConnectionString("RailLog") ?? "Data Source=raillog.db";
+        var builder = new SqliteConnectionStringBuilder(configured);
+        if (!Path.IsPathRooted(builder.DataSource))
+            builder.DataSource = Path.Combine(environment.ContentRootPath, builder.DataSource);
+        _connectionString = builder.ToString();
+    }
+
+    public async Task InitializeAsync()
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await ExecuteAsync(connection, "PRAGMA foreign_keys = ON;");
+        await ExecuteAsync(connection, "PRAGMA journal_mode = WAL;");
+        await ExecuteAsync(connection, """
+            CREATE TABLE IF NOT EXISTS AspNetUsers (
+                Id TEXT NOT NULL PRIMARY KEY,
+                DisplayName TEXT NOT NULL,
+                AvatarUrl TEXT NULL,
+                Email TEXT NOT NULL,
+                PasswordHash TEXT NOT NULL,
+                Bio TEXT NULL,
+                ShowEmailOnProfile INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS AuthTokens (
+                TokenHash TEXT NOT NULL PRIMARY KEY,
+                UserId TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS EmailVerificationCodes (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Email TEXT NOT NULL,
+                Purpose TEXT NOT NULL,
+                CodeHash TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                AttemptCount INTEGER NOT NULL DEFAULT 0,
+                ConsumedAt TEXT NULL
+            );
+            CREATE TABLE IF NOT EXISTS TripRecords (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                UserId TEXT NOT NULL,
+                ClientId TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                TrainNumber TEXT NOT NULL,
+                TravelDate TEXT NOT NULL,
+                RollingStock TEXT NULL,
+                CompanyName TEXT NULL,
+                FromStation TEXT NOT NULL,
+                ToStation TEXT NOT NULL,
+                DepartureTime TEXT NULL,
+                ArrivalTime TEXT NULL,
+                MileageKm REAL NOT NULL,
+                ViaRoutes TEXT NOT NULL,
+                SeatType TEXT NULL,
+                SeatNumber TEXT NULL,
+                Price REAL NOT NULL,
+                Notes TEXT NULL,
+                IsRailTrip INTEGER NOT NULL DEFAULT 1,
+                UpdatedAt TEXT NOT NULL,
+                DeletedAt TEXT NULL,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
+                UNIQUE (UserId, ClientId)
+            );
+            """);
+        // Remove indexes left by older Identity-compatible schemas before
+        // dropping the no-longer-used normalized email column.
+        await ExecuteAsync(connection, """
+            DROP INDEX IF EXISTS EmailIndex;
+            DROP INDEX IF EXISTS IX_AspNetUsers_NormalizedEmail;
+            """);
+        await DropColumnIfExistsAsync(connection, "AspNetUsers", "NormalizedEmail");
+        await EnsureColumnAsync(connection, "AspNetUsers", "CreatedAt", "TEXT NULL");
+        await EnsureColumnAsync(connection, "TripRecords", "ClientId", "TEXT NULL");
+        await EnsureColumnAsync(connection, "TripRecords", "CompanyName", "TEXT NULL");
+        await EnsureColumnAsync(connection, "TripRecords", "UpdatedAt", "TEXT NULL");
+        await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
+        await ExecuteAsync(connection, $"""
+            UPDATE AspNetUsers
+            SET CreatedAt = '{ToDb(DateTime.UtcNow)}'
+            WHERE CreatedAt IS NULL OR CreatedAt = '';
+            UPDATE TripRecords
+            SET ClientId = lower(hex(randomblob(16)))
+            WHERE ClientId IS NULL OR ClientId = '';
+            UPDATE TripRecords
+            SET UpdatedAt = CreatedAt
+            WHERE UpdatedAt IS NULL OR UpdatedAt = '';
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_AspNetUsers_Email
+                ON AspNetUsers (Email COLLATE NOCASE);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_AspNetUsers_DisplayName
+                ON AspNetUsers (DisplayName COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS IX_AuthTokens_UserId ON AuthTokens (UserId);
+            CREATE INDEX IF NOT EXISTS IX_EmailVerificationCodes_Lookup
+                ON EmailVerificationCodes (Email, Purpose, CreatedAt DESC);
+            CREATE INDEX IF NOT EXISTS IX_TripRecords_UserId ON TripRecords (UserId);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_TripRecords_UserClient
+                ON TripRecords (UserId, ClientId);
+            """);
+    }
+
+    public async Task<(AuthResponse? Response, string? Error)> RegisterAsync(RegisterRequest request)
+    {
+        var email = request.Email.Trim();
+        var displayName = request.DisplayName.Trim();
+        if (!IsValidEmail(email)) return (null, "请输入有效邮箱");
+        if (displayName.Length is < 2 or > 40) return (null, "昵称长度应为 2 至 40 个字符");
+        if (request.Password.Length < 8) return (null, "密码至少需要 8 个字符");
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        var userId = Guid.NewGuid().ToString("N");
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO AspNetUsers
+                (Id, DisplayName, Email, PasswordHash, ShowEmailOnProfile, CreatedAt)
+            VALUES ($id, $name, $email, $hash, 0, $createdAt);
+            """;
+        command.Parameters.AddWithValue("$id", userId);
+        command.Parameters.AddWithValue("$name", displayName);
+        command.Parameters.AddWithValue("$email", email);
+        command.Parameters.AddWithValue("$hash", IdentityPasswordHasher.HashPassword(request.Password));
+        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.UtcNow));
+        try
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return (null, "邮箱或昵称已被使用");
+        }
+        return (await CreateSessionAsync(connection, new UserProfile(
+            userId, email, displayName, null, null, false)), null);
+    }
+
+    public async Task<AuthResponse?> LoginAsync(LoginRequest request)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Email, DisplayName, AvatarUrl, Bio, ShowEmailOnProfile, PasswordHash
+            FROM AspNetUsers WHERE Email = $email COLLATE NOCASE LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$email", request.Email.Trim());
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        var passwordHash = reader.IsDBNull(6) ? null : reader.GetString(6);
+        if (!IdentityPasswordHasher.VerifyHashedPassword(passwordHash, request.Password)) return null;
+        var profile = ReadProfile(reader);
+        await reader.CloseAsync();
+        return await CreateSessionAsync(connection, profile);
+    }
+
+    public async Task<bool> EmailExistsAsync(string email)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM AspNetUsers WHERE Email = $email COLLATE NOCASE LIMIT 1;";
+        command.Parameters.AddWithValue("$email", email);
+        return await command.ExecuteScalarAsync() is not null;
+    }
+
+    public async Task<DateTime?> GetLatestVerificationCreatedAtAsync(string email, string purpose)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CreatedAt FROM EmailVerificationCodes
+            WHERE Email = $email COLLATE NOCASE AND Purpose = $purpose
+            ORDER BY CreatedAt DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$email", email);
+        command.Parameters.AddWithValue("$purpose", purpose);
+        var value = await command.ExecuteScalarAsync() as string;
+        return value is null ? null : FromDb(value);
+    }
+
+    public async Task InsertVerificationCodeAsync(
+        string id,
+        string email,
+        string purpose,
+        string codeHash,
+        DateTime expiresAt)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO EmailVerificationCodes
+                (Id, Email, Purpose, CodeHash, CreatedAt, ExpiresAt, AttemptCount)
+            VALUES ($id, $email, $purpose, $hash, $createdAt, $expiresAt, 0);
+            DELETE FROM EmailVerificationCodes
+            WHERE CreatedAt < $cleanupBefore;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$email", email);
+        command.Parameters.AddWithValue("$purpose", purpose);
+        command.Parameters.AddWithValue("$hash", codeHash);
+        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.UtcNow));
+        command.Parameters.AddWithValue("$expiresAt", ToDb(expiresAt));
+        command.Parameters.AddWithValue("$cleanupBefore", ToDb(DateTime.UtcNow.AddDays(-1)));
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteVerificationCodeAsync(string id)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM EmailVerificationCodes WHERE Id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<StoredVerificationCode?> GetLatestVerificationCodeAsync(
+        string email,
+        string purpose)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, CodeHash, ExpiresAt, AttemptCount
+            FROM EmailVerificationCodes
+            WHERE Email = $email COLLATE NOCASE AND Purpose = $purpose AND ConsumedAt IS NULL
+            ORDER BY CreatedAt DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$email", email);
+        command.Parameters.AddWithValue("$purpose", purpose);
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync()
+            ? new StoredVerificationCode(
+                reader.GetString(0),
+                reader.GetString(1),
+                FromDb(reader.GetString(2)),
+                reader.GetInt32(3))
+            : null;
+    }
+
+    public async Task IncrementVerificationAttemptsAsync(string id)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE EmailVerificationCodes
+            SET AttemptCount = AttemptCount + 1
+            WHERE Id = $id AND ConsumedAt IS NULL;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<bool> ConsumeVerificationCodeAsync(string id)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE EmailVerificationCodes
+            SET ConsumedAt = $consumedAt
+            WHERE Id = $id AND ConsumedAt IS NULL;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$consumedAt", ToDb(DateTime.UtcNow));
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
+    public async Task<bool> ResetPasswordAsync(string email, string newPassword)
+    {
+        if (newPassword.Length < 8) return false;
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var transaction = connection.BeginTransaction();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE AspNetUsers SET PasswordHash = $hash
+            WHERE Email = $email COLLATE NOCASE;
+            """;
+        command.Parameters.AddWithValue("$hash", IdentityPasswordHasher.HashPassword(newPassword));
+        command.Parameters.AddWithValue("$email", email.Trim());
+        var changed = await command.ExecuteNonQueryAsync() == 1;
+        if (changed)
+        {
+            await using var revoke = connection.CreateCommand();
+            revoke.Transaction = transaction;
+            revoke.CommandText = """
+                DELETE FROM AuthTokens
+                WHERE UserId = (SELECT Id FROM AspNetUsers WHERE Email = $email COLLATE NOCASE);
+                """;
+            revoke.Parameters.AddWithValue("$email", email.Trim());
+            await revoke.ExecuteNonQueryAsync();
+        }
+        await transaction.CommitAsync();
+        return changed;
+    }
+
+    public async Task<string?> ValidateTokenAsync(string token)
+    {
+        if (token.Length < 32) return null;
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT UserId FROM AuthTokens WHERE TokenHash = $hash AND ExpiresAt > $now LIMIT 1;";
+        command.Parameters.AddWithValue("$hash", HashToken(token));
+        command.Parameters.AddWithValue("$now", ToDb(DateTime.UtcNow));
+        return await command.ExecuteScalarAsync() as string;
+    }
+
+    public async Task<UserProfile?> GetProfileAsync(string userId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Email, DisplayName, AvatarUrl, Bio, ShowEmailOnProfile
+            FROM AspNetUsers WHERE Id = $id LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$id", userId);
+        await using var reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? ReadProfile(reader) : null;
+    }
+
+    public async Task<(UserProfile? Profile, string? Error)> UpdateProfileAsync(
+        string userId, UpdateProfileRequest request)
+    {
+        var name = request.DisplayName.Trim();
+        if (name.Length is < 2 or > 40) return (null, "昵称长度应为 2 至 40 个字符");
+        if (request.AvatarUrl?.Length > 1000 || request.Bio?.Length > 300)
+            return (null, "头像地址或简介过长");
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE AspNetUsers SET DisplayName = $name, AvatarUrl = $avatar,
+                Bio = $bio, ShowEmailOnProfile = $showEmail WHERE Id = $id;
+            """;
+        command.Parameters.AddWithValue("$name", name);
+        command.Parameters.AddWithValue("$avatar", DbValue(request.AvatarUrl));
+        command.Parameters.AddWithValue("$bio", DbValue(request.Bio));
+        command.Parameters.AddWithValue("$showEmail", request.ShowEmailOnProfile ? 1 : 0);
+        command.Parameters.AddWithValue("$id", userId);
+        try
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return (null, "该昵称已被使用");
+        }
+        return (await GetProfileAsync(userId), null);
+    }
+
+    public async Task RevokeTokenAsync(string token)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM AuthTokens WHERE TokenHash = $hash;";
+        command.Parameters.AddWithValue("$hash", HashToken(token));
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteAccountAsync(string userId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await ExecuteAsync(connection, "PRAGMA foreign_keys = ON;");
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM AspNetUsers WHERE Id = $id;";
+        command.Parameters.AddWithValue("$id", userId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<SyncTrip>> SyncTripsAsync(
+        string userId, IReadOnlyList<SyncTrip> incoming)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        foreach (var trip in incoming)
+        {
+            if (string.IsNullOrWhiteSpace(trip.ClientId) || trip.ClientId.Length > 100) continue;
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                UPDATE TripRecords SET
+                    CreatedAt=$createdAt, TrainNumber=$trainNumber,
+                    TravelDate=$travelDate, RollingStock=$rollingStock,
+                    CompanyName=$companyName, FromStation=$fromStation,
+                    ToStation=$toStation, DepartureTime=$departureTime,
+                    ArrivalTime=$arrivalTime, MileageKm=$mileage,
+                    ViaRoutes=$routes, SeatType=$seatType,
+                    SeatNumber=$seatNumber, Price=$price, Notes=$notes,
+                    IsRailTrip=$isRail, UpdatedAt=$updatedAt, DeletedAt=$deletedAt
+                WHERE UserId=$userId AND ClientId=$clientId
+                  AND $updatedAt > UpdatedAt;
+
+                INSERT INTO TripRecords
+                    (UserId, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock, CompanyName,
+                     FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm, ViaRoutes,
+                     SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt)
+                SELECT
+                     $userId, $clientId, $createdAt, $trainNumber, $travelDate, $rollingStock, $companyName,
+                     $fromStation, $toStation, $departureTime, $arrivalTime, $mileage, $routes,
+                     $seatType, $seatNumber, $price, $notes, $isRail, $updatedAt, $deletedAt
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM TripRecords
+                    WHERE UserId=$userId AND ClientId=$clientId
+                );
+                """;
+            AddTripParameters(command, userId, trip);
+            await command.ExecuteNonQueryAsync();
+        }
+        await transaction.CommitAsync();
+        return await GetTripsAsync(connection, userId);
+    }
+
+    public async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            WITH ActiveTrips AS (
+                SELECT * FROM TripRecords
+                WHERE IsRailTrip = 1 AND DeletedAt IS NULL
+            ),
+            VisitEvents AS (
+                SELECT Id AS TripId, UserId, trim(FromStation) AS Location,
+                       DepartureTime AS OccurredAt,
+                       date(DepartureTime, '+8 hours') AS EventDay
+                FROM ActiveTrips
+                WHERE DepartureTime IS NOT NULL AND trim(FromStation) <> ''
+                UNION ALL
+                SELECT Id, UserId, trim(ToStation), ArrivalTime,
+                       date(ArrivalTime, '+8 hours')
+                FROM ActiveTrips
+                WHERE ArrivalTime IS NOT NULL AND trim(ToStation) <> ''
+            ),
+            MineVisits AS (
+                SELECT DISTINCT Location, EventDay
+                FROM VisitEvents WHERE UserId = $userId
+            ),
+            MineLocations AS (
+                SELECT DISTINCT Location FROM MineVisits
+            ),
+            MineTrains AS (
+                SELECT DISTINCT upper(trim(TrainNumber)) AS TrainKey,
+                       date(DepartureTime, '+8 hours') AS EventDay
+                FROM ActiveTrips
+                WHERE UserId = $userId AND DepartureTime IS NOT NULL
+                  AND trim(TrainNumber) <> ''
+            ),
+            MineTrainKeys AS (
+                SELECT DISTINCT TrainKey FROM MineTrains
+            )
+            SELECT 'station' AS Kind, other.Location, trip.Id, trip.UserId,
+                   user.DisplayName, user.AvatarUrl, user.Bio,
+                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   min(other.OccurredAt) AS OccurredAt,
+                   max(CASE WHEN EXISTS (
+                       SELECT 1 FROM MineVisits exact
+                       WHERE exact.Location = other.Location
+                         AND exact.EventDay = other.EventDay
+                   ) THEN 1 ELSE 0 END) AS IsStrict,
+                   trip.TrainNumber, trip.FromStation, trip.ToStation,
+                   trip.DepartureTime, trip.ArrivalTime, trip.MileageKm,
+                   trip.ViaRoutes, trip.SeatType, trip.SeatNumber, trip.Price,
+                   trip.RollingStock, trip.CompanyName
+            FROM MineLocations mine
+            JOIN VisitEvents other
+              ON other.Location = mine.Location AND other.UserId <> $userId
+            JOIN ActiveTrips trip ON trip.Id = other.TripId
+            JOIN AspNetUsers user ON user.Id = trip.UserId
+            GROUP BY other.Location, trip.Id
+
+            UNION ALL
+
+            SELECT DISTINCT 'train', upper(trim(trip.TrainNumber)), trip.Id,
+                   trip.UserId, user.DisplayName, user.AvatarUrl, user.Bio,
+                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   trip.DepartureTime,
+                   CASE WHEN EXISTS (
+                       SELECT 1 FROM MineTrains exact
+                       WHERE exact.TrainKey = upper(trim(trip.TrainNumber))
+                         AND exact.EventDay = date(trip.DepartureTime, '+8 hours')
+                   ) THEN 1 ELSE 0 END,
+                   trip.TrainNumber, trip.FromStation, trip.ToStation,
+                   trip.DepartureTime, trip.ArrivalTime, trip.MileageKm,
+                   trip.ViaRoutes, trip.SeatType, trip.SeatNumber, trip.Price,
+                   trip.RollingStock, trip.CompanyName
+            FROM MineTrainKeys mine
+            JOIN ActiveTrips trip
+              ON upper(trim(trip.TrainNumber)) = mine.TrainKey
+             AND trip.UserId <> $userId
+            JOIN AspNetUsers user ON user.Id = trip.UserId
+            WHERE trip.DepartureTime IS NOT NULL
+            ORDER BY OccurredAt DESC;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        var grouped = new Dictionary<(string Kind, string Location), List<IntersectionTrip>>();
+        while (await reader.ReadAsync())
+        {
+            var kind = reader.GetString(0);
+            var location = reader.GetString(1);
+            var trip = new IntersectionTrip(
+                reader.GetInt64(2), reader.GetString(3), reader.GetString(4),
+                NullableString(reader, 5), NullableString(reader, 6), NullableString(reader, 7),
+                FromDb(reader.GetString(8)), reader.GetInt32(9) == 1,
+                reader.GetString(10), reader.GetString(11), reader.GetString(12),
+                NullableDate(reader, 13), NullableDate(reader, 14), reader.GetDouble(15),
+                reader.GetString(16), NullableString(reader, 17), NullableString(reader, 18),
+                reader.GetDouble(19), NullableString(reader, 20), NullableString(reader, 21));
+            var key = (kind, location);
+            if (!grouped.TryGetValue(key, out var trips))
+            {
+                trips = [];
+                grouped[key] = trips;
+            }
+            trips.Add(trip);
+        }
+
+        return grouped
+            .Select(entry => new IntersectionGroup(
+                entry.Key.Kind,
+                entry.Key.Location,
+                entry.Value.Count,
+                entry.Value.OrderByDescending(trip => trip.OccurredAt).ToList()))
+            .OrderByDescending(group => group.IntersectionCount)
+            .ThenByDescending(group => group.Trips.Max(trip => trip.OccurredAt))
+            .Take(30)
+            .ToList();
+    }
+
+    public async Task<PublicUserDashboardResponse?> GetPublicUserDashboardAsync(string userId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+
+        await using var profileCommand = connection.CreateCommand();
+        profileCommand.CommandText = """
+            SELECT Id, DisplayName, AvatarUrl, Bio,
+                   CASE WHEN ShowEmailOnProfile = 1 THEN Email END
+            FROM AspNetUsers WHERE Id = $userId LIMIT 1;
+            """;
+        profileCommand.Parameters.AddWithValue("$userId", userId);
+        await using var profileReader = await profileCommand.ExecuteReaderAsync();
+        if (!await profileReader.ReadAsync()) return null;
+        var user = new PublicUser(
+            profileReader.GetString(0), profileReader.GetString(1),
+            NullableString(profileReader, 2), NullableString(profileReader, 3),
+            NullableString(profileReader, 4));
+        await profileReader.CloseAsync();
+
+        await using var tripsCommand = connection.CreateCommand();
+        tripsCommand.CommandText = """
+            SELECT Id, CreatedAt, TrainNumber, RollingStock, CompanyName,
+                   FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm,
+                   ViaRoutes, SeatType, SeatNumber, Price, Notes, IsRailTrip
+            FROM TripRecords
+            WHERE UserId = $userId AND DeletedAt IS NULL
+            ORDER BY DepartureTime DESC, Id DESC;
+            """;
+        tripsCommand.Parameters.AddWithValue("$userId", userId);
+        await using var tripsReader = await tripsCommand.ExecuteReaderAsync();
+        var trips = new List<PublicTrip>();
+        while (await tripsReader.ReadAsync())
+        {
+            trips.Add(new PublicTrip(
+                tripsReader.GetInt64(0), FromDb(tripsReader.GetString(1)),
+                tripsReader.GetString(2), NullableString(tripsReader, 3),
+                NullableString(tripsReader, 4), tripsReader.GetString(5),
+                tripsReader.GetString(6), NullableDate(tripsReader, 7),
+                NullableDate(tripsReader, 8), tripsReader.GetDouble(9),
+                tripsReader.GetString(10), NullableString(tripsReader, 11),
+                NullableString(tripsReader, 12), tripsReader.GetDouble(13),
+                NullableString(tripsReader, 14), tripsReader.GetInt32(15) == 1));
+        }
+        return new PublicUserDashboardResponse(user, trips);
+    }
+
+    public async Task<StatisticsResponse> GetStatisticsAsync()
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT trip.Id, trip.CreatedAt, trip.TrainNumber, trip.TravelDate,
+                   trip.RollingStock, trip.CompanyName, trip.FromStation,
+                   trip.ToStation, trip.DepartureTime, trip.ArrivalTime,
+                   trip.MileageKm, trip.ViaRoutes, trip.SeatType,
+                   trip.SeatNumber, trip.Price, trip.Notes, trip.IsRailTrip,
+                   user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
+                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END
+            FROM TripRecords trip
+            JOIN AspNetUsers user ON user.Id = trip.UserId
+            WHERE trip.IsRailTrip = 1 AND trip.DeletedAt IS NULL;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        var trips = new List<StatisticsTrip>();
+        while (await reader.ReadAsync())
+        {
+            var publicTrip = new PublicTrip(
+                reader.GetInt64(0), FromDb(reader.GetString(1)), reader.GetString(2),
+                NullableString(reader, 4), NullableString(reader, 5), reader.GetString(6),
+                reader.GetString(7), NullableDate(reader, 8), NullableDate(reader, 9),
+                reader.GetDouble(10), reader.GetString(11), NullableString(reader, 12),
+                NullableString(reader, 13), reader.GetDouble(14), NullableString(reader, 15),
+                reader.GetInt32(16) == 1);
+            var user = new PublicUser(
+                reader.GetString(17), reader.GetString(18), NullableString(reader, 19),
+                NullableString(reader, 20), NullableString(reader, 21));
+            trips.Add(new StatisticsTrip(
+                publicTrip, user, FromDb(reader.GetString(3)), ParseRouteNames(reader.GetString(11))));
+        }
+
+        var chinaNow = DateTime.UtcNow.AddHours(8);
+        var today = chinaNow.Date;
+        var weekStart = today.AddDays(-((7 + (int)today.DayOfWeek - (int)DayOfWeek.Monday) % 7));
+        var yearTrips = trips
+            .Where(trip => ChinaTravelDay(trip).Year == today.Year)
+            .ToList();
+        var monthTrips = trips
+            .Where(trip =>
+            {
+                var day = ChinaTravelDay(trip);
+                return day.Year == today.Year && day.Month == today.Month;
+            })
+            .ToList();
+        var weekTrips = trips
+            .Where(trip =>
+            {
+                var day = ChinaTravelDay(trip);
+                return day >= weekStart && day < weekStart.AddDays(7);
+            })
+            .ToList();
+        var site = new SiteStatistics(
+            trips.Count,
+            yearTrips.Count,
+            monthTrips.Count,
+            weekTrips.Count,
+            Summarize(trips),
+            Summarize(yearTrips),
+            Summarize(monthTrips),
+            Summarize(weekTrips));
+
+        var users = trips.GroupBy(trip => trip.User.Id).Select(group => new
+        {
+            User = group.First().User,
+            Spending = group.Sum(trip => trip.Trip.Price),
+            Count = (double)group.Count(),
+            Duration = group.Sum(trip => ValidDurationSeconds(trip.Trip) ?? 0),
+            Mileage = group.Sum(trip => trip.Trip.MileageKm),
+        }).ToList();
+        var userBoards = new UserLeaderboards(
+            RankUsers(users.Select(item => (item.User, item.Spending))),
+            RankUsers(users.Select(item => (item.User, item.Count))),
+            RankUsers(users.Select(item => (item.User, item.Duration))),
+            RankUsers(users.Select(item => (item.User, item.Mileage))));
+
+        var durationTrips = trips
+            .Select(trip => (Trip: trip, Duration: ValidDurationSeconds(trip.Trip)))
+            .Where(item => item.Duration is not null).ToList();
+        var ratioTrips = trips.Where(trip => trip.Trip.MileageKm > 0).ToList();
+        var tripBoards = new TripLeaderboards(
+            RankTrips(trips.Select(item => (item, item.Trip.Price)), descending: true),
+            RankTrips(trips.Select(item => (item, item.Trip.MileageKm)), descending: true),
+            RankTrips(durationTrips.Select(item => (item.Trip, item.Duration!.Value)), descending: true),
+            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: false),
+            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: true));
+
+        var stationCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var routeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var trainCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var trip in trips)
+        {
+            if (trip.Trip.DepartureTime is not null)
+                Increment(stationCounts, trip.Trip.FromStation.Trim());
+            if (trip.Trip.ArrivalTime is not null)
+                Increment(stationCounts, trip.Trip.ToStation.Trim());
+            foreach (var route in trip.RouteNames.Distinct(StringComparer.OrdinalIgnoreCase))
+                Increment(routeCounts, route);
+            Increment(trainCounts, trip.Trip.TrainNumber.Trim().ToUpperInvariant());
+        }
+        var elementBoards = new ElementLeaderboards(
+            RankElements(stationCounts), RankElements(routeCounts), RankElements(trainCounts));
+        return new StatisticsResponse(site, userBoards, tripBoards, elementBoards);
+    }
+
+    private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(SqliteConnection connection, string userId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock, CompanyName,
+                   FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm, ViaRoutes,
+                   SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt
+            FROM TripRecords WHERE UserId = $userId ORDER BY UpdatedAt;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+        await using var reader = await command.ExecuteReaderAsync();
+        var trips = new List<SyncTrip>();
+        while (await reader.ReadAsync())
+        {
+            trips.Add(new SyncTrip(
+                reader.GetInt64(0), reader.GetString(1), FromDb(reader.GetString(2)), reader.GetString(3),
+                FromDb(reader.GetString(4)), NullableString(reader, 5), NullableString(reader, 6),
+                reader.GetString(7), reader.GetString(8), NullableDate(reader, 9), NullableDate(reader, 10),
+                reader.GetDouble(11), reader.GetString(12), NullableString(reader, 13),
+                NullableString(reader, 14), reader.GetDouble(15), NullableString(reader, 16),
+                reader.GetInt32(17) == 1, FromDb(reader.GetString(18)), NullableDate(reader, 19)));
+        }
+        return trips;
+    }
+
+    private static void AddTripParameters(SqliteCommand command, string userId, SyncTrip trip)
+    {
+        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("$clientId", trip.ClientId);
+        command.Parameters.AddWithValue("$createdAt", ToDb(trip.CreatedAt));
+        command.Parameters.AddWithValue("$trainNumber", trip.TrainNumber);
+        command.Parameters.AddWithValue("$travelDate", ToDb(trip.TravelDate));
+        command.Parameters.AddWithValue("$rollingStock", DbValue(trip.RollingStock));
+        command.Parameters.AddWithValue("$companyName", DbValue(trip.CompanyName));
+        command.Parameters.AddWithValue("$fromStation", trip.FromStation);
+        command.Parameters.AddWithValue("$toStation", trip.ToStation);
+        command.Parameters.AddWithValue("$departureTime", DbValue(trip.DepartureTime));
+        command.Parameters.AddWithValue("$arrivalTime", DbValue(trip.ArrivalTime));
+        command.Parameters.AddWithValue("$mileage", trip.MileageKm);
+        command.Parameters.AddWithValue("$routes", trip.ViaRoutes);
+        command.Parameters.AddWithValue("$seatType", DbValue(trip.SeatType));
+        command.Parameters.AddWithValue("$seatNumber", DbValue(trip.SeatNumber));
+        command.Parameters.AddWithValue("$price", trip.Price);
+        command.Parameters.AddWithValue("$notes", DbValue(trip.Notes));
+        command.Parameters.AddWithValue("$isRail", trip.IsRailTrip ? 1 : 0);
+        command.Parameters.AddWithValue("$updatedAt", ToDb(trip.UpdatedAt));
+        command.Parameters.AddWithValue("$deletedAt", DbValue(trip.DeletedAt));
+    }
+
+    private async Task<AuthResponse> CreateSessionAsync(SqliteConnection connection, UserProfile profile)
+    {
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var expiresAt = DateTime.UtcNow.AddDays(30);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO AuthTokens (TokenHash, UserId, ExpiresAt) VALUES ($hash, $userId, $expiresAt);
+            """;
+        command.Parameters.AddWithValue("$hash", HashToken(token));
+        command.Parameters.AddWithValue("$userId", profile.Id);
+        command.Parameters.AddWithValue("$expiresAt", ToDb(expiresAt));
+        await command.ExecuteNonQueryAsync();
+        return new AuthResponse(token, expiresAt, profile);
+    }
+
+    private SqliteConnection OpenConnection() => new(_connectionString);
+    private static bool IsValidEmail(string value) =>
+        value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');
+    private static string HashToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    private static string ToDb(DateTime value) => value.ToUniversalTime().ToString("O");
+    private static DateTime FromDb(string value) => DateTime.Parse(value).ToUniversalTime();
+    private static object DbValue(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+    private static object DbValue(DateTime? value) => value is null ? DBNull.Value : ToDb(value.Value);
+    private static string? NullableString(SqliteDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    private static DateTime? NullableDate(SqliteDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : FromDb(reader.GetString(ordinal));
+
+    private static DateTime ChinaTravelDay(StatisticsTrip trip) =>
+        (trip.Trip.DepartureTime ?? trip.TravelDate).ToUniversalTime().AddHours(8).Date;
+
+    private static double? ValidDurationSeconds(PublicTrip trip)
+    {
+        if (trip.DepartureTime is null || trip.ArrivalTime is null ||
+            trip.ArrivalTime <= trip.DepartureTime) return null;
+        return (trip.ArrivalTime.Value - trip.DepartureTime.Value).TotalSeconds;
+    }
+
+    private static SitePeriodStatistics Summarize(IEnumerable<StatisticsTrip> trips)
+    {
+        var values = trips.ToList();
+        return new SitePeriodStatistics(
+            values.Count,
+            values.Sum(item => item.Trip.MileageKm),
+            values.Sum(item => ValidDurationSeconds(item.Trip) ?? 0),
+            values.Sum(item => item.Trip.Price));
+    }
+
+    private static IReadOnlyList<UserRankingEntry> RankUsers(
+        IEnumerable<(PublicUser User, double Value)> values) => values
+        .OrderByDescending(item => item.Value)
+        .ThenBy(item => item.User.DisplayName, StringComparer.Ordinal)
+        .ThenBy(item => item.User.Id, StringComparer.Ordinal)
+        .Take(10)
+        .Select((item, index) => new UserRankingEntry(index + 1, item.User, item.Value))
+        .ToList();
+
+    private static IReadOnlyList<TripRankingEntry> RankTrips(
+        IEnumerable<(StatisticsTrip Trip, double Value)> values, bool descending)
+    {
+        var ordered = descending
+            ? values.OrderByDescending(item => item.Value)
+            : values.OrderBy(item => item.Value);
+        return ordered
+            .ThenBy(item => item.Trip.Trip.TicketId)
+            .Take(10)
+            .Select((item, index) => new TripRankingEntry(
+                index + 1, item.Trip.User, item.Trip.Trip, item.Value))
+            .ToList();
+    }
+
+    private static IReadOnlyList<ElementRankingEntry> RankElements(
+        IReadOnlyDictionary<string, int> counts) => counts
+        .OrderByDescending(item => item.Value)
+        .ThenBy(item => item.Key, StringComparer.Ordinal)
+        .Take(10)
+        .Select((item, index) => new ElementRankingEntry(index + 1, item.Key, item.Value))
+        .ToList();
+
+    private static void Increment(IDictionary<string, int> counts, string name)
+    {
+        if (name.Length == 0) return;
+        counts[name] = counts.TryGetValue(name, out var count) ? count + 1 : 1;
+    }
+
+    private static IReadOnlyList<string> ParseRouteNames(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
+            return document.RootElement.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.Object &&
+                    item.TryGetProperty("routeName", out var name) &&
+                    name.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetProperty("routeName").GetString()?.Trim() ?? string.Empty)
+                .Where(name => name.Length > 0)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private sealed record StatisticsTrip(
+        PublicTrip Trip,
+        PublicUser User,
+        DateTime TravelDate,
+        IReadOnlyList<string> RouteNames);
+    private static UserProfile ReadProfile(SqliteDataReader reader) => new(
+        reader.GetString(0),
+        reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+        reader.IsDBNull(2) ? "RailLog 用户" : reader.GetString(2),
+        NullableString(reader, 3), NullableString(reader, 4), reader.GetInt32(5) == 1);
+
+    private static async Task EnsureColumnAsync(
+        SqliteConnection connection, string table, string column, string definition)
+    {
+        await using var check = connection.CreateCommand();
+        check.CommandText = $"PRAGMA table_info(\"{table}\");";
+        await using var reader = await check.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return;
+        }
+        await reader.CloseAsync();
+        await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition};");
+    }
+
+    private static async Task DropColumnIfExistsAsync(
+        SqliteConnection connection, string table, string column)
+    {
+        await using var check = connection.CreateCommand();
+        check.CommandText = $"PRAGMA table_info(\"{table}\");";
+        await using var reader = await check.ExecuteReaderAsync();
+        var exists = false;
+        while (await reader.ReadAsync())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                exists = true;
+                break;
+            }
+        }
+        await reader.CloseAsync();
+        if (exists)
+            await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" DROP COLUMN \"{column}\";");
+    }
+
+    private static async Task ExecuteAsync(SqliteConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+}
+
+public sealed record StoredVerificationCode(
+    string Id,
+    string CodeHash,
+    DateTime ExpiresAt,
+    int AttemptCount);

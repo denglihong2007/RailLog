@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="raillog.web.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+</Solution>
