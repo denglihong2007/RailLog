@@ -474,18 +474,14 @@ public sealed class RailLogDatabase
                 SELECT DISTINCT TrainKey FROM MineTrains
             )
             SELECT 'station' AS Kind, other.Location, trip.Id, trip.UserId,
-                   user.DisplayName, user.AvatarUrl, user.Bio,
-                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   user.DisplayName, user.AvatarUrl,
                    min(other.OccurredAt) AS OccurredAt,
                    max(CASE WHEN EXISTS (
                        SELECT 1 FROM MineVisits exact
                        WHERE exact.Location = other.Location
                          AND exact.EventDay = other.EventDay
                    ) THEN 1 ELSE 0 END) AS IsStrict,
-                   trip.TrainNumber, trip.FromStation, trip.ToStation,
-                   trip.DepartureTime, trip.ArrivalTime, trip.MileageKm,
-                   trip.ViaRoutes, trip.SeatType, trip.SeatNumber, trip.Price,
-                   trip.RollingStock, trip.CompanyName
+                   trip.TrainNumber
             FROM MineLocations mine
             JOIN VisitEvents other
               ON other.Location = mine.Location AND other.UserId <> $userId
@@ -496,18 +492,14 @@ public sealed class RailLogDatabase
             UNION ALL
 
             SELECT DISTINCT 'train', upper(trim(trip.TrainNumber)), trip.Id,
-                   trip.UserId, user.DisplayName, user.AvatarUrl, user.Bio,
-                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   trip.UserId, user.DisplayName, user.AvatarUrl,
                    trip.DepartureTime,
                    CASE WHEN EXISTS (
                        SELECT 1 FROM MineTrains exact
                        WHERE exact.TrainKey = upper(trim(trip.TrainNumber))
                          AND exact.EventDay = date(trip.DepartureTime, '+8 hours')
                    ) THEN 1 ELSE 0 END,
-                   trip.TrainNumber, trip.FromStation, trip.ToStation,
-                   trip.DepartureTime, trip.ArrivalTime, trip.MileageKm,
-                   trip.ViaRoutes, trip.SeatType, trip.SeatNumber, trip.Price,
-                   trip.RollingStock, trip.CompanyName
+                   trip.TrainNumber
             FROM MineTrainKeys mine
             JOIN ActiveTrips trip
               ON upper(trim(trip.TrainNumber)) = mine.TrainKey
@@ -526,12 +518,8 @@ public sealed class RailLogDatabase
             var location = reader.GetString(1);
             var trip = new IntersectionTrip(
                 reader.GetInt64(2), reader.GetString(3), reader.GetString(4),
-                NullableString(reader, 5), NullableString(reader, 6), NullableString(reader, 7),
-                FromDb(reader.GetString(8)), reader.GetInt32(9) == 1,
-                reader.GetString(10), reader.GetString(11), reader.GetString(12),
-                NullableDate(reader, 13), NullableDate(reader, 14), reader.GetDouble(15),
-                reader.GetString(16), NullableString(reader, 17), NullableString(reader, 18),
-                reader.GetDouble(19), NullableString(reader, 20), NullableString(reader, 21));
+                NullableString(reader, 5), FromDb(reader.GetString(6)),
+                reader.GetInt32(7) == 1, reader.GetString(8));
             var key = (kind, location);
             if (!grouped.TryGetValue(key, out var trips))
             {
@@ -549,8 +537,42 @@ public sealed class RailLogDatabase
                 entry.Value.OrderByDescending(trip => trip.OccurredAt).ToList()))
             .OrderByDescending(group => group.IntersectionCount)
             .ThenByDescending(group => group.Trips.Max(trip => trip.OccurredAt))
-            .Take(30)
             .ToList();
+    }
+
+    public async Task<PublicTripDetailsResponse?> GetPublicTripDetailsAsync(long ticketId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
+                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   trip.Id, trip.CreatedAt, trip.TrainNumber, trip.RollingStock,
+                   trip.CompanyName, trip.FromStation, trip.ToStation,
+                   trip.DepartureTime, trip.ArrivalTime, trip.MileageKm,
+                   trip.ViaRoutes, trip.SeatType, trip.SeatNumber, trip.Price,
+                   trip.Notes, trip.IsRailTrip
+            FROM TripRecords trip
+            JOIN AspNetUsers user ON user.Id = trip.UserId
+            WHERE trip.Id = $ticketId AND trip.DeletedAt IS NULL
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$ticketId", ticketId);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        var user = new PublicUser(
+            reader.GetString(0), reader.GetString(1), NullableString(reader, 2),
+            NullableString(reader, 3), NullableString(reader, 4));
+        var trip = new PublicTrip(
+            reader.GetInt64(5), FromDb(reader.GetString(6)), reader.GetString(7),
+            NullableString(reader, 8), NullableString(reader, 9), reader.GetString(10),
+            reader.GetString(11), NullableDate(reader, 12), NullableDate(reader, 13),
+            reader.GetDouble(14), reader.GetString(15), NullableString(reader, 16),
+            NullableString(reader, 17), reader.GetDouble(18), NullableString(reader, 19),
+            reader.GetInt32(20) == 1);
+        return new PublicTripDetailsResponse(user, trip);
     }
 
     public async Task<PublicUserDashboardResponse?> GetPublicUserDashboardAsync(string userId)
@@ -827,9 +849,23 @@ public sealed class RailLogDatabase
             .ThenBy(item => item.Trip.Trip.TicketId)
             .Take(10)
             .Select((item, index) => new TripRankingEntry(
-                index + 1, item.Trip.User, item.Trip.Trip, item.Value))
+                index + 1, item.Trip.User, ToSummary(item.Trip.Trip), item.Value))
             .ToList();
     }
+
+    private static PublicTripSummary ToSummary(PublicTrip trip) => new(
+        trip.TicketId,
+        trip.CreatedAt,
+        trip.TrainNumber,
+        trip.FromStation,
+        trip.ToStation,
+        trip.DepartureTime,
+        trip.ArrivalTime,
+        trip.MileageKm,
+        trip.SeatType,
+        trip.SeatNumber,
+        trip.Price,
+        trip.IsRailTrip);
 
     private static IReadOnlyList<ElementRankingEntry> RankElements(
         IReadOnlyDictionary<string, int> counts) => counts

@@ -70,22 +70,9 @@ public sealed record IntersectionTrip(
     string UserId,
     string DisplayName,
     string? AvatarUrl,
-    string? Bio,
-    string? Email,
     DateTime OccurredAt,
     bool IsStrict,
-    string TrainNumber,
-    string FromStation,
-    string ToStation,
-    DateTime? DepartureTime,
-    DateTime? ArrivalTime,
-    double MileageKm,
-    string ViaRoutes,
-    string? SeatType,
-    string? SeatNumber,
-    double Price,
-    string? RollingStock,
-    string? CompanyName);
+    string TrainNumber);
 
 public sealed record IntersectionGroup(
     string Kind,
@@ -119,6 +106,22 @@ public sealed record PublicTrip(
     double Price,
     string? Notes,
     bool IsRailTrip);
+
+public sealed record PublicTripSummary(
+    long TicketId,
+    DateTime CreatedAt,
+    string TrainNumber,
+    string FromStation,
+    string ToStation,
+    DateTime? DepartureTime,
+    DateTime? ArrivalTime,
+    double MileageKm,
+    string? SeatType,
+    string? SeatNumber,
+    double Price,
+    bool IsRailTrip);
+
+public sealed record PublicTripDetailsResponse(PublicUser User, PublicTrip Trip);
 
 public sealed record PublicUserDashboardResponse(
     PublicUser User,
@@ -154,7 +157,7 @@ public sealed record UserLeaderboards(
 public sealed record TripRankingEntry(
     int Rank,
     PublicUser User,
-    PublicTrip Trip,
+    PublicTripSummary Trip,
     double Value);
 
 public sealed record TripLeaderboards(

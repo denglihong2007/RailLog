@@ -1,8 +1,3 @@
-import 'dart:convert';
-
-import 'package:raillog/src/models/trip_record.dart';
-import 'package:raillog/src/models/via_route_segment.dart';
-
 enum OnlineIntersectionKind { station, train }
 
 class OnlineIntersection {
@@ -40,22 +35,9 @@ class IntersectionTrip {
     required this.userId,
     required this.displayName,
     required this.avatarUrl,
-    required this.bio,
-    required this.email,
     required this.occurredAt,
     required this.isStrict,
     required this.trainNumber,
-    required this.fromStation,
-    required this.toStation,
-    required this.departureTime,
-    required this.arrivalTime,
-    required this.mileageKm,
-    required this.viaRouteSegments,
-    required this.seatType,
-    required this.seatNumber,
-    required this.price,
-    required this.rollingStock,
-    required this.companyName,
   });
 
   factory IntersectionTrip.fromJson(Map<String, dynamic> json) {
@@ -64,22 +46,9 @@ class IntersectionTrip {
       userId: json['userId'] as String,
       displayName: json['displayName'] as String,
       avatarUrl: json['avatarUrl'] as String?,
-      bio: json['bio'] as String?,
-      email: json['email'] as String?,
       occurredAt: _date(json['occurredAt'])!,
       isStrict: json['isStrict'] as bool? ?? false,
       trainNumber: json['trainNumber'] as String,
-      fromStation: json['fromStation'] as String,
-      toStation: json['toStation'] as String,
-      departureTime: _date(json['departureTime']),
-      arrivalTime: _date(json['arrivalTime']),
-      mileageKm: (json['mileageKm'] as num).toDouble(),
-      viaRouteSegments: _routeSegments(json['viaRoutes'] as String?),
-      seatType: json['seatType'] as String?,
-      seatNumber: json['seatNumber'] as String?,
-      price: (json['price'] as num).toDouble(),
-      rollingStock: json['rollingStock'] as String?,
-      companyName: json['companyName'] as String?,
     );
   }
 
@@ -87,55 +56,12 @@ class IntersectionTrip {
   final String userId;
   final String displayName;
   final String? avatarUrl;
-  final String? bio;
-  final String? email;
   final DateTime occurredAt;
   final bool isStrict;
   final String trainNumber;
-  final String fromStation;
-  final String toStation;
-  final DateTime? departureTime;
-  final DateTime? arrivalTime;
-  final double mileageKm;
-  final List<ViaRouteSegment> viaRouteSegments;
-  final String? seatType;
-  final String? seatNumber;
-  final double price;
-  final String? rollingStock;
-  final String? companyName;
-
-  TripRecord toTripRecord() => TripRecord(
-    id: 0,
-    ticketId: ticketId,
-    ownerUserId: userId,
-    trainNumber: trainNumber,
-    rollingStock: rollingStock,
-    companyName: companyName,
-    fromStation: fromStation,
-    toStation: toStation,
-    departureTime: departureTime ?? occurredAt,
-    arrivalTime: arrivalTime,
-    mileageKm: mileageKm,
-    viaRouteSegments: viaRouteSegments,
-    seatType: seatType,
-    seatNumber: seatNumber,
-    price: price,
-  );
 }
 
 DateTime? _date(Object? value) {
   if (value is! String) return null;
   return DateTime.parse(value).toLocal();
-}
-
-List<ViaRouteSegment> _routeSegments(String? value) {
-  if (value == null || value.isEmpty) return const [];
-  try {
-    final rows = jsonDecode(value) as List<dynamic>;
-    return rows
-        .map((row) => ViaRouteSegment.fromJson(row as Map<String, dynamic>))
-        .toList(growable: false);
-  } catch (_) {
-    return const [];
-  }
 }

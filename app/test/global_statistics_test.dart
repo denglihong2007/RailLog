@@ -14,18 +14,14 @@ void main() {
       'ticketId': 9,
       'createdAt': '2026-07-15T00:00:00Z',
       'trainNumber': 'G1',
-      'rollingStock': null,
-      'companyName': null,
       'fromStation': '北京南',
       'toStation': '上海虹桥',
       'departureTime': '2026-07-15T00:00:00Z',
       'arrivalTime': '2026-07-15T04:00:00Z',
       'mileageKm': 1000,
-      'viaRoutes': '[]',
       'seatType': '二等座',
       'seatNumber': '1车1A号',
       'price': 500,
-      'notes': null,
       'isRailTrip': true,
     };
     final statistics = GlobalStatistics.fromJson({

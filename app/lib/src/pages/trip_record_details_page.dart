@@ -1,51 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class TripRecordDetailsPage extends StatefulWidget {
   const TripRecordDetailsPage({super.key, required this.tripId})
-    : publicTrip = null,
-      ownerName = null,
-      ownerAvatarUrl = null,
-      ownerBio = null,
+    : publicTicketId = null,
       onOwnerTap = null;
 
   const TripRecordDetailsPage.public({
     super.key,
-    required TripRecord trip,
-    required this.ownerName,
-    this.ownerAvatarUrl,
-    this.ownerBio,
+    required int ticketId,
     this.onOwnerTap,
   }) : tripId = null,
-       publicTrip = trip;
+       publicTicketId = ticketId;
 
   final int? tripId;
-  final TripRecord? publicTrip;
-  final String? ownerName;
-  final String? ownerAvatarUrl;
-  final String? ownerBio;
+  final int? publicTicketId;
   final VoidCallback? onOwnerTap;
 
-  bool get isReadOnly => publicTrip != null;
+  bool get isReadOnly => publicTicketId != null;
 
   @override
   State<TripRecordDetailsPage> createState() => _TripRecordDetailsPageState();
 }
 
 class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
-  late final Future<TripRecord?> _tripFuture;
+  late final Future<_LoadedTrip?> _tripFuture;
   bool _isDeleting = false;
 
   @override
   void initState() {
     super.initState();
-    _tripFuture = widget.publicTrip == null
-        ? DbHelper.instance.getTripById(widget.tripId!)
-        : Future.value(widget.publicTrip);
+    _tripFuture = _loadTrip();
+  }
+
+  Future<_LoadedTrip?> _loadTrip() async {
+    final publicTicketId = widget.publicTicketId;
+    if (publicTicketId != null) {
+      final details = await PublicTripService.fetch(publicTicketId);
+      return _LoadedTrip.public(details);
+    }
+    final trip = await DbHelper.instance.getTripById(widget.tripId!);
+    return trip == null ? null : _LoadedTrip.local(trip);
   }
 
   Future<void> _editTrip(TripRecord trip) async {
@@ -99,10 +100,10 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<TripRecord?>(
+    return FutureBuilder<_LoadedTrip?>(
       future: _tripFuture,
       builder: (context, snapshot) {
-        final trip = snapshot.data;
+        final trip = snapshot.data?.trip;
         return Scaffold(
           appBar: AppBar(
             title: const Text('行程详情'),
@@ -133,7 +134,7 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
     );
   }
 
-  Widget _buildBody(AsyncSnapshot<TripRecord?> snapshot) {
+  Widget _buildBody(AsyncSnapshot<_LoadedTrip?> snapshot) {
     if (snapshot.hasError) {
       return _MessageState(
         icon: Icons.error_outline,
@@ -143,21 +144,39 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
     if (snapshot.connectionState != ConnectionState.done) {
       return const Center(child: CircularProgressIndicator());
     }
-    final trip = snapshot.data;
-    if (trip == null) {
+    final loaded = snapshot.data;
+    if (loaded == null) {
       return const _MessageState(
         icon: Icons.search_off_outlined,
         message: '未找到这条行程记录',
       );
     }
     return _TripDetailsContent(
-      trip: trip,
-      ownerName: widget.ownerName,
-      ownerAvatarUrl: widget.ownerAvatarUrl,
-      ownerBio: widget.ownerBio,
+      trip: loaded.trip,
+      ownerName: loaded.ownerName,
+      ownerAvatarUrl: loaded.ownerAvatarUrl,
+      ownerBio: loaded.ownerBio,
       onOwnerTap: widget.onOwnerTap,
     );
   }
+}
+
+class _LoadedTrip {
+  const _LoadedTrip.local(this.trip)
+    : ownerName = null,
+      ownerAvatarUrl = null,
+      ownerBio = null;
+
+  _LoadedTrip.public(PublicTripDetails details)
+    : trip = details.trip,
+      ownerName = details.user.displayName,
+      ownerAvatarUrl = details.user.avatarUrl,
+      ownerBio = details.user.bio;
+
+  final TripRecord trip;
+  final String? ownerName;
+  final String? ownerAvatarUrl;
+  final String? ownerBio;
 }
 
 class _TripDetailsContent extends StatelessWidget {

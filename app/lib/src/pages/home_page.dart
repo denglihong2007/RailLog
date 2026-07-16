@@ -253,16 +253,11 @@ class _PublicUserPageState extends State<PublicUserPage> {
     PublicUserDashboard dashboard,
     DashboardTripEntry entry,
   ) {
-    final trip = dashboard.tripByTicketId(entry.ticketId);
-    if (trip == null) return Future.value(false);
+    final ticketId = entry.ticketId;
+    if (ticketId == null) return Future.value(false);
     return Navigator.of(context).push<bool>(
       m3PageRoute(
-        builder: (_) => TripRecordDetailsPage.public(
-          trip: trip,
-          ownerName: dashboard.user.displayName,
-          ownerAvatarUrl: dashboard.user.avatarUrl,
-          ownerBio: dashboard.user.bio,
-        ),
+        builder: (_) => TripRecordDetailsPage.public(ticketId: ticketId),
       ),
     );
   }
@@ -566,10 +561,7 @@ class _IntersectionAvatar extends StatelessWidget {
           onTap: () => Navigator.of(context).push(
             m3PageRoute(
               builder: (_) => TripRecordDetailsPage.public(
-                trip: trip.toTripRecord(),
-                ownerName: trip.displayName,
-                ownerAvatarUrl: trip.avatarUrl,
-                ownerBio: trip.bio,
+                ticketId: trip.ticketId,
                 onOwnerTap: () => Navigator.of(context).push(
                   m3PageRoute(
                     builder: (_) => PublicUserPage(userId: trip.userId),
