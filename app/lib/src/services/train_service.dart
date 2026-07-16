@@ -166,7 +166,7 @@ class TrainService {
   }
 
   static List<DateTime> ticketPriceLookupDates(DateTime now) {
-    final chinaNow = now.toUtc().add(const Duration(hours: 8));
+    final chinaNow = now.add(const Duration(hours: 8));
     final tomorrow = DateTime(chinaNow.year, chinaNow.month, chinaNow.day + 1);
     return List.unmodifiable([
       tomorrow,
@@ -388,7 +388,7 @@ class TrainService {
   }
 
   static DateTime trainQueryDate(DateTime selectedDate, {DateTime? now}) {
-    final chinaNow = (now ?? DateTime.now()).toUtc().add(
+    final chinaNow = (now ?? DateTime.now()).add(
       const Duration(hours: 8),
     );
     final today = DateTime(chinaNow.year, chinaNow.month, chinaNow.day);

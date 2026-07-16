@@ -50,8 +50,8 @@ class TripRecord {
     this.isRailTrip = true,
     this.notes,
   }) : clientId = clientId ?? _newClientId(),
-       createdAt = createdAt ?? DateTime.now().toUtc(),
-       updatedAt = updatedAt ?? DateTime.now().toUtc();
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
     return {
@@ -60,9 +60,9 @@ class TripRecord {
       'client_id': clientId,
       'owner_user_id': ownerUserId,
       'train_number': trainNumber,
-      'created_at': createdAt.toUtc().toIso8601String(),
-      'updated_at': updatedAt.toUtc().toIso8601String(),
-      'deleted_at': deletedAt?.toUtc().toIso8601String(),
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'deleted_at': deletedAt?.toIso8601String(),
       'rolling_stock': rollingStock,
       'company_name': companyName,
       'from_station': fromStation,
