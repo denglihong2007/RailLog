@@ -5,6 +5,7 @@ import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
+import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class TripRecordDetailsPage extends StatefulWidget {
@@ -395,27 +396,8 @@ class _OwnerAvatar extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    final url = avatarUrl?.trim() ?? '';
-    final fallback = Center(
-      child: Text(name.isEmpty ? '?' : name[0].toUpperCase()),
-    );
-    return ClipOval(
-      child: ColoredBox(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: SizedBox.square(
-          dimension: size,
-          child: url.isEmpty
-              ? fallback
-              : Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => fallback,
-                ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      CachedAvatar(name: name, imageUrl: avatarUrl, size: size);
 }
 
 class _DetailsTicket extends StatelessWidget {

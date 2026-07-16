@@ -5,6 +5,7 @@ import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/widgets/cached_avatar.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -438,25 +439,12 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = user.avatarUrl?.trim();
-    return CircleAvatar(
-      radius: radius,
-      child: url == null || url.isEmpty
-          ? Text(
-              user.displayName.isEmpty
-                  ? '?'
-                  : user.displayName[0].toUpperCase(),
-              style: TextStyle(fontSize: radius * 0.7),
-            )
-          : ClipOval(
-              child: Image.network(
-                url,
-                width: radius * 2,
-                height: radius * 2,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const Icon(Icons.person_outline),
-              ),
-            ),
+    return CachedAvatar(
+      name: user.displayName,
+      imageUrl: user.avatarUrl,
+      size: radius * 2,
+      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+      textStyle: TextStyle(fontSize: radius * 0.7),
     );
   }
 }
