@@ -127,7 +127,7 @@ SELECT
     nullif(trim(trip.SeatNumber), ''),
     CAST(trip.Price AS REAL),
     nullif(trim(trip.Notes), ''),
-    1,
+    trip.IsRailTrip,
     strftime('%Y-%m-%dT%H:%M:%fZ', trip.CreatedAt),
     NULL
 FROM legacy.TripRecords AS trip;

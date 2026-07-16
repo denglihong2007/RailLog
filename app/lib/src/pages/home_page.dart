@@ -527,16 +527,12 @@ class _IntersectionCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text('交集', style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 48,
-              child: ListView.separated(
-                primary: false,
-                scrollDirection: Axis.horizontal,
-                itemCount: intersection.trips.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, index) =>
-                    _IntersectionAvatar(trip: intersection.trips[index]),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: intersection.trips
+                  .map((trip) => _IntersectionAvatar(trip: trip))
+                  .toList(growable: false),
             ),
           ],
         ),
