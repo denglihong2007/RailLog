@@ -2,14 +2,21 @@ import 'dart:async';
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter/material.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/pages/main_navigation_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
+import 'package:raillog/src/services/theme_settings.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await ThemeSettings.instance.initialize();
+  } catch (error) {
+    debugPrint('主题偏好读取失败，将使用默认设置：$error');
+  }
 
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
     sqfliteFfiInit();
@@ -39,22 +46,39 @@ class RailLogApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '轨记',
-      themeMode: ThemeMode.system,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.blue,
-        brightness: Brightness.light,
-        fontFamily: 'Noto Sans SC',
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) => AnimatedBuilder(
+        animation: ThemeSettings.instance,
+        builder: (context, _) {
+          final settings = ThemeSettings.instance;
+          final useDynamic = settings.useSystemColor;
+          final lightScheme = useDynamic && lightDynamic != null
+              ? lightDynamic
+              : ColorScheme.fromSeed(
+                  seedColor: settings.seedColor,
+                  brightness: Brightness.light,
+                );
+          final darkScheme = useDynamic && darkDynamic != null
+              ? darkDynamic
+              : ColorScheme.fromSeed(
+                  seedColor: settings.seedColor,
+                  brightness: Brightness.dark,
+                );
+          return MaterialApp(
+            title: '轨记',
+            themeMode: settings.themeMode,
+            theme: _theme(lightScheme),
+            darkTheme: _theme(darkScheme),
+            home: const MainNavigationPage(),
+          );
+        },
       ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.blue,
-        brightness: Brightness.dark,
-        fontFamily: 'Noto Sans SC',
-      ),
-      home: const MainNavigationPage(),
     );
   }
+
+  ThemeData _theme(ColorScheme colorScheme) => ThemeData(
+    useMaterial3: true,
+    colorScheme: colorScheme,
+    fontFamily: 'Noto Sans SC',
+  );
 }
