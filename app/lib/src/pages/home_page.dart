@@ -82,50 +82,35 @@ class _HomePageState extends State<HomePage> {
                 < 840 => 24.0,
                 _ => 32.0,
               };
-              return ListView(
+              return _DashboardScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
                 children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: _dashboardMaxWidth,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (!SessionService.instance.isSignedIn) ...[
-                            const M3Reveal(child: _SignInBanner()),
-                            const SizedBox(height: 16),
-                          ],
-                          M3Reveal(
-                            child: _OverviewSection(
-                              stats: stats,
-                              onChanged: _refresh,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          _StatsGrid(stats: stats, onChanged: _refresh),
-                          const SizedBox(height: 24),
-                          _AchievementsSection(
-                            achievements: stats.achievements,
-                            onChanged: _refresh,
-                          ),
-                          if (stats.tripCount == 0) ...[
-                            const SizedBox(height: 24),
-                            const M3Reveal(child: _EmptyStateCard()),
-                          ],
-                          if (SessionService.instance.isSignedIn) ...[
-                            const SizedBox(height: 24),
-                            _OnlineIntersectionsSection(
-                              future: _intersectionsFuture,
-                              onRetry: _refresh,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                  if (!SessionService.instance.isSignedIn) ...[
+                    const M3Reveal(child: _SignInBanner()),
+                    const SizedBox(height: 16),
+                  ],
+                  M3Reveal(
+                    child: _OverviewSection(stats: stats, onChanged: _refresh),
                   ),
+                  const SizedBox(height: 24),
+                  _StatsGrid(stats: stats, onChanged: _refresh),
+                  const SizedBox(height: 24),
+                  _AchievementsSection(
+                    achievements: stats.achievements,
+                    onChanged: _refresh,
+                  ),
+                  if (stats.tripCount == 0) ...[
+                    const SizedBox(height: 24),
+                    const M3Reveal(child: _EmptyStateCard()),
+                  ],
+                  if (SessionService.instance.isSignedIn) ...[
+                    const SizedBox(height: 24),
+                    _OnlineIntersectionsSection(
+                      future: _intersectionsFuture,
+                      onRetry: _refresh,
+                    ),
+                  ],
                 ],
               );
             },
@@ -194,7 +179,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                   < 840 => 24.0,
                   _ => 32.0,
                 };
-                return ListView(
+                return _DashboardScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
                     pagePadding,
@@ -203,42 +188,30 @@ class _PublicUserPageState extends State<PublicUserPage> {
                     32,
                   ),
                   children: [
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: _dashboardMaxWidth,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _PublicProfileCard(user: dashboard.user),
-                            const SizedBox(height: 24),
-                            _OverviewSection(
-                              stats: stats,
-                              onChanged: _refresh,
-                              openTrip: openTrip,
-                              subject: 'TA',
-                            ),
-                            const SizedBox(height: 24),
-                            _StatsGrid(
-                              stats: stats,
-                              onChanged: _refresh,
-                              openTrip: openTrip,
-                            ),
-                            const SizedBox(height: 24),
-                            _AchievementsSection(
-                              achievements: stats.achievements,
-                              onChanged: _refresh,
-                              openTrip: openTrip,
-                            ),
-                            if (stats.tripCount == 0) ...[
-                              const SizedBox(height: 24),
-                              const _EmptyStateCard(),
-                            ],
-                          ],
-                        ),
-                      ),
+                    _PublicProfileCard(user: dashboard.user),
+                    const SizedBox(height: 24),
+                    _OverviewSection(
+                      stats: stats,
+                      onChanged: _refresh,
+                      openTrip: openTrip,
+                      subject: 'TA',
                     ),
+                    const SizedBox(height: 24),
+                    _StatsGrid(
+                      stats: stats,
+                      onChanged: _refresh,
+                      openTrip: openTrip,
+                    ),
+                    const SizedBox(height: 24),
+                    _AchievementsSection(
+                      achievements: stats.achievements,
+                      onChanged: _refresh,
+                      openTrip: openTrip,
+                    ),
+                    if (stats.tripCount == 0) ...[
+                      const SizedBox(height: 24),
+                      const _EmptyStateCard(),
+                    ],
                   ],
                 );
               },
@@ -260,6 +233,39 @@ class _PublicUserPageState extends State<PublicUserPage> {
       m3PageRoute(
         builder: (_) => TripRecordDetailsPage.public(ticketId: ticketId),
       ),
+    );
+  }
+}
+
+class _DashboardScrollView extends StatelessWidget {
+  const _DashboardScrollView({
+    required this.children,
+    required this.padding,
+    this.physics,
+  });
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry padding;
+  final ScrollPhysics? physics;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      physics: physics,
+      slivers: [
+        SliverPadding(
+          padding: padding,
+          sliver: SliverList.builder(
+            itemCount: children.length,
+            itemBuilder: (context, index) => Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _dashboardMaxWidth),
+                child: SizedBox(width: double.infinity, child: children[index]),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -437,21 +443,20 @@ class _IntersectionCardWrap extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 12.0;
-        final cardWidth = constraints.maxWidth >= 840
-            ? (constraints.maxWidth - gap) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: intersections
-              .map(
-                (intersection) => SizedBox(
-                  width: cardWidth,
-                  child: _IntersectionCard(intersection: intersection),
-                ),
-              )
-              .toList(growable: false),
+        final columns = _dashboardGridColumns(constraints.maxWidth);
+        return GridView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            mainAxisExtent: 120,
+          ),
+          itemCount: intersections.length,
+          itemBuilder: (context, index) =>
+              _IntersectionCard(intersection: intersections[index]),
         );
       },
     );
@@ -472,88 +477,124 @@ class _IntersectionCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(_cardRadius),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  isStation ? Icons.location_on_outlined : Icons.train_outlined,
-                  color: colors.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    intersection.location,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(
+          m3PageRoute(
+            builder: (_) =>
+                _IntersectionDetailsPage(intersection: intersection),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      intersection.location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${intersection.intersectionCount} 条',
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                children: [
+                  Icon(
+                    isStation
+                        ? Icons.location_on_outlined
+                        : Icons.train_outlined,
+                    color: colors.primary,
                   ),
-                ),
-                Text(
-                  '${intersection.intersectionCount} 条交集',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelLarge?.copyWith(color: colors.primary),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text('交集', style: Theme.of(context).textTheme.labelMedium),
-            const SizedBox(height: 8),
-            _IntersectionAvatarList(trips: intersection.trips),
-          ],
+                  const Spacer(),
+                  Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _IntersectionAvatarList extends StatefulWidget {
-  const _IntersectionAvatarList({required this.trips});
+class _IntersectionDetailsPage extends StatelessWidget {
+  const _IntersectionDetailsPage({required this.intersection});
 
-  final List<IntersectionTrip> trips;
-
-  @override
-  State<_IntersectionAvatarList> createState() =>
-      _IntersectionAvatarListState();
-}
-
-class _IntersectionAvatarListState extends State<_IntersectionAvatarList> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+  final OnlineIntersection intersection;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 160),
-        child: Scrollbar(
-          controller: _scrollController,
-          thumbVisibility: true,
-          interactive: true,
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            primary: false,
-            padding: const EdgeInsets.only(right: 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: widget.trips
-                    .map((trip) => _IntersectionAvatar(trip: trip))
-                    .toList(growable: false),
+    final kindLabel = intersection.kind == OnlineIntersectionKind.station
+        ? '车站交集'
+        : '车次交集';
+    return Scaffold(
+      appBar: AppBar(title: Text('$kindLabel · ${intersection.location}')),
+      body: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        itemCount: intersection.trips.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, index) => Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: _IntersectionTripRow(trip: intersection.trips[index]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IntersectionTripRow extends StatelessWidget {
+  const _IntersectionTripRow({required this.trip});
+
+  final IntersectionTrip trip;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: trip.isStrict
+          ? colors.primaryContainer
+          : colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(_cardRadius),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: _IntersectionTripAvatar(trip: trip),
+        title: Text(trip.displayName),
+        subtitle: Text(
+          '${_formatDate(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          m3PageRoute(
+            builder: (_) => TripRecordDetailsPage.public(
+              ticketId: trip.ticketId,
+              onOwnerTap: () => Navigator.of(context).push(
+                m3PageRoute(
+                  builder: (_) => PublicUserPage(userId: trip.userId),
+                ),
               ),
             ),
           ),
@@ -563,8 +604,8 @@ class _IntersectionAvatarListState extends State<_IntersectionAvatarList> {
   }
 }
 
-class _IntersectionAvatar extends StatelessWidget {
-  const _IntersectionAvatar({required this.trip});
+class _IntersectionTripAvatar extends StatelessWidget {
+  const _IntersectionTripAvatar({required this.trip});
 
   final IntersectionTrip trip;
 
@@ -572,45 +613,22 @@ class _IntersectionAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final avatarPadding = trip.isStrict ? 2.0 : 4.0;
-    return Tooltip(
-      message:
-          '${trip.displayName} · ${_formatDate(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}',
-      child: Semantics(
-        button: true,
-        label: '${trip.displayName}的交集行程',
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () => Navigator.of(context).push(
-            m3PageRoute(
-              builder: (_) => TripRecordDetailsPage.public(
-                ticketId: trip.ticketId,
-                onOwnerTap: () => Navigator.of(context).push(
-                  m3PageRoute(
-                    builder: (_) => PublicUserPage(userId: trip.userId),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          child: Container(
-            width: 48,
-            height: 48,
-            padding: EdgeInsets.all(avatarPadding),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: trip.isStrict ? colors.primary : colors.outlineVariant,
-                width: trip.isStrict ? 3 : 1,
-              ),
-            ),
-            child: CachedAvatar(
-              name: trip.displayName,
-              imageUrl: trip.avatarUrl,
-              size: 48 - avatarPadding * 2,
-              backgroundColor: colors.secondaryContainer,
-            ),
-          ),
+    return Container(
+      width: 48,
+      height: 48,
+      padding: EdgeInsets.all(avatarPadding),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: trip.isStrict ? colors.primary : colors.outlineVariant,
+          width: trip.isStrict ? 3 : 1,
         ),
+      ),
+      child: CachedAvatar(
+        name: trip.displayName,
+        imageUrl: trip.avatarUrl,
+        size: 48 - avatarPadding * 2,
+        backgroundColor: colors.secondaryContainer,
       ),
     );
   }
@@ -1002,12 +1020,7 @@ class _MetricGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = switch (constraints.maxWidth) {
-          < 600 => 1,
-          < 840 => 2,
-          < 1120 => 3,
-          _ => 4,
-        };
+        final columns = _dashboardGridColumns(constraints.maxWidth);
         return GridView.builder(
           shrinkWrap: true,
           padding: EdgeInsets.zero,
@@ -1032,6 +1045,13 @@ class _MetricGrid extends StatelessWidget {
     );
   }
 }
+
+int _dashboardGridColumns(double width) => switch (width) {
+  < 360 => 1,
+  < 840 => 2,
+  < 1120 => 3,
+  _ => 4,
+};
 
 class _MetricCard extends StatelessWidget {
   const _MetricCard({required this.metric});

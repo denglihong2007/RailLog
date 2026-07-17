@@ -71,3 +71,63 @@ class ResponsiveFieldWrap extends StatelessWidget {
     );
   }
 }
+
+class FormPageScrollView extends StatelessWidget {
+  const FormPageScrollView({
+    super.key,
+    required this.children,
+    required this.padding,
+    this.maxWidth = 840,
+  });
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry padding;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverPadding(
+          padding: padding,
+          sliver: SliverList.builder(
+            itemCount: children.length,
+            itemBuilder: (context, index) => _KeepAliveFormSection(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: children[index],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _KeepAliveFormSection extends StatefulWidget {
+  const _KeepAliveFormSection({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveFormSection> createState() => _KeepAliveFormSectionState();
+}
+
+class _KeepAliveFormSectionState extends State<_KeepAliveFormSection>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
