@@ -23,6 +23,7 @@ enum DashboardAchievementKind {
   hundredThousandKilometers,
   fTrain,
   axleOverheat,
+  permanentMagnetPower,
   advantageIsMine,
   platformSubsidence,
   archaeologyTeam,

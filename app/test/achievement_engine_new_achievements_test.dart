@@ -173,6 +173,30 @@ void main() {
     );
   });
 
+  test('永磁动力要求乘坐 CRH380AN 车型', () {
+    expect(
+      _achievement([
+        _trip(id: 1, rollingStock: 'CRH380AN'),
+      ], DashboardAchievementKind.permanentMagnetPower).isUnlocked,
+      isTrue,
+    );
+    expect(
+      _achievement([
+        _trip(id: 2, rollingStock: 'CRH380AN-0206'),
+      ], DashboardAchievementKind.permanentMagnetPower).unlockedBy?.id,
+      2,
+    );
+    for (final model in ['CRH380A', 'CRH380ANX']) {
+      expect(
+        _achievement([
+          _trip(id: 3, rollingStock: model),
+        ], DashboardAchievementKind.permanentMagnetPower).isUnlocked,
+        isFalse,
+        reason: model,
+      );
+    }
+  });
+
   test('已解锁成就稳定排在未解锁成就之前且删除烂柯之人', () {
     final achievements = buildDashboardAchievements([
       _trip(id: 1, fromStation: '天涯海角'),
@@ -227,6 +251,7 @@ TripRecord _trip({
   DateTime? departureTime,
   DateTime? arrivalTime,
   String? seatType,
+  String? rollingStock,
 }) => TripRecord(
   id: id,
   trainNumber: trainNumber ?? 'G$id',
@@ -236,5 +261,6 @@ TripRecord _trip({
       departureTime ?? DateTime(2026, 1, 1).add(Duration(days: id, hours: 8)),
   arrivalTime: arrivalTime,
   seatType: seatType,
+  rollingStock: rollingStock,
   viaRouteSegments: const [],
 );
