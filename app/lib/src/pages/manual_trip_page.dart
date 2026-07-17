@@ -315,205 +315,181 @@ class _ManualTripPageState extends State<ManualTripPage> {
         ),
         child: Form(
           key: _formKey,
-          child: ListView(
+          child: FormPageScrollView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 840),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      FormSection(
-                        icon: Icons.edit_location_alt_outlined,
-                        title: '行程信息',
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_isRailTrip ? '铁路行程' : '非铁路行程'),
-                            const SizedBox(width: 4),
-                            Switch(
-                              value: _isRailTrip,
-                              onChanged: (value) =>
-                                  setState(() => _isRailTrip = value),
-                            ),
-                          ],
+              FormSection(
+                icon: Icons.edit_location_alt_outlined,
+                title: '行程信息',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_isRailTrip ? '铁路行程' : '非铁路行程'),
+                    const SizedBox(width: 4),
+                    Switch(
+                      value: _isRailTrip,
+                      onChanged: (value) => setState(() => _isRailTrip = value),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _requiredTextField(
+                      controller: _trainNumberController,
+                      label: _isRailTrip ? '车次' : '班次或名称',
+                      icon: Icons.tag_outlined,
+                    ),
+                    const SizedBox(height: 12),
+                    ResponsiveFieldWrap(
+                      children: [
+                        _requiredTextField(
+                          controller: _fromStationController,
+                          label: '始发站',
+                          icon: Icons.trip_origin_outlined,
+                          onChanged: (_) => _syncRouteEndpoints(),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _requiredTextField(
-                              controller: _trainNumberController,
-                              label: _isRailTrip ? '车次' : '班次或名称',
-                              icon: Icons.tag_outlined,
-                            ),
-                            const SizedBox(height: 12),
-                            ResponsiveFieldWrap(
-                              children: [
-                                _requiredTextField(
-                                  controller: _fromStationController,
-                                  label: '始发站',
-                                  icon: Icons.trip_origin_outlined,
-                                  onChanged: (_) => _syncRouteEndpoints(),
-                                ),
-                                _requiredTextField(
-                                  controller: _toStationController,
-                                  label: '终到站',
-                                  icon: Icons.location_on_outlined,
-                                  onChanged: (_) => _syncRouteEndpoints(),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            ResponsiveFieldWrap(
-                              children: [
-                                _DateTimeInput(
-                                  label: '始发时间',
-                                  value: _departureTime,
-                                  onTap: _pickDepartureTime,
-                                ),
-                                _DateTimeInput(
-                                  label: '终到时间（可选）',
-                                  value: _arrivalTime,
-                                  onTap: _pickArrivalTime,
-                                  onClear: _arrivalTime == null
-                                      ? null
-                                      : () =>
-                                            setState(() => _arrivalTime = null),
-                                ),
-                              ],
-                            ),
-                          ],
+                        _requiredTextField(
+                          controller: _toStationController,
+                          label: '终到站',
+                          icon: Icons.location_on_outlined,
+                          onChanged: (_) => _syncRouteEndpoints(),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      FormSection(
-                        icon: Icons.event_seat_outlined,
-                        title: '座位信息',
-                        child: SeatEditor(
-                          seatTypes: SeatOptions.types,
-                          seatType: _seatType,
-                          seatMode: _seatMode,
-                          customSeatTypeController: _customSeatTypeController,
-                          customSeatNumberController:
-                              _customSeatNumberController,
-                          carriageNumber: _carriageNumber,
-                          primarySeatNumber: _primarySeatNumber,
-                          secondarySeatNumber: _secondarySeatNumber,
-                          secondarySeatNumbers: SeatOptions.secondaryNumbers,
-                          onSeatTypeChanged: _changeSeatType,
-                          onSeatModeChanged: _changeSeatMode,
-                          onCarriageChanged: (value) =>
-                              setState(() => _carriageNumber = value),
-                          onPrimaryChanged: (value) =>
-                              setState(() => _primarySeatNumber = value),
-                          onSecondaryChanged: (value) =>
-                              setState(() => _secondarySeatNumber = value),
-                          allowEmptyCustomSeat:
-                              widget.initialTrip != null &&
-                              (widget.initialTrip!.seatType?.trim().isEmpty ??
-                                  true) &&
-                              (widget.initialTrip!.seatNumber?.trim().isEmpty ??
-                                  true),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ResponsiveFieldWrap(
+                      children: [
+                        _DateTimeInput(
+                          label: '始发时间',
+                          value: _departureTime,
+                          onTap: _pickDepartureTime,
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      FormSection(
-                        icon: Icons.route_outlined,
-                        title: '运行信息',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ResponsiveFieldWrap(
-                              children: [
-                                _numberField(
-                                  controller: _distanceController,
-                                  label: '里程',
-                                  suffix: 'km',
-                                  icon: Icons.straighten_outlined,
-                                  onCalculate:
-                                      !_isRailTrip || _viaRouteSegments.isEmpty
-                                      ? null
-                                      : _calculateTotalMileage,
-                                ),
-                                _numberField(
-                                  controller: _priceController,
-                                  label: '票价',
-                                  suffix: '元',
-                                  icon: Icons.payments_outlined,
-                                ),
-                                CompanyEditor(controller: _companyController),
-                                TextFormField(
-                                  controller: _rollingStockController,
-                                  decoration: const InputDecoration(
-                                    labelText: '车型',
-                                    prefixIcon: Icon(Icons.train_outlined),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (_isRailTrip) ...[
-                              const SizedBox(height: 20),
-                              RouteSegmentsEditor(
-                                startStation: _fromStationController.text,
-                                endStation: _toStationController.text,
-                                routeNames: _routeNames,
-                                segments: _viaRouteSegments,
-                                isLoading: _isLoadingRouteCatalog,
-                                isRecognizing: _isRecognizingShortestPath,
-                                revision: _routeEditorRevision,
-                                onRecognizeShortestPath: _recognizeShortestPath,
-                                resolveDistance:
-                                    RouteService.getDistanceOnRoute,
-                                resolveStations:
-                                    RouteService.getStationsForRoute,
-                                onChanged: (segments) {
-                                  setState(() {
-                                    _viaRouteSegments = segments;
-                                    _unresolvedRouteSections = const [];
-                                    _routeLookupFailed = false;
-                                  });
-                                },
-                                unresolvedSections: _unresolvedRouteSections,
-                                lookupFailed: _routeLookupFailed,
-                              ),
-                            ],
-                          ],
+                        _DateTimeInput(
+                          label: '终到时间（可选）',
+                          value: _arrivalTime,
+                          onTap: _pickArrivalTime,
+                          onClear: _arrivalTime == null
+                              ? null
+                              : () => setState(() => _arrivalTime = null),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      FormSection(
-                        icon: Icons.notes_outlined,
-                        title: '备注',
-                        child: TextFormField(
-                          controller: _notesController,
-                          minLines: 3,
-                          maxLines: 6,
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              FormSection(
+                icon: Icons.event_seat_outlined,
+                title: '座位信息',
+                child: SeatEditor(
+                  seatTypes: SeatOptions.types,
+                  seatType: _seatType,
+                  seatMode: _seatMode,
+                  customSeatTypeController: _customSeatTypeController,
+                  customSeatNumberController: _customSeatNumberController,
+                  carriageNumber: _carriageNumber,
+                  primarySeatNumber: _primarySeatNumber,
+                  secondarySeatNumber: _secondarySeatNumber,
+                  secondarySeatNumbers: SeatOptions.secondaryNumbers,
+                  onSeatTypeChanged: _changeSeatType,
+                  onSeatModeChanged: _changeSeatMode,
+                  onCarriageChanged: (value) =>
+                      setState(() => _carriageNumber = value),
+                  onPrimaryChanged: (value) =>
+                      setState(() => _primarySeatNumber = value),
+                  onSecondaryChanged: (value) =>
+                      setState(() => _secondarySeatNumber = value),
+                  allowEmptyCustomSeat:
+                      widget.initialTrip != null &&
+                      (widget.initialTrip!.seatType?.trim().isEmpty ?? true) &&
+                      (widget.initialTrip!.seatNumber?.trim().isEmpty ?? true),
+                ),
+              ),
+              const SizedBox(height: 16),
+              FormSection(
+                icon: Icons.route_outlined,
+                title: '运行信息',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ResponsiveFieldWrap(
+                      children: [
+                        _numberField(
+                          controller: _distanceController,
+                          label: '里程',
+                          suffix: 'km',
+                          icon: Icons.straighten_outlined,
+                          onCalculate: !_isRailTrip || _viaRouteSegments.isEmpty
+                              ? null
+                              : _calculateTotalMileage,
+                        ),
+                        _numberField(
+                          controller: _priceController,
+                          label: '票价',
+                          suffix: '元',
+                          icon: Icons.payments_outlined,
+                        ),
+                        CompanyEditor(controller: _companyController),
+                        TextFormField(
+                          controller: _rollingStockController,
                           decoration: const InputDecoration(
-                            hintText: '记录这趟旅程的其它信息',
+                            labelText: '车型',
+                            prefixIcon: Icon(Icons.train_outlined),
                           ),
                         ),
-                      ),
+                      ],
+                    ),
+                    if (_isRailTrip) ...[
                       const SizedBox(height: 20),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed: _isSaving ? null : _save,
-                          icon: _isSaving
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: Text(
-                            widget.initialTrip == null ? '保存行程' : '保存修改',
-                          ),
-                        ),
+                      RouteSegmentsEditor(
+                        startStation: _fromStationController.text,
+                        endStation: _toStationController.text,
+                        routeNames: _routeNames,
+                        segments: _viaRouteSegments,
+                        isLoading: _isLoadingRouteCatalog,
+                        isRecognizing: _isRecognizingShortestPath,
+                        revision: _routeEditorRevision,
+                        onRecognizeShortestPath: _recognizeShortestPath,
+                        resolveDistance: RouteService.getDistanceOnRoute,
+                        resolveStations: RouteService.getStationsForRoute,
+                        onChanged: (segments) {
+                          setState(() {
+                            _viaRouteSegments = segments;
+                            _unresolvedRouteSections = const [];
+                            _routeLookupFailed = false;
+                          });
+                        },
+                        unresolvedSections: _unresolvedRouteSections,
+                        lookupFailed: _routeLookupFailed,
                       ),
                     ],
-                  ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              FormSection(
+                icon: Icons.notes_outlined,
+                title: '备注',
+                child: TextFormField(
+                  controller: _notesController,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(hintText: '记录这趟旅程的其它信息'),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: _isSaving ? null : _save,
+                  icon: _isSaving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(widget.initialTrip == null ? '保存行程' : '保存修改'),
                 ),
               ),
             ],

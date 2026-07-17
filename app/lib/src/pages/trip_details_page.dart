@@ -302,189 +302,146 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         ),
         child: Form(
           key: _formKey,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final horizontalPadding = constraints.maxWidth >= 720
-                  ? 24.0
-                  : 16.0;
-              return ListView(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  12,
-                  horizontalPadding,
-                  32,
-                ),
-                children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 840),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TripTicket(
-                            trainNumber: widget.trainNumber,
-                            departureStop: _departureStop,
-                            arrivalStop: _arrivalStop,
-                          ),
-                          const SizedBox(height: 20),
-                          FormSection(
-                            icon: Icons.event_seat_outlined,
-                            title: '座位信息',
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                SeatEditor(
-                                  seatTypes: SeatOptions.types,
-                                  seatType: _seatType,
-                                  seatMode: _seatMode,
-                                  customSeatTypeController:
-                                      _customSeatTypeController,
-                                  customSeatNumberController:
-                                      _customSeatNumberController,
-                                  carriageNumber: _carriageNumber,
-                                  primarySeatNumber: _primarySeatNumber,
-                                  secondarySeatNumber: _secondarySeatNumber,
-                                  secondarySeatNumbers:
-                                      SeatOptions.secondaryNumbers,
-                                  onSeatTypeChanged: _changeSeatType,
-                                  onSeatModeChanged: _changeSeatMode,
-                                  onCarriageChanged: (value) =>
-                                      setState(() => _carriageNumber = value),
-                                  onPrimaryChanged: (value) => setState(
-                                    () => _primarySeatNumber = value,
-                                  ),
-                                  onSecondaryChanged: (value) => setState(
-                                    () => _secondarySeatNumber = value,
-                                  ),
-                                  onTicketSeatOptionChanged: (option) =>
-                                      setState(
-                                        () => _applyTicketSeatOption(option),
-                                      ),
-                                  ticketSeatOptions:
-                                      _ticketSeatAvailability?.seatOptions,
-                                  noSeatOption:
-                                      _ticketSeatAvailability?.noSeatOption,
-                                ),
-                                if (_ticketSeatLookupFailed) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '未获取到当前区间的席别与票价',
-                                    style: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          FormSection(
-                            icon: Icons.route_outlined,
-                            title: '运行信息',
-                            trailing: _isLoadingRuntimeInfo
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : null,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                ResponsiveFieldWrap(
-                                  children: [
-                                    _buildDistanceField(),
-                                    _buildPriceField(),
-                                    CompanyEditor(
-                                      controller: _companyController,
-                                    ),
-                                    TextFormField(
-                                      controller: _rollingStockController,
-                                      decoration: InputDecoration(
-                                        labelText: '车型',
-                                        prefixIcon: const Icon(
-                                          Icons.train_outlined,
-                                        ),
-                                        helperText: _usedLatestRollingStock
-                                            ? '按照${_formatDate(_rollingStockReferenceTravelDate!)}乘车日期填入，请确认'
-                                            : _rollingStockLookupFailed
-                                            ? '未自动获取，请手动填写'
-                                            : null,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 20),
-                                RouteSegmentsEditor(
-                                  startStation: _departureStop.stationName,
-                                  endStation: _arrivalStop.stationName,
-                                  routeNames: _routeNames,
-                                  segments: _viaRouteSegments,
-                                  isLoading:
-                                      _isLoadingRouteInfo ||
-                                      _isLoadingRouteCatalog,
-                                  isRecognizing: _isRecognizingShortestPath,
-                                  revision: _routeEditorRevision,
-                                  onRecognizeShortestPath:
-                                      _recognizeShortestPath,
-                                  resolveDistance:
-                                      RouteService.getDistanceOnRoute,
-                                  resolveStations:
-                                      RouteService.getStationsForRoute,
-                                  onChanged: (segments) {
-                                    setState(() {
-                                      _viaRouteSegments = segments;
-                                      _unresolvedRouteSections = const [];
-                                      _usedShortestRoutePath = false;
-                                      _routeLookupFailed = false;
-                                    });
-                                  },
-                                  usedShortestPath: _usedShortestRoutePath,
-                                  unresolvedSections: _unresolvedRouteSections,
-                                  lookupFailed: _routeLookupFailed,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          FormSection(
-                            icon: Icons.notes_outlined,
-                            title: '备注',
-                            child: TextFormField(
-                              controller: _notesController,
-                              minLines: 3,
-                              maxLines: 6,
-                              decoration: const InputDecoration(
-                                hintText: '记录这趟旅程的其它信息',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: FilledButton.icon(
-                              onPressed: _isSaving ? null : _save,
-                              icon: _isSaving
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.save_outlined),
-                              label: const Text('保存行程'),
-                            ),
-                          ),
-                        ],
-                      ),
+          child: FormPageScrollView(
+            padding: EdgeInsets.fromLTRB(
+              MediaQuery.sizeOf(context).width >= 720 ? 24 : 16,
+              12,
+              MediaQuery.sizeOf(context).width >= 720 ? 24 : 16,
+              32,
+            ),
+            children: [
+              TripTicket(
+                trainNumber: widget.trainNumber,
+                departureStop: _departureStop,
+                arrivalStop: _arrivalStop,
+              ),
+              const SizedBox(height: 20),
+              FormSection(
+                icon: Icons.event_seat_outlined,
+                title: '座位信息',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SeatEditor(
+                      seatTypes: SeatOptions.types,
+                      seatType: _seatType,
+                      seatMode: _seatMode,
+                      customSeatTypeController: _customSeatTypeController,
+                      customSeatNumberController: _customSeatNumberController,
+                      carriageNumber: _carriageNumber,
+                      primarySeatNumber: _primarySeatNumber,
+                      secondarySeatNumber: _secondarySeatNumber,
+                      secondarySeatNumbers: SeatOptions.secondaryNumbers,
+                      onSeatTypeChanged: _changeSeatType,
+                      onSeatModeChanged: _changeSeatMode,
+                      onCarriageChanged: (value) =>
+                          setState(() => _carriageNumber = value),
+                      onPrimaryChanged: (value) =>
+                          setState(() => _primarySeatNumber = value),
+                      onSecondaryChanged: (value) =>
+                          setState(() => _secondarySeatNumber = value),
+                      onTicketSeatOptionChanged: (option) =>
+                          setState(() => _applyTicketSeatOption(option)),
+                      ticketSeatOptions: _ticketSeatAvailability?.seatOptions,
+                      noSeatOption: _ticketSeatAvailability?.noSeatOption,
                     ),
-                  ),
-                ],
-              );
-            },
+                    if (_ticketSeatLookupFailed) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '未获取到当前区间的席别与票价',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              FormSection(
+                icon: Icons.route_outlined,
+                title: '运行信息',
+                trailing: _isLoadingRuntimeInfo
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ResponsiveFieldWrap(
+                      children: [
+                        _buildDistanceField(),
+                        _buildPriceField(),
+                        CompanyEditor(controller: _companyController),
+                        TextFormField(
+                          controller: _rollingStockController,
+                          decoration: InputDecoration(
+                            labelText: '车型',
+                            prefixIcon: const Icon(Icons.train_outlined),
+                            helperText: _usedLatestRollingStock
+                                ? '按照${_formatDate(_rollingStockReferenceTravelDate!)}乘车日期填入，请确认'
+                                : _rollingStockLookupFailed
+                                ? '未自动获取，请手动填写'
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    RouteSegmentsEditor(
+                      startStation: _departureStop.stationName,
+                      endStation: _arrivalStop.stationName,
+                      routeNames: _routeNames,
+                      segments: _viaRouteSegments,
+                      isLoading: _isLoadingRouteInfo || _isLoadingRouteCatalog,
+                      isRecognizing: _isRecognizingShortestPath,
+                      revision: _routeEditorRevision,
+                      onRecognizeShortestPath: _recognizeShortestPath,
+                      resolveDistance: RouteService.getDistanceOnRoute,
+                      resolveStations: RouteService.getStationsForRoute,
+                      onChanged: (segments) {
+                        setState(() {
+                          _viaRouteSegments = segments;
+                          _unresolvedRouteSections = const [];
+                          _usedShortestRoutePath = false;
+                          _routeLookupFailed = false;
+                        });
+                      },
+                      usedShortestPath: _usedShortestRoutePath,
+                      unresolvedSections: _unresolvedRouteSections,
+                      lookupFailed: _routeLookupFailed,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              FormSection(
+                icon: Icons.notes_outlined,
+                title: '备注',
+                child: TextFormField(
+                  controller: _notesController,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(hintText: '记录这趟旅程的其它信息'),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: _isSaving ? null : _save,
+                  icon: _isSaving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: const Text('保存行程'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
