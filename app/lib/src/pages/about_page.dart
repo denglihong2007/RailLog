@@ -226,6 +226,17 @@ class _AboutPageState extends State<AboutPage> {
                     ),
                     const SizedBox(height: 20),
                     const _AboutSection(
+                      title: '赞助者名单',
+                      children: [
+                        _InfoTile(
+                          icon: Icons.favorite_outline,
+                          title: '冰镇杨梅汁儿',
+                          subtitle: '感谢对 RailLog 的支持',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const _AboutSection(
                       title: '友情链接',
                       children: [
                         _LinkTile(
