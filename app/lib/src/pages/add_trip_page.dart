@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
+import 'package:raillog/src/pages/import_12306_page.dart';
 import 'package:raillog/src/pages/trip_details_page.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/add_trip/entry_method_card.dart';
@@ -149,17 +150,18 @@ class _AddTripPageState extends State<AddTripPage> {
     if (saved == true && mounted) widget.onTripSaved();
   }
 
+  Future<void> _open12306Import() async {
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(m3PageRoute(builder: (context) => const Import12306Page()));
+    if (saved == true && mounted) widget.onTripSaved();
+  }
+
   void _clearSelectedTrain() {
     _selectedTrain = null;
     _scheduleStops = const [];
     _departureStopIndex = null;
     _arrivalStopIndex = null;
-  }
-
-  void _showUnavailableMessage(String feature) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$feature功能正在准备中')));
   }
 
   @override
@@ -200,8 +202,8 @@ class _AddTripPageState extends State<AddTripPage> {
         EntryMethodCard(
           icon: Icons.download_for_offline_outlined,
           title: '12306 导入',
-          description: '导入 12306 行程信息，快速生成行程记录',
-          onTap: () => _showUnavailableMessage('12306 导入'),
+          description: '扫码选择订单，逐条补全并确认行程信息',
+          onTap: _open12306Import,
         ),
       ],
     );

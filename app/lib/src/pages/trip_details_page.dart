@@ -23,12 +23,26 @@ class TripDetailsPage extends StatefulWidget {
     required this.scheduleStops,
     required this.departureStopIndex,
     required this.arrivalStopIndex,
+    this.initialSeatType,
+    this.initialSeatNumber,
+    this.initialMileageKm,
+    this.initialPrice,
+    this.initialNotes,
+    this.reviewPosition,
+    this.reviewTotal,
   });
 
   final String trainNumber;
   final List<TrainScheduleStop> scheduleStops;
   final int departureStopIndex;
   final int arrivalStopIndex;
+  final String? initialSeatType;
+  final String? initialSeatNumber;
+  final double? initialMileageKm;
+  final double? initialPrice;
+  final String? initialNotes;
+  final int? reviewPosition;
+  final int? reviewTotal;
 
   @override
   State<TripDetailsPage> createState() => _TripDetailsPageState();
@@ -77,6 +91,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   @override
   void initState() {
     super.initState();
+    _initializeImportedTicket();
     _loadRuntimeInfo();
     _loadRouteCatalog();
   }
@@ -130,7 +145,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final ticketSeatAvailability = results[3] as TicketSeatAvailability?;
     setState(() {
       if (distanceInfo != null) {
-        _distanceController.text = _formatNumber(distanceInfo.distance);
+        if (_distanceController.text.isEmpty) {
+          _distanceController.text = _formatNumber(distanceInfo.distance);
+        }
         _companyController.text = distanceInfo.companyName;
       } else {
         _distanceLookupFailed = true;
@@ -154,13 +171,76 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       }
       if (ticketSeatAvailability != null) {
         _ticketSeatAvailability = ticketSeatAvailability;
-        _applyInitialTicketSeat(ticketSeatAvailability);
+        if (!_hasImportedSeat) {
+          _applyInitialTicketSeat(ticketSeatAvailability);
+        }
       } else {
         _ticketSeatLookupFailed = true;
       }
       _isLoadingRouteInfo = false;
       _isLoadingRuntimeInfo = false;
     });
+  }
+
+  bool get _hasImportedSeat =>
+      (widget.initialSeatType?.trim().isNotEmpty ?? false) ||
+      (widget.initialSeatNumber?.trim().isNotEmpty ?? false);
+
+  void _initializeImportedTicket() {
+    final mileage = widget.initialMileageKm;
+    if (mileage != null && mileage > 0) {
+      _distanceController.text = _formatNumber(mileage);
+    }
+    final price = widget.initialPrice;
+    if (price != null && price >= 0) {
+      _priceController.text = _formatNumber(price);
+    }
+    _notesController.text = widget.initialNotes?.trim() ?? '';
+
+    final seatType = widget.initialSeatType?.trim() ?? '';
+    final seatNumber = widget.initialSeatNumber?.trim() ?? '';
+    if (seatType.isEmpty && seatNumber.isEmpty) return;
+    final carriageMatch = RegExp(
+      r'^(?:(不指定车厢)|(\d+)车)(.*)$',
+    ).firstMatch(seatNumber);
+    final carriage = carriageMatch?.group(1) != null
+        ? null
+        : int.tryParse(carriageMatch?.group(2) ?? '');
+    final remaining = carriageMatch?.group(3) ?? '';
+
+    if (carriageMatch != null && remaining == '无座') {
+      _seatMode = '无座';
+      _carriageNumber = carriage ?? 1;
+      _seatType = SeatOptions.types.contains(seatType) ? seatType : '二等座';
+      return;
+    }
+    if (carriageMatch != null && remaining == '不对号入座') {
+      _seatMode = '不对号入座';
+      _carriageNumber = carriage ?? 1;
+      _seatType = SeatOptions.types.contains(seatType) ? seatType : '二等座';
+      return;
+    }
+
+    final seatMatch = RegExp(
+      r'^(\d{1,3})(?:号)?(A|B|C|D|F|上铺|中铺|下铺)?(?:号)?$',
+    ).firstMatch(remaining);
+    if (carriageMatch != null &&
+        seatMatch != null &&
+        SeatOptions.types.contains(seatType)) {
+      final primary = int.tryParse(seatMatch.group(1) ?? '');
+      if (primary != null && primary >= 1 && primary <= 128) {
+        _seatMode = '席位';
+        _carriageNumber = carriage ?? 1;
+        _primarySeatNumber = primary;
+        _secondarySeatNumber = seatMatch.group(2) ?? '无';
+        _seatType = seatType;
+        return;
+      }
+    }
+
+    _seatMode = '其它';
+    _customSeatTypeController.text = seatType;
+    _customSeatNumberController.text = seatNumber;
   }
 
   Future<RouteResolution?> _resolveRoutes() async {
@@ -284,7 +364,23 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final colors = theme.colorScheme;
     return Scaffold(
       backgroundColor: colors.surfaceContainerLowest,
-      appBar: AppBar(title: const Text('详细信息'), scrolledUnderElevation: 0),
+      appBar: AppBar(
+        title: Text(
+          widget.reviewPosition == null || widget.reviewTotal == null
+              ? '详细信息'
+              : '确认导入 ${widget.reviewPosition}/${widget.reviewTotal}',
+        ),
+        scrolledUnderElevation: 0,
+        bottom: widget.reviewPosition == null || widget.reviewTotal == null
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(4),
+                child: LinearProgressIndicator(
+                  value: widget.reviewPosition! / widget.reviewTotal!,
+                  minHeight: 4,
+                ),
+              ),
+      ),
       body: Theme(
         data: theme.copyWith(
           inputDecorationTheme: theme.inputDecorationTheme.copyWith(
