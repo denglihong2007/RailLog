@@ -5,6 +5,7 @@ import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/widgets/trip_details/form_section.dart';
+import 'package:raillog/src/widgets/trip_details/company_editor.dart';
 import 'package:raillog/src/widgets/trip_details/route_segments_editor.dart';
 import 'package:raillog/src/widgets/trip_details/seat_editor.dart';
 
@@ -441,13 +442,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
                                   suffix: '元',
                                   icon: Icons.payments_outlined,
                                 ),
-                                TextFormField(
-                                  controller: _companyController,
-                                  decoration: const InputDecoration(
-                                    labelText: '担当公司',
-                                    prefixIcon: Icon(Icons.business_outlined),
-                                  ),
-                                ),
+                                CompanyEditor(controller: _companyController),
                                 TextFormField(
                                   controller: _rollingStockController,
                                   decoration: const InputDecoration(

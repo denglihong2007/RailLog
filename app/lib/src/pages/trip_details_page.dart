@@ -11,6 +11,7 @@ import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/trip_details/form_section.dart';
+import 'package:raillog/src/widgets/trip_details/company_editor.dart';
 import 'package:raillog/src/widgets/trip_details/route_segments_editor.dart';
 import 'package:raillog/src/widgets/trip_details/seat_editor.dart';
 import 'package:raillog/src/widgets/trip_details/trip_ticket.dart';
@@ -397,14 +398,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                   children: [
                                     _buildDistanceField(),
                                     _buildPriceField(),
-                                    TextFormField(
+                                    CompanyEditor(
                                       controller: _companyController,
-                                      decoration: const InputDecoration(
-                                        labelText: '担当公司',
-                                        prefixIcon: Icon(
-                                          Icons.business_outlined,
-                                        ),
-                                      ),
                                     ),
                                     TextFormField(
                                       controller: _rollingStockController,
