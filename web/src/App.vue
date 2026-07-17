@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowRight, CheckCircle2, Code2, Download, Monitor, Route, Smartphone, TrainFront } from '@lucide/vue'
+import { ArrowRight, CheckCircle2, Code2, Download, Monitor, Route, Smartphone, TrainFront, TriangleAlert } from '@lucide/vue'
 
 interface LatestRelease {
   version: string
@@ -69,6 +69,13 @@ onMounted(async () => {
     </section>
 
     <section id="download" class="download-section" aria-labelledby="download-title">
+      <div class="upgrade-alert" role="alert">
+        <TriangleAlert :size="25" aria-hidden="true" />
+        <div>
+          <strong>重要更新提示</strong>
+          <p>如果之前使用过 1.0.0 版本，请先清除应用数据，再更新到更高版本。</p>
+        </div>
+      </div>
       <div class="section-heading">
         <div><p class="section-kicker">获取应用</p><h2 id="download-title">选择你的平台</h2></div>
         <p :class="['release-status', releaseState]"><CheckCircle2 v-if="releaseState === 'ready'" :size="17" />{{ releaseState === 'loading' ? '正在读取最新版本' : versionLabel }}</p>

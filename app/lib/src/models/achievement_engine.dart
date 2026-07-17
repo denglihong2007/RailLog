@@ -168,7 +168,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.thousandKilometers,
       '千里足迹',
-      '累计运转总里程不少于 1000 km',
+      '单次运转里程不少于 1000 km',
       _firstMileageCompletion(railTrips, 1000),
     ),
     _achievement(
@@ -228,6 +228,40 @@ List<DashboardAchievement> buildDashboardAchievements(
       '站台沉降',
       '探访杭州东站',
       _firstStationVisit(railTrips, const {'杭州东'}),
+    ),
+    _achievement(
+      DashboardAchievementKind.archaeologyTeam,
+      '考古队',
+      '录入 15 年之前的行程',
+      _firstWhere(
+        railTrips,
+        (trip) => trip.departureTime.isBefore(
+          DateTime(DateTime.now().year - 15, DateTime.now().month, DateTime.now().day),
+        ),
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.strategist,
+      '战略家',
+      '从定西北站乘坐到镇江南站',
+      _firstWhere(
+        railTrips,
+        (trip) =>
+            _normalizedStation(trip.fromStation) == '定西北' &&
+            _normalizedStation(trip.toStation) == '镇江南' &&
+            trip.arrivalTime != null,
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.eveOfTheStorm,
+      '风雨前夜',
+      '在 2019.12.01-2020.01.23 探访武汉、汉口或武昌站',
+      _firstStationVisitDuring(
+        railTrips,
+        const {'武汉', '汉口', '武昌'},
+        DateTime(2019, 12, 1),
+        DateTime(2020, 1, 24),
+      ),
     ),
   ]);
 }
@@ -371,11 +405,31 @@ TripRecord? _firstStationVisit(
       targetStations.contains(_normalizedStation(trip.toStation));
 });
 
+TripRecord? _firstStationVisitDuring(
+  List<TripRecord> trips,
+  Set<String> targetStations,
+  DateTime startInclusive,
+  DateTime endExclusive,
+) => _firstWhere(trips, (trip) {
+  if (_isWithin(trip.departureTime, startInclusive, endExclusive) &&
+      targetStations.contains(_normalizedStation(trip.fromStation))) {
+    return true;
+  }
+  final arrival = trip.arrivalTime;
+  return arrival != null &&
+      _isWithin(arrival, startInclusive, endExclusive) &&
+      targetStations.contains(_normalizedStation(trip.toStation));
+});
+
+bool _isWithin(
+  DateTime value,
+  DateTime startInclusive,
+  DateTime endExclusive,
+) => !value.isBefore(startInclusive) && value.isBefore(endExclusive);
+
 TripRecord? _firstMileageCompletion(List<TripRecord> trips, double target) {
-  var mileage = 0.0;
   for (final trip in trips) {
-    mileage += trip.mileageKm;
-    if (mileage >= target) return trip;
+    if (trip.mileageKm >= target) return trip;
   }
   return null;
 }

@@ -26,6 +26,9 @@ enum DashboardAchievementKind {
   axleOverheat,
   advantageIsMine,
   platformSubsidence,
+  archaeologyTeam,
+  strategist,
+  eveOfTheStorm,
 }
 
 class DashboardAchievement {
