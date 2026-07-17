@@ -31,7 +31,7 @@ class TripRecordDetailsPage extends StatefulWidget {
 }
 
 class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
-  late final Future<_LoadedTrip?> _tripFuture;
+  late Future<_LoadedTrip?> _tripFuture;
   bool _isDeleting = false;
 
   @override
@@ -54,7 +54,11 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
     final updated = await Navigator.of(context).push<bool>(
       m3PageRoute(builder: (context) => ManualTripPage(initialTrip: trip)),
     );
-    if (updated == true && mounted) Navigator.of(context).pop(true);
+    if (updated == true && mounted) {
+      setState(() {
+        _tripFuture = _loadTrip();
+      });
+    }
   }
 
   Future<void> _deleteTrip(TripRecord trip) async {
