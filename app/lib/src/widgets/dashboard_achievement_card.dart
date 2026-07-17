@@ -79,42 +79,47 @@ class DashboardAchievementCard extends StatelessWidget {
   }
 }
 
-IconData dashboardAchievementIcon(DashboardAchievementKind kind) =>
-    switch (kind) {
-      DashboardAchievementKind.freeMeal => Icons.restaurant_outlined,
-      DashboardAchievementKind.overnightSeat =>
-        Icons.airline_seat_recline_extra_outlined,
-      DashboardAchievementKind.tightTransfer => Icons.transfer_within_a_station,
-      DashboardAchievementKind.sevenDayStreak => Icons.local_fire_department,
-      DashboardAchievementKind.thirtyDayStreak => Icons.calendar_month_outlined,
-      DashboardAchievementKind.yearStreak => Icons.event_repeat_outlined,
-      DashboardAchievementKind.duration24Hours => Icons.looks_one_outlined,
-      DashboardAchievementKind.duration48Hours => Icons.looks_two_outlined,
-      DashboardAchievementKind.duration72Hours => Icons.looks_3_outlined,
-      DashboardAchievementKind.all25Series => Icons.palette_outlined,
-      DashboardAchievementKind.allEmuSeries => Icons.train_outlined,
-      DashboardAchievementKind.allSeatTypes => Icons.checklist_outlined,
-      DashboardAchievementKind.noSeat12Hours => Icons.accessibility_new,
-      DashboardAchievementKind.hundredTickets =>
-        Icons.collections_bookmark_outlined,
-      DashboardAchievementKind.midnightBoarding => Icons.nightlight_outlined,
-      DashboardAchievementKind.wallFacingSeat =>
-        Icons.airline_seat_recline_normal,
-      DashboardAchievementKind.hundredStations => Icons.location_on_outlined,
-      DashboardAchievementKind.thousandKilometers => Icons.route_outlined,
-      DashboardAchievementKind.airRail => Icons.connecting_airports_outlined,
-      DashboardAchievementKind.railFerry => Icons.directions_boat_outlined,
-      DashboardAchievementKind.hundredThousandKilometers =>
-        Icons.gps_fixed_outlined,
-      DashboardAchievementKind.fTrain => Icons.u_turn_left_outlined,
-      DashboardAchievementKind.axleOverheat => Icons.device_thermostat_outlined,
-      DashboardAchievementKind.advantageIsMine => Icons.flag_outlined,
-      DashboardAchievementKind.platformSubsidence =>
-        Icons.vertical_align_bottom_outlined,
-      DashboardAchievementKind.archaeologyTeam => Icons.history_edu_outlined,
-      DashboardAchievementKind.strategist => Icons.alt_route_outlined,
-      DashboardAchievementKind.eveOfTheStorm => Icons.thunderstorm_outlined,
-    };
+IconData dashboardAchievementIcon(
+  DashboardAchievementKind kind,
+) => switch (kind) {
+  DashboardAchievementKind.freeMeal => Icons.restaurant_outlined,
+  DashboardAchievementKind.overnightSeat =>
+    Icons.airline_seat_recline_extra_outlined,
+  DashboardAchievementKind.tightTransfer => Icons.transfer_within_a_station,
+  DashboardAchievementKind.sevenDayStreak => Icons.local_fire_department,
+  DashboardAchievementKind.thirtyDayStreak => Icons.calendar_month_outlined,
+  DashboardAchievementKind.duration24Hours => Icons.looks_one_outlined,
+  DashboardAchievementKind.duration48Hours => Icons.looks_two_outlined,
+  DashboardAchievementKind.duration72Hours => Icons.looks_3_outlined,
+  DashboardAchievementKind.all25Series => Icons.palette_outlined,
+  DashboardAchievementKind.allEmuSeries => Icons.train_outlined,
+  DashboardAchievementKind.allSeatTypes => Icons.checklist_outlined,
+  DashboardAchievementKind.noSeat12Hours => Icons.accessibility_new,
+  DashboardAchievementKind.hundredTickets =>
+    Icons.collections_bookmark_outlined,
+  DashboardAchievementKind.midnightBoarding => Icons.nightlight_outlined,
+  DashboardAchievementKind.wallFacingSeat => Icons.airline_seat_recline_normal,
+  DashboardAchievementKind.hundredStations => Icons.location_on_outlined,
+  DashboardAchievementKind.thousandKilometers => Icons.route_outlined,
+  DashboardAchievementKind.airRail => Icons.connecting_airports_outlined,
+  DashboardAchievementKind.railFerry => Icons.directions_boat_outlined,
+  DashboardAchievementKind.hundredThousandKilometers =>
+    Icons.gps_fixed_outlined,
+  DashboardAchievementKind.fTrain => Icons.u_turn_left_outlined,
+  DashboardAchievementKind.axleOverheat => Icons.device_thermostat_outlined,
+  DashboardAchievementKind.advantageIsMine => Icons.flag_outlined,
+  DashboardAchievementKind.platformSubsidence =>
+    Icons.vertical_align_bottom_outlined,
+  DashboardAchievementKind.archaeologyTeam => Icons.history_edu_outlined,
+  DashboardAchievementKind.strategist => Icons.alt_route_outlined,
+  DashboardAchievementKind.eveOfTheStorm => Icons.thunderstorm_outlined,
+  DashboardAchievementKind.tenNumericTrains => Icons.pin_outlined,
+  DashboardAchievementKind.overnightSleeper => Icons.bedtime_outlined,
+  DashboardAchievementKind.tripleTransfer => Icons.multiple_stop_outlined,
+  DashboardAchievementKind.endsOfTheEarth => Icons.landscape_outlined,
+  DashboardAchievementKind.fourFamousNorths => Icons.explore_outlined,
+  DashboardAchievementKind.youthPriceless => Icons.airline_seat_recline_normal,
+};
 
 String _trainLabel(String value) {
   final train = value.trim();

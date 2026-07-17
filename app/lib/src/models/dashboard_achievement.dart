@@ -6,7 +6,6 @@ enum DashboardAchievementKind {
   tightTransfer,
   sevenDayStreak,
   thirtyDayStreak,
-  yearStreak,
   duration24Hours,
   duration48Hours,
   duration72Hours,
@@ -29,6 +28,12 @@ enum DashboardAchievementKind {
   archaeologyTeam,
   strategist,
   eveOfTheStorm,
+  tenNumericTrains,
+  overnightSleeper,
+  tripleTransfer,
+  endsOfTheEarth,
+  fourFamousNorths,
+  youthPriceless,
 }
 
 class DashboardAchievement {
