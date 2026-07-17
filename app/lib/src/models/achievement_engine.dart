@@ -45,7 +45,7 @@ List<DashboardAchievement> buildDashboardAchievements(
       return byTime != 0 ? byTime : a.id.compareTo(b.id);
     });
 
-  return List.unmodifiable([
+  final achievements = [
     _achievement(
       DashboardAchievementKind.freeMeal,
       '蹭吃蹭喝',
@@ -75,12 +75,6 @@ List<DashboardAchievement> buildDashboardAchievements(
       '漂泊不定',
       '连续 30 天每天乘坐火车',
       _firstStreakCompletion(railTrips, 30),
-    ),
-    _achievement(
-      DashboardAchievementKind.yearStreak,
-      '烂柯之人',
-      '连续 365 天每天乘坐火车',
-      _firstStreakCompletion(railTrips, 365),
     ),
     _achievement(
       DashboardAchievementKind.duration24Hours,
@@ -236,7 +230,11 @@ List<DashboardAchievement> buildDashboardAchievements(
       _firstWhere(
         railTrips,
         (trip) => trip.departureTime.isBefore(
-          DateTime(DateTime.now().year - 15, DateTime.now().month, DateTime.now().day),
+          DateTime(
+            DateTime.now().year - 15,
+            DateTime.now().month,
+            DateTime.now().day,
+          ),
         ),
       ),
     ),
@@ -263,6 +261,61 @@ List<DashboardAchievement> buildDashboardAchievements(
         DateTime(2020, 1, 24),
       ),
     ),
+    _achievement(
+      DashboardAchievementKind.tenNumericTrains,
+      '慢慢旅途',
+      '乘坐过 10 次纯数字车次',
+      _firstCountCompletion(
+        railTrips,
+        10,
+        (trip) => RegExp(r'^\d+$').hasMatch(trip.trainNumber.trim()),
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.overnightSleeper,
+      '夕发朝至',
+      '18:00-00:00 发车，05:00-11:00 到达的卧铺行程',
+      _firstWhere(railTrips, _unlocksOvernightSleeper),
+    ),
+    _achievement(
+      DashboardAchievementKind.tripleTransfer,
+      '辗转挪移',
+      '连续换乘至少 3 次，每次间隔不超过 3 小时',
+      _firstTransferChainCompletion(railTrips, 3),
+    ),
+    _achievement(
+      DashboardAchievementKind.endsOfTheEarth,
+      '天涯海角',
+      '探访天涯海角站',
+      _firstStationVisit(railTrips, const {'天涯海角'}),
+    ),
+    _achievement(
+      DashboardAchievementKind.fourFamousNorths,
+      '四大名北',
+      '探访阳泉北、盘锦北、孝感北和邵阳北站',
+      _firstTargetStationCompletion(railTrips, const {
+        '阳泉北',
+        '盘锦北',
+        '孝感北',
+        '邵阳北',
+      }),
+    ),
+    _achievement(
+      DashboardAchievementKind.youthPriceless,
+      '青春没有售价',
+      '乘坐火车前往拉萨，并且全程硬座',
+      _firstWhere(
+        railTrips,
+        (trip) =>
+            _normalizedStation(trip.toStation) == '拉萨' &&
+            trip.arrivalTime != null &&
+            _normalizedSeatType(trip.seatType) == '硬座',
+      ),
+    ),
+  ];
+  return List.unmodifiable([
+    ...achievements.where((achievement) => achievement.isUnlocked),
+    ...achievements.where((achievement) => !achievement.isUnlocked),
   ]);
 }
 
@@ -284,6 +337,20 @@ TripRecord? _firstWhere(
 ) {
   for (final trip in trips) {
     if (predicate(trip)) return trip;
+  }
+  return null;
+}
+
+TripRecord? _firstCountCompletion(
+  List<TripRecord> trips,
+  int target,
+  bool Function(TripRecord trip) predicate,
+) {
+  var count = 0;
+  for (final trip in trips) {
+    if (!predicate(trip)) continue;
+    count++;
+    if (count >= target) return trip;
   }
   return null;
 }
@@ -405,6 +472,23 @@ TripRecord? _firstStationVisit(
       targetStations.contains(_normalizedStation(trip.toStation));
 });
 
+TripRecord? _firstTargetStationCompletion(
+  List<TripRecord> trips,
+  Set<String> targetStations,
+) {
+  final visited = <String>{};
+  for (final trip in trips) {
+    final departure = _normalizedStation(trip.fromStation);
+    if (targetStations.contains(departure)) visited.add(departure);
+    if (trip.arrivalTime != null) {
+      final arrival = _normalizedStation(trip.toStation);
+      if (targetStations.contains(arrival)) visited.add(arrival);
+    }
+    if (visited.containsAll(targetStations)) return trip;
+  }
+  return null;
+}
+
 TripRecord? _firstStationVisitDuring(
   List<TripRecord> trips,
   Set<String> targetStations,
@@ -497,6 +581,18 @@ bool _unlocksOvernightSeat(TripRecord trip) {
   return false;
 }
 
+bool _unlocksOvernightSleeper(TripRecord trip) {
+  final arrival = trip.arrivalTime;
+  if (arrival == null || arrival.isBefore(trip.departureTime)) return false;
+  if (!_normalizedSeatType(trip.seatType).contains('卧')) return false;
+  final departureMinutes =
+      trip.departureTime.hour * 60 + trip.departureTime.minute;
+  final arrivalMinutes = arrival.hour * 60 + arrival.minute;
+  return departureMinutes >= 18 * 60 &&
+      arrivalMinutes >= 5 * 60 &&
+      arrivalMinutes <= 11 * 60;
+}
+
 TripRecord? _firstTightTransfer(List<TripRecord> trips) {
   for (var outgoingIndex = 0; outgoingIndex < trips.length; outgoingIndex++) {
     final outgoing = trips[outgoingIndex];
@@ -516,6 +612,40 @@ TripRecord? _firstTightTransfer(List<TripRecord> trips) {
         return outgoing;
       }
     }
+  }
+  return null;
+}
+
+TripRecord? _firstTransferChainCompletion(
+  List<TripRecord> trips,
+  int targetTransfers,
+) {
+  final transferCounts = List<int>.filled(trips.length, 0);
+  for (var outgoingIndex = 0; outgoingIndex < trips.length; outgoingIndex++) {
+    final outgoing = trips[outgoingIndex];
+    final station = _normalizedStation(outgoing.fromStation);
+    if (station.isEmpty) continue;
+    for (
+      var incomingIndex = 0;
+      incomingIndex < outgoingIndex;
+      incomingIndex++
+    ) {
+      final incoming = trips[incomingIndex];
+      final arrival = incoming.arrivalTime;
+      if (arrival == null ||
+          _normalizedStation(incoming.toStation) != station) {
+        continue;
+      }
+      final transferTime = outgoing.departureTime.difference(arrival);
+      if (transferTime.isNegative || transferTime > const Duration(hours: 3)) {
+        continue;
+      }
+      final count = transferCounts[incomingIndex] + 1;
+      if (count > transferCounts[outgoingIndex]) {
+        transferCounts[outgoingIndex] = count;
+      }
+    }
+    if (transferCounts[outgoingIndex] >= targetTransfers) return outgoing;
   }
   return null;
 }
