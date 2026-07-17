@@ -3,6 +3,7 @@ import 'package:raillog/src/models/user_profile.dart';
 import 'package:raillog/src/pages/about_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
+import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
@@ -78,6 +79,7 @@ class _SignedOutSettings extends StatelessWidget {
           subtitle: const Text('当前行程仅保存在此设备'),
         ),
         const Divider(),
+        _updateLogTile(context),
         _aboutTile(context),
       ],
     );
@@ -201,6 +203,7 @@ class _SignedInSettings extends StatelessWidget {
           onTap: () => _deleteAccount(context),
         ),
         const Divider(),
+        _updateLogTile(context, contentPadding: EdgeInsets.zero),
         _aboutTile(context, contentPadding: EdgeInsets.zero),
       ],
     );
@@ -461,5 +464,21 @@ Widget _aboutTile(BuildContext context, {EdgeInsetsGeometry? contentPadding}) {
     onTap: () => Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const AboutPage())),
+  );
+}
+
+Widget _updateLogTile(
+  BuildContext context, {
+  EdgeInsetsGeometry? contentPadding,
+}) {
+  return ListTile(
+    contentPadding: contentPadding,
+    leading: const Icon(Icons.newspaper_outlined),
+    title: const Text('更新日志'),
+    subtitle: const Text('查看最新版本的发布时间与更新内容'),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const UpdateLogPage())),
   );
 }
