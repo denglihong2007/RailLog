@@ -22,19 +22,63 @@ class UpdateService {
 
   static Future<UpdateCheckResult> check() async {
     try {
-      final values = await Future.wait([
-        PackageInfo.fromPlatform(),
-        ApiClient.instance.dio.get<Map<String, dynamic>>('/api/updates/latest'),
-      ]);
+      final values = await Future.wait([PackageInfo.fromPlatform(), latest()]);
       final package = values[0] as PackageInfo;
-      final response = values[1] as dynamic;
       return UpdateCheckResult(
         currentVersion: package.version,
-        latest: AppUpdateInfo.fromJson(response.data! as Map<String, dynamic>),
+        latest: values[1] as AppUpdateInfo,
       );
+    } on UpdateException {
+      rethrow;
     } catch (error) {
       throw UpdateException(apiErrorMessage(error));
     }
+  }
+
+  static Future<AppUpdateInfo> latest() async {
+    try {
+      final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
+        '/api/updates/latest',
+      );
+      return AppUpdateInfo.fromJson(response.data!);
+    } catch (error) {
+      throw UpdateException(apiErrorMessage(error));
+    }
+  }
+
+  static String? githubUrlForCurrentPlatform(AppUpdateInfo update) {
+    final preferred = switch (defaultTargetPlatform) {
+      TargetPlatform.windows => update.windowsDownloadUrl,
+      TargetPlatform.android => update.androidDownloadUrl,
+      _ => null,
+    };
+    return _firstNonEmpty([
+      preferred,
+      update.releaseUrl,
+      update.windowsDownloadUrl,
+      update.androidDownloadUrl,
+    ]);
+  }
+
+  static String? domesticUrlForCurrentPlatform(AppUpdateInfo update) {
+    final preferred = switch (defaultTargetPlatform) {
+      TargetPlatform.windows => update.windowsDomesticDownloadUrl,
+      TargetPlatform.android => update.androidDomesticDownloadUrl,
+      _ => null,
+    };
+    return _firstNonEmpty([
+      preferred,
+      update.windowsDomesticDownloadUrl,
+      update.androidDomesticDownloadUrl,
+    ]);
+  }
+
+  static String? _firstNonEmpty(Iterable<String?> values) {
+    for (final value in values) {
+      final normalized = value?.trim() ?? '';
+      if (normalized.isNotEmpty) return normalized;
+    }
+    return null;
   }
 }
 
