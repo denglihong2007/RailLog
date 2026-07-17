@@ -212,6 +212,17 @@ List<DashboardAchievement> buildDashboardAchievements(
       ),
     ),
     _achievement(
+      DashboardAchievementKind.permanentMagnetPower,
+      '永磁动力',
+      '乘坐 CRH380AN 车型',
+      _firstWhere(
+        railTrips,
+        (trip) => _rollingStockMatches(trip.rollingStock, const {
+          'CRH380AN',
+        }).isNotEmpty,
+      ),
+    ),
+    _achievement(
       DashboardAchievementKind.advantageIsMine,
       '优势在我',
       '探访徐州站或徐州东站',
