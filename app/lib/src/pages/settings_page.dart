@@ -6,6 +6,7 @@ import 'package:raillog/src/pages/password_reset_page.dart';
 import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -73,6 +74,8 @@ class _SignedOutSettings extends StatelessWidget {
         ),
         const SizedBox(height: 32),
         const Divider(),
+        _appearanceSettings(context),
+        const Divider(),
         ListTile(
           leading: const Icon(Icons.cloud_off_outlined),
           title: const Text('本地模式'),
@@ -135,6 +138,8 @@ class _SignedInSettings extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
+        const Divider(),
+        _appearanceSettings(context),
         const Divider(),
         Text('云同步', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -453,6 +458,159 @@ class _Avatar extends StatelessWidget {
 }
 
 String _two(int value) => value.toString().padLeft(2, '0');
+
+Widget _appearanceSettings(BuildContext context) {
+  return AnimatedBuilder(
+    animation: ThemeSettings.instance,
+    builder: (context, _) {
+      final settings = ThemeSettings.instance;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('外观', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          SegmentedButton<AppThemePreference>(
+            segments: const [
+              ButtonSegment(
+                value: AppThemePreference.system,
+                icon: Icon(Icons.brightness_auto_outlined),
+                label: Text('系统'),
+              ),
+              ButtonSegment(
+                value: AppThemePreference.light,
+                icon: Icon(Icons.light_mode_outlined),
+                label: Text('浅色'),
+              ),
+              ButtonSegment(
+                value: AppThemePreference.dark,
+                icon: Icon(Icons.dark_mode_outlined),
+                label: Text('深色'),
+              ),
+            ],
+            selected: {settings.preference},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) =>
+                settings.setPreference(selection.single),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.format_paint_outlined),
+            title: const Text('跟随系统主题色'),
+            subtitle: const Text('可用时使用设备动态配色'),
+            value: settings.useSystemColor,
+            onChanged: settings.setUseSystemColor,
+          ),
+          if (!settings.useSystemColor)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _ThemeColorSwatch(color: settings.seedColor),
+              title: const Text('主题色'),
+              subtitle: Text(settings.seedColorLabel),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _chooseThemeColor(context),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> _chooseThemeColor(BuildContext context) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('选择主题色', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 12,
+              runSpacing: 16,
+              children: [
+                for (final option in themeSeedOptions)
+                  _ThemeColorOption(option: option),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _ThemeColorOption extends StatelessWidget {
+  const _ThemeColorOption({required this.option});
+
+  final ThemeSeedOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected =
+        ThemeSettings.instance.seedColor.toARGB32() == option.color.toARGB32();
+    return Tooltip(
+      message: option.label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          ThemeSettings.instance.setSeedColor(option.color);
+          Navigator.of(context).pop();
+        },
+        child: SizedBox(
+          width: 64,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: option.color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? Theme.of(context).colorScheme.onSurface
+                        : Colors.transparent,
+                    width: 3,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(Icons.check, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                option.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeColorSwatch extends StatelessWidget {
+  const _ThemeColorSwatch({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 28,
+    height: 28,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+}
 
 Widget _aboutTile(BuildContext context, {EdgeInsetsGeometry? contentPadding}) {
   return ListTile(
