@@ -7,6 +7,7 @@ import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
+import 'package:raillog/src/services/trip_excel_export_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -18,18 +19,33 @@ class SettingsPage extends StatelessWidget {
       animation: SessionService.instance,
       builder: (context, _) {
         final user = SessionService.instance.user;
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-          children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: user == null
-                    ? _SignedOutSettings(onLogin: () => _openLogin(context))
-                    : _SignedInSettings(user: user),
+        return ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerLowest,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            children: [
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '设置',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 16),
+                      user == null
+                          ? _SignedOutSettings(
+                              onLogin: () => _openLogin(context),
+                            )
+                          : _SignedInSettings(user: user),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -48,42 +64,49 @@ class _SignedOutSettings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 24),
-        Icon(Icons.account_circle_outlined, size: 72, color: colors.primary),
-        const SizedBox(height: 16),
-        Text(
-          '登录 RailLog',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineSmall,
+        _SettingsCard(
+          title: '账户',
+          icon: Icons.account_circle_outlined,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('登录 RailLog', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Text(
+                '登录后可同步行程和个人资料',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onLogin,
+                icon: const Icon(Icons.login),
+                label: const Text('登录或注册'),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          '登录后可同步行程和个人资料',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: colors.onSurfaceVariant),
-        ),
-        const SizedBox(height: 24),
-        FilledButton.icon(
-          onPressed: onLogin,
-          icon: const Icon(Icons.login),
-          label: const Text('登录或注册'),
-        ),
-        const SizedBox(height: 32),
-        const Divider(),
+        const SizedBox(height: 12),
         _appearanceSettings(context),
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.cloud_off_outlined),
-          title: const Text('本地模式'),
-          subtitle: const Text('当前行程仅保存在此设备'),
+        const SizedBox(height: 12),
+        const _DataExportSection(),
+        const SizedBox(height: 12),
+        const _SettingsCard(
+          title: '存储',
+          icon: Icons.storage_outlined,
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.cloud_off_outlined),
+            title: Text('本地模式'),
+            subtitle: Text('当前行程仅保存在此设备'),
+          ),
         ),
-        const Divider(),
-        _updateLogTile(context),
-        _aboutTile(context),
+        const SizedBox(height: 12),
+        _applicationSettings(context),
       ],
     );
   }
@@ -98,118 +121,137 @@ class _SignedInSettings extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            _Avatar(user: user, radius: 34),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.displayName,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    user.email,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (user.bio?.isNotEmpty ?? false) ...[
-                    const SizedBox(height: 6),
+        _SettingsCard(
+          title: '个人资料',
+          icon: Icons.person_outline,
+          child: Row(
+            children: [
+              _Avatar(user: user, radius: 30),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      user.bio!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      user.displayName,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      user.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (user.bio?.isNotEmpty ?? false) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        user.bio!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            IconButton(
-              tooltip: '编辑个人资料',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => ProfileEditPage(user: user)),
+              IconButton.filledTonal(
+                tooltip: '编辑个人资料',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ProfileEditPage(user: user),
+                  ),
+                ),
+                icon: const Icon(Icons.edit_outlined),
               ),
-              icon: const Icon(Icons.edit_outlined),
-            ),
-          ],
+            ],
+          ),
         ),
-        const SizedBox(height: 24),
-        const Divider(),
+        const SizedBox(height: 12),
         _appearanceSettings(context),
-        const Divider(),
-        Text('云同步', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        AnimatedBuilder(
-          animation: CloudSyncService.instance,
-          builder: (context, _) {
-            final sync = CloudSyncService.instance;
-            return Column(
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  secondary: const Icon(Icons.sync_lock_outlined),
-                  title: const Text('自动同步'),
-                  subtitle: const Text('行程新增、修改或删除后自动同步到云端'),
-                  value: sync.autoSyncEnabled,
-                  onChanged: (value) => sync.setAutoSyncEnabled(value),
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    sync.lastError == null
-                        ? Icons.cloud_done_outlined
-                        : Icons.cloud_off_outlined,
+        const SizedBox(height: 12),
+        _SettingsCard(
+          title: '云同步',
+          icon: Icons.cloud_sync_outlined,
+          child: AnimatedBuilder(
+            animation: CloudSyncService.instance,
+            builder: (context, _) {
+              final sync = CloudSyncService.instance;
+              return Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.sync_lock_outlined),
+                    title: const Text('自动同步'),
+                    subtitle: const Text('行程新增、修改或删除后自动同步到云端'),
+                    value: sync.autoSyncEnabled,
+                    onChanged: (value) => sync.setAutoSyncEnabled(value),
                   ),
-                  title: Text(sync.isSyncing ? '正在同步' : '行程云同步'),
-                  subtitle: Text(_syncSubtitle(sync)),
-                  trailing: IconButton(
-                    tooltip: '立即同步',
-                    onPressed: sync.isSyncing ? null : () => _sync(context),
-                    icon: sync.isSyncing
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.sync),
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      sync.lastError == null
+                          ? Icons.cloud_done_outlined
+                          : Icons.cloud_off_outlined,
+                    ),
+                    title: Text(sync.isSyncing ? '正在同步' : '行程云同步'),
+                    subtitle: Text(_syncSubtitle(sync)),
+                    trailing: IconButton(
+                      tooltip: '立即同步',
+                      onPressed: sync.isSyncing ? null : () => _sync(context),
+                      icon: sync.isSyncing
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync),
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
-        const Divider(),
-        Text('账号', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.lock_reset_outlined),
-          title: const Text('重置密码'),
-          subtitle: Text('通过 ${user.email} 接收验证码'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _resetPassword(context),
+        const SizedBox(height: 12),
+        const _DataExportSection(),
+        const SizedBox(height: 12),
+        _SettingsCard(
+          title: '账号安全',
+          icon: Icons.security_outlined,
+          child: Column(
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.lock_reset_outlined),
+                title: const Text('重置密码'),
+                subtitle: Text('通过 ${user.email} 接收验证码'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _resetPassword(context),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.logout),
+                title: const Text('退出登录'),
+                onTap: () => _logout(context),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                textColor: Theme.of(context).colorScheme.error,
+                iconColor: Theme.of(context).colorScheme.error,
+                leading: const Icon(Icons.person_remove_outlined),
+                title: const Text('注销账号'),
+                subtitle: const Text('云端账号和云端行程将永久删除'),
+                onTap: () => _deleteAccount(context),
+              ),
+            ],
+          ),
         ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.logout),
-          title: const Text('退出登录'),
-          onTap: () => _logout(context),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          textColor: Theme.of(context).colorScheme.error,
-          iconColor: Theme.of(context).colorScheme.error,
-          leading: const Icon(Icons.person_remove_outlined),
-          title: const Text('注销账号'),
-          subtitle: const Text('云端账号和云端行程将永久删除'),
-          onTap: () => _deleteAccount(context),
-        ),
-        const Divider(),
-        _updateLogTile(context, contentPadding: EdgeInsets.zero),
-        _aboutTile(context, contentPadding: EdgeInsets.zero),
+        const SizedBox(height: 12),
+        _applicationSettings(context),
       ],
     );
   }
@@ -300,6 +342,105 @@ class _SignedInSettings extends StatelessWidget {
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     }
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: colors.primary),
+                const SizedBox(width: 10),
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DataExportSection extends StatefulWidget {
+  const _DataExportSection();
+
+  @override
+  State<_DataExportSection> createState() => _DataExportSectionState();
+}
+
+class _DataExportSectionState extends State<_DataExportSection> {
+  bool _isExporting = false;
+
+  Future<void> _export() async {
+    setState(() => _isExporting = true);
+    try {
+      final result = await TripExcelExportService.exportVisibleTrips();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '已导出 ${result.tripCount} 条行程\n保存位置：${result.savedPath}',
+          ),
+        ),
+      );
+    } on TripExcelExportException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出失败：$error')));
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(
+      title: '数据',
+      icon: Icons.table_chart_outlined,
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.table_view_outlined),
+        title: const Text('导出行程到 Excel'),
+        subtitle: const Text('保存到系统默认位置，并导出当前可见的全部行程详情'),
+        trailing: _isExporting
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.download_outlined),
+        onTap: _isExporting ? null : _export,
+      ),
+    );
   }
 }
 
@@ -460,59 +601,61 @@ class _Avatar extends StatelessWidget {
 String _two(int value) => value.toString().padLeft(2, '0');
 
 Widget _appearanceSettings(BuildContext context) {
-  return AnimatedBuilder(
-    animation: ThemeSettings.instance,
-    builder: (context, _) {
-      final settings = ThemeSettings.instance;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('外观', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          SegmentedButton<AppThemePreference>(
-            segments: const [
-              ButtonSegment(
-                value: AppThemePreference.system,
-                icon: Icon(Icons.brightness_auto_outlined),
-                label: Text('系统'),
-              ),
-              ButtonSegment(
-                value: AppThemePreference.light,
-                icon: Icon(Icons.light_mode_outlined),
-                label: Text('浅色'),
-              ),
-              ButtonSegment(
-                value: AppThemePreference.dark,
-                icon: Icon(Icons.dark_mode_outlined),
-                label: Text('深色'),
-              ),
-            ],
-            selected: {settings.preference},
-            showSelectedIcon: false,
-            onSelectionChanged: (selection) =>
-                settings.setPreference(selection.single),
-          ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            secondary: const Icon(Icons.format_paint_outlined),
-            title: const Text('跟随系统主题色'),
-            subtitle: const Text('可用时使用设备动态配色'),
-            value: settings.useSystemColor,
-            onChanged: settings.setUseSystemColor,
-          ),
-          if (!settings.useSystemColor)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: _ThemeColorSwatch(color: settings.seedColor),
-              title: const Text('主题色'),
-              subtitle: Text(settings.seedColorLabel),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _chooseThemeColor(context),
+  return _SettingsCard(
+    title: '外观',
+    icon: Icons.palette_outlined,
+    child: AnimatedBuilder(
+      animation: ThemeSettings.instance,
+      builder: (context, _) {
+        final settings = ThemeSettings.instance;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedButton<AppThemePreference>(
+              segments: const [
+                ButtonSegment(
+                  value: AppThemePreference.system,
+                  icon: Icon(Icons.brightness_auto_outlined),
+                  label: Text('系统'),
+                ),
+                ButtonSegment(
+                  value: AppThemePreference.light,
+                  icon: Icon(Icons.light_mode_outlined),
+                  label: Text('浅色'),
+                ),
+                ButtonSegment(
+                  value: AppThemePreference.dark,
+                  icon: Icon(Icons.dark_mode_outlined),
+                  label: Text('深色'),
+                ),
+              ],
+              selected: {settings.preference},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) =>
+                  settings.setPreference(selection.single),
             ),
-        ],
-      );
-    },
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.format_paint_outlined),
+              title: const Text('跟随系统主题色'),
+              subtitle: const Text('可用时使用设备动态配色'),
+              value: settings.useSystemColor,
+              onChanged: settings.setUseSystemColor,
+            ),
+            if (!settings.useSystemColor)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: _ThemeColorSwatch(color: settings.seedColor),
+                title: const Text('主题色'),
+                subtitle: Text(settings.seedColorLabel),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _chooseThemeColor(context),
+              ),
+          ],
+        );
+      },
+    ),
   );
 }
 
@@ -609,6 +752,20 @@ class _ThemeColorSwatch extends StatelessWidget {
     width: 28,
     height: 28,
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+}
+
+Widget _applicationSettings(BuildContext context) {
+  return _SettingsCard(
+    title: '应用',
+    icon: Icons.apps_outlined,
+    child: Column(
+      children: [
+        _updateLogTile(context, contentPadding: EdgeInsets.zero),
+        const Divider(height: 1),
+        _aboutTile(context, contentPadding: EdgeInsets.zero),
+      ],
+    ),
   );
 }
 

@@ -49,6 +49,8 @@ dependencies:
   url_launcher: ^6.3.2
   fl_chart: ^1.1.1
   cached_network_image: ^3.4.1
+  excel: ^4.0.6
+  file_saver: ^0.4.0
 
 dev_dependencies:
   flutter_test:
