@@ -111,6 +111,9 @@ IconData dashboardAchievementIcon(DashboardAchievementKind kind) =>
       DashboardAchievementKind.advantageIsMine => Icons.flag_outlined,
       DashboardAchievementKind.platformSubsidence =>
         Icons.vertical_align_bottom_outlined,
+      DashboardAchievementKind.archaeologyTeam => Icons.history_edu_outlined,
+      DashboardAchievementKind.strategist => Icons.alt_route_outlined,
+      DashboardAchievementKind.eveOfTheStorm => Icons.thunderstorm_outlined,
     };
 
 String _trainLabel(String value) {
