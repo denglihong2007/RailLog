@@ -50,6 +50,7 @@ class RouteSegmentsEditor extends StatefulWidget {
 
 class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   late List<Key> _segmentKeys;
+  late List<bool> _manualSegments;
 
   String get startStation => widget.startStation;
   String get endStation => widget.endStation;
@@ -69,6 +70,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   void initState() {
     super.initState();
     _segmentKeys = List.generate(segments.length, (_) => UniqueKey());
+    _manualSegments = List.filled(segments.length, false, growable: true);
   }
 
   @override
@@ -76,13 +78,16 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.revision != widget.revision) {
       _segmentKeys = List.generate(segments.length, (_) => UniqueKey());
+      _manualSegments = List.filled(segments.length, false, growable: true);
       return;
     }
     while (_segmentKeys.length < segments.length) {
       _segmentKeys.add(UniqueKey());
+      _manualSegments.add(false);
     }
     if (_segmentKeys.length > segments.length) {
       _segmentKeys.removeRange(segments.length, _segmentKeys.length);
+      _manualSegments.removeRange(segments.length, _manualSegments.length);
     }
   }
 
@@ -99,7 +104,8 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
           isLoading: isLoading,
           isRecognizing: isRecognizing,
           canEdit: _hasEndpoints,
-          onAdd: _addSegment,
+          onAdd: () => _addSegment(isManual: false),
+          onAddManual: () => _addSegment(isManual: true),
           onRecognize: onRecognizeShortestPath,
         ),
         const SizedBox(height: 8),
@@ -169,6 +175,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
             key: _segmentKeys[index],
             index: index,
             isLast: index == segments.length - 1,
+            initiallyManual: _manualSegments[index],
             segment: segments[index],
             routeNames: routeNames,
             fixedEndStation: endStation,
@@ -182,9 +189,10 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
     );
   }
 
-  void _addSegment() {
+  void _addSegment({required bool isManual}) {
     final updated = [...segments];
     _segmentKeys.add(UniqueKey());
+    _manualSegments.add(isManual);
     updated.add(
       ViaRouteSegment(
         routeName: '',
@@ -198,6 +206,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   void _removeSegment(int index) {
     final updated = [...segments]..removeAt(index);
     _segmentKeys.removeAt(index);
+    _manualSegments.removeAt(index);
     onChanged(_normalize(updated));
   }
 
@@ -222,6 +231,7 @@ class _EditorHeader extends StatelessWidget {
     required this.isRecognizing,
     required this.canEdit,
     required this.onAdd,
+    required this.onAddManual,
     required this.onRecognize,
   });
 
@@ -229,6 +239,7 @@ class _EditorHeader extends StatelessWidget {
   final bool isRecognizing;
   final bool canEdit;
   final VoidCallback onAdd;
+  final VoidCallback onAddManual;
   final VoidCallback onRecognize;
 
   @override
@@ -248,9 +259,14 @@ class _EditorHeader extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              tooltip: '添加线路',
+              tooltip: '添加数据库线路',
               onPressed: isLoading || !canEdit ? null : onAdd,
               icon: const Icon(Icons.add),
+            ),
+            IconButton(
+              tooltip: '添加手动线路',
+              onPressed: isLoading || !canEdit ? null : onAddManual,
+              icon: const Icon(Icons.edit_note_outlined),
             ),
             const SizedBox(width: 4),
             FilledButton.tonalIcon(
@@ -288,6 +304,7 @@ class _SegmentEditor extends StatefulWidget {
     super.key,
     required this.index,
     required this.isLast,
+    required this.initiallyManual,
     required this.segment,
     required this.routeNames,
     required this.fixedEndStation,
@@ -299,6 +316,7 @@ class _SegmentEditor extends StatefulWidget {
 
   final int index;
   final bool isLast;
+  final bool initiallyManual;
   final ViaRouteSegment segment;
   final List<String> routeNames;
   final String fixedEndStation;
@@ -318,15 +336,30 @@ class _SegmentEditorState extends State<_SegmentEditor> {
   bool _isCalculatingDistance = false;
   int _stationRequestId = 0;
   int _distanceRequestId = 0;
+  late bool _isManual;
 
   @override
   void initState() {
     super.initState();
-    if (widget.segment.routeName.isNotEmpty) {
+    _isManual = widget.initiallyManual;
+    if (!_isManual && widget.segment.routeName.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        await _loadRouteStations(widget.segment.routeName);
-        if (mounted) await _recalculateDistance();
+        try {
+          final stations = await _loadRouteStations(widget.segment.routeName);
+          if (!mounted) return;
+          final start = widget.segment.fromStation.trim();
+          final end = widget.isLast
+              ? widget.fixedEndStation.trim()
+              : widget.segment.toStation.trim();
+          if (!stations.contains(start) || !stations.contains(end)) {
+            _switchToManual();
+            return;
+          }
+          await _recalculateDistance(fallbackToManual: true);
+        } catch (_) {
+          if (mounted) _switchToManual();
+        }
       });
     }
   }
@@ -339,7 +372,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
         oldWidget.segment.toStation != widget.segment.toStation ||
         oldWidget.fixedEndStation != widget.fixedEndStation ||
         oldWidget.isLast != widget.isLast;
-    if (endpointsChanged && widget.segment.routeName.isNotEmpty) {
+    if (!_isManual && endpointsChanged && widget.segment.routeName.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _recalculateDistance();
       });
@@ -374,16 +407,29 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                 ),
               ],
             ),
-            _SearchPickerFormField(
-              key: ValueKey('route-${widget.segment.routeName}'),
-              label: '线路',
-              value: widget.segment.routeName,
-              options: widget.routeNames,
-              icon: Icons.route_outlined,
-              onSelected: _selectRoute,
-              validator: (value) =>
-                  !widget.routeNames.contains(value) ? '请选择数据库中的线路' : null,
-            ),
+            if (_isManual)
+              TextFormField(
+                initialValue: widget.segment.routeName,
+                decoration: const InputDecoration(
+                  labelText: '线路',
+                  prefixIcon: Icon(Icons.edit_road_outlined),
+                ),
+                textInputAction: TextInputAction.next,
+                validator: _requiredText,
+                onChanged: (value) =>
+                    widget.onChanged(_copyWith(routeName: value)),
+              )
+            else
+              _SearchPickerFormField(
+                key: ValueKey('route-${widget.segment.routeName}'),
+                label: '线路',
+                value: widget.segment.routeName,
+                options: widget.routeNames,
+                icon: Icons.route_outlined,
+                onSelected: _selectRoute,
+                validator: (value) =>
+                    !widget.routeNames.contains(value) ? '请选择数据库中的线路' : null,
+              ),
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -409,6 +455,15 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                           station: widget.fixedEndStation,
                           alignEnd: true,
                         )
+                      : _isManual
+                      ? TextFormField(
+                          initialValue: widget.segment.toStation,
+                          decoration: const InputDecoration(labelText: '换线站'),
+                          textInputAction: TextInputAction.next,
+                          validator: _requiredText,
+                          onChanged: (value) =>
+                              widget.onChanged(_copyWith(toStation: value)),
+                        )
                       : _SearchPickerFormField(
                           key: ValueKey(
                             'station-${widget.segment.routeName}-${widget.segment.toStation}',
@@ -417,6 +472,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                           value: widget.segment.toStation,
                           options: _routeStations,
                           isLoading: _isLoadingStations,
+                          searchAutoFocus: false,
                           onSelected: _selectEndStation,
                           validator: (value) => !_routeStations.contains(value)
                               ? '请选择当前线路车站'
@@ -425,20 +481,41 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                 ),
                 const SizedBox(width: 12),
                 SizedBox(
-                  width: 82,
-                  child: FormField<double>(
-                    validator: (_) {
-                      if (_isLoadingStations || _isCalculatingDistance) {
-                        return '读取中';
-                      }
-                      return _distanceError;
-                    },
-                    builder: (field) => _MileageSummary(
-                      mileage: widget.segment.mileageKm,
-                      isLoading: _isLoadingStations || _isCalculatingDistance,
-                      errorText: field.errorText ?? _distanceError,
-                    ),
-                  ),
+                  width: _isManual ? 110 : 82,
+                  child: _isManual
+                      ? TextFormField(
+                          initialValue: widget.segment.mileageKm > 0
+                              ? _formatMileage(widget.segment.mileageKm)
+                              : '',
+                          decoration: const InputDecoration(
+                            labelText: '里程',
+                            suffixText: 'km',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          textInputAction: TextInputAction.done,
+                          validator: _positiveMileage,
+                          onChanged: (value) => widget.onChanged(
+                            _copyWith(
+                              mileageKm: double.tryParse(value.trim()) ?? 0,
+                            ),
+                          ),
+                        )
+                      : FormField<double>(
+                          validator: (_) {
+                            if (_isLoadingStations || _isCalculatingDistance) {
+                              return '读取中';
+                            }
+                            return _distanceError;
+                          },
+                          builder: (field) => _MileageSummary(
+                            mileage: widget.segment.mileageKm,
+                            isLoading:
+                                _isLoadingStations || _isCalculatingDistance,
+                            errorText: field.errorText ?? _distanceError,
+                          ),
+                        ),
                 ),
               ],
             ),
@@ -489,6 +566,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
   Future<void> _recalculateDistance({
     String? routeName,
     String? toStation,
+    bool fallbackToManual = false,
   }) async {
     final route = routeName ?? widget.segment.routeName;
     final start = widget.segment.fromStation.trim();
@@ -505,6 +583,10 @@ class _SegmentEditorState extends State<_SegmentEditor> {
     final distance = await widget.resolveDistance(route, start, end);
     if (!mounted || requestId != _distanceRequestId) return;
     if (distance == null) {
+      if (fallbackToManual) {
+        _switchToManual();
+        return;
+      }
       setState(() {
         _isCalculatingDistance = false;
         _distanceError = '线路不连接起终点';
@@ -532,6 +614,25 @@ class _SegmentEditorState extends State<_SegmentEditor> {
       mileageKm: mileageKm ?? widget.segment.mileageKm,
     );
   }
+
+  void _switchToManual() {
+    _stationRequestId++;
+    _distanceRequestId++;
+    setState(() {
+      _isManual = true;
+      _isLoadingStations = false;
+      _isCalculatingDistance = false;
+      _distanceError = null;
+    });
+  }
+}
+
+String? _requiredText(String? value) =>
+    value == null || value.trim().isEmpty ? '必填' : null;
+
+String? _positiveMileage(String? value) {
+  final mileage = double.tryParse(value?.trim() ?? '');
+  return mileage == null || mileage <= 0 ? '请输入正数' : null;
 }
 
 class _SearchPickerFormField extends StatelessWidget {
@@ -544,6 +645,7 @@ class _SearchPickerFormField extends StatelessWidget {
     required this.validator,
     this.icon,
     this.isLoading = false,
+    this.searchAutoFocus = true,
   });
 
   final String label;
@@ -553,6 +655,7 @@ class _SearchPickerFormField extends StatelessWidget {
   final FormFieldValidator<String> validator;
   final IconData? icon;
   final bool isLoading;
+  final bool searchAutoFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -573,6 +676,7 @@ class _SearchPickerFormField extends StatelessWidget {
                       title: label,
                       options: options,
                       selectedValue: field.value,
+                      searchAutoFocus: searchAutoFocus,
                     ),
                   );
                   if (selected == null) return;
@@ -611,11 +715,13 @@ class _SearchPickerSheet extends StatefulWidget {
     required this.title,
     required this.options,
     required this.selectedValue,
+    required this.searchAutoFocus,
   });
 
   final String title;
   final List<String> options;
   final String? selectedValue;
+  final bool searchAutoFocus;
 
   @override
   State<_SearchPickerSheet> createState() => _SearchPickerSheetState();
@@ -653,7 +759,7 @@ class _SearchPickerSheetState extends State<_SearchPickerSheet> {
             Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             SearchBar(
-              autoFocus: true,
+              autoFocus: widget.searchAutoFocus,
               leading: const Icon(Icons.search),
               hintText: '搜索${widget.title}',
               onChanged: (value) => setState(() => _query = value),
