@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowRight, CheckCircle2, Code2, Download, Monitor, Route, Smartphone, TrainFront, TriangleAlert } from '@lucide/vue'
+import { ArrowRight, CheckCircle2, Code2, Download, Monitor, Route, Search, Smartphone, TrainFront, TriangleAlert } from '@lucide/vue'
+import TripLookup from './components/TripLookup.vue'
 
 interface LatestRelease {
   version: string
@@ -24,12 +25,15 @@ const release = ref<LatestRelease | null>(null)
 const downloadLinks = ref<DownloadLinks | null>(null)
 const releaseState = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
-const downloadLanding = window.location.pathname.startsWith('/download') || new URLSearchParams(window.location.search).has('download')
+const pageParams = new URLSearchParams(window.location.search)
+const tripLanding = window.location.pathname.startsWith('/trip') || pageParams.has('trip')
+const downloadLanding = !tripLanding && (window.location.pathname.startsWith('/download') || pageParams.has('download'))
 const windowsUrl = computed(() => release.value?.windowsDownloadUrl ?? release.value?.releaseUrl ?? fallbackReleaseUrl)
 const androidUrl = computed(() => release.value?.androidDownloadUrl ?? release.value?.releaseUrl ?? fallbackReleaseUrl)
 const versionLabel = computed(() => release.value ? `最新版本 ${release.value.version}` : 'GitHub Releases')
 
 onMounted(async () => {
+  if (tripLanding) return
   try {
     const response = await fetch(`${apiBase}/api/updates/downloads`)
     if (response.ok) downloadLinks.value = (await response.json()) as DownloadLinks
@@ -51,12 +55,15 @@ onMounted(async () => {
   <header class="site-header">
     <a class="brand" href="/" aria-label="RailLog 首页"><img src="/raillog-icon.png" alt="" /><span>RailLog 轨记</span></a>
     <nav aria-label="主导航">
-      <a href="#download">下载</a>
-      <a href="https://github.com/denglihong2007/RailLog" target="_blank" rel="noreferrer"><Code2 :size="19" /><span>GitHub</span></a>
+      <a href="/trip"><Search :size="19" /><span>行程查询</span></a>
+      <a class="download-nav" :href="tripLanding ? '/download' : '#download'">下载</a>
+      <a class="source-nav" href="https://github.com/denglihong2007/RailLog" target="_blank" rel="noreferrer" aria-label="GitHub"><Code2 :size="19" /><span>GitHub</span></a>
     </nav>
   </header>
 
   <main>
+    <TripLookup v-if="tripLanding" :api-base="apiBase" />
+    <template v-else>
     <section v-if="!downloadLanding" class="intro" aria-labelledby="page-title">
       <div class="intro-watermark" aria-hidden="true"></div>
       <div class="intro-content">
@@ -106,6 +113,7 @@ onMounted(async () => {
       <div><TrainFront :size="24" /><strong>铁路足迹</strong><span>车站、线路与车型记录</span></div>
       <div><CheckCircle2 :size="24" /><strong>云端同步</strong><span>多设备保存个人行程</span></div>
     </section>
+    </template>
   </main>
 
   <footer>

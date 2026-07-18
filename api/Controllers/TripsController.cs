@@ -12,6 +12,7 @@ namespace RailLog.API.Controllers;
 public sealed class TripsController(RailLogDatabase database) : ControllerBase
 {
     [HttpGet("{ticketId:long}")]
+    [AllowAnonymous]
     public async Task<ActionResult<PublicTripDetailsResponse>> Get(long ticketId)
     {
         var details = await database.GetPublicTripDetailsAsync(ticketId);
