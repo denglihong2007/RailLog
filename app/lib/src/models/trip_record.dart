@@ -27,6 +27,19 @@ class TripRecord {
 
   String get ticketLabel => ticketId == null ? '本地 #$id' : '#$ticketId';
 
+  double? get averageSpeedKmh {
+    final arrival = arrivalTime;
+    if (arrival == null || mileageKm <= 0) return null;
+    final duration = arrival.difference(departureTime);
+    if (duration <= Duration.zero) return null;
+    return mileageKm / (duration.inMilliseconds / 3600000);
+  }
+
+  double? get averagePricePerKm {
+    if (mileageKm <= 0) return null;
+    return price / mileageKm;
+  }
+
   TripRecord({
     required this.id,
     this.ticketId,

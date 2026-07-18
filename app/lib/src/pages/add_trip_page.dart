@@ -202,7 +202,7 @@ class _AddTripPageState extends State<AddTripPage> {
         EntryMethodCard(
           icon: Icons.download_for_offline_outlined,
           title: '12306 导入',
-          description: '扫码选择订单，逐条补全并确认行程信息',
+          description: '核验电子发票，导入近 180 天行程并逐条确认',
           onTap: _open12306Import,
         ),
       ],

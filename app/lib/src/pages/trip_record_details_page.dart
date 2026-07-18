@@ -265,6 +265,12 @@ class _TripDetailsContent extends StatelessWidget {
                           : '未记录',
                     ),
                     _InfoItem(label: '乘坐时长', value: _tripDuration(trip)),
+                    _InfoItem(
+                      label: '均速',
+                      value: trip.averageSpeedKmh == null
+                          ? '未记录'
+                          : '${_number(trip.averageSpeedKmh!)} km/h',
+                    ),
                   ],
                 ),
               ),
@@ -281,6 +287,12 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '票价',
                       value: '¥${trip.price.toStringAsFixed(2)}',
+                    ),
+                    _InfoItem(
+                      label: '平均价格',
+                      value: trip.averagePricePerKm == null
+                          ? '未记录'
+                          : '${trip.averagePricePerKm!.toStringAsFixed(2)} 元/km',
                     ),
                   ],
                 ),

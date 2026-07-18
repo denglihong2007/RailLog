@@ -34,13 +34,13 @@ class _Import12306PageState extends State<Import12306Page> {
   bool _isCreatingQr = false;
   bool _isPollingQr = false;
   bool _isFinalizingLogin = false;
+  bool _invoiceVerified = false;
   bool _isQuerying = false;
   bool _isImporting = false;
   int? _preparingPosition;
   int _pollGeneration = 0;
 
-  bool get _canQuery =>
-      _username != null && !_isFinalizingLogin && !_isQuerying;
+  bool get _canQuery => _invoiceVerified && !_isFinalizingLogin && !_isQuerying;
 
   List<Ticket12306Order> get _selectableOrders => _orders
       .where((order) => order.canImport && !_importedIds.contains(order.id))
@@ -59,6 +59,7 @@ class _Import12306PageState extends State<Import12306Page> {
       _isCreatingQr = true;
       _qrImage = null;
       _username = null;
+      _invoiceVerified = false;
       _orders = const [];
       _selectedIds.clear();
       _importedIds.clear();
@@ -96,7 +97,7 @@ class _Import12306PageState extends State<Import12306Page> {
         if (!mounted || generation != _pollGeneration) return;
         setState(() {
           _qrMessageIsError = false;
-          _qrMessage = status.message.isEmpty ? '等待扫码确认...' : status.message;
+          _qrMessage = status.message.isEmpty ? '等待扫码确认' : status.message;
         });
         if (status.code == '2') {
           final ticket = status.uamtk;
@@ -104,6 +105,9 @@ class _Import12306PageState extends State<Import12306Page> {
             throw const Ticket12306Exception('扫码成功，但未获得登录票据');
           }
           await _completeLogin(ticket, generation);
+          if (mounted && generation == _pollGeneration) {
+            await _startInvoiceVerification(generation);
+          }
           return;
         }
         if (status.code == '3') {
@@ -138,9 +142,8 @@ class _Import12306PageState extends State<Import12306Page> {
       if (!mounted || generation != _pollGeneration) return;
       setState(() {
         _username = username.isEmpty ? '已登录账号' : username;
-        _qrMessage = '登录成功：${_username!}';
+        _qrMessage = '登录成功，正在准备电子发票访问核验';
       });
-      await _queryOrders();
     } catch (error) {
       if (!mounted || generation != _pollGeneration) return;
       setState(() {
@@ -154,21 +157,85 @@ class _Import12306PageState extends State<Import12306Page> {
     }
   }
 
+  Future<void> _restartInvoiceVerification() async {
+    final generation = ++_pollGeneration;
+    await _startInvoiceVerification(generation);
+  }
+
+  Future<void> _startInvoiceVerification(int generation) async {
+    if (!mounted || generation != _pollGeneration) return;
+    setState(() {
+      _invoiceVerified = false;
+      _isCreatingQr = true;
+      _qrImage = null;
+      _qrMessageIsError = false;
+      _qrMessage = '正在生成电子发票核验二维码...';
+    });
+    try {
+      final result = await _service.createInvoiceVerificationQr();
+      if (!mounted || generation != _pollGeneration) return;
+      setState(() {
+        _qrImage = _decodeQrImage(result.imageBase64);
+        _isCreatingQr = false;
+        _isPollingQr = true;
+        _qrMessage = '请再次扫码完成电子发票访问核验';
+      });
+      await _pollInvoiceVerification(result.uuid, generation);
+    } catch (error) {
+      if (!mounted || generation != _pollGeneration) return;
+      setState(() {
+        _qrMessageIsError = true;
+        _qrMessage = '获取电子发票核验二维码失败：$error';
+      });
+    } finally {
+      if (mounted && generation == _pollGeneration) {
+        setState(() {
+          _isCreatingQr = false;
+          _isPollingQr = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _pollInvoiceVerification(String uuid, int generation) async {
+    while (mounted && generation == _pollGeneration) {
+      final status = await _service.checkInvoiceVerificationQr(uuid);
+      if (!mounted || generation != _pollGeneration) return;
+      if (status.code == '2') {
+        setState(() {
+          _invoiceVerified = true;
+          _qrMessageIsError = false;
+          _qrMessage = status.message;
+        });
+        await _queryOrders();
+        return;
+      }
+      if (status.code != '0' && status.code != '1') {
+        throw const Ticket12306Exception('电子发票核验状态异常，请重新获取二维码');
+      }
+      setState(() {
+        _qrMessageIsError = false;
+        _qrMessage = status.message;
+      });
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+  }
+
   Future<void> _queryOrders() async {
-    if (_username == null) return;
+    if (!_invoiceVerified) return;
     setState(() {
       _isQuerying = true;
       _message = null;
       _selectedIds.clear();
     });
     try {
-      final orders = await _service.queryRecentOrders();
+      final orders = await _service.queryInvoiceTrips();
       if (!mounted) return;
       setState(() {
         _orders = orders;
         _messageIsError = false;
         _message = orders.isEmpty
-            ? '近 30 天没有可导入行程'
+            ? '近 180 天没有可导入行程'
             : '共查询到 ${orders.length} 张车票';
       });
     } catch (error) {
@@ -391,14 +458,23 @@ class _Import12306PageState extends State<Import12306Page> {
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
-              20,
+              16,
+              horizontalPadding,
+              4,
+            ),
+            sliver: const SliverToBoxAdapter(child: _SmallWindowTip()),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              12,
               horizontalPadding,
               10,
             ),
             sliver: const SliverToBoxAdapter(
               child: _StepHeader(
                 step: 1,
-                icon: Icons.qr_code_scanner,
+                icon: Icons.login,
                 title: '登录铁路 12306',
               ),
             ),
@@ -411,14 +487,69 @@ class _Import12306PageState extends State<Import12306Page> {
               24,
             ),
             sliver: SliverToBoxAdapter(
-              child: _LoginPanel(
-                qrImage: _qrImage,
-                status: _qrMessage,
-                statusIsError: _qrMessageIsError,
-                isBusy: _isCreatingQr || _isPollingQr || _isFinalizingLogin,
-                isLoggedIn: _username != null,
-                onCreateQr: _startQrLogin,
+              child: _username == null
+                  ? Column(
+                      children: [
+                        _LoginPanel(
+                          qrImage: _qrImage,
+                          status: _qrMessage,
+                          statusIsError: _qrMessageIsError,
+                          isBusy:
+                              _isCreatingQr ||
+                              _isPollingQr ||
+                              _isFinalizingLogin,
+                          isLoggedIn: false,
+                          isInvoiceVerification: false,
+                          onCreateQr: _startQrLogin,
+                        ),
+                      ],
+                    )
+                  : _CompletedStepCard(message: '已登录：$_username'),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              0,
+              horizontalPadding,
+              10,
+            ),
+            sliver: const SliverToBoxAdapter(
+              child: _StepHeader(
+                step: 2,
+                icon: Icons.domain_verification_outlined,
+                title: '核验电子发票访问',
               ),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              0,
+              horizontalPadding,
+              24,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: _username == null
+                  ? const _PendingStepCard(message: '完成登录后进行二次核验')
+                  : _invoiceVerified
+                  ? const _CompletedStepCard(message: '电子发票访问核验通过')
+                  : Column(
+                      children: [
+                        _LoginPanel(
+                          qrImage: _qrImage,
+                          status: _qrMessage,
+                          statusIsError: _qrMessageIsError,
+                          isBusy:
+                              _isCreatingQr ||
+                              _isPollingQr ||
+                              _isFinalizingLogin,
+                          isLoggedIn: true,
+                          isInvoiceVerification: true,
+                          onCreateQr: _restartInvoiceVerification,
+                        ),
+                      ],
+                    ),
             ),
           ),
           SliverPadding(
@@ -433,7 +564,7 @@ class _Import12306PageState extends State<Import12306Page> {
                 children: [
                   const Expanded(
                     child: _StepHeader(
-                      step: 2,
+                      step: 3,
                       icon: Icons.train_outlined,
                       title: '选择待导入行程',
                     ),
@@ -606,6 +737,74 @@ class _Import12306PageState extends State<Import12306Page> {
   }
 }
 
+class _CompletedStepCard extends StatelessWidget {
+  const _CompletedStepCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: colors.primaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ListTile(
+        leading: Icon(Icons.check_circle_outline, color: colors.primary),
+        title: Text(message),
+      ),
+    );
+  }
+}
+
+class _PendingStepCard extends StatelessWidget {
+  const _PendingStepCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ListTile(
+        leading: Icon(Icons.lock_outline, color: colors.onSurfaceVariant),
+        title: Text(message, style: TextStyle(color: colors.onSurfaceVariant)),
+      ),
+    );
+  }
+}
+
+class _SmallWindowTip extends StatelessWidget {
+  const _SmallWindowTip();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: colors.tertiaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ListTile(
+        leading: Icon(
+          Icons.picture_in_picture_alt_outlined,
+          color: colors.onTertiaryContainer,
+        ),
+        title: Text(
+          '建议开启小窗模式',
+          style: TextStyle(color: colors.onTertiaryContainer),
+        ),
+        subtitle: Text(
+          '避免切回应用时网络请求中断',
+          style: TextStyle(color: colors.onTertiaryContainer),
+        ),
+      ),
+    );
+  }
+}
+
 class _LoginPanel extends StatelessWidget {
   const _LoginPanel({
     required this.qrImage,
@@ -613,6 +812,7 @@ class _LoginPanel extends StatelessWidget {
     required this.statusIsError,
     required this.isBusy,
     required this.isLoggedIn,
+    required this.isInvoiceVerification,
     required this.onCreateQr,
   });
 
@@ -621,14 +821,17 @@ class _LoginPanel extends StatelessWidget {
   final bool statusIsError;
   final bool isBusy;
   final bool isLoggedIn;
+  final bool isInvoiceVerification;
   final VoidCallback onCreateQr;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Material(
+    return Card.filled(
+      margin: EdgeInsets.zero,
       color: isLoggedIn ? colors.primaryContainer : colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: LayoutBuilder(
@@ -639,6 +842,7 @@ class _LoginPanel extends StatelessWidget {
               statusIsError: statusIsError,
               isBusy: isBusy,
               isLoggedIn: isLoggedIn,
+              isInvoiceVerification: isInvoiceVerification,
               hasQrCode: qrImage != null,
               onCreateQr: onCreateQr,
             );
@@ -685,6 +889,7 @@ class _LoginDetails extends StatelessWidget {
     required this.statusIsError,
     required this.isBusy,
     required this.isLoggedIn,
+    required this.isInvoiceVerification,
     required this.hasQrCode,
     required this.onCreateQr,
   });
@@ -693,6 +898,7 @@ class _LoginDetails extends StatelessWidget {
   final bool statusIsError;
   final bool isBusy;
   final bool isLoggedIn;
+  final bool isInvoiceVerification;
   final bool hasQrCode;
   final VoidCallback onCreateQr;
 
@@ -703,13 +909,21 @@ class _LoginDetails extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
-          isLoggedIn ? Icons.verified_outlined : Icons.phone_android,
+          isInvoiceVerification
+              ? Icons.domain_verification_outlined
+              : isLoggedIn
+              ? Icons.verified_outlined
+              : Icons.phone_android,
           size: 32,
           color: isLoggedIn ? colors.onPrimaryContainer : colors.primary,
         ),
         const SizedBox(height: 12),
         Text(
-          isLoggedIn ? '账号已连接' : '使用 12306 App 扫码',
+          isInvoiceVerification
+              ? '核验电子发票访问'
+              : isLoggedIn
+              ? '账号已连接'
+              : '使用 12306 App 扫码',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         if (status != null) ...[
@@ -808,7 +1022,7 @@ class _EmptyOrders extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              isLoggedIn ? '近 30 天暂无行程' : '登录后显示近 30 天行程',
+              isLoggedIn ? '近 180 天暂无行程' : '登录并核验后显示近 180 天行程',
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(color: colors.onSurfaceVariant),

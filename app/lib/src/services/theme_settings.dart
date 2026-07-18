@@ -34,7 +34,7 @@ class ThemeSettings extends ChangeNotifier {
 
   SharedPreferences? _preferences;
   AppThemePreference _preference = AppThemePreference.system;
-  bool _useSystemColor = true;
+  bool _useSystemColor = false;
   Color _seedColor = themeSeedOptions.first.color;
 
   AppThemePreference get preference => _preference;
@@ -61,7 +61,7 @@ class ThemeSettings extends ChangeNotifier {
       (value) => value.name == preferences.getString(_modeKey),
       orElse: () => AppThemePreference.system,
     );
-    _useSystemColor = preferences.getBool(_systemColorKey) ?? true;
+    _useSystemColor = preferences.getBool(_systemColorKey) ?? false;
     final storedColor = preferences.getInt(_seedColorKey);
     if (storedColor != null) _seedColor = Color(storedColor);
   }

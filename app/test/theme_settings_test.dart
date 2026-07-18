@@ -34,6 +34,13 @@ void main() {
     expect(preferences.getBool('theme_use_system_color'), isTrue);
   });
 
+  test('首次启动默认关闭跟随系统主题色', () async {
+    SharedPreferences.setMockInitialValues({});
+    await ThemeSettings.instance.initialize();
+
+    expect(ThemeSettings.instance.useSystemColor, isFalse);
+  });
+
   testWidgets('设置页在窄屏可切换深色模式和手动主题色', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));

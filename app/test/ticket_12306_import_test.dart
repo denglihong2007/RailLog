@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
@@ -8,31 +10,26 @@ import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 
 void main() {
-  group('12306 order mapping', () {
-    test('maps ticket fields used by local trip records', () {
-      final order = Ticket12306Service.parseOrderTicket(
-        {
-          'start_train_date_page': '2026-07-18 21:35',
-          'seat_type_name': '硬卧',
-          'coach_name': '08',
-          'seat_name': '12号下铺',
-          'str_ticket_price_page': '¥215.50',
-          'ticket_status_name': '已支付',
-          'passengerDTO': {'passenger_name': '测试乘客'},
-          'stationTrainDTO': {
-            'station_train_code': 'Z123',
-            'from_station_name': '北京西',
-            'to_station_name': '武昌',
-            'distance': '1225公里',
-            'arrive_date_local': '2026-07-19',
-            'arrive_time_local': '08:12',
-          },
-        },
-        sequenceNo: 'E123',
-        pageIndex: 0,
-        orderIndex: 0,
-        ticketIndex: 0,
-      );
+  group('12306 invoice mapping', () {
+    test('maps electronic invoice fields used by local trip records', () {
+      final order = Ticket12306Service.parseInvoiceTicket({
+        'local_start_time': '202607182135',
+        'local_arrive_time': '202607190812',
+        'board_train_code': 'Z123',
+        'train_code': 'Z122',
+        'from_station_name': '北京西',
+        'to_station_name': '武昌',
+        'distance': '1225',
+        'passenger_name': '测试乘客',
+        'seat_type_name': '硬卧',
+        'coach_name': '08',
+        'seat_name': '12号下铺',
+        'ticket_price': '2155',
+        'status_name': '已出站',
+        'sequence_no': 'E123',
+        'batch_no': '1',
+        'ext_ticket_no': 'ticket-123',
+      });
 
       expect(order, isNotNull);
       expect(order!.trainCode, 'Z123');
@@ -49,13 +46,10 @@ void main() {
 
     test('rejects unusable records and changed or refunded tickets', () {
       expect(
-        Ticket12306Service.parseOrderTicket(
-          const {'start_train_date_page': 'invalid'},
-          sequenceNo: '',
-          pageIndex: 0,
-          orderIndex: 0,
-          ticketIndex: 0,
-        ),
+        Ticket12306Service.parseInvoiceTicket(const {
+          'local_start_time': 'invalid',
+          'local_arrive_time': '202607190812',
+        }),
         isNull,
       );
       for (final status in ['已退票', '已改签', '变更到站']) {
@@ -111,14 +105,64 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('登录铁路 12306'), findsOneWidget);
+    expect(find.text('核验电子发票访问'), findsWidgets);
     expect(find.text('选择待导入行程'), findsOneWidget);
     expect(find.text('Z123'), findsOneWidget);
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -420));
+    final service =
+        tester.widget<Import12306Page>(find.byType(Import12306Page)).service!
+            as _FakeTicket12306Service;
+    expect(service.invoiceQrRequests, 1);
+    expect(service.invoiceQueries, 1);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -760));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Z123'));
     await tester.pump();
     expect(find.text('开始确认'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('second QR code recommends keeping requests active in a window', (
+    tester,
+  ) async {
+    final service = _PendingInvoiceVerificationService();
+    await tester.pumpWidget(
+      MaterialApp(home: Import12306Page(service: service)),
+    );
+    await tester.tap(find.text('获取二维码'));
+    for (var index = 0; index < 8; index++) {
+      await tester.pump();
+    }
+
+    expect(find.text('核验电子发票访问'), findsWidgets);
+    expect(find.textContaining('小窗模式'), findsOneWidget);
+    expect(find.byType(Card), findsWidgets);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    service.completePendingCheck();
+  });
+
+  testWidgets('login QR code also recommends using a small window', (
+    tester,
+  ) async {
+    final service = _PendingLoginVerificationService();
+    await tester.pumpWidget(
+      MaterialApp(home: Import12306Page(service: service)),
+    );
+    await tester.tap(find.text('获取二维码'));
+    for (var index = 0; index < 6; index++) {
+      await tester.pump();
+    }
+
+    expect(find.text('使用 12306 App 扫码'), findsOneWidget);
+    expect(find.textContaining('小窗模式'), findsOneWidget);
+    expect(find.byType(Card), findsWidgets);
+    expect(
+      tester.getTopLeft(find.text('建议开启小窗模式')).dy,
+      lessThan(tester.getTopLeft(find.text('登录铁路 12306')).dy),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    service.completePendingCheck();
   });
 
   test('review page receives import progress and ticket values', () {
@@ -169,6 +213,9 @@ void main() {
 }
 
 class _FakeTicket12306Service extends Ticket12306Service {
+  int invoiceQrRequests = 0;
+  int invoiceQueries = 0;
+
   @override
   Future<Ticket12306QrCode> createQrCode() async => const Ticket12306QrCode(
     uuid: 'test-uuid',
@@ -188,22 +235,71 @@ class _FakeTicket12306Service extends Ticket12306Service {
   Future<String> completeLogin(String uamtk) async => '测试账号';
 
   @override
-  Future<List<Ticket12306Order>> queryRecentOrders({DateTime? now}) async => [
-    Ticket12306Order(
-      id: 'ticket-1',
-      sequenceNo: 'sequence-1',
-      startTime: DateTime(2026, 7, 18, 21, 35),
-      arriveTime: DateTime(2026, 7, 19, 8, 12),
-      trainCode: 'Z123',
-      fromStation: '北京西',
-      toStation: '武昌',
-      distance: 1225,
-      passengerName: '测试乘客',
-      seatType: '硬卧',
-      coachName: '08',
-      seatName: '12号下铺',
-      price: 215.5,
-      statusText: '已支付',
-    ),
-  ];
+  Future<Ticket12306QrCode> createInvoiceVerificationQr() async {
+    invoiceQrRequests++;
+    return const Ticket12306QrCode(
+      uuid: 'invoice-uuid',
+      imageBase64:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+  }
+
+  @override
+  Future<Ticket12306QrStatus> checkInvoiceVerificationQr(String uuid) async =>
+      const Ticket12306QrStatus(code: '2', message: '电子发票访问核验通过');
+
+  @override
+  Future<List<Ticket12306Order>> queryInvoiceTrips({DateTime? now}) async {
+    invoiceQueries++;
+    return [
+      Ticket12306Order(
+        id: 'ticket-1',
+        sequenceNo: 'sequence-1',
+        startTime: DateTime(2026, 7, 18, 21, 35),
+        arriveTime: DateTime(2026, 7, 19, 8, 12),
+        trainCode: 'Z123',
+        fromStation: '北京西',
+        toStation: '武昌',
+        distance: 1225,
+        passengerName: '测试乘客',
+        seatType: '硬卧',
+        coachName: '08',
+        seatName: '12号下铺',
+        price: 215.5,
+        statusText: '已支付',
+      ),
+    ];
+  }
+}
+
+class _PendingInvoiceVerificationService extends _FakeTicket12306Service {
+  final _pendingCheck = Completer<Ticket12306QrStatus>();
+
+  @override
+  Future<Ticket12306QrStatus> checkInvoiceVerificationQr(String uuid) =>
+      _pendingCheck.future;
+
+  void completePendingCheck() {
+    if (!_pendingCheck.isCompleted) {
+      _pendingCheck.complete(
+        const Ticket12306QrStatus(code: '2', message: '电子发票访问核验通过'),
+      );
+    }
+  }
+}
+
+class _PendingLoginVerificationService extends _FakeTicket12306Service {
+  final _pendingCheck = Completer<Ticket12306QrStatus>();
+
+  @override
+  Future<Ticket12306QrStatus> checkQrStatus(String uuid) =>
+      _pendingCheck.future;
+
+  void completePendingCheck() {
+    if (!_pendingCheck.isCompleted) {
+      _pendingCheck.complete(
+        const Ticket12306QrStatus(code: '3', message: '二维码已过期'),
+      );
+    }
+  }
 }

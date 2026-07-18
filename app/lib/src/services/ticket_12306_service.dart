@@ -46,8 +46,9 @@ class Ticket12306Service {
   static const _loginPage = '$_otnBase/resources/login.html';
   static const _passportRedirect =
       '$_otnBase/passport?redirect=/otn/login/userLogin';
-  static const _orderPage = '$_otnBase/view/train_order.html';
-  static const _pageSize = 8;
+  static const _invoiceIndexPage = '$_otnBase/view/invoice_index.html';
+  static const _invoiceListPage =
+      '$_otnBase/view/invoice_ticket_list.html?tab_type=1';
   static const _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 '
@@ -127,123 +128,144 @@ class Ticket12306Service {
     return _readString(clientAuth, 'username');
   }
 
-  Future<List<Ticket12306Order>> queryRecentOrders({DateTime? now}) async {
-    await _navigate(_orderPage, referer: '$_otnBase/login/userLogin');
+  Future<Ticket12306QrCode> createInvoiceVerificationQr() async {
+    await _navigate(_invoiceIndexPage, referer: '$_otnBase/login/userLogin');
+    final json = await _postForm(
+      '$_passportBase/create-verifyqr64',
+      const {'appid': 'otn', 'authType': 'itinerary'},
+      referer: _invoiceIndexPage,
+      accept: '*/*',
+    );
+    final uuid = _readString(json, 'uuid');
+    final image = _readString(json, 'image');
+    if (uuid.isEmpty || image.isEmpty) {
+      throw const Ticket12306Exception('12306 未返回有效的电子发票核验二维码');
+    }
+    return Ticket12306QrCode(uuid: uuid, imageBase64: image);
+  }
+
+  Future<Ticket12306QrStatus> checkInvoiceVerificationQr(String uuid) async {
+    final json = await _postForm(
+      '$_otnBase/psr/checkVerifyqr',
+      {'uuid': uuid, 'appid': 'otn'},
+      referer: _invoiceIndexPage,
+      accept: 'application/json, text/javascript, */*; q=0.01',
+    );
+    final code = _readValue(json, 'data');
+    final message = switch (code) {
+      '0' => '等待扫描核验二维码',
+      '1' => '已扫描，请在铁路 12306 App 中确认',
+      '2' => '电子发票访问核验通过',
+      _ => '等待电子发票访问核验',
+    };
+    return Ticket12306QrStatus(code: code, message: message);
+  }
+
+  Future<List<Ticket12306Order>> queryInvoiceTrips({DateTime? now}) async {
+    await _prepareInvoiceQuery();
     final today = _dateOnly(now ?? DateTime.now());
-    final start = today.subtract(const Duration(days: 30));
-    final historyEnd = today.subtract(const Duration(days: 1));
+    final start = today.subtract(const Duration(days: 179));
     final merged = <String, Ticket12306Order>{};
 
-    for (final order in await _queryOrdersByType(start, historyEnd, 'H')) {
-      merged[_mergeKey(order)] = order;
-    }
-    for (final order in await _queryOrdersByType(start, today, 'G')) {
-      merged[_mergeKey(order)] = order;
+    for (final type in const [1, 2]) {
+      for (final order in await _queryInvoicesByType(start, today, type)) {
+        merged[order.id] = order;
+      }
     }
     final result = merged.values.toList()
       ..sort((a, b) => b.startTime.compareTo(a.startTime));
     return result;
   }
 
-  Future<List<Ticket12306Order>> _queryOrdersByType(
+  Future<void> _prepareInvoiceQuery() async {
+    await _navigate(_invoiceListPage, referer: _invoiceIndexPage);
+    final login = await _postForm(
+      '$_otnBase/login/conf',
+      const {},
+      referer: _invoiceListPage,
+      accept: '*/*',
+    );
+    final loginData = login['data'];
+    if (login['status'] != true ||
+        loginData is! Map ||
+        loginData['psr_qr_code_result']?.toString() != 'Y') {
+      throw const Ticket12306Exception('电子发票访问核验已失效，请重新扫码');
+    }
+    final info = await _postForm(
+      '$_otnBase/eInvoice/queryInfo',
+      const {},
+      referer: _invoiceListPage,
+      accept: 'application/json, text/javascript, */*; q=0.01',
+    );
+    if (info['status'] != true) {
+      throw const Ticket12306Exception('电子发票服务初始化失败');
+    }
+  }
+
+  Future<List<Ticket12306Order>> _queryInvoicesByType(
     DateTime start,
     DateTime end,
-    String queryWhere,
+    int type,
   ) async {
     if (end.isBefore(start)) return const [];
     final result = <Ticket12306Order>[];
-    var pageIndex = 0;
+    var pageIndex = 1;
     var total = 1 << 30;
+    var fetched = 0;
 
-    while (pageIndex * _pageSize < total) {
+    while (fetched < total) {
       final json = await _postForm(
-        '$_otnBase/queryOrder/queryMyOrder',
+        '$_otnBase/eInvoice/queryPsr',
         {
-          'come_from_flag': 'my_order',
+          'from_date': _formatCompactDate(start),
+          'end_date': _formatCompactDate(end),
+          'order_num': '',
           'pageIndex': '$pageIndex',
-          'pageSize': '$_pageSize',
-          'query_where': queryWhere,
-          'queryStartDate': _formatDate(start),
-          'queryEndDate': _formatDate(end),
-          'queryType': '1',
-          'sequeue_train_name': '',
+          'ticket_type': '',
+          'type': '$type',
         },
-        referer: _orderPage,
+        referer: _invoiceListPage,
         accept: 'application/json, text/javascript, */*; q=0.01',
       );
       if (json['status'] != true) {
-        throw const Ticket12306Exception('12306 订单查询失败，请重新登录后再试');
+        throw Ticket12306Exception('电子发票行程查询失败（type=$type）');
       }
       final data = json['data'];
       if (data is! Map<String, dynamic>) break;
-      total = _asInt(data['order_total_number']) ?? total;
-      final orders = data['OrderDTODataList'];
-      if (orders is! List) break;
-
-      var orderIndex = 0;
-      for (final rawOrder in orders) {
-        if (rawOrder is! Map) continue;
-        final order = Map<String, dynamic>.from(rawOrder);
-        final sequenceNo = _readString(order, 'sequence_no');
-        final tickets = order['tickets'];
-        if (tickets is! List) continue;
-        var ticketIndex = 0;
-        for (final rawTicket in tickets) {
-          if (rawTicket is Map) {
-            final parsed = parseOrderTicket(
-              Map<String, dynamic>.from(rawTicket),
-              sequenceNo: sequenceNo,
-              pageIndex: pageIndex,
-              orderIndex: orderIndex,
-              ticketIndex: ticketIndex,
-            );
-            if (parsed != null) result.add(parsed);
-          }
-          ticketIndex++;
-        }
-        orderIndex++;
+      total = _asInt(data['total']) ?? 0;
+      final rows = data['results'];
+      if (rows is! List || rows.isEmpty) break;
+      for (final rawRow in rows) {
+        if (rawRow is! Map) continue;
+        final parsed = parseInvoiceTicket(Map<String, dynamic>.from(rawRow));
+        if (parsed != null) result.add(parsed);
       }
-      if (orders.length < _pageSize) break;
+      fetched += rows.length;
+      final returnedPage = _asInt(data['pageIndex']) ?? pageIndex;
+      final pageSize = _asInt(data['pageSize']) ?? rows.length;
+      if (returnedPage * pageSize >= total) break;
       pageIndex++;
     }
     return result;
   }
 
-  static Ticket12306Order? parseOrderTicket(
-    Map<String, dynamic> ticket, {
-    required String sequenceNo,
-    required int pageIndex,
-    required int orderIndex,
-    required int ticketIndex,
-  }) {
-    final startTime = _parseDateTime(
-      _readString(ticket, 'start_train_date_page'),
+  static Ticket12306Order? parseInvoiceTicket(Map<String, dynamic> ticket) {
+    final startTime = _parseCompactDateTime(
+      _readString(ticket, 'local_start_time'),
     );
-    final trainDto = ticket['stationTrainDTO'];
-    if (startTime == null || trainDto is! Map) return null;
-    final train = Map<String, dynamic>.from(trainDto);
-    final passengerDto = ticket['passengerDTO'];
-    final passenger = passengerDto is Map
-        ? Map<String, dynamic>.from(passengerDto)
-        : const <String, dynamic>{};
-    final trainCode = _readString(train, 'station_train_code');
-    final passengerName = _readString(passenger, 'passenger_name');
-    final arriveDate = _datePart(_readString(train, 'arrive_date_local'));
-    final arriveClock = _timePart(_readString(train, 'arrive_time_local'));
-    final arriveTime = arriveDate == null || arriveClock == null
-        ? null
-        : DateTime(
-            arriveDate.year,
-            arriveDate.month,
-            arriveDate.day,
-            arriveClock.hour,
-            arriveClock.minute,
-          );
+    final arriveTime = _parseCompactDateTime(
+      _readString(ticket, 'local_arrive_time'),
+    );
+    if (startTime == null || arriveTime == null) return null;
+    final sequenceNo = _readString(ticket, 'sequence_no');
+    final trainCode = _readString(ticket, 'board_train_code').isNotEmpty
+        ? _readString(ticket, 'board_train_code')
+        : _readString(ticket, 'train_code');
+    final passengerName = _readString(ticket, 'passenger_name');
     final id = [
+      _readString(ticket, 'ext_ticket_no'),
       sequenceNo,
-      pageIndex,
-      orderIndex,
-      ticketIndex,
+      _readString(ticket, 'batch_no'),
       trainCode,
       startTime.toIso8601String(),
       passengerName,
@@ -255,15 +277,15 @@ class Ticket12306Service {
       startTime: startTime,
       arriveTime: arriveTime,
       trainCode: trainCode,
-      fromStation: _readString(train, 'from_station_name'),
-      toStation: _readString(train, 'to_station_name'),
-      distance: _parseNumber(_readString(train, 'distance')),
+      fromStation: _readString(ticket, 'from_station_name'),
+      toStation: _readString(ticket, 'to_station_name'),
+      distance: _parseNumber(_readString(ticket, 'distance')),
       passengerName: passengerName,
       seatType: _readString(ticket, 'seat_type_name'),
       coachName: _readString(ticket, 'coach_name'),
       seatName: _readString(ticket, 'seat_name'),
-      price: _parseNumber(_readString(ticket, 'str_ticket_price_page')),
-      statusText: _readString(ticket, 'ticket_status_name'),
+      price: _parseNumber(_readString(ticket, 'ticket_price')) / 10,
+      statusText: _readString(ticket, 'status_name'),
     );
   }
 
@@ -387,21 +409,11 @@ class Ticket12306Service {
     if (_disposed) throw const Ticket12306Exception('12306 会话已关闭');
   }
 
-  static String _mergeKey(Ticket12306Order order) => [
-    order.sequenceNo,
-    order.startTime.toIso8601String(),
-    order.trainCode,
-    order.fromStation,
-    order.toStation,
-    order.passengerName,
-    order.seatName,
-  ].join('|');
-
   static DateTime _dateOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
-  static String _formatDate(DateTime value) =>
-      '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
+  static String _formatCompactDate(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}'
+      '${value.month.toString().padLeft(2, '0')}'
       '${value.day.toString().padLeft(2, '0')}';
   static String _readString(Map<String, dynamic> map, String key) =>
       map[key]?.toString().trim() ?? '';
@@ -419,33 +431,14 @@ class Ticket12306Service {
     return parsed < 0 ? 0 : parsed;
   }
 
-  static DateTime? _parseDateTime(String value) {
-    if (value.isEmpty) return null;
-    final normalized = value.replaceAll('/', '-').replaceFirst(' ', 'T');
-    return DateTime.tryParse(normalized);
-  }
-
-  static DateTime? _datePart(String value) {
-    final match = RegExp(
-      r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})',
-    ).firstMatch(value);
-    if (match == null) return null;
+  static DateTime? _parseCompactDateTime(String value) {
+    if (!RegExp(r'^\d{12}$').hasMatch(value)) return null;
     return DateTime(
-      int.parse(match.group(1)!),
-      int.parse(match.group(2)!),
-      int.parse(match.group(3)!),
-    );
-  }
-
-  static DateTime? _timePart(String value) {
-    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(value);
-    if (match == null) return null;
-    return DateTime(
-      2000,
-      1,
-      1,
-      int.parse(match.group(1)!),
-      int.parse(match.group(2)!),
+      int.parse(value.substring(0, 4)),
+      int.parse(value.substring(4, 6)),
+      int.parse(value.substring(6, 8)),
+      int.parse(value.substring(8, 10)),
+      int.parse(value.substring(10, 12)),
     );
   }
 }
