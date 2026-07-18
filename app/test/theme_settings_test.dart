@@ -49,6 +49,8 @@ void main() {
     );
 
     expect(find.text('外观'), findsOneWidget);
+    expect(find.text('火车票生成器'), findsOneWidget);
+    expect(find.text('川建国'), findsOneWidget);
     await tester.tap(find.text('深色'));
     await tester.pump();
     expect(ThemeSettings.instance.preference, AppThemePreference.dark);

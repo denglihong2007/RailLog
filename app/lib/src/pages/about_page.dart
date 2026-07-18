@@ -233,6 +233,11 @@ class _AboutPageState extends State<AboutPage> {
                           title: '冰镇杨梅汁儿',
                           subtitle: '感谢对 RailLog 的支持',
                         ),
+                        _InfoTile(
+                          icon: Icons.texture_outlined,
+                          title: '杰瑞瞎搞（Bilibili）',
+                          subtitle: '提供车票底纹、字体',
+                        ),
                       ],
                     ),
                     const SizedBox(height: 20),

@@ -77,6 +77,12 @@ public sealed class RailLogDatabase
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
                 UNIQUE (UserId, ClientId)
             );
+            CREATE TABLE IF NOT EXISTS TicketPdfDownloads (
+                KeyHash TEXT NOT NULL PRIMARY KEY,
+                RequestJson TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL
+            );
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -110,7 +116,46 @@ public sealed class RailLogDatabase
             CREATE INDEX IF NOT EXISTS IX_TripRecords_UserId ON TripRecords (UserId);
             CREATE UNIQUE INDEX IF NOT EXISTS IX_TripRecords_UserClient
                 ON TripRecords (UserId, ClientId);
+            CREATE INDEX IF NOT EXISTS IX_TicketPdfDownloads_ExpiresAt
+                ON TicketPdfDownloads (ExpiresAt);
             """);
+    }
+
+    public async Task CreateTicketPdfDownloadAsync(
+        string keyHash,
+        string requestJson,
+        DateTime expiresAt)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM TicketPdfDownloads WHERE ExpiresAt <= $now;
+            INSERT INTO TicketPdfDownloads (KeyHash, RequestJson, CreatedAt, ExpiresAt)
+            VALUES ($keyHash, $requestJson, $createdAt, $expiresAt);
+            """;
+        command.Parameters.AddWithValue("$now", ToDb(DateTime.Now));
+        command.Parameters.AddWithValue("$keyHash", keyHash);
+        command.Parameters.AddWithValue("$requestJson", requestJson);
+        command.Parameters.AddWithValue("$createdAt", ToDb(DateTime.Now));
+        command.Parameters.AddWithValue("$expiresAt", ToDb(expiresAt));
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<string?> GetTicketPdfDownloadAsync(string keyHash)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RequestJson
+            FROM TicketPdfDownloads
+            WHERE KeyHash = $keyHash AND ExpiresAt > $now
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$keyHash", keyHash);
+        command.Parameters.AddWithValue("$now", ToDb(DateTime.Now));
+        return await command.ExecuteScalarAsync() as string;
     }
 
     public async Task<(AuthResponse? Response, string? Error)> RegisterAsync(RegisterRequest request)

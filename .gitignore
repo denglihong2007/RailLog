@@ -1,0 +1,10 @@
+# Ticket generator assets are server-only and must never be committed.
+**/CODE1.OTF
+**/PAPERTICKETS.OTF
+**/District.json
+**/blue.png
+**/red.png
+**/ticket-assets/
+.pinyin-check/
+**/bin/
+**/obj/
