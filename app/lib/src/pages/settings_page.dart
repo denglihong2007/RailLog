@@ -69,6 +69,8 @@ class _SignedOutSettings extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _SettingsCategoryHeader(title: '账户'),
+        const SizedBox(height: 8),
         _SettingsCard(
           title: '账户',
           icon: Icons.account_circle_outlined,
@@ -92,11 +94,15 @@ class _SignedOutSettings extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '个性化'),
+        const SizedBox(height: 8),
         _appearanceSettings(context),
         const SizedBox(height: 12),
         const _TicketGeneratorSettingsSection(),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '数据与存储'),
+        const SizedBox(height: 8),
         const _DataExportSection(),
         const SizedBox(height: 12),
         const _SettingsCard(
@@ -109,7 +115,9 @@ class _SignedOutSettings extends StatelessWidget {
             subtitle: Text('当前行程仅保存在此设备'),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '应用'),
+        const SizedBox(height: 8),
         _applicationSettings(context),
       ],
     );
@@ -125,6 +133,8 @@ class _SignedInSettings extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _SettingsCategoryHeader(title: '账户'),
+        const SizedBox(height: 8),
         _SettingsCard(
           title: '个人资料',
           icon: Icons.person_outline,
@@ -172,11 +182,15 @@ class _SignedInSettings extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '个性化'),
+        const SizedBox(height: 8),
         _appearanceSettings(context),
         const SizedBox(height: 12),
         const _TicketGeneratorSettingsSection(),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '同步与数据'),
+        const SizedBox(height: 8),
         _SettingsCard(
           title: '云同步',
           icon: Icons.cloud_sync_outlined,
@@ -222,7 +236,9 @@ class _SignedInSettings extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         const _DataExportSection(),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '安全'),
+        const SizedBox(height: 8),
         _SettingsCard(
           title: '账号安全',
           icon: Icons.security_outlined,
@@ -256,7 +272,9 @@ class _SignedInSettings extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 24),
+        const _SettingsCategoryHeader(title: '应用'),
+        const SizedBox(height: 8),
         _applicationSettings(context),
       ],
     );
@@ -349,6 +367,24 @@ class _SignedInSettings extends StatelessWidget {
       }
     }
   }
+}
+
+class _SettingsCategoryHeader extends StatelessWidget {
+  const _SettingsCategoryHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    child: Text(
+      title,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }
 
 class _SettingsCard extends StatelessWidget {

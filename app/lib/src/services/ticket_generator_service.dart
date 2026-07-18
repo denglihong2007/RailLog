@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:raillog/src/services/api_client.dart';
+import 'package:raillog/src/services/download_file_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 
@@ -13,11 +14,12 @@ abstract final class TicketGeneratorService {
   static Future<String> saveImage({
     required int tripId,
     required Uint8List bytes,
-  }) => FileSaver.instance.saveFile(
+  }) => DownloadFileService.save(
     name: 'RailLog_车票_$tripId',
     bytes: bytes,
     fileExtension: 'png',
     mimeType: MimeType.png,
+    androidMimeType: 'image/png',
   );
 
   static Future<TicketPdfDownloadKey> createPdfDownloadKey({
