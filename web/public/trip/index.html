@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>行程查询 - RailLog 轨记</title>
+    <script>
+      const target = new URL('/', location.origin)
+      target.searchParams.set('trip', '1')
+      const id = new URLSearchParams(location.search).get('id')
+      if (id) target.searchParams.set('id', id)
+      location.replace(target)
+    </script>
+  </head>
+  <body></body>
+</html>
