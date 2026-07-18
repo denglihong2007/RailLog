@@ -5,6 +5,7 @@ import 'package:excel/excel.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/download_file_service.dart';
 
 class TripExcelExportResult {
   const TripExcelExportResult({
@@ -56,11 +57,13 @@ abstract final class TripExcelExportService {
     final bytes = buildWorkbook(trips);
     final timestamp = _fileTimestamp(DateTime.now());
     final name = 'RailLog_行程_$timestamp';
-    final savedPath = await FileSaver.instance.saveFile(
+    final savedPath = await DownloadFileService.save(
       name: name,
       bytes: bytes,
       fileExtension: 'xlsx',
       mimeType: MimeType.microsoftExcel,
+      androidMimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
     return TripExcelExportResult(
       tripCount: trips.length,
