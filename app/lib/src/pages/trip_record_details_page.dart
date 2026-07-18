@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
+import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/services/ticket_generator_service.dart';
+import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class TripRecordDetailsPage extends StatefulWidget {
   const TripRecordDetailsPage({super.key, required this.tripId})
@@ -217,7 +222,21 @@ class _TripDetailsContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
               ],
-              M3Reveal(child: _DetailsTicket(trip: trip)),
+              AnimatedBuilder(
+                animation: TicketGeneratorSettings.instance,
+                builder: (context, _) {
+                  final settings = TicketGeneratorSettings.instance;
+                  if (settings.displayStyle == TicketDisplayStyle.md3) {
+                    return M3Reveal(child: _DetailsTicket(trip: trip));
+                  }
+                  return M3Reveal(
+                    child: _GeneratedTicketPanel(
+                      key: ValueKey('${trip.ticketId}|${settings.cacheKey}'),
+                      trip: trip,
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 16),
               _DetailsSection(
                 icon: Icons.info_outline,
@@ -414,6 +433,273 @@ class _OwnerAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       CachedAvatar(name: name, imageUrl: avatarUrl, size: size);
+}
+
+class _GeneratedTicketPanel extends StatefulWidget {
+  const _GeneratedTicketPanel({super.key, required this.trip});
+
+  final TripRecord trip;
+
+  @override
+  State<_GeneratedTicketPanel> createState() => _GeneratedTicketPanelState();
+}
+
+class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel> {
+  Uint8List? _imageBytes;
+  String? _error;
+  bool _loading = false;
+  bool _savingImage = false;
+  bool _buying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final ticketId = widget.trip.ticketId;
+    if (SessionService.instance.token == null) {
+      setState(() => _error = '登录后才能生成纪念车票');
+      return;
+    }
+    if (ticketId == null) {
+      setState(() => _error = '请先同步这条行程，再生成纪念车票');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final bytes = await TicketGeneratorService.generateImage(
+        tripId: ticketId,
+      );
+      if (!mounted) return;
+      setState(() => _imageBytes = bytes);
+    } on TicketGeneratorException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = '车票生成失败：$error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _saveImage() async {
+    final ticketId = widget.trip.ticketId;
+    final bytes = _imageBytes;
+    if (ticketId == null || bytes == null || _savingImage) return;
+    setState(() => _savingImage = true);
+    try {
+      final path = await TicketGeneratorService.saveImage(
+        tripId: ticketId,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('车票图片已保存\n保存位置：$path')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
+    } finally {
+      if (mounted) setState(() => _savingImage = false);
+    }
+  }
+
+  Future<void> _buy() async {
+    final ticketId = widget.trip.ticketId;
+    if (ticketId == null || _buying) return;
+    setState(() => _buying = true);
+    try {
+      final download = await TicketGeneratorService.createPdfDownloadKey(
+        tripId: ticketId,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.key_outlined),
+          title: const Text('向商家发送下载 Key'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('请将以下 Key 发送给淘宝商家客服，用于获取本次车票排版文件。'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext).colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  download.key,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Key 有效期至 ${_formatDateTime(download.expiresAt.toLocal())}，关闭弹窗后将打开淘宝。',
+                style: Theme.of(dialogContext).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: download.key));
+                if (!mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Key 已复制')));
+              },
+              icon: const Icon(Icons.copy_outlined),
+              label: const Text('复制 Key'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('关闭并前往淘宝'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      final opened = await launchUrl(
+        Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法打开购买链接')));
+      }
+    } on TicketGeneratorException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('创建下载 Key 失败：$error')));
+    } finally {
+      if (mounted) setState(() => _buying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final bytes = _imageBytes;
+    return Material(
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: AspectRatio(
+        aspectRatio: 1800 / 1120,
+        child: bytes == null
+            ? _buildState(colors)
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: colors.surface,
+                    child: Image.memory(
+                      bytes,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Material(
+                      elevation: 3,
+                      color: colors.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: '下载车票图片',
+                            onPressed: _savingImage ? null : _saveImage,
+                            icon: _savingImage
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.download_outlined),
+                          ),
+                          IconButton(
+                            tooltip: '购买实体纪念票',
+                            onPressed: _buying ? null : _buy,
+                            icon: _buying
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.shopping_bag_outlined),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildState(ColorScheme colors) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.confirmation_number_outlined,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(_error ?? '暂时无法生成车票', textAlign: TextAlign.center),
+            if (widget.trip.ticketId != null &&
+                SessionService.instance.token != null) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _load,
+                icon: const Icon(Icons.refresh),
+                label: const Text('重试'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _DetailsTicket extends StatelessWidget {

@@ -22,6 +22,30 @@ dotnet run --project api\RailLog.API.csproj --launch-profile http
 Legacy `AspNetUsers` and `TripRecords` tables are migrated in place on startup.
 Back up a production database before its first migration.
 
+The ticket generator reads its private fonts, ticket backgrounds, and station
+pinyin data only from a server-side directory. Configure that directory before
+using the authenticated generator endpoints:
+
+```powershell
+$env:TicketAssets__Directory = 'C:\path\to\private\ticket-assets'
+```
+
+For local API development, the same setting can be stored in .NET User Secrets:
+
+```powershell
+cd api
+dotnet user-secrets set "TicketAssets:Directory" "C:\path\to\private\ticket-assets"
+dotnet user-secrets set "TicketPdf:DownloadPassword" "your-private-download-password"
+```
+
+For deployed environments, set the PDF download password with the
+`TicketPdf__DownloadPassword` environment variable. Never place the password
+in the web or Flutter client.
+
+The directory must contain `CODE1.OTF`, `PAPERTICKETS.OTF`, `red.png`,
+`blue.png`, and `District.json`. These files are intentionally excluded from
+Git and must never be deployed with the web or Flutter client.
+
 ## Run the client
 
 ```powershell

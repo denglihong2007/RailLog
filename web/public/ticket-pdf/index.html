@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>PDF 下载 - RailLog 轨记</title>
+    <script>
+      const target = new URL('/', location.origin)
+      target.searchParams.set('ticket-pdf', '1')
+      location.replace(target)
+    </script>
+  </head>
+  <body></body>
+</html>

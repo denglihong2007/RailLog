@@ -40,6 +40,17 @@ public sealed record DownloadLinksResponse(
     string? WindowsDomesticDownloadUrl,
     string? AndroidDomesticDownloadUrl);
 
+public sealed record GenerateTicketRequest(
+    long TripId,
+    string Style,
+    string Passenger,
+    string MaskedId,
+    string SerialPrefix,
+    bool ShowNewAirConditioned);
+
+public sealed record CreateTicketPdfKeyResponse(string Key, DateTime ExpiresAt);
+public sealed record DownloadTicketPdfRequest(string Key, string Password);
+
 public sealed record SyncTrip(
     long? TicketId,
     string ClientId,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:raillog/src/models/user_profile.dart';
 import 'package:raillog/src/pages/about_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
@@ -7,6 +8,7 @@ import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
+import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 
@@ -93,6 +95,8 @@ class _SignedOutSettings extends StatelessWidget {
         const SizedBox(height: 12),
         _appearanceSettings(context),
         const SizedBox(height: 12),
+        const _TicketGeneratorSettingsSection(),
+        const SizedBox(height: 12),
         const _DataExportSection(),
         const SizedBox(height: 12),
         const _SettingsCard(
@@ -170,6 +174,8 @@ class _SignedInSettings extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _appearanceSettings(context),
+        const SizedBox(height: 12),
+        const _TicketGeneratorSettingsSection(),
         const SizedBox(height: 12),
         _SettingsCard(
           title: '云同步',
@@ -442,6 +448,169 @@ class _DataExportSectionState extends State<_DataExportSection> {
       ),
     );
   }
+}
+
+class _TicketGeneratorSettingsSection extends StatefulWidget {
+  const _TicketGeneratorSettingsSection();
+
+  @override
+  State<_TicketGeneratorSettingsSection> createState() =>
+      _TicketGeneratorSettingsSectionState();
+}
+
+class _TicketGeneratorSettingsSectionState
+    extends State<_TicketGeneratorSettingsSection> {
+  late final TextEditingController _passengerController;
+  late final TextEditingController _maskedIdController;
+  late final TextEditingController _serialPrefixController;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = TicketGeneratorSettings.instance;
+    _passengerController = TextEditingController(text: settings.passenger);
+    _maskedIdController = TextEditingController(text: settings.maskedId);
+    _serialPrefixController = TextEditingController(
+      text: settings.serialPrefix,
+    );
+  }
+
+  @override
+  void dispose() {
+    _passengerController.dispose();
+    _maskedIdController.dispose();
+    _serialPrefixController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(
+      title: '火车票生成器',
+      icon: Icons.confirmation_number_outlined,
+      child: AnimatedBuilder(
+        animation: TicketGeneratorSettings.instance,
+        builder: (context, _) {
+          final settings = TicketGeneratorSettings.instance;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('默认车票展示样式', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              SegmentedButton<TicketDisplayStyle>(
+                segments: const [
+                  ButtonSegment(
+                    value: TicketDisplayStyle.red,
+                    icon: Icon(Icons.confirmation_number_outlined),
+                    label: Text('红票'),
+                  ),
+                  ButtonSegment(
+                    value: TicketDisplayStyle.blue,
+                    icon: Icon(Icons.airplane_ticket_outlined),
+                    label: Text('蓝票'),
+                  ),
+                  ButtonSegment(
+                    value: TicketDisplayStyle.md3,
+                    icon: Icon(Icons.view_agenda_outlined),
+                    label: Text('MD3'),
+                  ),
+                ],
+                selected: {settings.displayStyle},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) =>
+                    settings.setDisplayStyle(selection.single),
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.ac_unit_outlined),
+                title: const Text('普速显示“新空调”'),
+                subtitle: const Text('硬座、硬卧、软座和软卧等席别自动添加前缀'),
+                value: settings.showNewAirConditioned,
+                onChanged: settings.setShowNewAirConditioned,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _passengerController,
+                decoration: const InputDecoration(
+                  labelText: '默认乘车人',
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
+                ),
+                maxLength: 30,
+                textInputAction: TextInputAction.next,
+                onChanged: settings.setPassenger,
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? '请输入默认乘车人' : null,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _maskedIdController,
+                decoration: const InputDecoration(
+                  labelText: '脱敏身份证号码',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                maxLength: 30,
+                textInputAction: TextInputAction.next,
+                onChanged: settings.setMaskedId,
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? '请输入脱敏身份证号码' : null,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _serialPrefixController,
+                decoration: InputDecoration(
+                  labelText: '票号前缀',
+                  helperText: '21 位票号的前 14 位',
+                  prefixIcon: const Icon(Icons.numbers_outlined),
+                  suffixIcon: IconButton(
+                    tooltip: '票号构成说明',
+                    onPressed: () => _showSerialNumberHelp(context),
+                    icon: const Icon(Icons.help_outline),
+                  ),
+                  border: const OutlineInputBorder(),
+                ),
+                maxLength: 14,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: settings.setSerialPrefix,
+                validator: (value) => RegExp(r'^\d{14}$').hasMatch(value ?? '')
+                    ? null
+                    : '请输入 14 位数字',
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showSerialNumberHelp(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('铁路磁票票号说明'),
+      content: const SingleChildScrollView(
+        child: Text(
+          '铁路磁票（报销凭证）的21位票号由以下五部分顺序构成：\n\n'
+          '• 前5位：数字格式的车站TMIS码（可前往 rail.re 查询具体车站）；\n'
+          '• 第6至7位：出票机器类型（00-09为人工售票窗口，20-29为车票代售点，30-39为自动售票机）；\n'
+          '• 第8至10位：3位数字的出票机器编号；\n'
+          '• 第11至14位：MMDD格式的4位结算日期（一般为乘车日期的下一天）；\n'
+          '• 最后7位：票纸编号（通常由1位字母和6位数字组合而成，该软件自动生成而无需设置）。',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('知道了'),
+        ),
+      ],
+    ),
+  );
 }
 
 class ProfileEditPage extends StatefulWidget {
