@@ -42,16 +42,18 @@ internal static class TicketLayout
     public static void Draw(ITicketDrawingBackend canvas, TicketRenderData ticket, string ticketType)
     {
         var blue = ticket.Style == TicketStyle.Blue;
-        var stationY = blue ? 154f : 202f;
-        var pinyinY = blue ? 260f : 302f;
-        var trainY = blue ? 167f : 215f;
-        var arrowY = blue ? 264f : 312f;
-        var dateY = blue ? 322f : 370f;
-        var priceY = blue ? 420f : 468f;
-        var memorialY = blue ? 633f : 642f;
-        var identityY = blue ? 737f : 740f;
+        var ticketNumberY = 40f;
+        var stationY = 135f;
+        var pinyinY = 250f;
+        var trainY = 167f;
+        var arrowY = 264f;
+        var dateY = 322f;
+        var priceY = 420f;
+        var memorialY = 633f;
+        var identityY = 737f;
+        var serialNumberY = 1023f;
 
-        canvas.DrawText(ticket.TicketNumber, 112, blue ? 44 : 100,
+        canvas.DrawText(ticket.TicketNumber, 65, ticketNumberY,
             new TicketFont(76, TicketFontFamily.Arial), Red);
         var expand = Station(ticket.FromStation).Length >= 5 && Station(ticket.ToStation).Length >= 5;
         DrawStation(canvas, ticket.FromStation, 360, stationY, expand);
@@ -88,15 +90,15 @@ internal static class TicketLayout
             new TicketFont(63, Bold: true), Black);
         DrawIdAndName(canvas, ticket.MaskedId, ticket.Passenger, 112, identityY - 8);
 
-        var notice = new TicketRect(200, 819, 1010, 146);
+        var notice = new TicketRect(200, 820, 1075, 146);
         canvas.DrawDashedRectangle(notice, Black, 3, 12, 5);
         DrawCenteredLines(canvas, [ticket.NoticeLine1, ticket.NoticeLine2], notice,
             new TicketFont(50, Bold: true), 2);
-        canvas.DrawText(ticket.SerialNumber, 160, blue ? 1023 : 987,
-            new TicketFont(56, Bold: true), Black, scaleX: .9f);
+        canvas.DrawText(ticket.SerialNumber, 142, serialNumberY,
+            new TicketFont(58, Bold: true), Black, scaleX: .95f);
         var qrBounds = blue
-            ? new TicketRect(1443, identityY, 217, 217)
-            : new TicketRect(1352, 745, 300, 300);
+            ? new TicketRect(1443, identityY, 230, 230)
+            : new TicketRect(1352, 745, 350, 350);
         canvas.DrawQr(qrBounds, Black);
         if (ticketType != "pdf")
         {
@@ -112,7 +114,7 @@ internal static class TicketLayout
     {
         var station = Station(value);
         if (station.Length == 2) station = $"{station[0]}　{station[1]}";
-        var font = new TicketFont(expand ? 92 : 82, TicketFontFamily.Hei, true);
+        var font = new TicketFont(expand ? 88.5f : 98.5f, TicketFontFamily.Hei, true);
         var suffixFont = new TicketFont(48, Bold: true);
         var hanWidth = canvas.Measure("中", font).Width;
         var widths = station.Select(c => c == '　' ? hanWidth : canvas.Measure(c.ToString(), font).Width).ToArray();
@@ -173,7 +175,7 @@ internal static class TicketLayout
             canvas.DrawText(value, x, y, idFont, Black);
             x += canvas.Measure(value, idFont).Width - 2.2f;
         }
-        canvas.DrawText(name, x + 22, y, new TicketFont(63, Bold: true), Black);
+        canvas.DrawText(name, x + 22, y + 3, new TicketFont(63, Bold: true), Black);
     }
 
     private static void DrawCenteredLines(ITicketDrawingBackend canvas, IReadOnlyList<string> lines,

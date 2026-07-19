@@ -7,12 +7,21 @@ public sealed class TicketRenderer(TicketAssetStore assets)
 {
     public const int CanvasWidth = TicketLayoutRenderer.CanvasWidth;
     public const int CanvasHeight = TicketLayoutRenderer.CanvasHeight;
+    private const int RedPngPadding = 64;
 
     public byte[] RenderPng(TicketRenderData ticket, byte[] qrBytes, bool includeBackground)
     {
         using var bitmap = RenderBitmap(ticket, qrBytes, includeBackground);
         using var stream = new MemoryStream();
-        bitmap.Save(stream, ImageFormat.Png);
+        if (ticket.Style == TicketStyle.Red && includeBackground)
+        {
+            using var expanded = AddRedPngBackground(bitmap);
+            expanded.Save(stream, ImageFormat.Png);
+        }
+        else
+        {
+            bitmap.Save(stream, ImageFormat.Png);
+        }
         return stream.ToArray();
     }
 
@@ -30,6 +39,17 @@ public sealed class TicketRenderer(TicketAssetStore assets)
         if (!renderer.TrySetQrImage(qrBytes, out var qrError))
             throw new TicketAssetException($"二维码图片格式无效：{qrError}");
         return renderer.Render(ticket);
+    }
+
+    private static Bitmap AddRedPngBackground(Bitmap ticket)
+    {
+        var expanded = new Bitmap(ticket.Width + RedPngPadding * 2,
+            ticket.Height + RedPngPadding * 2, PixelFormat.Format32bppPArgb);
+        expanded.SetResolution(ticket.HorizontalResolution, ticket.VerticalResolution);
+        using var graphics = Graphics.FromImage(expanded);
+        graphics.Clear(Color.White);
+        graphics.DrawImageUnscaled(ticket, RedPngPadding, RedPngPadding);
+        return expanded;
     }
 }
 
