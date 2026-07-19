@@ -176,6 +176,13 @@ public sealed partial class TicketGeneratorService(
                 seat = seat[..number.Index] + number.Value.PadLeft(3, '0') +
                        seat[(number.Index + number.Length)..];
         }
+        else
+        {
+            var number = SeatNumberRegex().Match(seat);
+            if (number.Success)
+                seat = seat[..number.Index] + number.Value.PadLeft(2, '0') +
+                       seat[(number.Index + number.Length)..];
+        }
         return prefix + seat;
     }
 
