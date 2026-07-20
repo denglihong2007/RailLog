@@ -67,6 +67,8 @@ public sealed record TicketRenderData(
     string SeatClass,
     string Passenger,
     string MaskedId,
+    string RestrictionText,
+    string MemorialText,
     string NoticeLine1,
     string NoticeLine2,
     string SerialNumber);

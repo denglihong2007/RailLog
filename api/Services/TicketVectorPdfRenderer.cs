@@ -4,6 +4,7 @@ namespace RailLog.API.Services;
 
 internal sealed class TicketVectorPdfRenderer : ITicketDrawingBackend, IDisposable
 {
+    private const float RedTicketVerticalOffset = -(15f * 72f / 25.4f);
     private readonly TicketAssetStore _assets;
     private readonly SKTypeface _train;
     private readonly SKTypeface _id;
@@ -43,7 +44,17 @@ internal sealed class TicketVectorPdfRenderer : ITicketDrawingBackend, IDisposab
                     Canvas.DrawBitmap(background, new SKRect(
                         0, 0, TicketLayout.CanvasWidth, TicketLayout.CanvasHeight));
                 }
-                TicketLayout.Draw(this, ticket, "pdf");
+                if (ticket.Style == TicketStyle.Red)
+                {
+                    Canvas.Save();
+                    Canvas.Translate(0, RedTicketVerticalOffset);
+                    try { TicketLayout.Draw(this, ticket, "pdf"); }
+                    finally { Canvas.Restore(); }
+                }
+                else
+                {
+                    TicketLayout.Draw(this, ticket, "pdf");
+                }
             }
             finally
             {

@@ -65,6 +65,12 @@ List<DashboardAchievement> buildDashboardAchievements(
       _firstTightTransfer(railTrips),
     ),
     _achievement(
+      DashboardAchievementKind.wellPreparedTransfer,
+      '充分打算',
+      '同站换乘等待至少 6 小时、未满 12 小时，且不返回出发站',
+      _firstWellPreparedTransfer(railTrips),
+    ),
+    _achievement(
       DashboardAchievementKind.sevenDayStreak,
       '马不停蹄',
       '连续 7 天每天乘坐火车',
@@ -174,19 +180,96 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.railFerry,
       '铁水联运',
-      '乘坐列车经由粤海轮渡线',
+      '乘坐列车经由粤海轮渡线，或在大连、烟台间完成 24 小时内的跨海接续',
+      _firstRailFerryCompletion(railTrips),
+    ),
+    _achievement(
+      DashboardAchievementKind.railwayWorkerPassenger,
+      '待旅客如职工',
+      '乘坐过路用列车',
       _firstWhere(
         railTrips,
-        (trip) => trip.viaRouteSegments.any(
-          (segment) => segment.routeName.trim().contains('粤海轮渡线'),
-        ),
+        (trip) => RegExp(r'^57\d{3}$').hasMatch(trip.trainNumber.trim()),
       ),
+    ),
+    _achievement(
+      DashboardAchievementKind.verticalChina,
+      '纵贯中国',
+      '在 14 天内探访漠河和三亚站',
+      _firstStationPairWithin(railTrips, '漠河', '三亚', const Duration(days: 14)),
+    ),
+    _achievement(
+      DashboardAchievementKind.horizontalChina,
+      '横贯中国',
+      '在 14 天内探访阿克陶和抚远站',
+      _firstStationPairWithin(railTrips, '阿克陶', '抚远', const Duration(days: 14)),
+    ),
+    _achievement(
+      DashboardAchievementKind.highSpeedExperiment,
+      '冲高实验',
+      '乘坐超过 1 小时且均速超过 300 km/h 的行程',
+      _firstWhere(
+        railTrips,
+        (trip) =>
+            _validDuration(trip) > const Duration(hours: 1) &&
+            (trip.averageSpeedKmh ?? 0) > 300,
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.slowCrawl,
+      '龟速爬行',
+      '乘坐超过 1 小时且均速不高于 50 km/h 的行程',
+      _firstWhere(
+        railTrips,
+        (trip) =>
+            _validDuration(trip) > const Duration(hours: 1) &&
+            trip.averageSpeedKmh != null &&
+            trip.averageSpeedKmh! <= 50,
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.slowerThanCycling,
+      '不如骑车',
+      '单程超过 1 小时且均速低于 30 km/h',
+      _firstWhere(
+        railTrips,
+        (trip) =>
+            _validDuration(trip) > const Duration(hours: 1) &&
+            trip.averageSpeedKmh != null &&
+            trip.averageSpeedKmh! < 30,
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.fleetingMoment,
+      '转瞬即逝',
+      '在福田或深圳北至香港西九龙区间乘坐一等座、商务座或特等座',
+      _firstWhere(railTrips, _unlocksFleetingMoment),
+    ),
+    _achievement(
+      DashboardAchievementKind.borderPorts,
+      '异域风情',
+      '探访阿拉山口、二连、满洲里、绥芬河、丹东、崇左或磨憨口岸车站',
+      _firstStationVisit(railTrips, const {
+        '阿拉山口',
+        '二连',
+        '满洲里',
+        '绥芬河',
+        '丹东',
+        '崇左',
+        '磨憨',
+      }),
+    ),
+    _achievement(
+      DashboardAchievementKind.lonelyPlanet,
+      '孤独星球',
+      '乘坐过和若线及格库线的列车',
+      _firstRouteCollectionCompletion(railTrips, const {'和若线', '格库线'}),
     ),
     _achievement(
       DashboardAchievementKind.hundredThousandKilometers,
       '我就是GPS',
       '累计运转总里程达到 100000 km',
-      _firstMileageCompletion(railTrips, 100000),
+      _firstCumulativeMileageCompletion(railTrips, 100000),
     ),
     _achievement(
       DashboardAchievementKind.fTrain,
@@ -500,6 +583,60 @@ TripRecord? _firstTargetStationCompletion(
   return null;
 }
 
+TripRecord? _firstStationPairWithin(
+  List<TripRecord> trips,
+  String firstStation,
+  String secondStation,
+  Duration maxWindow,
+) {
+  final targets = {
+    _normalizedStation(firstStation),
+    _normalizedStation(secondStation),
+  };
+  final latestVisit = <String, _StationVisit>{};
+  for (final visit in _stationVisits(trips)) {
+    if (!targets.contains(visit.station)) continue;
+    latestVisit[visit.station] = visit;
+    final otherStation = targets.firstWhere(
+      (station) => station != visit.station,
+    );
+    final otherVisit = latestVisit[otherStation];
+    if (otherVisit != null &&
+        visit.time.difference(otherVisit.time) <= maxWindow) {
+      return visit.trip;
+    }
+  }
+  return null;
+}
+
+List<_StationVisit> _stationVisits(List<TripRecord> trips) {
+  final visits = <_StationVisit>[];
+  for (final trip in trips) {
+    visits.add(
+      _StationVisit(
+        station: _normalizedStation(trip.fromStation),
+        time: trip.departureTime,
+        trip: trip,
+      ),
+    );
+    final arrival = trip.arrivalTime;
+    if (arrival != null) {
+      visits.add(
+        _StationVisit(
+          station: _normalizedStation(trip.toStation),
+          time: arrival,
+          trip: trip,
+        ),
+      );
+    }
+  }
+  visits.sort((a, b) {
+    final byTime = a.time.compareTo(b.time);
+    return byTime != 0 ? byTime : a.trip.id.compareTo(b.trip.id);
+  });
+  return visits;
+}
+
 TripRecord? _firstStationVisitDuring(
   List<TripRecord> trips,
   Set<String> targetStations,
@@ -525,6 +662,61 @@ bool _isWithin(
 TripRecord? _firstMileageCompletion(List<TripRecord> trips, double target) {
   for (final trip in trips) {
     if (trip.mileageKm >= target) return trip;
+  }
+  return null;
+}
+
+TripRecord? _firstCumulativeMileageCompletion(
+  List<TripRecord> trips,
+  double target,
+) {
+  var mileage = 0.0;
+  for (final trip in trips) {
+    if (trip.mileageKm > 0) mileage += trip.mileageKm;
+    if (mileage >= target) return trip;
+  }
+  return null;
+}
+
+TripRecord? _firstRouteCollectionCompletion(
+  List<TripRecord> trips,
+  Set<String> requiredRoutes,
+) => _firstCollectionCompletion(
+  trips,
+  requiredRoutes,
+  (trip) => requiredRoutes
+      .where(
+        (route) => trip.viaRouteSegments.any(
+          (segment) => segment.routeName.trim().contains(route),
+        ),
+      )
+      .toSet(),
+);
+
+TripRecord? _firstRailFerryCompletion(List<TripRecord> trips) {
+  for (var currentIndex = 0; currentIndex < trips.length; currentIndex++) {
+    final current = trips[currentIndex];
+    if (current.viaRouteSegments.any(
+      (segment) => segment.routeName.trim().contains('粤海轮渡线'),
+    )) {
+      return current;
+    }
+    final departureStation = _normalizedStation(current.fromStation);
+    if (!departureStation.contains('大连')  && !departureStation.contains('烟台')) continue;
+    final requiredArrivalStation = departureStation.contains('大连') ? '烟台' : '大连';
+    for (var previousIndex = 0; previousIndex < currentIndex; previousIndex++) {
+      final previous = trips[previousIndex];
+      final arrival = previous.arrivalTime;
+      if (arrival == null ||
+          !_normalizedStation(previous.toStation).contains(requiredArrivalStation)) {
+        continue;
+      }
+      final connectionTime = current.departureTime.difference(arrival);
+      if (!connectionTime.isNegative &&
+          connectionTime <= const Duration(hours: 24)) {
+        return current;
+      }
+    }
   }
   return null;
 }
@@ -604,6 +796,19 @@ bool _unlocksOvernightSleeper(TripRecord trip) {
       arrivalMinutes <= 11 * 60;
 }
 
+bool _unlocksFleetingMoment(TripRecord trip) {
+  const premiumSeats = {'一等座', '商务座', '特等座'};
+  if (!premiumSeats.contains(_normalizedSeatType(trip.seatType)) ||
+      trip.arrivalTime == null) {
+    return false;
+  }
+  final from = _normalizedStation(trip.fromStation);
+  final to = _normalizedStation(trip.toStation);
+  const mainlandStations = {'福田', '深圳北'};
+  return (mainlandStations.contains(from) && to == '香港西九龙') ||
+      (from == '香港西九龙' && mainlandStations.contains(to));
+}
+
 TripRecord? _firstTightTransfer(List<TripRecord> trips) {
   for (var outgoingIndex = 0; outgoingIndex < trips.length; outgoingIndex++) {
     final outgoing = trips[outgoingIndex];
@@ -620,6 +825,34 @@ TripRecord? _firstTightTransfer(List<TripRecord> trips) {
       final transferTime = outgoing.departureTime.difference(arrival);
       if (!transferTime.isNegative &&
           transferTime < const Duration(minutes: 10)) {
+        return outgoing;
+      }
+    }
+  }
+  return null;
+}
+
+TripRecord? _firstWellPreparedTransfer(List<TripRecord> trips) {
+  for (var outgoingIndex = 0; outgoingIndex < trips.length; outgoingIndex++) {
+    final outgoing = trips[outgoingIndex];
+    final transferStation = _normalizedStation(outgoing.fromStation);
+    final outgoingDestination = _normalizedStation(outgoing.toStation);
+    if (transferStation.isEmpty || outgoingDestination.isEmpty) continue;
+    for (
+      var incomingIndex = 0;
+      incomingIndex < outgoingIndex;
+      incomingIndex++
+    ) {
+      final incoming = trips[incomingIndex];
+      final arrival = incoming.arrivalTime;
+      if (arrival == null ||
+          _normalizedStation(incoming.toStation) != transferStation ||
+          _normalizedStation(incoming.fromStation) == outgoingDestination) {
+        continue;
+      }
+      final transferTime = outgoing.departureTime.difference(arrival);
+      if (transferTime >= const Duration(hours: 6) &&
+          transferTime < const Duration(hours: 12)) {
         return outgoing;
       }
     }
@@ -663,3 +896,15 @@ TripRecord? _firstTransferChainCompletion(
 
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
+
+class _StationVisit {
+  const _StationVisit({
+    required this.station,
+    required this.time,
+    required this.trip,
+  });
+
+  final String station;
+  final DateTime time;
+  final TripRecord trip;
+}

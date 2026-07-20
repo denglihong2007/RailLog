@@ -105,6 +105,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         ),
       ],
       body: (_) => SafeArea(
+        bottom: false,
         child: M3FadeThroughSwitcher(
           child: KeyedSubtree(
             key: ValueKey(_currentIdx),

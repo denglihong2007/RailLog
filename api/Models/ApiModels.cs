@@ -49,7 +49,13 @@ public sealed record GenerateTicketRequest(
     bool ShowNewAirConditioned);
 
 public sealed record CreateTicketPdfKeyResponse(string Key, DateTime ExpiresAt);
-public sealed record DownloadTicketPdfRequest(string Key, string Password);
+public sealed record DownloadTicketPdfRequest(
+    string Key,
+    string Password,
+    string? RestrictionText = null,
+    string? MemorialText = null,
+    string? NoticeLine1 = null,
+    string? NoticeLine2 = null);
 
 public sealed record SyncTrip(
     long? TicketId,
