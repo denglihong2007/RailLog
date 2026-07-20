@@ -86,6 +86,7 @@ IconData dashboardAchievementIcon(
   DashboardAchievementKind.overnightSeat =>
     Icons.airline_seat_recline_extra_outlined,
   DashboardAchievementKind.tightTransfer => Icons.transfer_within_a_station,
+  DashboardAchievementKind.wellPreparedTransfer => Icons.schedule_outlined,
   DashboardAchievementKind.sevenDayStreak => Icons.local_fire_department,
   DashboardAchievementKind.thirtyDayStreak => Icons.calendar_month_outlined,
   DashboardAchievementKind.duration24Hours => Icons.looks_one_outlined,
@@ -103,6 +104,15 @@ IconData dashboardAchievementIcon(
   DashboardAchievementKind.thousandKilometers => Icons.route_outlined,
   DashboardAchievementKind.airRail => Icons.connecting_airports_outlined,
   DashboardAchievementKind.railFerry => Icons.directions_boat_outlined,
+  DashboardAchievementKind.railwayWorkerPassenger => Icons.engineering_outlined,
+  DashboardAchievementKind.verticalChina => Icons.swap_vert,
+  DashboardAchievementKind.horizontalChina => Icons.swap_horiz,
+  DashboardAchievementKind.highSpeedExperiment => Icons.speed_outlined,
+  DashboardAchievementKind.slowCrawl => Icons.slow_motion_video_outlined,
+  DashboardAchievementKind.slowerThanCycling => Icons.directions_bike_outlined,
+  DashboardAchievementKind.fleetingMoment => Icons.flash_on_outlined,
+  DashboardAchievementKind.borderPorts => Icons.language_outlined,
+  DashboardAchievementKind.lonelyPlanet => Icons.map_outlined,
   DashboardAchievementKind.hundredThousandKilometers =>
     Icons.gps_fixed_outlined,
   DashboardAchievementKind.fTrain => Icons.u_turn_left_outlined,

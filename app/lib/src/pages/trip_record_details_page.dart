@@ -444,12 +444,16 @@ class _GeneratedTicketPanel extends StatefulWidget {
   State<_GeneratedTicketPanel> createState() => _GeneratedTicketPanelState();
 }
 
-class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel> {
+class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
+    with AutomaticKeepAliveClientMixin<_GeneratedTicketPanel> {
   Uint8List? _imageBytes;
   String? _error;
   bool _loading = false;
   bool _savingImage = false;
   bool _buying = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -521,7 +525,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel> {
         tripId: ticketId,
       );
       if (!mounted) return;
-      await showDialog<void>(
+      final openTaobao = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => AlertDialog(
@@ -553,7 +557,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Key 有效期至 ${_formatDateTime(download.expiresAt.toLocal())}，关闭弹窗后将打开淘宝。',
+                'Key 有效期至 ${_formatDateTime(download.expiresAt.toLocal())}。',
                 style: Theme.of(dialogContext).textTheme.bodySmall,
               ),
             ],
@@ -570,14 +574,18 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel> {
               icon: const Icon(Icons.copy_outlined),
               label: const Text('复制 Key'),
             ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('关闭并前往淘宝'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('前往淘宝'),
             ),
           ],
         ),
       );
-      if (!mounted) return;
+      if (!mounted || openTaobao != true) return;
       final opened = await launchUrl(
         Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM'),
         mode: LaunchMode.externalApplication,
@@ -604,6 +612,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colors = Theme.of(context).colorScheme;
     final bytes = _imageBytes;
     return Material(
