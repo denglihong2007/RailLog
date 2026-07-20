@@ -23,6 +23,7 @@ class TripRecord {
   final String? seatNumber;
   final double price;
   final bool isRailTrip;
+  final bool isLocalOnly;
   final String? notes;
 
   String get ticketLabel => ticketId == null ? '本地 #$id' : '#$ticketId';
@@ -61,6 +62,7 @@ class TripRecord {
     this.seatNumber,
     this.price = 0.0,
     this.isRailTrip = true,
+    this.isLocalOnly = false,
     this.notes,
   }) : clientId = clientId ?? _newClientId(),
        createdAt = createdAt ?? DateTime.now(),
@@ -90,6 +92,7 @@ class TripRecord {
       'seat_number': seatNumber,
       'price': price,
       'is_rail_trip': isRailTrip ? 1 : 0,
+      'is_local_only': isLocalOnly ? 1 : 0,
       'notes': notes,
     };
   }
@@ -129,9 +132,12 @@ class TripRecord {
       seatNumber: map['seat_number'] as String?,
       price: (map['price'] as num).toDouble(),
       isRailTrip: (map['is_rail_trip'] as int) == 1,
+      isLocalOnly: (map['is_local_only'] as num?)?.toInt() == 1,
       notes: map['notes'] as String?,
     );
   }
+
+  static String createClientId() => _newClientId();
 }
 
 String _newClientId() {

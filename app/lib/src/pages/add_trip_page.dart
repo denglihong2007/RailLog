@@ -3,7 +3,7 @@ import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
-import 'package:raillog/src/pages/trip_details_page.dart';
+import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/add_trip/entry_method_card.dart';
 import 'package:raillog/src/widgets/add_trip/quick_add_card.dart';
@@ -132,7 +132,7 @@ class _AddTripPageState extends State<AddTripPage> {
     );
     final saved = await Navigator.of(context).push<bool>(
       m3PageRoute(
-        builder: (context) => TripDetailsPage(
+        builder: (context) => TrainTripFormPage(
           trainNumber: train.trainNumber.replaceFirst(' 次', ''),
           scheduleStops: resolvedStops,
           departureStopIndex: departureIndex,
@@ -223,7 +223,7 @@ class _PublicTripNotice extends StatelessWidget {
       child: ListTile(
         leading: Icon(Icons.public, color: colors.onSecondaryContainer),
         title: Text(
-          '行程会公开展示，建议在出行结束后录入',
+          '本地行程不会上传到云端并参加统计',
           style: TextStyle(color: colors.onSecondaryContainer),
         ),
       ),

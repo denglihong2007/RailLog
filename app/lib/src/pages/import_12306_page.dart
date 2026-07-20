@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
-import 'package:raillog/src/pages/trip_details_page.dart';
+import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
@@ -290,7 +290,7 @@ class _Import12306PageState extends State<Import12306Page> {
       setState(() => _preparingPosition = null);
       final saved = await Navigator.of(context).push<bool>(
         m3PageRoute(
-          builder: (context) => TripDetailsPage(
+          builder: (context) => TrainTripFormPage(
             trainNumber: order.trainCode,
             scheduleStops: prepared.stops,
             departureStopIndex: prepared.departureIndex,
