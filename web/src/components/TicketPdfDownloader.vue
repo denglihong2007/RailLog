@@ -5,6 +5,10 @@ import { ref } from 'vue'
 const props = defineProps<{ apiBase: string }>()
 const keyValue = ref('')
 const password = ref('')
+const restrictionText = ref('限乘当日当次车')
+const memorialText = ref('')
+const noticeLine1 = ref('仅供收藏使用  严禁乘车或报销')
+const noticeLine2 = ref('寻梦交通文创祝您旅途愉快')
 const busy = ref(false)
 const error = ref('')
 
@@ -20,7 +24,14 @@ async function downloadPdf() {
     const response = await fetch(`${props.apiBase}/api/ticket-generator/web-pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, password: password.value }),
+      body: JSON.stringify({
+        key,
+        password: password.value,
+        restrictionText: restrictionText.value.trim(),
+        memorialText: memorialText.value.trim(),
+        noticeLine1: noticeLine1.value.trim(),
+        noticeLine2: noticeLine2.value.trim(),
+      }),
     })
     if (!response.ok) {
       const body = await response.json().catch(() => null) as { message?: string } | null
@@ -67,6 +78,26 @@ async function downloadPdf() {
       <div class="ticket-input">
         <KeyRound :size="20" aria-hidden="true" />
         <input id="pdf-key" v-model="keyValue" type="text" inputmode="text" autocomplete="off" spellcheck="false" required />
+      </div>
+
+      <label for="restriction-text">提示文案</label>
+      <div class="ticket-input">
+        <input id="restriction-text" v-model="restrictionText" type="text" maxlength="40" />
+      </div>
+
+      <label for="memorial-text">防伪文案</label>
+      <div class="ticket-input">
+        <input id="memorial-text" v-model="memorialText" type="text" maxlength="40" />
+      </div>
+
+      <label for="notice-line-1">备注第一行</label>
+      <div class="ticket-input">
+        <input id="notice-line-1" v-model="noticeLine1" type="text" maxlength="40" />
+      </div>
+
+      <label for="notice-line-2">备注第二行</label>
+      <div class="ticket-input">
+        <input id="notice-line-2" v-model="noticeLine2" type="text" maxlength="40" />
       </div>
 
       <p v-if="error" class="ticket-pdf-error" role="alert">{{ error }}</p>

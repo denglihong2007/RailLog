@@ -42,18 +42,19 @@ internal static class TicketLayout
     public static void Draw(ITicketDrawingBackend canvas, TicketRenderData ticket, string ticketType)
     {
         var blue = ticket.Style == TicketStyle.Blue;
-        var ticketNumberY = 40f;
+        var ticketNumberY = 35f;
         var stationY = 135f;
         var pinyinY = 250f;
         var trainY = 167f;
         var arrowY = 264f;
         var dateY = 322f;
         var priceY = 420f;
-        var memorialY = 633f;
-        var identityY = 737f;
-        var serialNumberY = 1023f;
+        var restrictionY = 525f;
+        var memorialY = 623f;
+        var identityY = 727f;
+        var serialNumberY = blue ? 1023f : 1000f;
 
-        canvas.DrawText(ticket.TicketNumber, 65, ticketNumberY,
+        canvas.DrawText(ticket.TicketNumber, 88, ticketNumberY,
             new TicketFont(76, TicketFontFamily.Arial), Red);
         var expand = Station(ticket.FromStation).Length >= 5 && Station(ticket.ToStation).Length >= 5;
         DrawStation(canvas, ticket.FromStation, 360, stationY, expand);
@@ -86,7 +87,9 @@ internal static class TicketLayout
             new(ticket.Price.ToString("F1"), new(75, TicketFontFamily.IdCode)),
             SmallLabel("元", 9));
         canvas.DrawText(ticket.SeatClass, 1230, priceY, new TicketFont(63, Bold: true), Black);
-        canvas.DrawText("仅供收藏纪念使用", 112, memorialY,
+        canvas.DrawText(ticket.RestrictionText, 112, restrictionY,
+            new TicketFont(63, Bold: true), Black);
+        canvas.DrawText(ticket.MemorialText, 112, memorialY,
             new TicketFont(63, Bold: true), Black);
         DrawIdAndName(canvas, ticket.MaskedId, ticket.Passenger, 112, identityY - 8);
 
@@ -97,8 +100,8 @@ internal static class TicketLayout
         canvas.DrawText(ticket.SerialNumber, 142, serialNumberY,
             new TicketFont(58, Bold: true), Black, scaleX: .95f);
         var qrBounds = blue
-            ? new TicketRect(1443, identityY, 230, 230)
-            : new TicketRect(1352, 745, 350, 350);
+            ? new TicketRect(1443, identityY, 240, 240)
+            : new TicketRect(1352, 745, 327, 327);
         canvas.DrawQr(qrBounds, Black);
         if (ticketType != "pdf")
         {
@@ -114,8 +117,8 @@ internal static class TicketLayout
     {
         var station = Station(value);
         if (station.Length == 2) station = $"{station[0]}　{station[1]}";
-        var font = new TicketFont(expand ? 88.5f : 98.5f, TicketFontFamily.Hei, true);
-        var suffixFont = new TicketFont(48, Bold: true);
+        var font = new TicketFont(expand ? 82f : 92f, TicketFontFamily.Hei, true);
+        var suffixFont = new TicketFont(56, Bold: true);
         var hanWidth = canvas.Measure("中", font).Width;
         var widths = station.Select(c => c == '　' ? hanWidth : canvas.Measure(c.ToString(), font).Width).ToArray();
         var nameWidth = widths.Sum() + Math.Max(0, station.Length - 1) * 12;
@@ -169,11 +172,13 @@ internal static class TicketLayout
         float x, float y)
     {
         var idFont = new TicketFont(64, TicketFontFamily.IdCode);
+        var songFont = new TicketFont(64, TicketFontFamily.Song, Bold: true);
         foreach (var character in id)
         {
             var value = character.ToString();
-            canvas.DrawText(value, x, y, idFont, Black);
-            x += canvas.Measure(value, idFont).Width - 2.2f;
+            var currentFont = (character == '*') ? songFont : idFont;
+            canvas.DrawText(value, x, y, currentFont, Black);
+            x += canvas.Measure(value, currentFont).Width - 2.2f;
         }
         canvas.DrawText(name, x + 22, y + 3, new TicketFont(63, Bold: true), Black);
     }

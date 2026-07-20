@@ -15,12 +15,21 @@ public sealed partial class TicketGeneratorService(
     HttpClient httpClient,
     IOptions<TicketPdfOptions> pdfOptions)
 {
-    private const string NoticeLine1 = "买票请到12306  发货请到95306";
-    private const string NoticeLine2 = "中国铁路祝您旅途愉快";
+    private const string DefaultRestrictionText = "限乘当日当次车";
+    private const string DefaultMemorialText = "仅供收藏纪念使用";
+    private const string DefaultNoticeLine1 = "买票请到12306  发货请到95306";
+    private const string DefaultNoticeLine2 = "中国铁路祝您旅途愉快";
 
     public async Task<TicketGenerationResult?> GenerateAsync(
         GenerateTicketRequest request,
         bool pdf,
+        CancellationToken cancellationToken) =>
+        await GenerateAsync(request, pdf, TicketText.Default, cancellationToken);
+
+    private async Task<TicketGenerationResult?> GenerateAsync(
+        GenerateTicketRequest request,
+        bool pdf,
+        TicketText text,
         CancellationToken cancellationToken)
     {
         var error = Validate(request, out var style);
@@ -48,8 +57,10 @@ public sealed partial class TicketGeneratorService(
             FormatSeatClass(trip.SeatType, request.ShowNewAirConditioned),
             request.Passenger.Trim(),
             request.MaskedId.Trim(),
-            NoticeLine1,
-            NoticeLine2,
+            text.Restriction,
+            text.Memorial,
+            text.NoticeLine1,
+            text.NoticeLine2,
             $"{request.SerialPrefix.Trim()}{ticketNumber}    JM");
         var bytes = pdf
             ? renderer.RenderPdf(data, await qrTask)
@@ -67,7 +78,8 @@ public sealed partial class TicketGeneratorService(
         if (requestJson is null) throw new TicketPdfKeyException();
         var generationRequest = JsonSerializer.Deserialize<GenerateTicketRequest>(requestJson)
             ?? throw new TicketPdfKeyException();
-        return await GenerateAsync(generationRequest, pdf: true, cancellationToken);
+        return await GenerateAsync(generationRequest, pdf: true,
+            ResolvePdfText(request), cancellationToken);
     }
 
     public async Task<CreateTicketPdfKeyResponse?> CreatePdfKeyAsync(GenerateTicketRequest request)
@@ -85,6 +97,18 @@ public sealed partial class TicketGeneratorService(
             JsonSerializer.Serialize(request),
             expiresAt);
         return new CreateTicketPdfKeyResponse(displayKey, expiresAt);
+    }
+
+    private static TicketText ResolvePdfText(DownloadTicketPdfRequest request) => new(
+        NormalizePdfText(request.RestrictionText, DefaultRestrictionText),
+        NormalizePdfText(request.MemorialText, DefaultMemorialText),
+        NormalizePdfText(request.NoticeLine1, DefaultNoticeLine1),
+        NormalizePdfText(request.NoticeLine2, DefaultNoticeLine2));
+
+    private static string NormalizePdfText(string? value, string fallback)
+    {
+        if (value is null) return fallback;
+        return value;
     }
 
     private void ValidatePdfPassword(string? supplied)
@@ -197,6 +221,19 @@ public sealed partial class TicketGeneratorService(
 
     [GeneratedRegex(@"\d+", RegexOptions.CultureInvariant)]
     private static partial Regex SeatNumberRegex();
+
+    private sealed record TicketText(
+        string Restriction,
+        string Memorial,
+        string NoticeLine1,
+        string NoticeLine2)
+    {
+        public static TicketText Default { get; } = new(
+            DefaultRestrictionText,
+            DefaultMemorialText,
+            DefaultNoticeLine1,
+            DefaultNoticeLine2);
+    }
 }
 
 public sealed record TicketGenerationResult(byte[] Bytes, string TicketNumber, TicketStyle Style);
