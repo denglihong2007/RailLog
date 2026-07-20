@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
 import 'package:raillog/src/pages/add_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
-import 'package:raillog/src/pages/trip_details_page.dart';
+import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 
@@ -168,7 +168,7 @@ void main() {
   test('review page receives import progress and ticket values', () {
     final departure = DateTime(2026, 7, 18, 21, 35);
     final arrival = DateTime(2026, 7, 19, 8, 12);
-    final page = TripDetailsPage(
+    final page = TrainTripFormPage(
       trainNumber: 'Z123',
       scheduleStops: [
         TrainScheduleStop(

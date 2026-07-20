@@ -9,6 +9,7 @@ import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
+import 'package:raillog/src/services/ticket_display_policy.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -226,7 +227,11 @@ class _TripDetailsContent extends StatelessWidget {
                 animation: TicketGeneratorSettings.instance,
                 builder: (context, _) {
                   final settings = TicketGeneratorSettings.instance;
-                  if (settings.displayStyle == TicketDisplayStyle.md3) {
+                  final displayStyle = ticketDisplayStyleForTrip(
+                    trip,
+                    settings.displayStyle,
+                  );
+                  if (displayStyle == TicketDisplayStyle.md3) {
                     return M3Reveal(child: _DetailsTicket(trip: trip));
                   }
                   return M3Reveal(

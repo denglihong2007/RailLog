@@ -22,7 +22,17 @@ class DbHelper {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
+  }
+
+  Future<void> useInMemoryDatabaseForTesting() async {
+    await _database?.close();
+    _database = await openDatabase(
+      inMemoryDatabasePath,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -50,7 +60,8 @@ class DbHelper {
         seat_type TEXT,
         seat_number TEXT,
         price REAL NOT NULL,
-        is_rail_trip INTEGER NOT NULL,   
+        is_rail_trip INTEGER NOT NULL,
+        is_local_only INTEGER NOT NULL DEFAULT 0,
         notes TEXT
       )
     ''');
@@ -93,6 +104,11 @@ class DbHelper {
     if (oldVersion < 5) {
       await db.execute('ALTER TABLE trip_records ADD COLUMN ticket_id INTEGER');
     }
+    if (oldVersion < 6) {
+      await db.execute(
+        'ALTER TABLE trip_records ADD COLUMN is_local_only INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   Future<void> _createSettingsTable(Database db) async {
@@ -107,7 +123,12 @@ class DbHelper {
   Future<int> insertTrip(TripRecord trip) async {
     final db = await database;
     final values = trip.toMap()..remove('id');
-    values['owner_user_id'] ??= activeUserId?.call();
+    if (trip.isLocalOnly) {
+      values['ticket_id'] = null;
+      values['owner_user_id'] = null;
+    } else {
+      values['owner_user_id'] ??= activeUserId?.call();
+    }
     final result = await db.insert('trip_records', values);
     _notifyTripsChanged();
     return result;
@@ -115,15 +136,57 @@ class DbHelper {
 
   Future<int> updateTrip(TripRecord trip) async {
     final db = await database;
+    final updatedAt = DateTime.now().toIso8601String();
     final values = trip.toMap()
       ..remove('id')
-      ..['updated_at'] = DateTime.now().toIso8601String();
-    final result = await db.update(
-      'trip_records',
-      values,
-      where: 'id = ?',
-      whereArgs: [trip.id],
-    );
+      ..['updated_at'] = updatedAt;
+    final result = await db.transaction((txn) async {
+      final rows = await txn.query(
+        'trip_records',
+        where: 'id = ?',
+        whereArgs: [trip.id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return 0;
+
+      final existing = rows.first;
+      final wasLocalOnly = (existing['is_local_only'] as num?)?.toInt() == 1;
+      final hadCloudIdentity =
+          existing['ticket_id'] != null || existing['owner_user_id'] != null;
+      if (!wasLocalOnly && trip.isLocalOnly && hadCloudIdentity) {
+        values
+          ..['client_id'] = TripRecord.createClientId()
+          ..['ticket_id'] = null
+          ..['owner_user_id'] = null;
+        final updated = await txn.update(
+          'trip_records',
+          values,
+          where: 'id = ?',
+          whereArgs: [trip.id],
+        );
+        final tombstone = Map<String, Object?>.from(existing)
+          ..remove('id')
+          ..['updated_at'] = updatedAt
+          ..['deleted_at'] = updatedAt
+          ..['is_local_only'] = 0;
+        await txn.insert('trip_records', tombstone);
+        return updated;
+      }
+
+      if (trip.isLocalOnly) {
+        values
+          ..['ticket_id'] = null
+          ..['owner_user_id'] = null;
+      } else if (wasLocalOnly) {
+        values['owner_user_id'] ??= activeUserId?.call();
+      }
+      return txn.update(
+        'trip_records',
+        values,
+        where: 'id = ?',
+        whereArgs: [trip.id],
+      );
+    });
     _notifyTripsChanged();
     return result;
   }
@@ -132,14 +195,29 @@ class DbHelper {
     final db = await database;
     final userId = activeUserId?.call();
     final now = DateTime.now().toIso8601String();
-    final result = await db.update(
-      'trip_records',
-      {'deleted_at': now, 'updated_at': now},
-      where: userId == null
-          ? 'id = ? AND deleted_at IS NULL AND owner_user_id IS NULL'
-          : 'id = ? AND deleted_at IS NULL AND (owner_user_id IS NULL OR owner_user_id = ?)',
-      whereArgs: userId == null ? [id] : [id, userId],
-    );
+    final where = userId == null
+        ? 'id = ? AND deleted_at IS NULL AND owner_user_id IS NULL'
+        : 'id = ? AND deleted_at IS NULL AND (owner_user_id IS NULL OR owner_user_id = ?)';
+    final whereArgs = userId == null ? <Object?>[id] : <Object?>[id, userId];
+    final result = await db.transaction((txn) async {
+      final rows = await txn.query(
+        'trip_records',
+        columns: ['is_local_only'],
+        where: where,
+        whereArgs: whereArgs,
+        limit: 1,
+      );
+      if (rows.isEmpty) return 0;
+      if ((rows.first['is_local_only'] as num?)?.toInt() == 1) {
+        return txn.delete('trip_records', where: where, whereArgs: whereArgs);
+      }
+      return txn.update(
+        'trip_records',
+        {'deleted_at': now, 'updated_at': now},
+        where: where,
+        whereArgs: whereArgs,
+      );
+    });
     _notifyTripsChanged();
     return result;
   }
@@ -182,10 +260,10 @@ class DbHelper {
     final db = await database;
     await db.update('trip_records', {
       'owner_user_id': userId,
-    }, where: 'owner_user_id IS NULL');
+    }, where: 'owner_user_id IS NULL AND is_local_only = 0');
     final maps = await db.query(
       'trip_records',
-      where: 'owner_user_id = ?',
+      where: 'owner_user_id = ? AND is_local_only = 0',
       whereArgs: [userId],
       orderBy: 'updated_at',
     );
@@ -201,11 +279,15 @@ class DbHelper {
       for (final cloudTrip in cloudTrips) {
         final existing = await txn.query(
           'trip_records',
-          columns: ['id', 'ticket_id', 'updated_at'],
+          columns: ['id', 'ticket_id', 'updated_at', 'is_local_only'],
           where: 'client_id = ?',
           whereArgs: [cloudTrip.clientId],
           limit: 1,
         );
+        if (existing.isNotEmpty &&
+            (existing.first['is_local_only'] as num?)?.toInt() == 1) {
+          continue;
+        }
         final values = cloudTrip.toMap()
           ..remove('id')
           ..['owner_user_id'] = userId;
