@@ -10,7 +10,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  testWidgets('新增页在行程属性中显示铁路行程和本地行程', (tester) async {
+  testWidgets('新增页在行程属性中显示铁路行程和云端行程', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: ManualTripPage()));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
@@ -18,7 +18,14 @@ void main() {
 
     expect(find.text('行程属性'), findsOneWidget);
     expect(find.text('铁路行程'), findsOneWidget);
-    expect(find.text('本地行程'), findsOneWidget);
+    expect(find.text('云端行程'), findsOneWidget);
+    expect(find.text('本地行程'), findsNothing);
+
+    final cloudTripSwitch = find.widgetWithText(SwitchListTile, '云端行程');
+    expect(tester.widget<SwitchListTile>(cloudTripSwitch).value, isTrue);
+    await tester.tap(cloudTripSwitch);
+    await tester.pump();
+    expect(tester.widget<SwitchListTile>(cloudTripSwitch).value, isFalse);
   });
 
   testWidgets('编辑页将同步开关显示为云端行程', (tester) async {

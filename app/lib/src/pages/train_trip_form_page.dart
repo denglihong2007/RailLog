@@ -458,7 +458,6 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
           TripPropertiesSection(
             isRailTrip: true,
             isLocalOnly: _isLocalOnly,
-            isEditing: false,
             enabled: !_isSaving,
             showRailTrip: false,
             onRailTripChanged: (_) {},

@@ -516,6 +516,59 @@ void main() {
     );
     expect(achievements.map((item) => item.title), isNot(contains('烂柯之人')));
   });
+  _registerNewAchievementTests();
+}
+
+void _registerNewAchievementTests() {
+  test('位移为零要求环线列车已完成全程且始发终到站相同', () {
+    final matching = _trip(
+      id: 1,
+      fromStation: '上海站',
+      toStation: '上海',
+      arrivalTime: DateTime(2026, 1, 2),
+    );
+    expect(
+      _achievement([
+        matching,
+      ], DashboardAchievementKind.zeroDisplacement).unlockedBy?.id,
+      matching.id,
+    );
+    expect(
+      _achievement([
+        _trip(id: 2, fromStation: '上海', toStation: '上海'),
+      ], DashboardAchievementKind.zeroDisplacement).isUnlocked,
+      isFalse,
+    );
+    expect(
+      _achievement([
+        _trip(
+          id: 3,
+          fromStation: '上海',
+          toStation: '北京',
+          arrivalTime: DateTime(2026, 1, 2),
+        ),
+      ], DashboardAchievementKind.zeroDisplacement).isUnlocked,
+      isFalse,
+    );
+  });
+
+  test('逐梦之路匹配完整的 25DT 型号', () {
+    expect(
+      _achievement([
+        _trip(id: 1, rollingStock: '25DT-1234'),
+      ], DashboardAchievementKind.dreamPath).isUnlocked,
+      isTrue,
+    );
+    for (final model in ['25D', '25DTX', 'CRH25DT']) {
+      expect(
+        _achievement([
+          _trip(id: 2, rollingStock: model),
+        ], DashboardAchievementKind.dreamPath).isUnlocked,
+        isFalse,
+        reason: model,
+      );
+    }
+  });
 }
 
 DashboardAchievement _achievement(
