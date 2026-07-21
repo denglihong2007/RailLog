@@ -130,6 +130,8 @@ IconData dashboardAchievementIcon(
   DashboardAchievementKind.endsOfTheEarth => Icons.landscape_outlined,
   DashboardAchievementKind.fourFamousNorths => Icons.explore_outlined,
   DashboardAchievementKind.youthPriceless => Icons.airline_seat_recline_normal,
+  DashboardAchievementKind.zeroDisplacement => Icons.loop,
+  DashboardAchievementKind.dreamPath => Icons.auto_awesome_outlined,
 };
 
 String _trainLabel(String value) {

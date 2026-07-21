@@ -395,7 +395,6 @@ class _ManualTripPageState extends State<ManualTripPage> {
           TripPropertiesSection(
             isRailTrip: _isRailTrip,
             isLocalOnly: _isLocalOnly,
-            isEditing: widget.initialTrip != null,
             enabled: !_isSaving,
             onRailTripChanged: (value) => setState(() => _isRailTrip = value),
             onLocalOnlyChanged: (value) => setState(() => _isLocalOnly = value),

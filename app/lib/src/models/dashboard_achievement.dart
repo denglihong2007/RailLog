@@ -45,6 +45,8 @@ enum DashboardAchievementKind {
   endsOfTheEarth,
   fourFamousNorths,
   youthPriceless,
+  zeroDisplacement,
+  dreamPath,
 }
 
 class DashboardAchievement {

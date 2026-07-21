@@ -40,7 +40,10 @@ class TrainScheduleStop {
 
   factory TrainScheduleStop.fromJson(Map<String, dynamic> json) {
     return TrainScheduleStop(
-      stationName: json['station_name'] ?? '',
+      stationName: (json['station_name']?.toString() ?? '').replaceAll(
+        RegExp(r'\s+'),
+        '',
+      ),
       stationNo: json['station_no'] ?? '',
       arriveTime: json['arrive_time'] ?? '',
       startTime: json['start_time'] ?? '',

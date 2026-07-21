@@ -136,7 +136,6 @@ class TripPropertiesSection extends StatelessWidget {
     super.key,
     required this.isRailTrip,
     required this.isLocalOnly,
-    required this.isEditing,
     required this.enabled,
     required this.onRailTripChanged,
     required this.onLocalOnlyChanged,
@@ -145,7 +144,6 @@ class TripPropertiesSection extends StatelessWidget {
 
   final bool isRailTrip;
   final bool isLocalOnly;
-  final bool isEditing;
   final bool enabled;
   final ValueChanged<bool> onRailTripChanged;
   final ValueChanged<bool> onLocalOnlyChanged;
@@ -167,10 +165,10 @@ class TripPropertiesSection extends StatelessWidget {
           const Divider(height: 1),
         ],
         _SwitchTile(
-          title: isEditing ? '云端行程' : '本地行程',
-          value: isEditing ? !isLocalOnly : isLocalOnly,
+          title: '云端行程',
+          value: !isLocalOnly,
           enabled: enabled,
-          onChanged: (value) => onLocalOnlyChanged(isEditing ? !value : value),
+          onChanged: (value) => onLocalOnlyChanged(!value),
         ),
       ],
     ),

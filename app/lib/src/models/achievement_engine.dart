@@ -49,61 +49,61 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.freeMeal,
       '蹭吃蹭喝',
-      '饭点乘坐 50 km 以内的商务座',
+      '在用餐时段乘坐里程不超过 50 公里的商务座',
       _firstWhere(railTrips, _unlocksFreeMeal),
     ),
     _achievement(
       DashboardAchievementKind.overnightSeat,
       '铁腚行',
-      '乘坐硬座或二等座完整度过 00:00-06:00',
+      '乘坐硬座或二等座，完整度过 00:00 至 06:00',
       _firstWhere(railTrips, _unlocksOvernightSeat),
     ),
     _achievement(
       DashboardAchievementKind.tightTransfer,
       '极限换乘',
-      '同站换乘时间小于 10 分钟',
+      '完成同站换乘，换乘时间少于 10 分钟',
       _firstTightTransfer(railTrips),
     ),
     _achievement(
       DashboardAchievementKind.wellPreparedTransfer,
       '充分打算',
-      '同站换乘等待至少 6 小时、未满 12 小时，且不返回出发站',
+      '完成同站换乘，等待至少 6 小时但少于 12 小时',
       _firstWellPreparedTransfer(railTrips),
     ),
     _achievement(
       DashboardAchievementKind.sevenDayStreak,
       '马不停蹄',
-      '连续 7 天每天乘坐火车',
+      '连续 7 天乘坐列车',
       _firstStreakCompletion(railTrips, 7),
     ),
     _achievement(
       DashboardAchievementKind.thirtyDayStreak,
       '漂泊不定',
-      '连续 30 天每天乘坐火车',
+      '连续 30 天乘坐列车',
       _firstStreakCompletion(railTrips, 30),
     ),
     _achievement(
       DashboardAchievementKind.duration24Hours,
       '恍如昨日',
-      '单程列车乘坐时长至少 24 小时',
+      '乘坐单程时长至少 24 小时的列车',
       _firstDurationAtLeast(railTrips, const Duration(hours: 24)),
     ),
     _achievement(
       DashboardAchievementKind.duration48Hours,
       '旦复旦兮',
-      '单程列车乘坐时长至少 48 小时',
+      '乘坐单程时长至少 48 小时的列车',
       _firstDurationAtLeast(railTrips, const Duration(hours: 48)),
     ),
     _achievement(
       DashboardAchievementKind.duration72Hours,
       '舟车劳顿',
-      '单程列车乘坐时长至少 72 小时',
+      '乘坐单程时长至少 72 小时的列车',
       _firstDurationAtLeast(railTrips, const Duration(hours: 72)),
     ),
     _achievement(
       DashboardAchievementKind.all25Series,
       '五彩斑斓',
-      '运转过 25 系列客车的所有常规车型',
+      '分别乘坐全部常规 25 系列客车型号',
       _firstCollectionCompletion(
         railTrips,
         _regular25Models,
@@ -113,7 +113,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.allEmuSeries,
       '琳琅满目',
-      '运转过和谐号、复兴号系列所有常规子型号',
+      '分别乘坐全部常规和谐号、复兴号子型号',
       _firstCollectionCompletion(
         railTrips,
         _emuModels,
@@ -123,7 +123,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.allSeatTypes,
       '我全都要',
-      '运转过所有常规席别',
+      '分别乘坐全部常规席别',
       _firstCollectionCompletion(
         railTrips,
         _regularSeatTypes,
@@ -133,7 +133,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.noSeat12Hours,
       '体力非凡',
-      '持无座车票乘车至少 12 小时',
+      '持无座车票乘坐至少 12 小时',
       _firstWhere(
         railTrips,
         (trip) =>
@@ -144,49 +144,49 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.hundredTickets,
       '日积月累',
-      '留存至少 100 张本人车票',
+      '累计留存至少 100 张本人车票',
       railTrips.length >= 100 ? railTrips[99] : null,
     ),
     _achievement(
       DashboardAchievementKind.midnightBoarding,
       '夜半钟声',
-      '在 00:00-05:00 之间乘车或下车',
+      '在 00:00 至 05:00 乘车或下车',
       _firstMidnightBoarding(railTrips),
     ),
     _achievement(
       DashboardAchievementKind.wallFacingSeat,
       '面壁者',
-      '二等座坐席位于车厢第 1 排或第 18 排',
+      '乘坐车厢第 1 排或第 18 排的二等座',
       _firstWhere(railTrips, _unlocksWallFacingSeat),
     ),
     _achievement(
       DashboardAchievementKind.hundredStations,
       '百站印记',
-      '累计去重到访客运车站不少于 100 座',
+      '累计到访至少 100 座不同的客运车站',
       _firstStationCompletion(railTrips, 100),
     ),
     _achievement(
       DashboardAchievementKind.thousandKilometers,
       '千里足迹',
-      '单次运转里程不少于 1000 km',
+      '完成单程至少 1,000 公里的行程',
       _firstMileageCompletion(railTrips, 1000),
     ),
     _achievement(
       DashboardAchievementKind.airRail,
       '空铁联运',
-      '从三处不同的国内机场铁路站出发或到达',
+      '累计到访至少 3 座不同的国内机场铁路站',
       _firstAirportStationCompletion(railTrips, 3),
     ),
     _achievement(
       DashboardAchievementKind.railFerry,
       '铁水联运',
-      '乘坐列车经由粤海轮渡线，或在大连、烟台间完成 24 小时内的跨海接续',
+      '乘坐经由粤海轮渡线的列车，或在大连与烟台间完成 24 小时内的跨海接续',
       _firstRailFerryCompletion(railTrips),
     ),
     _achievement(
       DashboardAchievementKind.railwayWorkerPassenger,
       '待旅客如职工',
-      '乘坐过路用列车',
+      '乘坐一次路用列车',
       _firstWhere(
         railTrips,
         (trip) => RegExp(r'^57\d{3}$').hasMatch(trip.trainNumber.trim()),
@@ -195,19 +195,19 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.verticalChina,
       '纵贯中国',
-      '在 14 天内探访漠河和三亚站',
+      '在 14 天内到访漠河站和三亚站',
       _firstStationPairWithin(railTrips, '漠河', '三亚', const Duration(days: 14)),
     ),
     _achievement(
       DashboardAchievementKind.horizontalChina,
       '横贯中国',
-      '在 14 天内探访阿克陶和抚远站',
+      '在 14 天内到访阿克陶站和抚远站',
       _firstStationPairWithin(railTrips, '阿克陶', '抚远', const Duration(days: 14)),
     ),
     _achievement(
       DashboardAchievementKind.highSpeedExperiment,
       '冲高实验',
-      '乘坐超过 1 小时且均速超过 300 km/h 的行程',
+      '完成时长超过 1 小时且均速超过 300 公里/小时的行程',
       _firstWhere(
         railTrips,
         (trip) =>
@@ -218,7 +218,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.slowCrawl,
       '龟速爬行',
-      '乘坐超过 1 小时且均速不高于 50 km/h 的行程',
+      '完成时长超过 1 小时且均速不超过 50 公里/小时的行程',
       _firstWhere(
         railTrips,
         (trip) =>
@@ -230,7 +230,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.slowerThanCycling,
       '不如骑车',
-      '单程超过 1 小时且均速低于 30 km/h',
+      '完成时长超过 1 小时且均速低于 30 公里/小时的行程',
       _firstWhere(
         railTrips,
         (trip) =>
@@ -242,13 +242,13 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.fleetingMoment,
       '转瞬即逝',
-      '在福田或深圳北至香港西九龙区间乘坐一等座、商务座或特等座',
+      '乘坐福田或深圳北与香港西九龙间的一等座、商务座或特等座',
       _firstWhere(railTrips, _unlocksFleetingMoment),
     ),
     _achievement(
       DashboardAchievementKind.borderPorts,
       '异域风情',
-      '探访阿拉山口、二连、满洲里、绥芬河、丹东、崇左或磨憨口岸车站',
+      '到访阿拉山口、二连、满洲里、绥芬河、丹东、崇左或磨憨站',
       _firstStationVisit(railTrips, const {
         '阿拉山口',
         '二连',
@@ -262,13 +262,13 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.lonelyPlanet,
       '孤独星球',
-      '乘坐过和若线及格库线的列车',
+      '分别乘坐经由和若线与格库线的列车',
       _firstRouteCollectionCompletion(railTrips, const {'和若线', '格库线'}),
     ),
     _achievement(
       DashboardAchievementKind.hundredThousandKilometers,
       '我就是GPS',
-      '累计运转总里程达到 100000 km',
+      '累计乘车里程至少 100,000 公里',
       _firstCumulativeMileageCompletion(railTrips, 100000),
     ),
     _achievement(
@@ -286,7 +286,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.axleOverheat,
       '轴温过高',
-      '搭乘 CR400BF-5033 车型',
+      '乘坐一次 CR400BF-5033 型列车',
       _firstWhere(
         railTrips,
         (trip) => _rollingStockMatches(trip.rollingStock, const {
@@ -297,7 +297,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.permanentMagnetPower,
       '永磁动力',
-      '乘坐 CRH380AN 车型',
+      '乘坐一次 CRH380AN 型列车',
       _firstWhere(
         railTrips,
         (trip) => _rollingStockMatches(trip.rollingStock, const {
@@ -308,19 +308,19 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.advantageIsMine,
       '优势在我',
-      '探访徐州站或徐州东站',
+      '到访徐州站或徐州东站',
       _firstStationVisit(railTrips, const {'徐州', '徐州东'}),
     ),
     _achievement(
       DashboardAchievementKind.platformSubsidence,
       '站台沉降',
-      '探访杭州东站',
+      '到访杭州东站',
       _firstStationVisit(railTrips, const {'杭州东'}),
     ),
     _achievement(
       DashboardAchievementKind.archaeologyTeam,
       '考古队',
-      '录入 15 年之前的行程',
+      '录入至少 15 年前的行程',
       _firstWhere(
         railTrips,
         (trip) => trip.departureTime.isBefore(
@@ -335,7 +335,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.strategist,
       '战略家',
-      '从定西北站乘坐到镇江南站',
+      '乘坐定西北站至镇江南站的列车',
       _firstWhere(
         railTrips,
         (trip) =>
@@ -347,7 +347,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.eveOfTheStorm,
       '风雨前夜',
-      '在 2019.12.01-2020.01.23 探访武汉、汉口或武昌站',
+      '在 2019-12-01 至 2020-01-23 到访武汉站、汉口站或武昌站',
       _firstStationVisitDuring(
         railTrips,
         const {'武汉', '汉口', '武昌'},
@@ -358,7 +358,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.tenNumericTrains,
       '慢慢旅途',
-      '乘坐过 10 次纯数字车次',
+      '累计乘坐至少 10 次纯数字车次',
       _firstCountCompletion(
         railTrips,
         10,
@@ -368,25 +368,25 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.overnightSleeper,
       '夕发朝至',
-      '18:00-00:00 发车，05:00-11:00 到达的卧铺行程',
+      '乘坐 18:00 至 00:00 发车且 05:00 至 11:00 到达的卧铺列车',
       _firstWhere(railTrips, _unlocksOvernightSleeper),
     ),
     _achievement(
       DashboardAchievementKind.tripleTransfer,
       '辗转挪移',
-      '连续换乘至少 3 次，每次间隔不超过 3 小时',
+      '连续换乘至少 3 次，每次换乘间隔不超过 3 小时',
       _firstTransferChainCompletion(railTrips, 3),
     ),
     _achievement(
       DashboardAchievementKind.endsOfTheEarth,
       '天涯海角',
-      '探访天涯海角站',
+      '到访天涯海角站',
       _firstStationVisit(railTrips, const {'天涯海角'}),
     ),
     _achievement(
       DashboardAchievementKind.fourFamousNorths,
       '四大名北',
-      '探访阳泉北、盘锦北、孝感北和邵阳北站',
+      '分别到访阳泉北站、盘锦北站、孝感北站和邵阳北站',
       _firstTargetStationCompletion(railTrips, const {
         '阳泉北',
         '盘锦北',
@@ -397,13 +397,36 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.youthPriceless,
       '青春没有售价',
-      '乘坐火车前往拉萨，并且全程硬座',
+      '乘坐全程硬座列车到达拉萨站',
       _firstWhere(
         railTrips,
         (trip) =>
             _normalizedStation(trip.toStation) == '拉萨' &&
             trip.arrivalTime != null &&
             _normalizedSeatType(trip.seatType) == '硬座',
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.zeroDisplacement,
+      '位移为零',
+      '乘坐始发站与终到站相同的环线列车全程',
+      _firstWhere(
+        railTrips,
+        (trip) =>
+            trip.arrivalTime != null &&
+            _normalizedStation(trip.fromStation) ==
+                _normalizedStation(trip.toStation),
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.dreamPath,
+      '逐梦之路',
+      '乘坐一次 25DT 型列车',
+      _firstWhere(
+        railTrips,
+        (trip) => _rollingStockMatches(trip.rollingStock, const {
+          '25DT',
+        }).contains('25DT'),
       ),
     ),
   ];
@@ -488,7 +511,7 @@ Set<String> _rollingStockMatches(String? value, Set<String> models) {
   return models
       .where(
         (model) => RegExp(
-          '(^|[^A-Z0-9])${RegExp.escape(model)}(?![A-Z0-9])',
+          '${RegExp.escape(model)}(?![A-Z0-9])',
         ).hasMatch(normalized),
       )
       .toSet();
