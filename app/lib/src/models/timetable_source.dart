@@ -1,5 +1,5 @@
 enum TimetableSource {
-  online('在线（包含2025及以后）'),
+  online('在线'),
   year2009('2009'),
   year2010('2010'),
   year2011('2011'),
