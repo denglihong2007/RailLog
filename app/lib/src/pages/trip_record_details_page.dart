@@ -5,12 +5,14 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -502,6 +504,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     final bytes = _imageBytes;
     if (ticketId == null || bytes == null || _savingImage) return;
     setState(() => _savingImage = true);
+    var saved = false;
     try {
       final path = await TicketGeneratorService.saveImage(
         tripId: ticketId,
@@ -511,6 +514,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('车票图片已保存\n保存位置：$path')));
+      saved = true;
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -518,6 +522,12 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
       ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
     } finally {
       if (mounted) setState(() => _savingImage = false);
+    }
+    if (saved && mounted) {
+      await maybeShowEngagementPrompt(
+        context,
+        EngagementPromptEvent.ticketImageSaved,
+      );
     }
   }
 

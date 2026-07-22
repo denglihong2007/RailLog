@@ -6,11 +6,13 @@ import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
 import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
+import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/engagement_prompt.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -439,6 +441,7 @@ class _DataExportSectionState extends State<_DataExportSection> {
 
   Future<void> _export() async {
     setState(() => _isExporting = true);
+    var exported = false;
     try {
       final result = await TripExcelExportService.exportVisibleTrips();
       if (!mounted) return;
@@ -449,6 +452,7 @@ class _DataExportSectionState extends State<_DataExportSection> {
           ),
         ),
       );
+      exported = true;
     } on TripExcelExportException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -461,6 +465,12 @@ class _DataExportSectionState extends State<_DataExportSection> {
       ).showSnackBar(SnackBar(content: Text('导出失败：$error')));
     } finally {
       if (mounted) setState(() => _isExporting = false);
+    }
+    if (exported && mounted) {
+      await maybeShowEngagementPrompt(
+        context,
+        EngagementPromptEvent.excelExported,
+      );
     }
   }
 
