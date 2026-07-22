@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
+import 'package:raillog/src/models/timetable_source.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
@@ -21,6 +22,9 @@ class AddTripPage extends StatefulWidget {
 class _AddTripPageState extends State<AddTripPage> {
   final _trainNumberController = TextEditingController();
   DateTime _travelDate = DateTime.now();
+  TimetableSource _timetableSource = TimetableSource.forYear(
+    DateTime.now().year,
+  );
   List<TrainSearchResult> _searchResults = const [];
   TrainSearchResult? _selectedTrain;
   List<TrainScheduleStop> _scheduleStops = const [];
@@ -41,12 +45,13 @@ class _AddTripPageState extends State<AddTripPage> {
     final date = await showDatePicker(
       context: context,
       initialDate: _travelDate,
-      firstDate: DateTime(2000),
+      firstDate: DateTime(2009),
       lastDate: DateTime.now().add(const Duration(days: 3650)),
     );
     if (date != null && mounted) {
       setState(() {
         _travelDate = date;
+        _timetableSource = TimetableSource.forYear(date.year);
         _clearSelectedTrain();
       });
       _searchTrains(_trainNumberController.text);
@@ -69,7 +74,9 @@ class _AddTripPageState extends State<AddTripPage> {
       _isSearching = true;
       _clearSelectedTrain();
     });
-    final results = await TrainService.searchTrains(query, _travelDate);
+    final results = !_timetableSource.isOnline
+        ? await _searchHistoricalTrain(query)
+        : await TrainService.searchTrains(query, _travelDate);
     if (!mounted || requestId != _searchRequestId) return;
     setState(() {
       _isSearching = false;
@@ -92,6 +99,7 @@ class _AddTripPageState extends State<AddTripPage> {
     final stops = await TrainService.fetchTrainSchedule(
       result.trainNo,
       _travelDate,
+      source: _timetableSource,
     );
     if (!mounted || requestId != _scheduleRequestId) return;
 
@@ -134,6 +142,7 @@ class _AddTripPageState extends State<AddTripPage> {
       m3PageRoute(
         builder: (context) => TrainTripFormPage(
           trainNumber: train.trainNumber.replaceFirst(' 次', ''),
+          timetableSource: _timetableSource,
           scheduleStops: resolvedStops,
           departureStopIndex: departureIndex,
           arrivalStopIndex: arrivalIndex,
@@ -164,6 +173,24 @@ class _AddTripPageState extends State<AddTripPage> {
     _arrivalStopIndex = null;
   }
 
+  Future<List<TrainSearchResult>> _searchHistoricalTrain(
+    String trainNumber,
+  ) async {
+    return TrainService.searchHistoricalTrains(
+      trainNumber,
+      _timetableSource.year!,
+    );
+  }
+
+  void _selectTimetableSource(TimetableSource source) {
+    if (source == _timetableSource) return;
+    setState(() {
+      _timetableSource = source;
+      _clearSelectedTrain();
+    });
+    _searchTrains(_trainNumberController.text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -177,8 +204,10 @@ class _AddTripPageState extends State<AddTripPage> {
         const SizedBox(height: 24),
         QuickAddCard(
           travelDate: _travelDate,
+          timetableSource: _timetableSource,
           trainNumberController: _trainNumberController,
           onPickDate: _pickTravelDate,
+          onSelectTimetableSource: _selectTimetableSource,
           isSearching: _isSearching,
           searchResults: _searchResults,
           onSearchChanged: _searchTrains,

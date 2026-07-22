@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
+import 'package:raillog/src/models/timetable_source.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class QuickAddCard extends StatelessWidget {
   const QuickAddCard({
     super.key,
     required this.travelDate,
+    required this.timetableSource,
     required this.trainNumberController,
     required this.onPickDate,
+    required this.onSelectTimetableSource,
     required this.isSearching,
     required this.searchResults,
     required this.onSearchChanged,
@@ -23,8 +26,10 @@ class QuickAddCard extends StatelessWidget {
   });
 
   final DateTime travelDate;
+  final TimetableSource timetableSource;
   final TextEditingController trainNumberController;
   final VoidCallback onPickDate;
+  final ValueChanged<TimetableSource> onSelectTimetableSource;
   final bool isSearching;
   final List<TrainSearchResult> searchResults;
   final ValueChanged<String> onSearchChanged;
@@ -70,7 +75,30 @@ class QuickAddCard extends StatelessWidget {
                 travelDate.toIso8601String().substring(0, 10),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              trailing: const Icon(Icons.chevron_right),
+              subtitle: Text(
+                timetableSource.isOnline
+                    ? '数据库 · 在线'
+                    : '数据库 · ${timetableSource.year} 年',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: PopupMenuButton<TimetableSource>(
+                initialValue: timetableSource,
+                tooltip: '选择时刻表数据库',
+                icon: const Icon(Icons.storage_outlined),
+                onSelected: onSelectTimetableSource,
+                itemBuilder: (context) => [
+                  _databaseMenuItem(
+                    context,
+                    TimetableSource.online,
+                    timetableSource,
+                  ),
+                  const PopupMenuDivider(),
+                  for (final source
+                      in TimetableSource.values.skip(1).toList().reversed)
+                    _databaseMenuItem(context, source, timetableSource),
+                ],
+              ),
               onTap: onPickDate,
             ),
             const SizedBox(height: 24),
@@ -105,6 +133,32 @@ class QuickAddCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  PopupMenuItem<TimetableSource> _databaseMenuItem(
+    BuildContext context,
+    TimetableSource source,
+    TimetableSource selectedSource,
+  ) {
+    final selected = source == selectedSource;
+    return PopupMenuItem<TimetableSource>(
+      value: source,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: selected
+                ? Icon(
+                    Icons.check,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  )
+                : null,
+          ),
+          Text(source.label),
+        ],
       ),
     );
   }

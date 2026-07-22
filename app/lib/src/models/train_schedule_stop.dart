@@ -7,6 +7,7 @@ class TrainScheduleStop {
     required this.runningTime,
     required this.arriveDay,
     required this.arriveDayDifference,
+    this.mileage,
     this.arrivalDateTime,
     this.departureDateTime,
   });
@@ -18,6 +19,7 @@ class TrainScheduleStop {
   final String runningTime;
   final String arriveDay;
   final int arriveDayDifference;
+  final double? mileage;
   final DateTime? arrivalDateTime;
   final DateTime? departureDateTime;
 
@@ -33,6 +35,7 @@ class TrainScheduleStop {
       runningTime: runningTime,
       arriveDay: arriveDay,
       arriveDayDifference: arriveDayDifference,
+      mileage: mileage,
       arrivalDateTime: arrivalDateTime,
       departureDateTime: departureDateTime,
     );
@@ -51,6 +54,7 @@ class TrainScheduleStop {
       arriveDay: json['arrive_day_str'] ?? '',
       arriveDayDifference:
           int.tryParse(json['arrive_day_diff']?.toString() ?? '') ?? 0,
+      mileage: (json['mileage'] as num?)?.toDouble(),
     );
   }
 }

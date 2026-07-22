@@ -9,6 +9,8 @@ import 'package:raillog/src/models/ticket_seat_option.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
+import 'package:raillog/src/models/timetable_source.dart';
+import 'package:raillog/src/services/api_client.dart';
 
 class TrainService {
   static final Dio _dio = Dio(
@@ -354,8 +356,12 @@ class TrainService {
 
   static Future<List<TrainScheduleStop>> fetchTrainSchedule(
     String trainNo,
-    DateTime travelDate,
-  ) async {
+    DateTime travelDate, {
+    TimetableSource source = TimetableSource.online,
+  }) async {
+    if (!source.isOnline) {
+      return _fetchHistoricalTrainSchedule(trainNo, source.year!);
+    }
     final queryDate = trainQueryDate(travelDate, now: DateTime.now());
     final formattedDate =
         '${queryDate.year}-'
@@ -387,10 +393,48 @@ class TrainService {
     }
   }
 
+  static Future<List<TrainScheduleStop>> _fetchHistoricalTrainSchedule(
+    String trainNumber,
+    int year,
+  ) async {
+    try {
+      final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
+        '/api/train-timetables',
+        queryParameters: {'trainNumber': trainNumber, 'year': year},
+      );
+      final stops = response.data?['stops'];
+      if (response.statusCode != 200 || stops is! List) return const [];
+      return stops
+          .whereType<Map<String, dynamic>>()
+          .map(TrainScheduleStop.fromJson)
+          .toList(growable: false);
+    } on DioException catch (_) {
+      return const [];
+    }
+  }
+
+  static Future<List<TrainSearchResult>> searchHistoricalTrains(
+    String trainNumberPrefix,
+    int year,
+  ) async {
+    try {
+      final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
+        '/api/train-timetables/search',
+        queryParameters: {'trainNumber': trainNumberPrefix, 'year': year},
+      );
+      final trains = response.data?['trains'];
+      if (response.statusCode != 200 || trains is! List) return const [];
+      return trains
+          .whereType<Map<String, dynamic>>()
+          .map(TrainSearchResult.fromJson)
+          .toList(growable: false);
+    } on DioException catch (_) {
+      return const [];
+    }
+  }
+
   static DateTime trainQueryDate(DateTime selectedDate, {DateTime? now}) {
-    final chinaNow = (now ?? DateTime.now()).add(
-      const Duration(hours: 8),
-    );
+    final chinaNow = (now ?? DateTime.now()).add(const Duration(hours: 8));
     final today = DateTime(chinaNow.year, chinaNow.month, chinaNow.day);
     final selected = DateTime(
       selectedDate.year,

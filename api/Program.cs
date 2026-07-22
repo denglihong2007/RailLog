@@ -7,6 +7,7 @@ builder.Configuration
     .AddEnvironmentVariables();
 
 builder.Services.AddSingleton<RailLogDatabase>();
+builder.Services.AddSingleton<TrainTimetableService>();
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 builder.Services.AddSingleton<EmailSender>();
 builder.Services.AddSingleton<EmailVerificationService>();

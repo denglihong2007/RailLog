@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/seat_selection.dart';
+import 'package:raillog/src/models/station_pair_distance.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
+import 'package:raillog/src/models/timetable_source.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
@@ -21,6 +23,7 @@ class TrainTripFormPage extends StatefulWidget {
     super.key,
     required this.trainNumber,
     required this.scheduleStops,
+    this.timetableSource = TimetableSource.online,
     required this.departureStopIndex,
     required this.arrivalStopIndex,
     this.initialSeatType,
@@ -34,6 +37,7 @@ class TrainTripFormPage extends StatefulWidget {
 
   final String trainNumber;
   final List<TrainScheduleStop> scheduleStops;
+  final TimetableSource timetableSource;
   final int departureStopIndex;
   final int arrivalStopIndex;
   final String? initialSeatType;
@@ -115,15 +119,18 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         terminalStop.arrivalDateTime ??
         terminalStop.departureDateTime ??
         _arrivalTime;
-    final shouldFetchRollingStock = TrainService.shouldFetchRollingStock(
-      widget.trainNumber,
-    );
+    final shouldFetchRollingStock =
+        TrainService.shouldFetchRollingStock(widget.trainNumber) &&
+        widget.timetableSource.isOnline;
     final results = await Future.wait<dynamic>([
-      TrainService.fetchDistanceInfo(
-        trainNumber: widget.trainNumber,
-        startStation: _departureStop.stationName,
-        endStation: _arrivalStop.stationName,
-      ),
+      if (widget.timetableSource.isOnline)
+        TrainService.fetchDistanceInfo(
+          trainNumber: widget.trainNumber,
+          startStation: _departureStop.stationName,
+          endStation: _arrivalStop.stationName,
+        )
+      else
+        Future<TrainDistanceInfo?>.value(),
       if (shouldFetchRollingStock)
         TrainService.fetchRollingStock(
           trainNumber: widget.trainNumber,
@@ -132,11 +139,14 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       else
         Future<RollingStockLookupResult?>.value(),
       _resolveRoutes(),
-      TrainService.fetchTicketSeatAvailability(
-        trainNumber: widget.trainNumber,
-        fromStation: _departureStop.stationName,
-        toStation: _arrivalStop.stationName,
-      ),
+      if (widget.timetableSource.isOnline)
+        TrainService.fetchTicketSeatAvailability(
+          trainNumber: widget.trainNumber,
+          fromStation: _departureStop.stationName,
+          toStation: _arrivalStop.stationName,
+        )
+      else
+        Future<TicketSeatAvailability?>.value(),
     ]);
     if (!mounted) return;
 
@@ -213,6 +223,38 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
 
   Future<RouteResolution?> _resolveRoutes() async {
     try {
+      if (!widget.timetableSource.isOnline) {
+        final selectedStops = widget.scheduleStops.sublist(
+          widget.departureStopIndex,
+          widget.arrivalStopIndex + 1,
+        );
+        final hasHistoricalMileage = selectedStops.any(
+          (stop) => stop.mileage != null && stop.mileage! > 0,
+        );
+        if (!hasHistoricalMileage) return null;
+
+        final sections = <StationPairDistance>[];
+        for (
+          var index = widget.departureStopIndex;
+          index < widget.arrivalStopIndex;
+          index++
+        ) {
+          final from = widget.scheduleStops[index];
+          final to = widget.scheduleStops[index + 1];
+          final fromMileage = from.mileage;
+          final toMileage = to.mileage;
+          sections.add(
+            StationPairDistance(
+              fromStation: from.stationName,
+              toStation: to.stationName,
+              distanceKm: fromMileage != null && toMileage != null
+                  ? (toMileage - fromMileage).abs()
+                  : null,
+            ),
+          );
+        }
+        return RouteService.resolveJourney(sections);
+      }
       final sections = await TrainService.fetchStationPairDistances(
         widget.trainNumber,
         widget.scheduleStops,
