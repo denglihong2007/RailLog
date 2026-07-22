@@ -5,9 +5,11 @@ import 'package:raillog/src/pages/add_trip_page.dart';
 import 'package:raillog/src/pages/settings_page.dart';
 import 'package:raillog/src/pages/statistics_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
+import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/update_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/update_prompt.dart';
 
 class MainNavigationPage extends StatefulWidget {
@@ -57,6 +59,13 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       _pages[0] = HomePage(key: UniqueKey());
       _currentIdx = 0;
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showEngagementPromptAfterSave();
+    });
+  }
+
+  Future<void> _showEngagementPromptAfterSave() async {
+    await maybeShowEngagementPrompt(context, EngagementPromptEvent.tripSaved);
   }
 
   Future<void> _checkForUpdate() async {
