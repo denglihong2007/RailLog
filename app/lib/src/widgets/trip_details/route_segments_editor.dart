@@ -179,6 +179,10 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
             segment: segments[index],
             routeNames: routeNames,
             fixedEndStation: endStation,
+            previousRouteName: index > 0 ? segments[index - 1].routeName : null,
+            nextRouteName: index + 1 < segments.length
+                ? segments[index + 1].routeName
+                : null,
             onChanged: (segment) => _updateSegment(index, segment),
             onRemove: () => _removeSegment(index),
             resolveDistance: resolveDistance,
@@ -308,6 +312,8 @@ class _SegmentEditor extends StatefulWidget {
     required this.segment,
     required this.routeNames,
     required this.fixedEndStation,
+    required this.previousRouteName,
+    required this.nextRouteName,
     required this.onChanged,
     required this.onRemove,
     required this.resolveDistance,
@@ -320,6 +326,8 @@ class _SegmentEditor extends StatefulWidget {
   final ViaRouteSegment segment;
   final List<String> routeNames;
   final String fixedEndStation;
+  final String? previousRouteName;
+  final String? nextRouteName;
   final ValueChanged<ViaRouteSegment> onChanged;
   final VoidCallback onRemove;
   final RouteDistanceResolver resolveDistance;
@@ -415,7 +423,8 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                   prefixIcon: Icon(Icons.edit_road_outlined),
                 ),
                 textInputAction: TextInputAction.next,
-                validator: _requiredText,
+                validator: (value) =>
+                    _requiredText(value) ?? _routeRuleError(value),
                 onChanged: (value) =>
                     widget.onChanged(_copyWith(routeName: value)),
               )
@@ -428,7 +437,8 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                 icon: Icons.route_outlined,
                 onSelected: _selectRoute,
                 validator: (value) =>
-                    !widget.routeNames.contains(value) ? '请选择数据库中的线路' : null,
+                    _routeRuleError(value) ??
+                    (!widget.routeNames.contains(value) ? '请选择数据库中的线路' : null),
               ),
             const SizedBox(height: 12),
             Row(
@@ -624,6 +634,26 @@ class _SegmentEditorState extends State<_SegmentEditor> {
       _isCalculatingDistance = false;
       _distanceError = null;
     });
+  }
+
+  String? _routeRuleError(String? routeName) {
+    final fromStation = widget.segment.fromStation.trim();
+    final toStation =
+        (widget.isLast ? widget.fixedEndStation : widget.segment.toStation)
+            .trim();
+    if (fromStation.isNotEmpty &&
+        toStation.isNotEmpty &&
+        fromStation == toStation) {
+      return '始发站和终到站不能相同';
+    }
+
+    final route = routeName?.trim() ?? '';
+    if (route.isNotEmpty &&
+        (route == widget.previousRouteName?.trim() ||
+            route == widget.nextRouteName?.trim())) {
+      return '相邻经由段线路不能相同';
+    }
+    return null;
   }
 }
 

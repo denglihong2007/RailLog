@@ -132,6 +132,15 @@ IconData dashboardAchievementIcon(
   DashboardAchievementKind.youthPriceless => Icons.airline_seat_recline_normal,
   DashboardAchievementKind.zeroDisplacement => Icons.loop,
   DashboardAchievementKind.dreamPath => Icons.auto_awesome_outlined,
+  DashboardAchievementKind.commuterSpecial => Icons.work_outline,
+  DashboardAchievementKind.grandSlam => Icons.emoji_events_outlined,
+  DashboardAchievementKind.storedUpReward => Icons.redeem_outlined,
+  DashboardAchievementKind.spontaneousTrip => Icons.luggage_outlined,
+  DashboardAchievementKind.redFootprints => Icons.directions_walk_outlined,
+  DashboardAchievementKind.greatWallWatch => Icons.account_balance_outlined,
+  DashboardAchievementKind.icyWorld => Icons.ac_unit_outlined,
+  DashboardAchievementKind.unnecessaryExtra => Icons.filter_3_outlined,
+  DashboardAchievementKind.blessChina => Icons.flag_outlined,
 };
 
 String _trainLabel(String value) {

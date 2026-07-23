@@ -1,5 +1,6 @@
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/models/railway_bureau.dart';
 import 'package:raillog/src/models/trip_record.dart';
 
 const _regular25Models = {'25B', '25Z', '25G', '25K', '25T', '25DT'};
@@ -340,8 +341,7 @@ List<DashboardAchievement> buildDashboardAchievements(
         railTrips,
         (trip) =>
             _normalizedStation(trip.fromStation) == '定西北' &&
-            _normalizedStation(trip.toStation) == '镇江南' &&
-            trip.arrivalTime != null,
+            _normalizedStation(trip.toStation) == '镇江南'
       ),
     ),
     _achievement(
@@ -402,7 +402,6 @@ List<DashboardAchievement> buildDashboardAchievements(
         railTrips,
         (trip) =>
             _normalizedStation(trip.toStation) == '拉萨' &&
-            trip.arrivalTime != null &&
             _normalizedSeatType(trip.seatType) == '硬座',
       ),
     ),
@@ -413,7 +412,6 @@ List<DashboardAchievement> buildDashboardAchievements(
       _firstWhere(
         railTrips,
         (trip) =>
-            trip.arrivalTime != null &&
             _normalizedStation(trip.fromStation) ==
                 _normalizedStation(trip.toStation),
       ),
@@ -428,6 +426,66 @@ List<DashboardAchievement> buildDashboardAchievements(
           '25DT',
         }).contains('25DT'),
       ),
+    ),
+    _achievement(
+      DashboardAchievementKind.commuterSpecial,
+      '牛马专列',
+      '乘坐北京与上海间经由京沪高铁的一等座、优选一等座、商务座或特等座',
+      _firstWhere(railTrips, _unlocksCommuterSpecial),
+    ),
+    _achievement(
+      DashboardAchievementKind.grandSlam,
+      '大满贯',
+      '分别乘坐全部铁路局担当的列车',
+      _firstRailwayBureauCompletion(railTrips),
+    ),
+    _achievement(
+      DashboardAchievementKind.storedUpReward,
+      '厚积薄发',
+      '使用积分兑换里程超过 50 公里的商务座或特等座车票',
+      _firstWhere(railTrips, _unlocksStoredUpReward),
+    ),
+    _achievement(
+      DashboardAchievementKind.spontaneousTrip,
+      '说走就走',
+      '乘坐一次 Y 字头旅游列车',
+      _firstWhere(
+        railTrips,
+        (trip) => RegExp(
+          r'^Y\s*\d',
+          caseSensitive: false,
+        ).hasMatch(trip.trainNumber.trim()),
+      ),
+    ),
+    _achievement(
+      DashboardAchievementKind.redFootprints,
+      '红色足迹',
+      '乘坐韶山南站至延安站的列车',
+      _firstWhere(railTrips, _unlocksRedFootprints),
+    ),
+    _achievement(
+      DashboardAchievementKind.greatWallWatch,
+      '长城守望',
+      '到访八达岭站或八达岭长城站',
+      _firstStationVisit(railTrips, const {'八达岭', '八达岭长城'}),
+    ),
+    _achievement(
+      DashboardAchievementKind.icyWorld,
+      '冰天雪地',
+      '在 12 月、1 月或 2 月到访根河站',
+      _firstWhere(railTrips, _unlocksIcyWorld),
+    ),
+    _achievement(
+      DashboardAchievementKind.unnecessaryExtra,
+      '多此一举',
+      '分 3 张车票接续乘坐同一列车',
+      _firstThreeTicketSameTrainCompletion(railTrips),
+    ),
+    _achievement(
+      DashboardAchievementKind.blessChina,
+      '祝福祖国',
+      '在 10 月 1 日乘坐列车',
+      _firstWhere(railTrips, _unlocksBlessChina),
     ),
   ];
   return List.unmodifiable([
@@ -510,9 +568,8 @@ Set<String> _rollingStockMatches(String? value, Set<String> models) {
   final normalized = value?.trim().toUpperCase() ?? '';
   return models
       .where(
-        (model) => RegExp(
-          '${RegExp.escape(model)}(?![A-Z0-9])',
-        ).hasMatch(normalized),
+        (model) =>
+            RegExp('${RegExp.escape(model)}(?![A-Z0-9])').hasMatch(normalized),
       )
       .toSet();
 }
@@ -572,7 +629,7 @@ TripRecord? _firstStationCompletion(List<TripRecord> trips, int target) {
   final stations = <String>{};
   for (final trip in trips) {
     _addStation(stations, trip.fromStation);
-    if (trip.arrivalTime != null) _addStation(stations, trip.toStation);
+    _addStation(stations, trip.toStation);
     if (stations.length >= target) return trip;
   }
   return null;
@@ -585,8 +642,7 @@ TripRecord? _firstStationVisit(
   if (targetStations.contains(_normalizedStation(trip.fromStation))) {
     return true;
   }
-  return trip.arrivalTime != null &&
-      targetStations.contains(_normalizedStation(trip.toStation));
+  return targetStations.contains(_normalizedStation(trip.toStation));
 });
 
 TripRecord? _firstTargetStationCompletion(
@@ -597,10 +653,8 @@ TripRecord? _firstTargetStationCompletion(
   for (final trip in trips) {
     final departure = _normalizedStation(trip.fromStation);
     if (targetStations.contains(departure)) visited.add(departure);
-    if (trip.arrivalTime != null) {
-      final arrival = _normalizedStation(trip.toStation);
-      if (targetStations.contains(arrival)) visited.add(arrival);
-    }
+    final arrival = _normalizedStation(trip.toStation);
+    if (targetStations.contains(arrival)) visited.add(arrival);
     if (visited.containsAll(targetStations)) return trip;
   }
   return null;
@@ -725,13 +779,19 @@ TripRecord? _firstRailFerryCompletion(List<TripRecord> trips) {
       return current;
     }
     final departureStation = _normalizedStation(current.fromStation);
-    if (!departureStation.contains('大连')  && !departureStation.contains('烟台')) continue;
-    final requiredArrivalStation = departureStation.contains('大连') ? '烟台' : '大连';
+    if (!departureStation.contains('大连') && !departureStation.contains('烟台')) {
+      continue;
+    }
+    final requiredArrivalStation = departureStation.contains('大连')
+        ? '烟台'
+        : '大连';
     for (var previousIndex = 0; previousIndex < currentIndex; previousIndex++) {
       final previous = trips[previousIndex];
       final arrival = previous.arrivalTime;
       if (arrival == null ||
-          !_normalizedStation(previous.toStation).contains(requiredArrivalStation)) {
+          !_normalizedStation(
+            previous.toStation,
+          ).contains(requiredArrivalStation)) {
         continue;
       }
       final connectionTime = current.departureTime.difference(arrival);
@@ -749,7 +809,7 @@ TripRecord? _firstAirportStationCompletion(List<TripRecord> trips, int target) {
   for (final trip in trips) {
     for (final station in [
       trip.fromStation,
-      if (trip.arrivalTime != null) trip.toStation,
+      trip.toStation,
     ]) {
       final normalized = station.trim().replaceFirst(RegExp(r'站$'), '');
       if (normalized.contains('机场') ||
@@ -821,8 +881,7 @@ bool _unlocksOvernightSleeper(TripRecord trip) {
 
 bool _unlocksFleetingMoment(TripRecord trip) {
   const premiumSeats = {'一等座', '商务座', '特等座'};
-  if (!premiumSeats.contains(_normalizedSeatType(trip.seatType)) ||
-      trip.arrivalTime == null) {
+  if (!premiumSeats.contains(_normalizedSeatType(trip.seatType))) {
     return false;
   }
   final from = _normalizedStation(trip.fromStation);
@@ -831,6 +890,85 @@ bool _unlocksFleetingMoment(TripRecord trip) {
   return (mainlandStations.contains(from) && to == '香港西九龙') ||
       (from == '香港西九龙' && mainlandStations.contains(to));
 }
+
+bool _unlocksCommuterSpecial(TripRecord trip) {
+  const premiumSeats = {'优选一等座', '一等座', '商务座', '特等座'};
+  if (!premiumSeats.contains(_normalizedSeatType(trip.seatType))) {
+    return false;
+  }
+  const beijingStations = {'北京', '北京南'};
+  const shanghaiStations = {'上海虹桥', '上海'};
+  final from = _normalizedStation(trip.fromStation);
+  final to = _normalizedStation(trip.toStation);
+  final coversFullRoute =
+      (beijingStations.contains(from) && shanghaiStations.contains(to)) ||
+      (shanghaiStations.contains(from) && beijingStations.contains(to));
+  return coversFullRoute;
+}
+
+TripRecord? _firstRailwayBureauCompletion(List<TripRecord> trips) =>
+    _firstCollectionCompletion(trips, railwayBureauSegments.keys.toSet(), (
+      trip,
+    ) {
+      final bureau = railwayBureauForCompany(trip.companyName);
+      return bureau == null ? const <String>{} : {bureau};
+    });
+
+bool _unlocksStoredUpReward(TripRecord trip) =>
+    trip.price == 0 &&
+    trip.mileageKm > 50 &&
+    const {'商务座', '特等座'}.contains(_normalizedSeatType(trip.seatType));
+
+bool _unlocksRedFootprints(TripRecord trip) =>
+    _normalizedStation(trip.fromStation) == '韶山南' &&
+    _normalizedStation(trip.toStation) == '延安';
+
+bool _unlocksIcyWorld(TripRecord trip) {
+  const winterMonths = {12, 1, 2};
+  if (_normalizedStation(trip.fromStation) == '根河' &&
+      winterMonths.contains(trip.departureTime.month)) {
+    return true;
+  }
+  final arrival = trip.arrivalTime;
+  return arrival != null &&
+      _normalizedStation(trip.toStation) == '根河' &&
+      winterMonths.contains(arrival.month);
+}
+
+TripRecord? _firstThreeTicketSameTrainCompletion(List<TripRecord> trips) {
+  final chainLengths = List<int>.filled(trips.length, 1);
+  for (var currentIndex = 0; currentIndex < trips.length; currentIndex++) {
+    final current = trips[currentIndex];
+    final trainNumber = current.trainNumber.trim().toUpperCase();
+    final fromStation = _normalizedStation(current.fromStation);
+    if (trainNumber.isEmpty || fromStation.isEmpty) continue;
+    for (var previousIndex = 0; previousIndex < currentIndex; previousIndex++) {
+      final previous = trips[previousIndex];
+      final arrival = previous.arrivalTime;
+      if (arrival == null ||
+          previous.trainNumber.trim().toUpperCase() != trainNumber ||
+          _normalizedStation(previous.toStation) != fromStation ||
+          current.departureTime.isBefore(arrival)) {
+        continue;
+      }
+      chainLengths[currentIndex] = _max(
+        chainLengths[currentIndex],
+        chainLengths[previousIndex] + 1,
+      );
+    }
+    if (chainLengths[currentIndex] >= 3) return current;
+  }
+  return null;
+}
+
+bool _unlocksBlessChina(TripRecord trip) {
+  if (trip.departureTime.month == 10 && trip.departureTime.day == 1) {
+    return true;
+  }
+  return false;
+}
+
+int _max(int first, int second) => first > second ? first : second;
 
 TripRecord? _firstTightTransfer(List<TripRecord> trips) {
   for (var outgoingIndex = 0; outgoingIndex < trips.length; outgoingIndex++) {

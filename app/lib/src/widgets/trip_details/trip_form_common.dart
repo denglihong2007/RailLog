@@ -69,7 +69,7 @@ TripSeatFormValue parseTripSeat(String? storedType, String? storedNumber) {
       seatMatch != null &&
       SeatOptions.types.contains(seatType) &&
       primary != null &&
-      primary >= 1 &&
+      primary >= SeatOptions.unknownNumber &&
       primary <= 128) {
     return TripSeatFormValue(
       seatType: seatType,
@@ -227,6 +227,7 @@ class TripNumberField extends StatelessWidget {
     required this.icon,
     this.onCalculate,
     this.helperText,
+    this.hintText,
   });
 
   final TextEditingController controller;
@@ -235,6 +236,7 @@ class TripNumberField extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onCalculate;
   final String? helperText;
+  final String? hintText;
 
   @override
   Widget build(BuildContext context) => TextFormField(
@@ -245,6 +247,7 @@ class TripNumberField extends StatelessWidget {
       prefixIcon: Icon(icon),
       suffixText: suffix,
       helperText: helperText,
+      hintText: hintText,
       suffixIcon: onCalculate == null
           ? null
           : IconButton(
@@ -272,6 +275,7 @@ class TripPriceField extends StatelessWidget {
     label: '票价',
     suffix: '元',
     icon: Icons.payments_outlined,
+    hintText: '积分兑换请填0',
   );
 }
 

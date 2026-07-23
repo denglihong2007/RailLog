@@ -52,6 +52,13 @@ void main() {
       await DbHelper.instance.getSetting('ticket_show_new_air_conditioned'),
       'true',
     );
+
+    await TicketGeneratorSettings.instance.setPassenger('');
+    await TicketGeneratorSettings.instance.setMaskedId('');
+    expect(TicketGeneratorSettings.instance.passenger, isEmpty);
+    expect(TicketGeneratorSettings.instance.maskedId, isEmpty);
+    expect(await DbHelper.instance.getSetting('ticket_default_passenger'), '');
+    expect(await DbHelper.instance.getSetting('ticket_masked_id'), '');
   });
 
   test('无效票号前缀不会覆盖已保存值', () async {

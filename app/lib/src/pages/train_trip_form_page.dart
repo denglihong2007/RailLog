@@ -311,14 +311,15 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (!hasValidRouteContinuity(
+    final routeError = validateViaRouteSegments(
       _viaRouteSegments,
       startStation: _departureStop.stationName,
       endStation: _arrivalStop.stationName,
-    )) {
+    );
+    if (routeError != null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('经由线路必须首尾相接并覆盖乘车区间')));
+      ).showSnackBar(SnackBar(content: Text(routeError)));
       return;
     }
     setState(() => _isSaving = true);

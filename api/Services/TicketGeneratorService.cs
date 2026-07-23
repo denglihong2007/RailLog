@@ -163,10 +163,8 @@ public sealed partial class TicketGeneratorService(
         };
         if (!Enum.IsDefined(style)) return "车票样式只能是 red 或 blue";
         if (request.TripId <= 0) return "行程 ID 无效";
-        if (string.IsNullOrWhiteSpace(request.Passenger)) return "请输入乘车人";
-        if (request.Passenger.Trim().Length is < 1 or > 30) return "乘车人长度应为 1 至 30 个字符";
-        if (string.IsNullOrWhiteSpace(request.MaskedId)) return "请输入脱敏身份证号码";
-        if (request.MaskedId.Trim().Length is < 1 or > 30) return "脱敏身份证号码长度应为 1 至 30 个字符";
+        if (request.Passenger.Trim().Length > 30) return "乘车人长度不能超过 30 个字符";
+        if (request.MaskedId.Trim().Length > 30) return "脱敏身份证号码长度不能超过 30 个字符";
         if (string.IsNullOrWhiteSpace(request.SerialPrefix)) return "请输入票号前缀";
         if (!SerialPrefixRegex().IsMatch(request.SerialPrefix.Trim())) return "票号前缀必须是 14 位数字";
         return null;

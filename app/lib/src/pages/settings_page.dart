@@ -586,9 +586,6 @@ class _TicketGeneratorSettingsSectionState
                 maxLength: 30,
                 textInputAction: TextInputAction.next,
                 onChanged: settings.setPassenger,
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? '请输入默认乘车人' : null,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
               ),
               const SizedBox(height: 8),
               TextFormField(
@@ -601,9 +598,6 @@ class _TicketGeneratorSettingsSectionState
                 maxLength: 30,
                 textInputAction: TextInputAction.next,
                 onChanged: settings.setMaskedId,
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? '请输入脱敏身份证号码' : null,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
               ),
               const SizedBox(height: 8),
               TextFormField(

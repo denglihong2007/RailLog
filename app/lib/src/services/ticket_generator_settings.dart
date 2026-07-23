@@ -61,9 +61,7 @@ class TicketGeneratorSettings extends ChangeNotifier {
 
   Future<void> setPassenger(String value) async {
     final normalized = value.trim();
-    if (normalized.isEmpty ||
-        normalized.length > 30 ||
-        _passenger == normalized) {
+    if (normalized.length > 30 || _passenger == normalized) {
       return;
     }
     _passenger = normalized;
@@ -73,9 +71,7 @@ class TicketGeneratorSettings extends ChangeNotifier {
 
   Future<void> setMaskedId(String value) async {
     final normalized = value.trim();
-    if (normalized.isEmpty ||
-        normalized.length > 30 ||
-        _maskedId == normalized) {
+    if (normalized.length > 30 || _maskedId == normalized) {
       return;
     }
     _maskedId = normalized;

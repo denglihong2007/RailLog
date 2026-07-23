@@ -68,3 +68,35 @@ bool hasValidRouteContinuity(
   }
   return true;
 }
+
+String? validateViaRouteSegments(
+  List<ViaRouteSegment> segments, {
+  required String startStation,
+  required String endStation,
+}) {
+  for (var index = 0; index < segments.length; index++) {
+    final segment = segments[index];
+    final fromStation = segment.fromStation.trim();
+    final toStation = segment.toStation.trim();
+    if (fromStation.isNotEmpty &&
+        toStation.isNotEmpty &&
+        fromStation == toStation) {
+      return '第${index + 1}段经由的始发站和终到站不能相同';
+    }
+
+    if (index > 0 &&
+        segment.routeName.trim().isNotEmpty &&
+        segment.routeName.trim() == segments[index - 1].routeName.trim()) {
+      return '第$index段和第${index + 1}段经由的线路不能相同';
+    }
+  }
+
+  if (!hasValidRouteContinuity(
+    segments,
+    startStation: startStation,
+    endStation: endStation,
+  )) {
+    return '经由线路必须首尾相接并覆盖乘车区间';
+  }
+  return null;
+}
