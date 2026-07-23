@@ -11,6 +11,7 @@ namespace RailLog.API.Controllers;
 [Route("api/ticket-generator")]
 public sealed class TicketGeneratorController(
     TicketGeneratorService generator,
+    TicketDownloadLinkStore downloadLinks,
     ILogger<TicketGeneratorController> logger) : ControllerBase
 {
     [HttpPost("image")]
@@ -45,14 +46,11 @@ public sealed class TicketGeneratorController(
             var result = await generator.GenerateWebDownloadAsync(request, cancellationToken);
             if (result is null) return NotFound(new MessageResponse("未找到所选行程记录"));
             Response.Headers.CacheControl = "private, no-store";
-            var stream = new FileStream(
-                result.FilePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 64 * 1024,
-                options: FileOptions.DeleteOnClose | FileOptions.SequentialScan);
-            return File(stream, result.ContentType, result.FileName);
+            var link = downloadLinks.Add(result);
+            var downloadUrl = Url.Action(
+                nameof(Download),
+                values: new { token = link.Token })!;
+            return Ok(new TicketDownloadLinkResponse(downloadUrl, link.ExpiresAt));
         }
         catch (TicketPdfPasswordException)
         {
@@ -77,6 +75,20 @@ public sealed class TicketGeneratorController(
         {
             return StatusCode(StatusCodes.Status502BadGateway, new MessageResponse("二维码服务暂时不可用"));
         }
+    }
+
+    [AllowAnonymous]
+    [HttpGet("download/{token}")]
+    public IActionResult Download(string token)
+    {
+        var download = downloadLinks.Open(token);
+        if (download is null) return NotFound(new MessageResponse("下载链接无效或已过期"));
+        Response.Headers.CacheControl = "private, no-store";
+        return File(
+            download.Stream,
+            download.ContentType,
+            download.FileName,
+            enableRangeProcessing: true);
     }
 
     private async Task<IActionResult> Generate(
