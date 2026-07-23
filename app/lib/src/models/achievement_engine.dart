@@ -430,7 +430,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.commuterSpecial,
       '牛马专列',
-      '乘坐北京站或北京南站与上海虹桥站或上海站间全程经由京沪高铁的优选一等座、商务座、一等座或特等座',
+      '乘坐北京与上海间经由京沪高铁的一等座、优选一等座、商务座或特等座',
       _firstWhere(railTrips, _unlocksCommuterSpecial),
     ),
     _achievement(

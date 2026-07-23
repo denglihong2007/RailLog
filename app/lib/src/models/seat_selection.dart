@@ -1,4 +1,6 @@
 abstract final class SeatOptions {
+  static const unknownNumber = 0;
+
   static const types = [
     '硬座',
     '软座',
@@ -29,6 +31,7 @@ abstract final class SeatOptions {
   ];
 
   static const carriageNumbers = [
+    unknownNumber,
     1,
     2,
     3,
@@ -69,6 +72,7 @@ class SeatSelection {
   String get seatNumber {
     final carriage = '${carriageNumber ?? 99}车';
     if (mode != '席位') return '$carriage$mode';
+    if (primaryNumber == SeatOptions.unknownNumber) return '${carriage}0号';
     if (secondaryNumber == '无') return '$carriage$primaryNumber号';
     if (const {'上铺', '中铺', '下铺'}.contains(secondaryNumber)) {
       return '$carriage$primaryNumber号$secondaryNumber';

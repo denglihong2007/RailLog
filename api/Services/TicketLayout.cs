@@ -206,8 +206,12 @@ internal static class TicketLayout
         if (match.Success)
         {
             AddCarriage(runs, match.Groups["car"].Value);
-            AddStandardSeat(runs, match.Groups["seat"].Value);
-            runs.Add(SmallLabel("号", 7));
+            var standardSeat = match.Groups["seat"].Value;
+            if (!IsZero(standardSeat))
+            {
+                AddStandardSeat(runs, standardSeat);
+                runs.Add(SmallLabel("号", 7));
+            }
             return runs;
         }
         var fallback = Regex.Match(normalized, @"^(?<car>\d+)\s*车\s*(?<seat>.*)$");
@@ -238,10 +242,13 @@ internal static class TicketLayout
 
     private static void AddCarriage(ICollection<TicketTextRun> runs, string car)
     {
-        if (car == "99") return;
+        if (int.TryParse(car, out var number) && number is 0 or 99) return;
         runs.Add(new(car, new(73, TicketFontFamily.IdCode)));
         runs.Add(SmallLabel("车", 7));
     }
+
+    private static bool IsZero(string value) =>
+        int.TryParse(value, out var number) && number == 0;
 
     private static void AddStandardSeat(ICollection<TicketTextRun> runs, string seat)
     {

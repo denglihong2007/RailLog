@@ -472,6 +472,8 @@ class _SeatNumberFields extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showsSecondaryPosition =
+        showSecondaryPosition && primarySeatNumber != SeatOptions.unknownNumber;
     final carriageValues = {
       ...SeatOptions.carriageNumbers,
       ?carriageNumber,
@@ -482,14 +484,14 @@ class _SeatNumberFields extends StatelessWidget {
         final compact = constraints.maxWidth < 520;
         final halfWidth = (constraints.maxWidth - gap) / 2;
         final thirdWidth = (constraints.maxWidth - gap * 2) / 3;
-        final carriageWidth = seatMode == '席位' && !showSecondaryPosition
+        final carriageWidth = seatMode == '席位' && !showsSecondaryPosition
             ? halfWidth
             : seatMode == '席位' && compact
             ? constraints.maxWidth
             : seatMode == '席位'
             ? thirdWidth
             : constraints.maxWidth;
-        final seatWidth = !showSecondaryPosition
+        final seatWidth = !showsSecondaryPosition
             ? halfWidth
             : compact
             ? halfWidth
@@ -507,7 +509,9 @@ class _SeatNumberFields extends StatelessWidget {
                     .map(
                       (value) => DropdownMenuItem<int>(
                         value: value,
-                        child: Text('$value'),
+                        child: Text(
+                          value == SeatOptions.unknownNumber ? '未知' : '$value',
+                        ),
                       ),
                     )
                     .toList(),
@@ -524,20 +528,28 @@ class _SeatNumberFields extends StatelessWidget {
                 child: DropdownButtonFormField<int>(
                   initialValue: primarySeatNumber,
                   decoration: const InputDecoration(labelText: '号码'),
-                  items: List<int>.generate(128, (index) => index + 1)
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text('$value'),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      [
+                            SeatOptions.unknownNumber,
+                            ...List<int>.generate(128, (index) => index + 1),
+                          ]
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(
+                                value == SeatOptions.unknownNumber
+                                    ? '未知'
+                                    : '$value',
+                              ),
+                            ),
+                          )
+                          .toList(),
                   onChanged: (value) {
                     if (value != null) onPrimaryChanged(value);
                   },
                 ),
               ),
-              if (showSecondaryPosition)
+              if (showsSecondaryPosition)
                 SizedBox(
                   width: seatWidth,
                   child: DropdownButtonFormField<String>(
