@@ -39,6 +39,8 @@ public sealed partial class TicketGeneratorService(
         var trip = details.Trip;
 
         var ticketNumber = $"A{trip.TicketId.ToString("D6", CultureInfo.InvariantCulture)}";
+        var travelDate = trip.DepartureTime ?? trip.CreatedAt;
+        var settlementDate = travelDate.AddDays(1).ToString("MMdd", CultureInfo.InvariantCulture);
         var fromPinyinTask = stationPinyin.ResolveAsync(trip.FromStation, cancellationToken);
         var toPinyinTask = stationPinyin.ResolveAsync(trip.ToStation, cancellationToken);
         var qrTask = DownloadQrAsync(trip.TicketId, cancellationToken);
@@ -51,7 +53,7 @@ public sealed partial class TicketGeneratorService(
             trip.ToStation,
             await toPinyinTask,
             trip.TrainNumber,
-            trip.DepartureTime ?? trip.CreatedAt,
+            travelDate,
             FormatCarriageSeat(trip.SeatNumber, trip.SeatType),
             trip.Price,
             FormatSeatClass(trip.SeatType, request.ShowNewAirConditioned),
@@ -61,7 +63,7 @@ public sealed partial class TicketGeneratorService(
             text.Memorial,
             text.NoticeLine1,
             text.NoticeLine2,
-            $"{request.SerialPrefix.Trim()}{ticketNumber}    JM");
+            $"{request.SerialPrefix.Trim()}{settlementDate}{ticketNumber}    JM");
         var bytes = pdf
             ? renderer.RenderPdf(data, await qrTask)
             : renderer.RenderPng(data, await qrTask, includeBackground: true);
@@ -166,7 +168,7 @@ public sealed partial class TicketGeneratorService(
         if (request.Passenger.Trim().Length > 30) return "乘车人长度不能超过 30 个字符";
         if (request.MaskedId.Trim().Length > 30) return "脱敏身份证号码长度不能超过 30 个字符";
         if (string.IsNullOrWhiteSpace(request.SerialPrefix)) return "请输入票号前缀";
-        if (!SerialPrefixRegex().IsMatch(request.SerialPrefix.Trim())) return "票号前缀必须是 14 位数字";
+        if (!SerialPrefixRegex().IsMatch(request.SerialPrefix.Trim())) return "票号前缀必须是 10 位数字";
         return null;
     }
 
@@ -211,7 +213,7 @@ public sealed partial class TicketGeneratorService(
     private static bool IsConventionalSeatClass(string? value) =>
         !string.IsNullOrWhiteSpace(value) && (value.Contains('硬') || value.Contains('软'));
 
-    [GeneratedRegex("^[0-9]{14}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[0-9]{10}$", RegexOptions.CultureInvariant)]
     private static partial Regex SerialPrefixRegex();
 
     [GeneratedRegex(@"^(?<car>\d+)\s*车\s*(?<seat>.*)$", RegexOptions.CultureInvariant)]

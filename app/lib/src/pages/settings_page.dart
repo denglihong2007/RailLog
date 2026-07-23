@@ -604,7 +604,7 @@ class _TicketGeneratorSettingsSectionState
                 controller: _serialPrefixController,
                 decoration: InputDecoration(
                   labelText: '票号前缀',
-                  helperText: '21 位票号的前 14 位',
+                  helperText: '21 位票号的前 10 位',
                   prefixIcon: const Icon(Icons.numbers_outlined),
                   suffixIcon: IconButton(
                     tooltip: '票号构成说明',
@@ -613,13 +613,13 @@ class _TicketGeneratorSettingsSectionState
                   ),
                   border: const OutlineInputBorder(),
                 ),
-                maxLength: 14,
+                maxLength: 10,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 onChanged: settings.setSerialPrefix,
-                validator: (value) => RegExp(r'^\d{14}$').hasMatch(value ?? '')
+                validator: (value) => RegExp(r'^\d{10}$').hasMatch(value ?? '')
                     ? null
-                    : '请输入 14 位数字',
+                    : '请输入 10 位数字',
                 autovalidateMode: AutovalidateMode.onUserInteraction,
               ),
             ],
@@ -639,8 +639,8 @@ class _TicketGeneratorSettingsSectionState
           '• 前5位：数字格式的车站TMIS码（可前往 rail.re 查询具体车站）；\n'
           '• 第6至7位：出票机器类型（00-09为人工售票窗口，20-29为车票代售点，30-39为自动售票机）；\n'
           '• 第8至10位：3位数字的出票机器编号；\n'
-          '• 第11至14位：MMDD格式的4位结算日期（一般为乘车日期的下一天）；\n'
-          '• 最后7位：票纸编号（通常由1位字母和6位数字组合而成，该软件自动生成而无需设置）。',
+          '• 第11至14位：MMDD格式的4位结算日期（一般为乘车日期的下一天，由软件自动生成而无需设置）；\n'
+          '• 最后7位：票纸编号（通常由1位字母和6位数字组合而成，由软件自动生成而无需设置）。',
         ),
       ),
       actions: [
