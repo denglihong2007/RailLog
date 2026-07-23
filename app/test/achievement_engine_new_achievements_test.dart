@@ -139,36 +139,19 @@ void main() {
       _achievement(
         famousNorthTrips,
         DashboardAchievementKind.fourFamousNorths,
-      ).isUnlocked,
-      isFalse,
-    );
-    final finalVisit = _arrivingTrip(id: 5, station: '邵阳北站');
-    expect(
-      _achievement([
-        ...famousNorthTrips,
-        finalVisit,
-      ], DashboardAchievementKind.fourFamousNorths).unlockedBy?.id,
-      finalVisit.id,
+      ).unlockedBy?.id,
+      4,
     );
   });
 
-  test('青春没有售价要求硬座实际到达拉萨', () {
-    final notArrived = _trip(id: 1, toStation: '拉萨站', seatType: '硬座');
+  test('青春没有售价不要求填写到达时间', () {
+    final matching = _trip(id: 1, toStation: '拉萨站', seatType: '硬座');
     final wrongSeat = _arrivingTrip(id: 2, station: '拉萨', seatType: '硬卧');
-    final matching = _arrivingTrip(id: 3, station: '拉萨站', seatType: '硬座');
 
     expect(
       _achievement([
-        notArrived,
-        wrongSeat,
-      ], DashboardAchievementKind.youthPriceless).isUnlocked,
-      isFalse,
-    );
-    expect(
-      _achievement([
-        notArrived,
-        wrongSeat,
         matching,
+        wrongSeat,
       ], DashboardAchievementKind.youthPriceless).unlockedBy?.id,
       matching.id,
     );
@@ -297,7 +280,6 @@ void main() {
           id: 4,
           toStation: '阿克陶站',
           departureTime: DateTime(2026, 2, 1, 6),
-          arrivalTime: DateTime(2026, 2, 1, 8),
         ),
         _trip(
           id: 5,
@@ -305,6 +287,19 @@ void main() {
           departureTime: DateTime(2026, 2, 10, 8),
         ),
       ], DashboardAchievementKind.horizontalChina).isUnlocked,
+      isTrue,
+    );
+  });
+
+  test('指定日期内探访终点站不要求填写到达时间', () {
+    expect(
+      _achievement([
+        _trip(
+          id: 1,
+          toStation: '武汉站',
+          departureTime: DateTime(2019, 12, 20, 8),
+        ),
+      ], DashboardAchievementKind.eveOfTheStorm).isUnlocked,
       isTrue,
     );
   });

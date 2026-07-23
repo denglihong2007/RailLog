@@ -88,15 +88,13 @@ class TripDashboardStats {
         trip,
         action: DashboardUnlockAction.departStation,
       );
-      if (trip.arrivalTime != null) {
-        _recordUnlock(
-          stationUnlocks,
-          trip.toStation,
-          trip,
-          unlockTime: trip.arrivalTime,
-          action: DashboardUnlockAction.arriveStation,
-        );
-      }
+      _recordUnlock(
+        stationUnlocks,
+        trip.toStation,
+        trip,
+        unlockTime: trip.arrivalTime ?? trip.departureTime,
+        action: DashboardUnlockAction.arriveStation,
+      );
       for (final routeName in {
         ...trip.viaRouteSegments.map((segment) => segment.routeName.trim()),
       }) {

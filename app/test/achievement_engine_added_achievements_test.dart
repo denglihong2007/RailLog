@@ -194,6 +194,16 @@ void main() {
       ], DashboardAchievementKind.icyWorld).isUnlocked,
       isFalse,
     );
+    expect(
+      _achievement([
+        _trip(
+          id: 4,
+          toStation: '根河',
+          departureTime: DateTime(2026, 1, 3, 8),
+        ),
+      ], DashboardAchievementKind.icyWorld).isUnlocked,
+      isTrue,
+    );
   });
 
   test('多此一举要求三张票按站点和时间接续同一车次', () {

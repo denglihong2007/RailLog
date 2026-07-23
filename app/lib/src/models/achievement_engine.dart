@@ -696,16 +696,13 @@ List<_StationVisit> _stationVisits(List<TripRecord> trips) {
         trip: trip,
       ),
     );
-    final arrival = trip.arrivalTime;
-    if (arrival != null) {
-      visits.add(
-        _StationVisit(
-          station: _normalizedStation(trip.toStation),
-          time: arrival,
-          trip: trip,
-        ),
-      );
-    }
+    visits.add(
+      _StationVisit(
+        station: _normalizedStation(trip.toStation),
+        time: trip.arrivalTime ?? trip.departureTime,
+        trip: trip,
+      ),
+    );
   }
   visits.sort((a, b) {
     final byTime = a.time.compareTo(b.time);
@@ -724,9 +721,8 @@ TripRecord? _firstStationVisitDuring(
       targetStations.contains(_normalizedStation(trip.fromStation))) {
     return true;
   }
-  final arrival = trip.arrivalTime;
-  return arrival != null &&
-      _isWithin(arrival, startInclusive, endExclusive) &&
+  final arrivalVisitTime = trip.arrivalTime ?? trip.departureTime;
+  return _isWithin(arrivalVisitTime, startInclusive, endExclusive) &&
       targetStations.contains(_normalizedStation(trip.toStation));
 });
 
@@ -929,10 +925,9 @@ bool _unlocksIcyWorld(TripRecord trip) {
       winterMonths.contains(trip.departureTime.month)) {
     return true;
   }
-  final arrival = trip.arrivalTime;
-  return arrival != null &&
-      _normalizedStation(trip.toStation) == '根河' &&
-      winterMonths.contains(arrival.month);
+  final arrivalVisitTime = trip.arrivalTime ?? trip.departureTime;
+  return _normalizedStation(trip.toStation) == '根河' &&
+      winterMonths.contains(arrivalVisitTime.month);
 }
 
 TripRecord? _firstThreeTicketSameTrainCompletion(List<TripRecord> trips) {
