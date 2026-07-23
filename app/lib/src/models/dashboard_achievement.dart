@@ -47,6 +47,15 @@ enum DashboardAchievementKind {
   youthPriceless,
   zeroDisplacement,
   dreamPath,
+  commuterSpecial,
+  grandSlam,
+  storedUpReward,
+  spontaneousTrip,
+  redFootprints,
+  greatWallWatch,
+  icyWorld,
+  unnecessaryExtra,
+  blessChina,
 }
 
 class DashboardAchievement {
