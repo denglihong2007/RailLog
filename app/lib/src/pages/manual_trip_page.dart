@@ -175,16 +175,18 @@ class _ManualTripPageState extends State<ManualTripPage> {
 
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_isRailTrip &&
-        !hasValidRouteContinuity(
-          _viaRouteSegments,
-          startStation: _fromStationController.text,
-          endStation: _toStationController.text,
-        )) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('经由线路必须首尾相接并覆盖乘车区间')));
-      return;
+    if (_isRailTrip) {
+      final routeError = validateViaRouteSegments(
+        _viaRouteSegments,
+        startStation: _fromStationController.text,
+        endStation: _toStationController.text,
+      );
+      if (routeError != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(routeError)));
+        return;
+      }
     }
     if (_arrivalTime != null && _arrivalTime!.isBefore(_departureTime)) {
       ScaffoldMessenger.of(

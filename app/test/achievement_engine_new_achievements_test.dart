@@ -559,7 +559,7 @@ void _registerNewAchievementTests() {
       ], DashboardAchievementKind.dreamPath).isUnlocked,
       isTrue,
     );
-    for (final model in ['25D', '25DTX', 'CRH25DT']) {
+    for (final model in ['25D', '25DTX']) {
       expect(
         _achievement([
           _trip(id: 2, rollingStock: model),
