@@ -16,7 +16,7 @@ class TicketGeneratorSettings extends ChangeNotifier {
   TicketDisplayStyle _displayStyle = TicketDisplayStyle.red;
   String _passenger = '川建国';
   String _maskedId = '1101021946****001X';
-  String _serialPrefix = '45413310010226';
+  String _serialPrefix = '4541331001';
   bool _showNewAirConditioned = false;
 
   TicketDisplayStyle get displayStyle => _displayStyle;
@@ -44,9 +44,16 @@ class TicketGeneratorSettings extends ChangeNotifier {
     _maskedId =
         await DbHelper.instance.getSetting(_maskedIdKey) ??
         '1101021946****001X';
-    _serialPrefix =
-        await DbHelper.instance.getSetting(_serialPrefixKey) ??
-        '45413310010226';
+    final storedSerialPrefix = await DbHelper.instance.getSetting(
+      _serialPrefixKey,
+    );
+    final normalizedSerialPrefix = storedSerialPrefix?.trim() ?? '';
+    _serialPrefix = RegExp(r'^\d{10}$').hasMatch(normalizedSerialPrefix)
+        ? normalizedSerialPrefix
+        : '4541331001';
+    if (storedSerialPrefix != null && storedSerialPrefix != _serialPrefix) {
+      await DbHelper.instance.setSetting(_serialPrefixKey, _serialPrefix);
+    }
     _showNewAirConditioned =
         await DbHelper.instance.getSetting(_showNewAirConditionedKey) == 'true';
     notifyListeners();
@@ -81,7 +88,7 @@ class TicketGeneratorSettings extends ChangeNotifier {
 
   Future<void> setSerialPrefix(String value) async {
     final normalized = value.trim();
-    if (!RegExp(r'^\d{14}$').hasMatch(normalized) ||
+    if (!RegExp(r'^\d{10}$').hasMatch(normalized) ||
         _serialPrefix == normalized) {
       return;
     }

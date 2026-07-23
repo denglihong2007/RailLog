@@ -24,7 +24,7 @@ void main() {
     );
     expect(TicketGeneratorSettings.instance.passenger, '川建国');
     expect(TicketGeneratorSettings.instance.maskedId, '1101021946****001X');
-    expect(TicketGeneratorSettings.instance.serialPrefix, '45413310010226');
+    expect(TicketGeneratorSettings.instance.serialPrefix, '4541331001');
     expect(TicketGeneratorSettings.instance.showNewAirConditioned, isFalse);
 
     await TicketGeneratorSettings.instance.setDisplayStyle(
@@ -32,7 +32,7 @@ void main() {
     );
     await TicketGeneratorSettings.instance.setPassenger('测试乘车人');
     await TicketGeneratorSettings.instance.setMaskedId('1234****5678');
-    await TicketGeneratorSettings.instance.setSerialPrefix('12345678901234');
+    await TicketGeneratorSettings.instance.setSerialPrefix('1234567890');
     await TicketGeneratorSettings.instance.setShowNewAirConditioned(true);
 
     expect(await DbHelper.instance.getSetting('ticket_display_style'), 'blue');
@@ -46,7 +46,7 @@ void main() {
     );
     expect(
       await DbHelper.instance.getSetting('ticket_serial_prefix'),
-      '12345678901234',
+      '1234567890',
     );
     expect(
       await DbHelper.instance.getSetting('ticket_show_new_air_conditioned'),
@@ -64,6 +64,6 @@ void main() {
   test('无效票号前缀不会覆盖已保存值', () async {
     await TicketGeneratorSettings.instance.setSerialPrefix('123');
 
-    expect(TicketGeneratorSettings.instance.serialPrefix, '12345678901234');
+    expect(TicketGeneratorSettings.instance.serialPrefix, '1234567890');
   });
 }

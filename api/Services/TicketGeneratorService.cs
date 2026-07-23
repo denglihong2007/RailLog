@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -39,6 +40,8 @@ public sealed partial class TicketGeneratorService(
         var trip = details.Trip;
 
         var ticketNumber = $"A{trip.TicketId.ToString("D6", CultureInfo.InvariantCulture)}";
+        var travelDate = trip.DepartureTime ?? trip.CreatedAt;
+        var settlementDate = travelDate.AddDays(1).ToString("MMdd", CultureInfo.InvariantCulture);
         var fromPinyinTask = stationPinyin.ResolveAsync(trip.FromStation, cancellationToken);
         var toPinyinTask = stationPinyin.ResolveAsync(trip.ToStation, cancellationToken);
         var qrTask = DownloadQrAsync(trip.TicketId, cancellationToken);
@@ -51,7 +54,7 @@ public sealed partial class TicketGeneratorService(
             trip.ToStation,
             await toPinyinTask,
             trip.TrainNumber,
-            trip.DepartureTime ?? trip.CreatedAt,
+            travelDate,
             FormatCarriageSeat(trip.SeatNumber, trip.SeatType),
             trip.Price,
             FormatSeatClass(trip.SeatType, request.ShowNewAirConditioned),
@@ -61,14 +64,14 @@ public sealed partial class TicketGeneratorService(
             text.Memorial,
             text.NoticeLine1,
             text.NoticeLine2,
-            $"{request.SerialPrefix.Trim()}{ticketNumber}    JM");
+            $"{request.SerialPrefix.Trim()}{settlementDate}{ticketNumber}    JM");
         var bytes = pdf
             ? renderer.RenderPdf(data, await qrTask)
             : renderer.RenderPng(data, await qrTask, includeBackground: true);
         return new TicketGenerationResult(bytes, ticketNumber, style);
     }
 
-    public async Task<TicketGenerationResult?> GenerateWebPdfAsync(
+    public async Task<TicketDownloadResult?> GenerateWebDownloadAsync(
         DownloadTicketPdfRequest request,
         CancellationToken cancellationToken)
     {
@@ -76,17 +79,103 @@ public sealed partial class TicketGeneratorService(
         var normalizedKey = NormalizeDownloadKey(request.Key);
         var requestJson = await database.GetTicketPdfDownloadAsync(HashDownloadKey(normalizedKey));
         if (requestJson is null) throw new TicketPdfKeyException();
-        var generationRequest = JsonSerializer.Deserialize<GenerateTicketRequest>(requestJson)
-            ?? throw new TicketPdfKeyException();
-        return await GenerateAsync(generationRequest, pdf: true,
-            ResolvePdfText(request), cancellationToken);
+        var keyRequest = DeserializePdfRequest(requestJson);
+        var generationRequests = NormalizePdfRequests(keyRequest);
+        var text = ResolvePdfText(request);
+        var pdfFiles = new List<TemporaryPdfFile>(generationRequests.Count);
+        string? zipPath = null;
+        try
+        {
+            foreach (var generationRequest in generationRequests)
+            {
+                var result = await GenerateAsync(
+                    generationRequest, pdf: true, text, cancellationToken);
+                if (result is null)
+                {
+                    DeleteTemporaryFiles(pdfFiles, zipPath);
+                    return null;
+                }
+
+                var pdfPath = CreateTemporaryPath(".pdf");
+                var pdfFile = new TemporaryPdfFile(
+                    pdfPath,
+                    $"RailLog_{result.TicketNumber}.pdf");
+                pdfFiles.Add(pdfFile);
+                await File.WriteAllBytesAsync(pdfPath, result.Bytes, cancellationToken);
+            }
+
+            if (pdfFiles.Count == 1)
+            {
+                var pdf = pdfFiles[0];
+                return new TicketDownloadResult(pdf.Path, "application/pdf", pdf.FileName);
+            }
+
+            zipPath = CreateTemporaryPath(".zip");
+            await using (var zipStream = new FileStream(
+                zipPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 64 * 1024,
+                options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                using var archive = new ZipArchive(zipStream, ZipArchiveMode.Create);
+                foreach (var pdf in pdfFiles)
+                {
+                    var entry = archive.CreateEntry(pdf.FileName, CompressionLevel.Fastest);
+                    await using var entryStream = entry.Open();
+                    await using var pdfStream = new FileStream(
+                        pdf.Path,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read,
+                        bufferSize: 64 * 1024,
+                        options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    await pdfStream.CopyToAsync(entryStream, cancellationToken);
+                }
+            }
+
+            DeleteTemporaryFiles(pdfFiles, null);
+            return new TicketDownloadResult(
+                zipPath,
+                "application/zip",
+                $"RailLog_车票排版_{pdfFiles.Count}张.zip");
+        }
+        catch
+        {
+            DeleteTemporaryFiles(pdfFiles, zipPath);
+            throw;
+        }
     }
 
-    public async Task<CreateTicketPdfKeyResponse?> CreatePdfKeyAsync(GenerateTicketRequest request)
+    private static string CreateTemporaryPath(string extension) => Path.Combine(
+        Path.GetTempPath(), $"raillog-ticket-{Guid.NewGuid():N}{extension}");
+
+    private static void DeleteTemporaryFiles(
+        IEnumerable<TemporaryPdfFile> pdfFiles,
+        string? zipPath)
     {
-        var error = Validate(request, out _);
-        if (error is not null) throw new TicketRequestException(error);
-        if (await database.GetPublicTripDetailsAsync(request.TripId) is null) return null;
+        foreach (var pdf in pdfFiles)
+        {
+            try { File.Delete(pdf.Path); } catch (IOException) { }
+        }
+        if (zipPath is not null)
+        {
+            try { File.Delete(zipPath); } catch (IOException) { }
+        }
+    }
+
+    public async Task<CreateTicketPdfKeyResponse?> CreatePdfKeyAsync(
+        CreateTicketPdfKeyRequest request)
+    {
+        var generationRequests = NormalizePdfRequests(request);
+        foreach (var generationRequest in generationRequests)
+        {
+            var error = Validate(generationRequest, out _);
+            if (error is not null) throw new TicketRequestException(error);
+            if (await database.GetPublicTripDetailsAsync(generationRequest.TripId) is null)
+                return null;
+        }
 
         var normalizedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(8));
         var displayKey = string.Join('-', Enumerable.Range(0, 4)
@@ -94,9 +183,46 @@ public sealed partial class TicketGeneratorService(
         var expiresAt = DateTime.Now.AddHours(24);
         await database.CreateTicketPdfDownloadAsync(
             HashDownloadKey(normalizedKey),
-            JsonSerializer.Serialize(request),
+            JsonSerializer.Serialize(request with
+            {
+                TripIds = generationRequests.Select(item => item.TripId).ToList()
+            }),
             expiresAt);
         return new CreateTicketPdfKeyResponse(displayKey, expiresAt);
+    }
+
+    private static IReadOnlyList<GenerateTicketRequest> NormalizePdfRequests(
+        CreateTicketPdfKeyRequest request)
+    {
+        var tripIds = request.TripIds?.Distinct().ToList() ?? [];
+        if (tripIds.Count == 0) throw new TicketRequestException("请至少选择一张车票");
+        if (tripIds.Count > 50) throw new TicketRequestException("一次最多订购 50 张车票");
+        if (tripIds.Any(tripId => tripId <= 0))
+            throw new TicketRequestException("行程 ID 无效");
+        return tripIds
+            .Select(tripId => new GenerateTicketRequest(
+                tripId,
+                request.Style,
+                request.Passenger,
+                request.MaskedId,
+                request.SerialPrefix,
+                request.ShowNewAirConditioned))
+            .ToList();
+    }
+
+    private static CreateTicketPdfKeyRequest DeserializePdfRequest(string requestJson)
+    {
+        try
+        {
+            var request = JsonSerializer.Deserialize<CreateTicketPdfKeyRequest>(requestJson);
+            if (request?.TripIds is not { Count: > 0 } || request.TripIds.Count > 50)
+                throw new TicketPdfKeyException();
+            return request;
+        }
+        catch (JsonException)
+        {
+            throw new TicketPdfKeyException();
+        }
     }
 
     private static TicketText ResolvePdfText(DownloadTicketPdfRequest request) => new(
@@ -166,7 +292,7 @@ public sealed partial class TicketGeneratorService(
         if (request.Passenger.Trim().Length > 30) return "乘车人长度不能超过 30 个字符";
         if (request.MaskedId.Trim().Length > 30) return "脱敏身份证号码长度不能超过 30 个字符";
         if (string.IsNullOrWhiteSpace(request.SerialPrefix)) return "请输入票号前缀";
-        if (!SerialPrefixRegex().IsMatch(request.SerialPrefix.Trim())) return "票号前缀必须是 14 位数字";
+        if (!SerialPrefixRegex().IsMatch(request.SerialPrefix.Trim())) return "票号前缀必须是 10 位数字";
         return null;
     }
 
@@ -211,7 +337,7 @@ public sealed partial class TicketGeneratorService(
     private static bool IsConventionalSeatClass(string? value) =>
         !string.IsNullOrWhiteSpace(value) && (value.Contains('硬') || value.Contains('软'));
 
-    [GeneratedRegex("^[0-9]{14}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[0-9]{10}$", RegexOptions.CultureInvariant)]
     private static partial Regex SerialPrefixRegex();
 
     [GeneratedRegex(@"^(?<car>\d+)\s*车\s*(?<seat>.*)$", RegexOptions.CultureInvariant)]
@@ -235,6 +361,8 @@ public sealed partial class TicketGeneratorService(
 }
 
 public sealed record TicketGenerationResult(byte[] Bytes, string TicketNumber, TicketStyle Style);
+public sealed record TicketDownloadResult(string FilePath, string ContentType, string FileName);
+public sealed record TemporaryPdfFile(string Path, string FileName);
 public sealed class TicketRequestException(string message) : Exception(message);
 public sealed class TicketPdfPasswordException : Exception;
 public sealed class TicketPdfKeyException : Exception;

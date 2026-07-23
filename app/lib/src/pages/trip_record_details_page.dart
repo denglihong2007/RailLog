@@ -537,7 +537,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     setState(() => _buying = true);
     try {
       final download = await TicketGeneratorService.createPdfDownloadKey(
-        tripId: ticketId,
+        tripIds: [ticketId],
       );
       if (!mounted) return;
       final openTaobao = await showDialog<bool>(

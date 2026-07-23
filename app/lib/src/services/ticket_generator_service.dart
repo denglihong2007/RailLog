@@ -23,7 +23,7 @@ abstract final class TicketGeneratorService {
   );
 
   static Future<TicketPdfDownloadKey> createPdfDownloadKey({
-    required int tripId,
+    required Iterable<int> tripIds,
   }) async {
     final token = SessionService.instance.token;
     if (token == null) throw const TicketGeneratorException('请先登录');
@@ -31,10 +31,17 @@ abstract final class TicketGeneratorService {
     if (settings.displayStyle == TicketDisplayStyle.md3) {
       throw const TicketGeneratorException('MD3 样式无需生成车票文件');
     }
+    final normalizedTripIds = tripIds.toSet().toList(growable: false);
+    if (normalizedTripIds.isEmpty) {
+      throw const TicketGeneratorException('请至少选择一张车票');
+    }
+    if (normalizedTripIds.length > 50) {
+      throw const TicketGeneratorException('一次最多订购 50 张车票');
+    }
     try {
       final response = await ApiClient.instance.dio.post<Map<String, dynamic>>(
         '/api/ticket-generator/pdf-key',
-        data: _requestData(tripId, settings),
+        data: _pdfKeyRequestData(normalizedTripIds, settings),
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       final data = response.data;
@@ -84,6 +91,18 @@ abstract final class TicketGeneratorService {
     TicketGeneratorSettings settings,
   ) => {
     'tripId': tripId,
+    'style': settings.requestStyle,
+    'passenger': settings.passenger,
+    'maskedId': settings.maskedId,
+    'serialPrefix': settings.serialPrefix,
+    'showNewAirConditioned': settings.showNewAirConditioned,
+  };
+
+  static Map<String, dynamic> _pdfKeyRequestData(
+    List<int> tripIds,
+    TicketGeneratorSettings settings,
+  ) => {
+    'tripIds': tripIds,
     'style': settings.requestStyle,
     'passenger': settings.passenger,
     'maskedId': settings.maskedId,

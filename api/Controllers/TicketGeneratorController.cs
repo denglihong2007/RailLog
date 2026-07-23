@@ -18,12 +18,12 @@ public sealed class TicketGeneratorController(
         Generate(request, pdf: false, cancellationToken);
 
     [HttpPost("pdf-key")]
-    public async Task<IActionResult> PdfKey(GenerateTicketRequest request)
+    public async Task<IActionResult> PdfKey(CreateTicketPdfKeyRequest request)
     {
         try
         {
             var result = await generator.CreatePdfKeyAsync(request);
-            if (result is null) return NotFound(new MessageResponse("未找到这条行程记录"));
+            if (result is null) return NotFound(new MessageResponse("未找到所选行程记录"));
             Response.Headers.CacheControl = "private, no-store";
             return Ok(result);
         }
@@ -42,10 +42,17 @@ public sealed class TicketGeneratorController(
     {
         try
         {
-            var result = await generator.GenerateWebPdfAsync(request, cancellationToken);
-            if (result is null) return NotFound(new MessageResponse("未找到这条行程记录"));
+            var result = await generator.GenerateWebDownloadAsync(request, cancellationToken);
+            if (result is null) return NotFound(new MessageResponse("未找到所选行程记录"));
             Response.Headers.CacheControl = "private, no-store";
-            return File(result.Bytes, "application/pdf", $"RailLog_{result.TicketNumber}.pdf");
+            var stream = new FileStream(
+                result.FilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 64 * 1024,
+                options: FileOptions.DeleteOnClose | FileOptions.SequentialScan);
+            return File(stream, result.ContentType, result.FileName);
         }
         catch (TicketPdfPasswordException)
         {
