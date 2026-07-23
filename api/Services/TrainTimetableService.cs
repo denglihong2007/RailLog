@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace RailLog.API.Services;
@@ -91,8 +92,6 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
                 ArriveTime AS arrive_time,
                 StartTime AS start_time,
                 '' AS running_time,
-                '' AS arrive_day_str,
-                0 AS arrive_day_diff,
                 Mileage AS mileage
             FROM {Quote(tableName)}
             WHERE upper(trim(COALESCE(TrainCode1, ''))) = @trainNumber
@@ -102,19 +101,36 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
         command.Parameters.AddWithValue("@trainNumber", normalizedTrainNumber);
 
         var result = new List<TrainTimetableStop>();
+        TimeSpan? previousEventTime = null;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var stationName = ReadString(reader, "station_name");
             if (stationName.Length == 0) continue;
+
+            var arriveTime = ReadString(reader, "arrive_time");
+            var startTime = ReadString(reader, "start_time");
+            var arriveDayDiff = 0;
+            if (TryParseTime(arriveTime, out var arrivalEventTime))
+            {
+                arrivalEventTime = MoveToNextEventDay(arrivalEventTime, previousEventTime);
+                previousEventTime = arrivalEventTime;
+                arriveDayDiff = GetDayDifference(arrivalEventTime);
+            }
+
+            // A train can cross midnight while dwelling at a station. Process the
+            // departure after the arrival so the next station inherits that day.
+            if (TryParseTime(startTime, out var departureEventTime))
+                previousEventTime = MoveToNextEventDay(departureEventTime, previousEventTime);
+
             result.Add(new TrainTimetableStop(
                 stationName,
                 ReadString(reader, "station_no"),
-                ReadString(reader, "arrive_time"),
-                ReadString(reader, "start_time"),
-                ReadString(reader, "running_time"),
-                ReadString(reader, "arrive_day_str"),
-                ReadInt(reader, "arrive_day_diff"),
+                arriveTime,
+                startTime,
+                string.Empty,
+                string.Empty,
+                arriveDayDiff,
                 ReadDouble(reader, "mileage")));
         }
 
@@ -166,11 +182,29 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
     private static string ReadString(SqliteDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name])?.Trim() ?? string.Empty;
 
-    private static int ReadInt(SqliteDataReader reader, string name) =>
-        int.TryParse(ReadString(reader, name), out var value) ? value : 0;
-
     private static double ReadDouble(SqliteDataReader reader, string name) =>
         double.TryParse(ReadString(reader, name), out var value) ? value : 0;
+
+    private static bool TryParseTime(string value, out TimeSpan time)
+    {
+        time = default;
+        var normalized = value.Trim();
+        if (normalized.Length == 0 || normalized.All(static character => character == '-'))
+            return false;
+
+        return TimeSpan.TryParse(normalized, CultureInfo.InvariantCulture, out time) &&
+               time >= TimeSpan.Zero;
+    }
+
+    private static TimeSpan MoveToNextEventDay(TimeSpan eventTime, TimeSpan? previousEventTime)
+    {
+        while (previousEventTime is not null && eventTime < previousEventTime.Value)
+            eventTime += TimeSpan.FromDays(1);
+        return eventTime;
+    }
+
+    private static int GetDayDifference(TimeSpan eventTime) =>
+        Math.Max(0, (int)eventTime.TotalDays);
 }
 
 public sealed record TrainTimetableStop(
