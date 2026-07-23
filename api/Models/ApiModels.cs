@@ -48,6 +48,14 @@ public sealed record GenerateTicketRequest(
     string SerialPrefix,
     bool ShowNewAirConditioned);
 
+public sealed record CreateTicketPdfKeyRequest(
+    IReadOnlyList<long> TripIds,
+    string Style,
+    string Passenger,
+    string MaskedId,
+    string SerialPrefix,
+    bool ShowNewAirConditioned);
+
 public sealed record CreateTicketPdfKeyResponse(string Key, DateTime ExpiresAt);
 public sealed record DownloadTicketPdfRequest(
     string Key,

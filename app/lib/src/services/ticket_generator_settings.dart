@@ -47,7 +47,10 @@ class TicketGeneratorSettings extends ChangeNotifier {
     final storedSerialPrefix = await DbHelper.instance.getSetting(
       _serialPrefixKey,
     );
-    _serialPrefix = _normalizeSerialPrefix(storedSerialPrefix);
+    final normalizedSerialPrefix = storedSerialPrefix?.trim() ?? '';
+    _serialPrefix = RegExp(r'^\d{10}$').hasMatch(normalizedSerialPrefix)
+        ? normalizedSerialPrefix
+        : '4541331001';
     if (storedSerialPrefix != null && storedSerialPrefix != _serialPrefix) {
       await DbHelper.instance.setSetting(_serialPrefixKey, _serialPrefix);
     }
@@ -92,15 +95,6 @@ class TicketGeneratorSettings extends ChangeNotifier {
     _serialPrefix = normalized;
     notifyListeners();
     await DbHelper.instance.setSetting(_serialPrefixKey, normalized);
-  }
-
-  static String _normalizeSerialPrefix(String? value) {
-    final normalized = value?.trim() ?? '';
-    if (RegExp(r'^\d{10}$').hasMatch(normalized)) return normalized;
-    if (RegExp(r'^\d{14}$').hasMatch(normalized)) {
-      return normalized.substring(0, 10);
-    }
-    return '4541331001';
   }
 
   Future<void> setShowNewAirConditioned(bool value) async {

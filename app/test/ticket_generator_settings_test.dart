@@ -66,19 +66,4 @@ void main() {
 
     expect(TicketGeneratorSettings.instance.serialPrefix, '1234567890');
   });
-
-  test('初始化时将旧版 14 位票号前缀迁移为前 10 位', () async {
-    await DbHelper.instance.setSetting(
-      'ticket_serial_prefix',
-      '98765432101234',
-    );
-
-    await TicketGeneratorSettings.instance.initialize();
-
-    expect(TicketGeneratorSettings.instance.serialPrefix, '9876543210');
-    expect(
-      await DbHelper.instance.getSetting('ticket_serial_prefix'),
-      '9876543210',
-    );
-  });
 }

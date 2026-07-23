@@ -12,6 +12,20 @@ const noticeLine2 = ref('寻梦交通文创祝您旅途愉快')
 const busy = ref(false)
 const error = ref('')
 
+function downloadFilename(disposition: string, contentType: string) {
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.replace(/^"|"$/g, ''))
+    } catch {
+      // Fall through to the plain filename supplied by the server.
+    }
+  }
+  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  if (plain) return plain
+  return contentType.includes('zip') ? 'RailLog_车票排版.zip' : 'RailLog_车票排版.pdf'
+}
+
 async function downloadPdf() {
   const key = keyValue.value.trim()
   if (!key || !password.value) {
@@ -39,8 +53,10 @@ async function downloadPdf() {
     }
     const blob = await response.blob()
     const disposition = response.headers.get('content-disposition') ?? ''
-    const match = disposition.match(/filename="?([^";]+)"?/i)
-    const filename = match?.[1] ?? 'RailLog_车票排版.pdf'
+    const filename = downloadFilename(
+      disposition,
+      response.headers.get('content-type') ?? blob.type,
+    )
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
@@ -63,8 +79,8 @@ async function downloadPdf() {
       <div class="ticket-pdf-heading">
         <Download :size="28" aria-hidden="true" />
         <div>
-          <p>车票排版文件</p>
-          <h1 id="ticket-pdf-title">PDF 下载</h1>
+          <p>单张 PDF / 多张 ZIP</p>
+          <h1 id="ticket-pdf-title">车票排版下载</h1>
         </div>
       </div>
 
@@ -103,7 +119,7 @@ async function downloadPdf() {
       <p v-if="error" class="ticket-pdf-error" role="alert">{{ error }}</p>
       <button type="submit" :disabled="busy">
         <Download :size="20" aria-hidden="true" />
-        {{ busy ? '正在生成' : '下载 PDF' }}
+        {{ busy ? '正在生成' : '下载排版文件' }}
       </button>
     </form>
   </section>

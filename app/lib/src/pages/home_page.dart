@@ -195,6 +195,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                       onChanged: _refresh,
                       openTrip: openTrip,
                       subject: 'TA',
+                      enableTripManagement: false,
                     ),
                     const SizedBox(height: 24),
                     _StatsGrid(
@@ -771,20 +772,25 @@ class _OverviewSection extends StatelessWidget {
     required this.onChanged,
     this.openTrip,
     this.subject = '你',
+    this.enableTripManagement = true,
   });
 
   final TripDashboardStats stats;
   final Future<void> Function() onChanged;
   final TripEntryOpener? openTrip;
   final String subject;
+  final bool enableTripManagement;
 
   @override
   Widget build(BuildContext context) {
     Future<void> openAllTrips() async {
       final changed = await Navigator.of(context).push<bool>(
         m3PageRoute(
-          builder: (context) =>
-              AllTripsPage(trips: stats.allTrips, openTrip: openTrip),
+          builder: (context) => AllTripsPage(
+            trips: stats.allTrips,
+            openTrip: openTrip,
+            enableSelection: enableTripManagement,
+          ),
         ),
       );
       if (changed == true) await onChanged();
