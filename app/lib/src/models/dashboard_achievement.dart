@@ -56,6 +56,14 @@ enum DashboardAchievementKind {
   icyWorld,
   unnecessaryExtra,
   blessChina,
+  snowWelcomesSpring,
+  moistensJiangnan,
+  facingTheWorld,
+  revivalPrototype,
+  vibrantJourney,
+  multipleChoices,
+  publicDisplayOfAffection,
+  farsighted,
 }
 
 class DashboardAchievement {

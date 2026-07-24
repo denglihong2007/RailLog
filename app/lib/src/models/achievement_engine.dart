@@ -36,6 +36,35 @@ const _regularSeatTypes = {
   '高级动卧',
 };
 const _airportStationsWithoutAirportSuffix = {'美兰', '龙洞堡'};
+const _variableGaugeModels = {
+  'CR400BF-0031',
+  'CR400BF-G-0051',
+  'CR400AF-G-0021',
+};
+const _prototypeModels = {
+  'CR400BF-0305',
+  'CR400BF-0503',
+  'CR400BF-0507',
+  'CR400AF-0207',
+  'CR400AF-0208',
+  'CR300AF-0001',
+  'CR300AF-0003',
+  'CR300AF-0004',
+  'CR300BF-0002',
+  'CR300BF-0005',
+  'CR300BF-0006',
+};
+const _vibrantExpressModels = {
+  'CRH380A-0251',
+  'CRH380A-0252',
+  'CRH380A-0253',
+  'CRH380A-0254',
+  'CRH380A-0255',
+  'CRH380A-0256',
+  'CRH380A-0257',
+  'CRH380A-0258',
+  'CRH380A-0259',
+};
 
 List<DashboardAchievement> buildDashboardAchievements(
   Iterable<TripRecord> trips,
@@ -341,7 +370,7 @@ List<DashboardAchievement> buildDashboardAchievements(
         railTrips,
         (trip) =>
             _normalizedStation(trip.fromStation) == '定西北' &&
-            _normalizedStation(trip.toStation) == '镇江南'
+            _normalizedStation(trip.toStation) == '镇江南',
       ),
     ),
     _achievement(
@@ -413,7 +442,7 @@ List<DashboardAchievement> buildDashboardAchievements(
         railTrips,
         (trip) =>
             _normalizedStation(trip.fromStation) ==
-                _normalizedStation(trip.toStation),
+            _normalizedStation(trip.toStation),
       ),
     ),
     _achievement(
@@ -478,7 +507,7 @@ List<DashboardAchievement> buildDashboardAchievements(
     _achievement(
       DashboardAchievementKind.unnecessaryExtra,
       '多此一举',
-      '分 3 张车票接续乘坐同一列车',
+      '至少分 3 张车票接续乘坐同一列车',
       _firstThreeTicketSameTrainCompletion(railTrips),
     ),
     _achievement(
@@ -486,6 +515,54 @@ List<DashboardAchievement> buildDashboardAchievements(
       '祝福祖国',
       '在 10 月 1 日乘坐列车',
       _firstWhere(railTrips, _unlocksBlessChina),
+    ),
+    _achievement(
+      DashboardAchievementKind.snowWelcomesSpring,
+      '瑞雪迎春',
+      '乘坐一次北京冬奥会限定车型 CR400BF-C-5162',
+      _firstRollingStockMatch(railTrips, const {'CR400BF-C-5162'}),
+    ),
+    _achievement(
+      DashboardAchievementKind.moistensJiangnan,
+      '润泽江南',
+      '乘坐一次杭州亚运会限定车型 CR400BF-Z-0524',
+      _firstRollingStockMatch(railTrips, const {'CR400BF-Z-0524'}),
+    ),
+    _achievement(
+      DashboardAchievementKind.facingTheWorld,
+      '面向世界',
+      '乘坐一次 CR400 系列可变轨距列车',
+      _firstRollingStockMatch(railTrips, _variableGaugeModels),
+    ),
+    _achievement(
+      DashboardAchievementKind.revivalPrototype,
+      '复兴之路',
+      '乘坐一次 CR400 或 CR300 原样车',
+      _firstRollingStockMatch(railTrips, _prototypeModels),
+    ),
+    _achievement(
+      DashboardAchievementKind.vibrantJourney,
+      '动感之旅',
+      '乘坐一次港铁动感号列车',
+      _firstRollingStockMatch(railTrips, _vibrantExpressModels),
+    ),
+    _achievement(
+      DashboardAchievementKind.multipleChoices,
+      '多重选择',
+      '在同一乘车区间累计乘坐至少 10 个不同车次',
+      _firstDistinctTrainCountForRoute(railTrips, 10),
+    ),
+    _achievement(
+      DashboardAchievementKind.publicDisplayOfAffection,
+      '秀恩爱',
+      '在 5 月 20 日乘坐重联动车组列车',
+      _firstWhere(railTrips, _unlocksPublicDisplayOfAffection),
+    ),
+    _achievement(
+      DashboardAchievementKind.farsighted,
+      '高瞻远瞩',
+      '乘坐双层车厢的上层席位',
+      _firstWhere(railTrips, _unlocksFarsighted),
     ),
   ];
   return List.unmodifiable([
@@ -572,6 +649,36 @@ Set<String> _rollingStockMatches(String? value, Set<String> models) {
             RegExp('${RegExp.escape(model)}(?![A-Z0-9])').hasMatch(normalized),
       )
       .toSet();
+}
+
+TripRecord? _firstRollingStockMatch(
+  List<TripRecord> trips,
+  Set<String> models,
+) => _firstWhere(
+  trips,
+  (trip) => _rollingStockMatches(trip.rollingStock, models).isNotEmpty,
+);
+
+TripRecord? _firstDistinctTrainCountForRoute(
+  List<TripRecord> trips,
+  int target,
+) {
+  final trainNumbersByRoute = <(String, String), Set<String>>{};
+  for (final trip in trips) {
+    final from = _normalizedStation(trip.fromStation);
+    final to = _normalizedStation(trip.toStation);
+    final trainNumber = trip.trainNumber
+        .replaceAll(RegExp(r'\s+'), '')
+        .toUpperCase();
+    if (from.isEmpty || to.isEmpty || trainNumber.isEmpty) continue;
+    final trainNumbers = trainNumbersByRoute.putIfAbsent((
+      from,
+      to,
+    ), () => <String>{});
+    trainNumbers.add(trainNumber);
+    if (trainNumbers.length >= target) return trip;
+  }
+  return null;
 }
 
 Set<String> _emuMatches(String? value) {
@@ -803,10 +910,7 @@ TripRecord? _firstRailFerryCompletion(List<TripRecord> trips) {
 TripRecord? _firstAirportStationCompletion(List<TripRecord> trips, int target) {
   final stations = <String>{};
   for (final trip in trips) {
-    for (final station in [
-      trip.fromStation,
-      trip.toStation,
-    ]) {
+    for (final station in [trip.fromStation, trip.toStation]) {
       final normalized = station.trim().replaceFirst(RegExp(r'站$'), '');
       if (normalized.contains('机场') ||
           _airportStationsWithoutAirportSuffix.contains(normalized)) {
@@ -961,6 +1065,17 @@ bool _unlocksBlessChina(TripRecord trip) {
     return true;
   }
   return false;
+}
+
+bool _unlocksPublicDisplayOfAffection(TripRecord trip) =>
+    trip.departureTime.month == 5 &&
+    trip.departureTime.day == 20 &&
+    (trip.rollingStock?.contains('&') ?? false);
+
+bool _unlocksFarsighted(TripRecord trip) {
+  final seat = trip.seatNumber;
+  if (seat == null) return false;
+  return RegExp(r'上(?!铺)').hasMatch(seat);
 }
 
 int _max(int first, int second) => first > second ? first : second;
