@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/seat_selection.dart';
-import 'package:raillog/src/models/station_pair_distance.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/timetable_source.dart';
@@ -78,6 +77,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   bool _ticketSeatLookupFailed = false;
   List<ViaRouteSegment> _viaRouteSegments = const [];
   List<String> _unresolvedRouteSections = const [];
+  List<String> _routeInferenceLog = const [];
   bool _usedShortestRoutePath = false;
   bool _isLoadingRouteInfo = true;
   bool _routeLookupFailed = false;
@@ -154,12 +154,19 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final rollingStock = results[1] as RollingStockLookupResult?;
     final routeResolution = results[2] as RouteResolution?;
     final ticketSeatAvailability = results[3] as TicketSeatAvailability?;
+    final historicalMileage = widget.timetableSource.isOnline
+        ? null
+        : historicalJourneyMileage(_departureStop, _arrivalStop);
     setState(() {
       if (distanceInfo != null) {
         if (_distanceController.text.isEmpty) {
           _distanceController.text = formatTripNumber(distanceInfo.distance);
         }
         _companyController.text = distanceInfo.companyName;
+      } else if (historicalMileage != null) {
+        if (_distanceController.text.isEmpty) {
+          _distanceController.text = formatTripNumber(historicalMileage);
+        }
       } else {
         _distanceLookupFailed = true;
       }
@@ -175,6 +182,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       if (routeResolution != null) {
         _viaRouteSegments = _normalizeRouteSegments(routeResolution.segments);
         _unresolvedRouteSections = routeResolution.unresolvedSections;
+        _routeInferenceLog = routeResolution.inferenceLog;
         _usedShortestRoutePath = routeResolution.usedShortestPath;
         _routeEditorRevision++;
       } else {
@@ -228,32 +236,17 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
           widget.departureStopIndex,
           widget.arrivalStopIndex + 1,
         );
-        final hasHistoricalMileage = selectedStops.any(
-          (stop) => stop.mileage != null && stop.mileage! > 0,
+        final hasMileageData = selectedStops.any(
+          (stop) => (stop.mileage ?? 0) > 0,
         );
-        if (!hasHistoricalMileage) return null;
-
-        final sections = <StationPairDistance>[];
-        for (
-          var index = widget.departureStopIndex;
-          index < widget.arrivalStopIndex;
-          index++
-        ) {
-          final from = widget.scheduleStops[index];
-          final to = widget.scheduleStops[index + 1];
-          final fromMileage = from.mileage;
-          final toMileage = to.mileage;
-          sections.add(
-            StationPairDistance(
-              fromStation: from.stationName,
-              toStation: to.stationName,
-              distanceKm: fromMileage != null && toMileage != null
-                  ? (toMileage - fromMileage).abs()
-                  : null,
-            ),
+        if (!hasMileageData) {
+          return const RouteResolution(
+            segments: [],
+            usedShortestPath: false,
+            unresolvedSections: [],
+            inferenceLog: ['历史时刻表所选区间无有效里程数据，已跳过路径推断'],
           );
         }
-        return RouteService.resolveJourney(sections);
       }
       final sections = await TrainService.fetchStationPairDistances(
         widget.trainNumber,
@@ -295,6 +288,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       setState(() {
         _viaRouteSegments = _normalizeRouteSegments(result.segments);
         _unresolvedRouteSections = result.unresolvedSections;
+        _routeInferenceLog = result.inferenceLog;
         _usedShortestRoutePath = true;
         _routeLookupFailed = false;
         _isRecognizingShortestPath = false;
@@ -492,6 +486,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
                   },
                   usedShortestPath: _usedShortestRoutePath,
                   unresolvedSections: _unresolvedRouteSections,
+                  inferenceLog: _routeInferenceLog,
                   lookupFailed: _routeLookupFailed,
                 ),
               ],

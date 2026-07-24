@@ -26,6 +26,7 @@ class RouteSegmentsEditor extends StatefulWidget {
     required this.onChanged,
     this.usedShortestPath = false,
     this.unresolvedSections = const [],
+    this.inferenceLog = const [],
     this.lookupFailed = false,
   });
 
@@ -42,6 +43,7 @@ class RouteSegmentsEditor extends StatefulWidget {
   final ValueChanged<List<ViaRouteSegment>> onChanged;
   final bool usedShortestPath;
   final List<String> unresolvedSections;
+  final List<String> inferenceLog;
   final bool lookupFailed;
 
   @override
@@ -64,6 +66,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   ValueChanged<List<ViaRouteSegment>> get onChanged => widget.onChanged;
   bool get usedShortestPath => widget.usedShortestPath;
   List<String> get unresolvedSections => widget.unresolvedSections;
+  List<String> get inferenceLog => widget.inferenceLog;
   bool get lookupFailed => widget.lookupFailed;
 
   @override
@@ -107,6 +110,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
           onAdd: () => _addSegment(isManual: false),
           onAddManual: () => _addSegment(isManual: true),
           onRecognize: onRecognizeShortestPath,
+          onShowLog: inferenceLog.isEmpty ? null : _showInferenceLog,
         ),
         const SizedBox(height: 8),
         Row(
@@ -152,6 +156,15 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
           ),
         ],
       ],
+    );
+  }
+
+  void _showInferenceLog() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => _InferenceLogSheet(entries: inferenceLog),
     );
   }
 
@@ -229,6 +242,62 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   }
 }
 
+class _InferenceLogSheet extends StatelessWidget {
+  const _InferenceLogSheet({required this.entries});
+
+  final List<String> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.72,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 12),
+              child: Row(
+                children: [
+                  Icon(Icons.receipt_long_outlined, color: colors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '路径推断日志',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                itemCount: entries.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) => SelectableText(
+                  entries[index],
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EditorHeader extends StatelessWidget {
   const _EditorHeader({
     required this.isLoading,
@@ -237,6 +306,7 @@ class _EditorHeader extends StatelessWidget {
     required this.onAdd,
     required this.onAddManual,
     required this.onRecognize,
+    required this.onShowLog,
   });
 
   final bool isLoading;
@@ -245,6 +315,7 @@ class _EditorHeader extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback onAddManual;
   final VoidCallback onRecognize;
+  final VoidCallback? onShowLog;
 
   @override
   Widget build(BuildContext context) {
@@ -262,6 +333,12 @@ class _EditorHeader extends StatelessWidget {
         final actions = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              tooltip: '查看推断日志',
+              visualDensity: VisualDensity.compact,
+              onPressed: onShowLog,
+              icon: const Icon(Icons.receipt_long_outlined, size: 20),
+            ),
             IconButton(
               tooltip: '添加数据库线路',
               onPressed: isLoading || !canEdit ? null : onAdd,

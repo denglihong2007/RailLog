@@ -5,9 +5,11 @@ class RouteResolution {
     required this.segments,
     required this.usedShortestPath,
     required this.unresolvedSections,
+    this.inferenceLog = const [],
   });
 
   final List<ViaRouteSegment> segments;
   final bool usedShortestPath;
   final List<String> unresolvedSections;
+  final List<String> inferenceLog;
 }
