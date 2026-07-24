@@ -18,7 +18,7 @@ public sealed class ProfileController(RailLogDatabase database) : ControllerBase
         return profile is null ? NotFound() : Ok(profile);
     }
 
-    [HttpPut]
+    [HttpPost]
     public async Task<ActionResult<UserProfile>> Update(UpdateProfileRequest request)
     {
         var result = await database.UpdateProfileAsync(UserId, request);

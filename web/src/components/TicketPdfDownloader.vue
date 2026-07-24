@@ -12,20 +12,6 @@ const noticeLine2 = ref('寻梦交通文创祝您旅途愉快')
 const busy = ref(false)
 const error = ref('')
 
-function downloadFilename(disposition: string, contentType: string) {
-  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-  if (encoded) {
-    try {
-      return decodeURIComponent(encoded.replace(/^"|"$/g, ''))
-    } catch {
-      // Fall through to the plain filename supplied by the server.
-    }
-  }
-  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1]
-  if (plain) return plain
-  return contentType.includes('zip') ? 'RailLog_车票排版.zip' : 'RailLog_车票排版.pdf'
-}
-
 async function downloadPdf() {
   const key = keyValue.value.trim()
   if (!key || !password.value) {
@@ -51,20 +37,12 @@ async function downloadPdf() {
       const body = await response.json().catch(() => null) as { message?: string } | null
       throw new Error(body?.message ?? `下载失败（${response.status}）`)
     }
-    const blob = await response.blob()
-    const disposition = response.headers.get('content-disposition') ?? ''
-    const filename = downloadFilename(
-      disposition,
-      response.headers.get('content-type') ?? blob.type,
-    )
-    const url = URL.createObjectURL(blob)
+    const body = await response.json() as { downloadUrl: string; expiresAt: string }
     const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = filename
+    anchor.href = new URL(body.downloadUrl, response.url).href
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
-    URL.revokeObjectURL(url)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '下载失败，请稍后重试'
   } finally {

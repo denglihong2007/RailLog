@@ -141,6 +141,16 @@ IconData dashboardAchievementIcon(
   DashboardAchievementKind.icyWorld => Icons.ac_unit_outlined,
   DashboardAchievementKind.unnecessaryExtra => Icons.filter_3_outlined,
   DashboardAchievementKind.blessChina => Icons.flag_outlined,
+  DashboardAchievementKind.snowWelcomesSpring => Icons.ac_unit_outlined,
+  DashboardAchievementKind.moistensJiangnan => Icons.water_drop_outlined,
+  DashboardAchievementKind.facingTheWorld => Icons.public_outlined,
+  DashboardAchievementKind.revivalPrototype =>
+    Icons.precision_manufacturing_outlined,
+  DashboardAchievementKind.vibrantJourney => Icons.directions_railway_outlined,
+  DashboardAchievementKind.multipleChoices =>
+    Icons.format_list_numbered_outlined,
+  DashboardAchievementKind.publicDisplayOfAffection => Icons.favorite_outline,
+  DashboardAchievementKind.farsighted => Icons.visibility_outlined,
 };
 
 String _trainLabel(String value) {

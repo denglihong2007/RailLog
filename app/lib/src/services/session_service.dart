@@ -80,7 +80,7 @@ class SessionService extends ChangeNotifier {
     final authToken = _token;
     if (authToken == null) throw const SessionException('请先登录');
     try {
-      final response = await ApiClient.instance.dio.put<Map<String, dynamic>>(
+      final response = await ApiClient.instance.dio.post<Map<String, dynamic>>(
         '/api/profile',
         options: ApiClient.instance.authorized(authToken),
         data: {

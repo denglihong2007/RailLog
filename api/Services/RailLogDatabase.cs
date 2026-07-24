@@ -8,6 +8,7 @@ namespace RailLog.API.Services;
 
 public sealed class RailLogDatabase
 {
+    private const int LeaderboardSize = 15;
     private readonly string _connectionString;
 
     public RailLogDatabase(IConfiguration configuration, IWebHostEnvironment environment)
@@ -889,7 +890,7 @@ public sealed class RailLogDatabase
         .OrderByDescending(item => item.Value)
         .ThenBy(item => item.User.DisplayName, StringComparer.Ordinal)
         .ThenBy(item => item.User.Id, StringComparer.Ordinal)
-        .Take(10)
+        .Take(LeaderboardSize)
         .Select((item, index) => new UserRankingEntry(index + 1, item.User, item.Value))
         .ToList();
 
@@ -901,7 +902,7 @@ public sealed class RailLogDatabase
             : values.OrderBy(item => item.Value);
         return ordered
             .ThenBy(item => item.Trip.Trip.TicketId)
-            .Take(10)
+            .Take(LeaderboardSize)
             .Select((item, index) => new TripRankingEntry(
                 index + 1, item.Trip.User, ToSummary(item.Trip.Trip), item.Value))
             .ToList();
@@ -925,7 +926,7 @@ public sealed class RailLogDatabase
         IReadOnlyDictionary<string, int> counts) => counts
         .OrderByDescending(item => item.Value)
         .ThenBy(item => item.Key, StringComparer.Ordinal)
-        .Take(10)
+        .Take(LeaderboardSize)
         .Select((item, index) => new ElementRankingEntry(index + 1, item.Key, item.Value))
         .ToList();
 

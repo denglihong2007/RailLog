@@ -17,6 +17,7 @@ builder.Services.Configure<TicketAssetsOptions>(builder.Configuration.GetSection
 builder.Services.Configure<TicketPdfOptions>(builder.Configuration.GetSection("TicketPdf"));
 builder.Services.AddSingleton<TicketAssetStore>();
 builder.Services.AddSingleton<TicketRenderer>();
+builder.Services.AddSingleton<TicketDownloadLinkStore>();
 builder.Services.AddHttpClient("12306-stations", client =>
 {
     client.BaseAddress = new Uri("https://kyfw.12306.cn/");

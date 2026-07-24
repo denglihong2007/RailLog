@@ -863,9 +863,143 @@ class _OverviewCard extends StatelessWidget {
               '记录时间：$dateRange',
               style: TextStyle(color: colors.onPrimaryContainer),
             ),
+            const SizedBox(height: 20),
+            Divider(color: colors.onPrimaryContainer.withValues(alpha: 0.24)),
+            const SizedBox(height: 12),
+            _OverviewMetrics(stats: stats),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _OverviewMetrics extends StatelessWidget {
+  const _OverviewMetrics({required this.stats});
+
+  final TripDashboardStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onPrimaryContainer;
+    final metrics = [
+      _OverviewMetric(
+        label: '累计花费',
+        value: _money(stats.totalCost),
+        description: '单次最高 ${_money(stats.maxCost)}',
+        icon: Icons.account_balance_wallet_outlined,
+      ),
+      _OverviewMetric(
+        label: '累计里程',
+        value: _km(stats.totalMileage),
+        description: '单次最长 ${_km(stats.maxMileage)}',
+        icon: Icons.straighten_outlined,
+      ),
+      _OverviewMetric(
+        label: '累计时长',
+        value: _duration(stats.totalDuration),
+        description: '最长 ${_duration(stats.maxDuration)}',
+        icon: Icons.schedule_outlined,
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 520) {
+          return Column(
+            children: [
+              metrics[0],
+              Divider(color: color.withValues(alpha: 0.24)),
+              metrics[1],
+              Divider(color: color.withValues(alpha: 0.24)),
+              metrics[2],
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: metrics[0]),
+            _OverviewMetricDivider(color: color),
+            Expanded(child: metrics[1]),
+            _OverviewMetricDivider(color: color),
+            Expanded(child: metrics[2]),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _OverviewMetric extends StatelessWidget {
+  const _OverviewMetric({
+    required this.label,
+    required this.value,
+    required this.description,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final String description;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onPrimaryContainer;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: color),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          description,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: color.withValues(alpha: 0.8)),
+        ),
+      ],
+    );
+  }
+}
+
+class _OverviewMetricDivider extends StatelessWidget {
+  const _OverviewMetricDivider({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 64,
+      child: VerticalDivider(color: color.withValues(alpha: 0.24)),
     );
   }
 }
@@ -882,26 +1016,6 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final summaryCards = [
-      _Metric(
-        '累计花费',
-        _money(stats.totalCost),
-        '单次最高 ${_money(stats.maxCost)}',
-        Icons.account_balance_wallet_outlined,
-      ),
-      _Metric(
-        '累计里程',
-        _km(stats.totalMileage),
-        '单次最长 ${_km(stats.maxMileage)}',
-        Icons.straighten_outlined,
-      ),
-      _Metric(
-        '累计时长',
-        _duration(stats.totalDuration),
-        '最长 ${_duration(stats.maxDuration)}',
-        Icons.schedule_outlined,
-      ),
-    ];
     final footprintCards = [
       _Metric(
         '走过线路',
@@ -973,13 +1087,9 @@ class _StatsGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionHeading(title: '行程累计'),
-        const SizedBox(height: 12),
-        _MetricGrid(cards: summaryCards),
-        const SizedBox(height: 24),
         const _SectionHeading(title: '铁路足迹'),
         const SizedBox(height: 12),
-        _MetricGrid(cards: footprintCards, animationOffset: 3),
+        _MetricGrid(cards: footprintCards),
       ],
     );
   }
@@ -1017,10 +1127,9 @@ class _SectionHeading extends StatelessWidget {
 }
 
 class _MetricGrid extends StatelessWidget {
-  const _MetricGrid({required this.cards, this.animationOffset = 0});
+  const _MetricGrid({required this.cards});
 
   final List<_Metric> cards;
-  final int animationOffset;
 
   @override
   Widget build(BuildContext context) {
@@ -1039,9 +1148,8 @@ class _MetricGrid extends StatelessWidget {
           ),
           itemCount: cards.length,
           itemBuilder: (context, index) {
-            final animationIndex = animationOffset + index;
             return M3Reveal(
-              duration: Duration(milliseconds: 260 + animationIndex * 45),
+              duration: Duration(milliseconds: 260 + index * 45),
               distance: 8,
               child: _MetricCard(metric: cards[index]),
             );

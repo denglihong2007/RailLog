@@ -58,3 +58,15 @@ class TrainScheduleStop {
     );
   }
 }
+
+double? historicalJourneyMileage(
+  TrainScheduleStop departure,
+  TrainScheduleStop arrival,
+) {
+  final departureMileage = departure.mileage;
+  final arrivalMileage = arrival.mileage;
+  if (departureMileage == null || arrivalMileage == null) return null;
+
+  final distance = (arrivalMileage - departureMileage).abs();
+  return distance > 0 ? distance : null;
+}

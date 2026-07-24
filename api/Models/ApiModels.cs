@@ -64,6 +64,7 @@ public sealed record DownloadTicketPdfRequest(
     string? MemorialText = null,
     string? NoticeLine1 = null,
     string? NoticeLine2 = null);
+public sealed record TicketDownloadLinkResponse(string DownloadUrl, DateTime ExpiresAt);
 
 public sealed record SyncTrip(
     long? TicketId,

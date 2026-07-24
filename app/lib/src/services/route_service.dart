@@ -39,12 +39,20 @@ class RouteService {
           segments: const [],
           usedShortestPath: true,
           unresolvedSections: ['$fromStation-$toStation'],
+          inferenceLog: [
+            '最短路径识别：$fromStation → $toStation',
+            '结果：站点不存在或线路图中不可达',
+          ],
         );
       }
       return RouteResolution(
         segments: _mergeEdges(result.edges),
         usedShortestPath: true,
         unresolvedSections: const [],
+        inferenceLog: [
+          '最短路径识别：$fromStation → $toStation',
+          ...result.inferenceLog,
+        ],
       );
     });
   }
@@ -73,9 +81,19 @@ class RouteService {
   ) {
     final allEdges = <_RouteEdge>[];
     final unresolved = <String>[];
+    final inferenceLog = <String>[];
     var usedShortestPath = false;
 
-    for (final section in sections) {
+    for (var index = 0; index < sections.length; index++) {
+      final section = sections[index];
+      inferenceLog.add(
+        '区间 ${index + 1}：${section.fromStation} → ${section.toStation}',
+      );
+      inferenceLog.add(
+        section.distanceKm == null
+            ? '目标里程：未获取，将使用最短路径'
+            : '目标里程：${_formatDistance(section.distanceKm!)} km',
+      );
       final result = graph.findPath(
         section.fromStation,
         section.toStation,
@@ -83,8 +101,10 @@ class RouteService {
       );
       if (result == null) {
         unresolved.add('${section.fromStation}-${section.toStation}');
+        inferenceLog.add('结果：站点不存在或线路图中不可达');
         continue;
       }
+      inferenceLog.addAll(result.inferenceLog);
       allEdges.addAll(result.edges);
       usedShortestPath = usedShortestPath || result.usedShortestPath;
     }
@@ -93,6 +113,7 @@ class RouteService {
       segments: _mergeEdges(allEdges),
       usedShortestPath: usedShortestPath,
       unresolvedSections: unresolved,
+      inferenceLog: inferenceLog,
     );
   }
 
@@ -256,18 +277,42 @@ class _RouteGraph {
     final end = _resolveStationName(toStation);
     if (start == null || end == null) return null;
     if (start == end) {
-      return const _PathResult(edges: [], usedShortestPath: false);
+      return const _PathResult(
+        edges: [],
+        usedShortestPath: false,
+        inferenceLog: ['结果：起点与终点相同，无需搜索'],
+      );
     }
 
     final shortest = _shortestPath(start, end);
     if (shortest == null) return null;
     if (targetDistance == null) {
-      return _PathResult(edges: shortest, usedShortestPath: true);
+      return _PathResult(
+        edges: shortest,
+        usedShortestPath: true,
+        inferenceLog: [
+          '结果：采用最短路径，里程 ${_formatDistance(_edgeDistance(shortest))} km',
+          '线路：${_describeEdges(shortest)}',
+        ],
+      );
     }
-    final exact = _distanceMatchingPath(start, end, targetDistance);
+    final search = _distanceMatchingOrClosestPath(
+      start,
+      end,
+      targetDistance,
+      shortest,
+    );
     return _PathResult(
-      edges: exact ?? shortest,
-      usedShortestPath: exact == null,
+      edges: search.edges,
+      usedShortestPath: identical(search.edges, shortest),
+      inferenceLog: [
+        '最短路径里程：${_formatDistance(_edgeDistance(shortest))} km',
+        ...search.steps,
+        '搜索状态数：${search.exploredStates}',
+        search.matchedTolerance ? '结果：找到容差内匹配路径' : '结果：未找到容差内路径，采用里程最接近路径',
+        '选定里程：${_formatDistance(search.distance)} km，误差 ${_formatDistance(search.error)} km',
+        '线路：${_describeEdges(search.edges)}',
+      ],
     );
   }
 
@@ -331,16 +376,40 @@ class _RouteGraph {
     return null;
   }
 
-  List<_RouteEdge>? _distanceMatchingPath(
+  _DistanceSearchResult _distanceMatchingOrClosestPath(
     String start,
     String end,
     double targetDistance,
+    List<_RouteEdge> shortest,
   ) {
     final lowerBounds = _shortestDistancesFrom(end);
     final startLowerBound = lowerBounds[start];
-    if (startLowerBound == null ||
-        startLowerBound > targetDistance + _distanceTolerance) {
-      return null;
+    if (startLowerBound == null) {
+      return _DistanceSearchResult(
+        edges: shortest,
+        distance: _edgeDistance(shortest),
+        error: (_edgeDistance(shortest) - targetDistance).abs(),
+        matchedTolerance: false,
+        exploredStates: 0,
+        steps: const ['无法计算目标站最短距离，保留最短路径候选'],
+      );
+    }
+
+    var closest = shortest;
+    var closestError = (startLowerBound - targetDistance).abs();
+    final steps = <String>[
+      '初始候选：${_formatDistance(startLowerBound)} km，误差 ${_formatDistance(closestError)} km',
+    ];
+    if (closestError <= _distanceTolerance ||
+        startLowerBound > targetDistance) {
+      return _DistanceSearchResult(
+        edges: closest,
+        distance: startLowerBound,
+        error: closestError,
+        matchedTolerance: closestError <= _distanceTolerance,
+        exploredStates: 0,
+        steps: steps,
+      );
     }
 
     final queue = _MinHeap<_ExactSearchNode>();
@@ -359,9 +428,31 @@ class _RouteGraph {
     while (queue.isNotEmpty && exploredStates < _maxExactSearchStates) {
       final current = queue.removeFirst();
       exploredStates++;
-      if (current.station == end &&
-          (current.distance - targetDistance).abs() <= _distanceTolerance) {
-        return current.edges;
+      if (current.station == end) {
+        final error = (current.distance - targetDistance).abs();
+        if (error <= _distanceTolerance) {
+          _addSearchStep(
+            steps,
+            '容差内候选：${_formatDistance(current.distance)} km，误差 ${_formatDistance(error)} km',
+          );
+          return _DistanceSearchResult(
+            edges: current.edges,
+            distance: current.distance,
+            error: error,
+            matchedTolerance: true,
+            exploredStates: exploredStates,
+            steps: steps,
+          );
+        }
+        if (error < closestError) {
+          closest = current.edges;
+          closestError = error;
+          _addSearchStep(
+            steps,
+            '更近候选：${_formatDistance(current.distance)} km，误差 ${_formatDistance(error)} km',
+          );
+        }
+        continue;
       }
 
       for (final edge in adjacency[current.station] ?? const []) {
@@ -369,8 +460,8 @@ class _RouteGraph {
         final nextDistance = current.distance + edge.distanceKm;
         final lowerBound = lowerBounds[edge.toStation];
         if (lowerBound == null ||
-            nextDistance > targetDistance + _distanceTolerance ||
-            nextDistance + lowerBound > targetDistance + _distanceTolerance) {
+            nextDistance > targetDistance + closestError ||
+            nextDistance + lowerBound > targetDistance + closestError) {
           continue;
         }
         final next = _ExactSearchNode(
@@ -389,7 +480,15 @@ class _RouteGraph {
         );
       }
     }
-    return null;
+    final closestDistance = _edgeDistance(closest);
+    return _DistanceSearchResult(
+      edges: closest,
+      distance: closestDistance,
+      error: (closestDistance - targetDistance).abs(),
+      matchedTolerance: false,
+      exploredStates: exploredStates,
+      steps: steps,
+    );
   }
 
   Map<String, double> _shortestDistancesFrom(String start) {
@@ -455,10 +554,33 @@ class _RouteEdge {
 }
 
 class _PathResult {
-  const _PathResult({required this.edges, required this.usedShortestPath});
+  const _PathResult({
+    required this.edges,
+    required this.usedShortestPath,
+    required this.inferenceLog,
+  });
 
   final List<_RouteEdge> edges;
   final bool usedShortestPath;
+  final List<String> inferenceLog;
+}
+
+class _DistanceSearchResult {
+  const _DistanceSearchResult({
+    required this.edges,
+    required this.distance,
+    required this.error,
+    required this.matchedTolerance,
+    required this.exploredStates,
+    required this.steps,
+  });
+
+  final List<_RouteEdge> edges;
+  final double distance;
+  final double error;
+  final bool matchedTolerance;
+  final int exploredStates;
+  final List<String> steps;
 }
 
 class _SearchNode {
@@ -572,3 +694,42 @@ class _MinHeap<T> {
 
 const _distanceTolerance = 0.55;
 const _maxExactSearchStates = 150000;
+const _maxInferenceLogSteps = 200;
+
+double _edgeDistance(List<_RouteEdge> edges) =>
+    edges.fold(0, (sum, edge) => sum + edge.distanceKm);
+
+String _describeEdges(List<_RouteEdge> edges) {
+  if (edges.isEmpty) return '无';
+  final sections = <String>[];
+  var routeName = edges.first.routeName;
+  var fromStation = edges.first.fromStation;
+  var toStation = edges.first.toStation;
+  for (final edge in edges.skip(1)) {
+    if (edge.routeName == routeName && edge.fromStation == toStation) {
+      toStation = edge.toStation;
+      continue;
+    }
+    sections.add('$routeName（$fromStation → $toStation）');
+    routeName = edge.routeName;
+    fromStation = edge.fromStation;
+    toStation = edge.toStation;
+  }
+  sections.add('$routeName（$fromStation → $toStation）');
+  return sections.join('；');
+}
+
+String _formatDistance(double value) {
+  final rounded = value.roundToDouble();
+  return value == rounded
+      ? rounded.toInt().toString()
+      : value.toStringAsFixed(1);
+}
+
+void _addSearchStep(List<String> steps, String entry) {
+  if (steps.length < _maxInferenceLogSteps) {
+    steps.add(entry);
+  } else if (steps.length == _maxInferenceLogSteps) {
+    steps.add('候选记录过多，后续改进过程已省略');
+  }
+}
