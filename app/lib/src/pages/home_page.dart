@@ -863,10 +863,22 @@ class _OverviewCard extends StatelessWidget {
               '记录时间：$dateRange',
               style: TextStyle(color: colors.onPrimaryContainer),
             ),
-            const SizedBox(height: 20),
-            Divider(color: colors.onPrimaryContainer.withValues(alpha: 0.24)),
-            const SizedBox(height: 12),
-            _OverviewMetrics(stats: stats),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 380;
+                return Column(
+                  children: [
+                    SizedBox(height: isCompact ? 12 : 20),
+                    Divider(
+                      height: isCompact ? 1 : null,
+                      color: colors.onPrimaryContainer.withValues(alpha: 0.24),
+                    ),
+                    SizedBox(height: isCompact ? 6 : 12),
+                    _OverviewMetrics(stats: stats),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -898,23 +910,15 @@ class _OverviewMetrics extends StatelessWidget {
       _OverviewMetric(
         label: '累计时长',
         value: _duration(stats.totalDuration),
-        description: '最长 ${_duration(stats.maxDuration)}',
+        description: '单次最长 ${_duration(stats.maxDuration)}',
         icon: Icons.schedule_outlined,
       ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 520) {
-          return Column(
-            children: [
-              metrics[0],
-              Divider(color: color.withValues(alpha: 0.24)),
-              metrics[1],
-              Divider(color: color.withValues(alpha: 0.24)),
-              metrics[2],
-            ],
-          );
+        if (constraints.maxWidth < 380) {
+          return _CompactOverviewMetrics(metrics: metrics);
         }
         return Row(
           children: [
@@ -926,6 +930,77 @@ class _OverviewMetrics extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _CompactOverviewMetrics extends StatelessWidget {
+  const _CompactOverviewMetrics({required this.metrics});
+
+  final List<_OverviewMetric> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onPrimaryContainer;
+    final theme = Theme.of(context).textTheme;
+
+    return Table(
+      columnWidths: const {
+        0: FixedColumnWidth(92),
+        1: FlexColumnWidth(4),
+        2: FlexColumnWidth(5),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: metrics
+          .map((metric) {
+            return TableRow(
+              children: [
+                SizedBox(
+                  height: 34,
+                  child: Row(
+                    children: [
+                      Icon(metric.icon, size: 18, color: color),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          metric.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.labelMedium?.copyWith(color: color),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    metric.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: theme.titleSmall?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    metric.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: theme.labelSmall?.copyWith(
+                      color: color.withValues(alpha: 0.76),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          })
+          .toList(growable: false),
     );
   }
 }
