@@ -151,6 +151,14 @@ IconData dashboardAchievementIcon(
     Icons.format_list_numbered_outlined,
   DashboardAchievementKind.publicDisplayOfAffection => Icons.favorite_outline,
   DashboardAchievementKind.farsighted => Icons.visibility_outlined,
+  DashboardAchievementKind.oneYuanJourney => Icons.currency_yen,
+  DashboardAchievementKind.cardinalStations => Icons.explore_outlined,
+  DashboardAchievementKind.ancientLetters => Icons.history_edu_outlined,
+  DashboardAchievementKind.miniTurnaround => Icons.timer_outlined,
+  DashboardAchievementKind.verticalSleeper => Icons.train_outlined,
+  DashboardAchievementKind.completeTrainLetters =>
+    Icons.format_list_numbered_outlined,
+  DashboardAchievementKind.blueHorizon => Icons.water_drop_outlined,
 };
 
 String _trainLabel(String value) {

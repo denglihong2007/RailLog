@@ -65,6 +65,17 @@ const _vibrantExpressModels = {
   'CRH380A-0258',
   'CRH380A-0259',
 };
+const _commonTrainCategories = {
+  'G',
+  'D',
+  'C',
+  'Z',
+  'T',
+  'K',
+  'Y',
+  'S',
+  'numeric',
+};
 
 List<DashboardAchievement> buildDashboardAchievements(
   Iterable<TripRecord> trips,
@@ -564,6 +575,62 @@ List<DashboardAchievement> buildDashboardAchievements(
       '乘坐双层车厢的上层席位',
       _firstWhere(railTrips, _unlocksFarsighted),
     ),
+    _achievement(
+      DashboardAchievementKind.oneYuanJourney,
+      '一元旅程',
+      '单次行程票价为 1 元',
+      _firstWhere(railTrips, (trip) => trip.price == 1),
+    ),
+    _achievement(
+      DashboardAchievementKind.cardinalStations,
+      '东西南北',
+      '到访过一个城市的东西南北中五个车站',
+      _firstCardinalStationCompletion(railTrips),
+    ),
+    _achievement(
+      DashboardAchievementKind.ancientLetters,
+      '远古字母',
+      '乘坐过以 A、N 或 L 开头的列车',
+      _firstWhere(railTrips, (trip) {
+        return RegExp(
+          r'^[ANL]\s*\d',
+          caseSensitive: false,
+        ).hasMatch(trip.trainNumber.trim());
+      }),
+    ),
+    _achievement(
+      DashboardAchievementKind.miniTurnaround,
+      '迷你运转',
+      '单次旅程时间在 10 分钟以内',
+      _firstWhere(railTrips, _unlocksMiniTurnaround),
+    ),
+    _achievement(
+      DashboardAchievementKind.verticalSleeper,
+      '纵向动卧',
+      '乘坐过 CRH2E 纵向动卧列车',
+      _firstWhere(railTrips, _unlocksVerticalSleeper),
+    ),
+    _achievement(
+      DashboardAchievementKind.completeTrainLetters,
+      '车次大全',
+      '常见车次字母都坐过至少一次',
+      _firstCollectionCompletion(railTrips, _commonTrainCategories, (trip) {
+        final category = _commonTrainCategory(trip.trainNumber);
+        return category == null ? const <String>{} : {category};
+      }),
+    ),
+    _achievement(
+      DashboardAchievementKind.blueHorizon,
+      '一碧千里',
+      '至少坐过 10 次动集列车',
+      _firstCountCompletion(
+        railTrips,
+        10,
+        (trip) => _rollingStockMatches(trip.rollingStock, const {
+          'CR200J',
+        }).isNotEmpty,
+      ),
+    ),
   ];
   return List.unmodifiable([
     ...achievements.where((achievement) => achievement.isUnlocked),
@@ -856,6 +923,51 @@ TripRecord? _firstCumulativeMileageCompletion(
     if (mileage >= target) return trip;
   }
   return null;
+}
+
+TripRecord? _firstCardinalStationCompletion(List<TripRecord> trips) {
+  const directions = {'东', '西', '南', '北', ''};
+  final visited = <String, Set<String>>{};
+  for (final trip in trips) {
+    for (final station in [trip.fromStation, trip.toStation]) {
+      final normalized = _normalizedStation(station);
+      if (normalized.isEmpty) continue;
+      final directionalMatch = RegExp(
+        r'^(.+)(东|西|南|北)$',
+      ).firstMatch(normalized);
+      final city = directionalMatch?.group(1) ?? normalized;
+      // The city-name station is represented by an empty direction key.
+      final direction = directionalMatch?.group(2) ?? '';
+      final cityDirections = visited.putIfAbsent(city, () => <String>{});
+      cityDirections.add(direction);
+      if (cityDirections.containsAll(directions)) return trip;
+    }
+  }
+  return null;
+}
+
+bool _unlocksMiniTurnaround(TripRecord trip) {
+  final arrival = trip.arrivalTime;
+  return arrival != null &&
+      !arrival.isBefore(trip.departureTime) &&
+      arrival.difference(trip.departureTime) <= const Duration(minutes: 10);
+}
+
+bool _unlocksVerticalSleeper(TripRecord trip) {
+  final rollingStock = trip.rollingStock?.trim().toUpperCase() ?? '';
+  if (!rollingStock.contains('CRH2E')) return false;
+  final serialInStock = RegExp(
+    r'CRH2E\s*[- ]?\s*(2463|2464|2465)(?!\d)',
+  ).hasMatch(rollingStock);
+  final trainNumber = trip.trainNumber.trim().replaceAll(RegExp(r'\s+'), '');
+  return serialInStock || const {'2463', '2464', '2465'}.contains(trainNumber);
+}
+
+String? _commonTrainCategory(String value) {
+  final trainNumber = value.trim().toUpperCase();
+  if (RegExp(r'^\d+$').hasMatch(trainNumber)) return 'numeric';
+  final letter = RegExp(r'^([GDCZTKYS])\s*\d').firstMatch(trainNumber);
+  return letter?.group(1);
 }
 
 TripRecord? _firstRouteCollectionCompletion(
