@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using RailLog.API.Models;
@@ -12,5 +13,7 @@ public sealed class StatisticsController(RailLogDatabase database) : ControllerB
 {
     [HttpGet]
     public async Task<ActionResult<StatisticsResponse>> Get() =>
-        Ok(await database.GetStatisticsAsync());
+        Ok(await database.GetStatisticsAsync(UserId));
+
+    private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 }
