@@ -5,12 +5,14 @@ import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/achievements_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/trip_chart_page.dart';
+import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/intersection_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
@@ -194,6 +196,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                       stats: stats,
                       onChanged: _refresh,
                       openTrip: openTrip,
+                      mapTrips: dashboard.trips,
                       subject: 'TA',
                       enableTripManagement: false,
                     ),
@@ -771,6 +774,7 @@ class _OverviewSection extends StatelessWidget {
     required this.stats,
     required this.onChanged,
     this.openTrip,
+    this.mapTrips,
     this.subject = '你',
     this.enableTripManagement = true,
   });
@@ -778,6 +782,7 @@ class _OverviewSection extends StatelessWidget {
   final TripDashboardStats stats;
   final Future<void> Function() onChanged;
   final TripEntryOpener? openTrip;
+  final List<TripRecord>? mapTrips;
   final String subject;
   final bool enableTripManagement;
 
@@ -813,6 +818,18 @@ class _OverviewSection extends StatelessWidget {
               icon: const Icon(Icons.show_chart, size: 18),
               label: const Text('趋势'),
             ),
+            if (enableTripManagement || mapTrips != null)
+              TextButton.icon(
+                onPressed: stats.tripCount == 0
+                    ? null
+                    : () => Navigator.of(context).push<void>(
+                        m3PageRoute(
+                          builder: (_) => TripMapPage(trips: mapTrips),
+                        ),
+                      ),
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('地图'),
+              ),
             TextButton.icon(
               onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
               icon: const Icon(Icons.format_list_bulleted, size: 18),
@@ -863,10 +880,22 @@ class _OverviewCard extends StatelessWidget {
               '记录时间：$dateRange',
               style: TextStyle(color: colors.onPrimaryContainer),
             ),
-            const SizedBox(height: 20),
-            Divider(color: colors.onPrimaryContainer.withValues(alpha: 0.24)),
-            const SizedBox(height: 12),
-            _OverviewMetrics(stats: stats),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 380;
+                return Column(
+                  children: [
+                    SizedBox(height: isCompact ? 12 : 20),
+                    Divider(
+                      height: isCompact ? 1 : null,
+                      color: colors.onPrimaryContainer.withValues(alpha: 0.24),
+                    ),
+                    SizedBox(height: isCompact ? 6 : 12),
+                    _OverviewMetrics(stats: stats),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -898,23 +927,15 @@ class _OverviewMetrics extends StatelessWidget {
       _OverviewMetric(
         label: '累计时长',
         value: _duration(stats.totalDuration),
-        description: '最长 ${_duration(stats.maxDuration)}',
+        description: '单次最长 ${_duration(stats.maxDuration)}',
         icon: Icons.schedule_outlined,
       ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 520) {
-          return Column(
-            children: [
-              metrics[0],
-              Divider(color: color.withValues(alpha: 0.24)),
-              metrics[1],
-              Divider(color: color.withValues(alpha: 0.24)),
-              metrics[2],
-            ],
-          );
+        if (constraints.maxWidth < 380) {
+          return _CompactOverviewMetrics(metrics: metrics);
         }
         return Row(
           children: [
@@ -926,6 +947,77 @@ class _OverviewMetrics extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _CompactOverviewMetrics extends StatelessWidget {
+  const _CompactOverviewMetrics({required this.metrics});
+
+  final List<_OverviewMetric> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onPrimaryContainer;
+    final theme = Theme.of(context).textTheme;
+
+    return Table(
+      columnWidths: const {
+        0: FixedColumnWidth(92),
+        1: FlexColumnWidth(4),
+        2: FlexColumnWidth(5),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: metrics
+          .map((metric) {
+            return TableRow(
+              children: [
+                SizedBox(
+                  height: 34,
+                  child: Row(
+                    children: [
+                      Icon(metric.icon, size: 18, color: color),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          metric.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.labelMedium?.copyWith(color: color),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    metric.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: theme.titleSmall?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    metric.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: theme.labelSmall?.copyWith(
+                      color: color.withValues(alpha: 0.76),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          })
+          .toList(growable: false),
     );
   }
 }

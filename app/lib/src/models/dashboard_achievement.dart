@@ -64,6 +64,13 @@ enum DashboardAchievementKind {
   multipleChoices,
   publicDisplayOfAffection,
   farsighted,
+  oneYuanJourney,
+  cardinalStations,
+  ancientLetters,
+  miniTurnaround,
+  verticalSleeper,
+  completeTrainLetters,
+  blueHorizon,
 }
 
 class DashboardAchievement {

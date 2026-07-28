@@ -15,6 +15,7 @@ builder.Services.AddMemoryCache();
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Updates"));
 builder.Services.Configure<TicketAssetsOptions>(builder.Configuration.GetSection("TicketAssets"));
 builder.Services.Configure<TicketPdfOptions>(builder.Configuration.GetSection("TicketPdf"));
+builder.Services.Configure<AmapOptions>(builder.Configuration.GetSection("Amap"));
 builder.Services.AddSingleton<TicketAssetStore>();
 builder.Services.AddSingleton<TicketRenderer>();
 builder.Services.AddSingleton<TicketDownloadLinkStore>();
@@ -36,6 +37,14 @@ builder.Services.AddHttpClient<GitHubReleaseService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("RailLog-Update-Service/1.0");
     client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 });
+builder.Services.AddHttpClient<AmapProxyService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("RailLog-Amap-Proxy/1.0");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = System.Net.DecompressionMethods.All,
+});
 builder.Services
     .AddAuthentication(TokenAuthenticationHandler.SchemeName)
     .AddScheme<TokenAuthenticationOptions, TokenAuthenticationHandler>(
@@ -51,6 +60,15 @@ builder.Services.AddRateLimiter(options => options.AddPolicy("ticket-pdf", conte
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         })));
+builder.Services.AddRateLimiter(options => options.AddPolicy("amap-proxy", context =>
+    RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        })));
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 {
     if (builder.Environment.IsDevelopment())
@@ -63,6 +81,8 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
         .Get<string[]>() ?? [];
     policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
 }));
+builder.Services.AddCors(options => options.AddPolicy("amap-proxy", policy =>
+    policy.AllowAnyOrigin().WithMethods("GET").AllowAnyHeader()));
 builder.Services.AddControllers();
 
 var app = builder.Build();

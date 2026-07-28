@@ -668,7 +668,7 @@ public sealed class RailLogDatabase
         return new PublicUserDashboardResponse(user, trips);
     }
 
-    public async Task<StatisticsResponse> GetStatisticsAsync()
+    public async Task<StatisticsResponse> GetStatisticsAsync(string currentUserId)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
@@ -743,10 +743,10 @@ public sealed class RailLogDatabase
             Mileage = group.Sum(trip => trip.Trip.MileageKm),
         }).ToList();
         var userBoards = new UserLeaderboards(
-            RankUsers(users.Select(item => (item.User, item.Spending))),
-            RankUsers(users.Select(item => (item.User, item.Count))),
-            RankUsers(users.Select(item => (item.User, item.Duration))),
-            RankUsers(users.Select(item => (item.User, item.Mileage))));
+            RankUsers(users.Select(item => (item.User, item.Spending)), currentUserId),
+            RankUsers(users.Select(item => (item.User, item.Count)), currentUserId),
+            RankUsers(users.Select(item => (item.User, item.Duration)), currentUserId),
+            RankUsers(users.Select(item => (item.User, item.Mileage)), currentUserId));
 
         var durationTrips = trips
             .Select(trip => (Trip: trip, Duration: ValidDurationSeconds(trip.Trip)))
@@ -760,13 +760,13 @@ public sealed class RailLogDatabase
                 Speed: item.Trip.Trip.MileageKm * 3600 / item.Duration!.Value))
             .ToList();
         var tripBoards = new TripLeaderboards(
-            RankTrips(trips.Select(item => (item, item.Trip.Price)), descending: true),
-            RankTrips(trips.Select(item => (item, item.Trip.MileageKm)), descending: true),
-            RankTrips(durationTrips.Select(item => (item.Trip, item.Duration!.Value)), descending: true),
-            RankTrips(pricedRatioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: false),
-            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: true),
-            RankTrips(speedTrips.Select(item => (item.Trip, item.Speed)), descending: false),
-            RankTrips(speedTrips.Select(item => (item.Trip, item.Speed)), descending: true));
+            RankTrips(trips.Select(item => (item, item.Trip.Price)), descending: true, currentUserId),
+            RankTrips(trips.Select(item => (item, item.Trip.MileageKm)), descending: true, currentUserId),
+            RankTrips(durationTrips.Select(item => (item.Trip, item.Duration!.Value)), descending: true, currentUserId),
+            RankTrips(pricedRatioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: false, currentUserId),
+            RankTrips(ratioTrips.Select(item => (item, item.Trip.Price / item.Trip.MileageKm)), descending: true, currentUserId),
+            RankTrips(speedTrips.Select(item => (item.Trip, item.Speed)), descending: false, currentUserId),
+            RankTrips(speedTrips.Select(item => (item.Trip, item.Speed)), descending: true, currentUserId));
 
         var stationCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var routeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -886,26 +886,52 @@ public sealed class RailLogDatabase
     }
 
     private static IReadOnlyList<UserRankingEntry> RankUsers(
-        IEnumerable<(PublicUser User, double Value)> values) => values
-        .OrderByDescending(item => item.Value)
-        .ThenBy(item => item.User.DisplayName, StringComparer.Ordinal)
-        .ThenBy(item => item.User.Id, StringComparer.Ordinal)
-        .Take(LeaderboardSize)
-        .Select((item, index) => new UserRankingEntry(index + 1, item.User, item.Value))
-        .ToList();
+        IEnumerable<(PublicUser User, double Value)> values, string currentUserId)
+    {
+        var ordered = values
+            .OrderByDescending(item => item.Value)
+            .ThenBy(item => item.User.DisplayName, StringComparer.Ordinal)
+            .ThenBy(item => item.User.Id, StringComparer.Ordinal);
+        var leaderboard = new List<UserRankingEntry>(LeaderboardSize + 1);
+        UserRankingEntry? currentUser = null;
+        var rank = 0;
+        foreach (var item in ordered)
+        {
+            rank++;
+            var entry = new UserRankingEntry(rank, item.User, item.Value);
+            if (rank <= LeaderboardSize) leaderboard.Add(entry);
+            if (item.User.Id == currentUserId) currentUser = entry;
+            if (rank >= LeaderboardSize && currentUser is not null) break;
+        }
+        if (currentUser?.Rank > LeaderboardSize) leaderboard.Add(currentUser);
+        return leaderboard;
+    }
 
     private static IReadOnlyList<TripRankingEntry> RankTrips(
-        IEnumerable<(StatisticsTrip Trip, double Value)> values, bool descending)
+        IEnumerable<(StatisticsTrip Trip, double Value)> values, bool descending,
+        string currentUserId)
     {
         var ordered = descending
             ? values.OrderByDescending(item => item.Value)
             : values.OrderBy(item => item.Value);
-        return ordered
-            .ThenBy(item => item.Trip.Trip.TicketId)
-            .Take(LeaderboardSize)
-            .Select((item, index) => new TripRankingEntry(
-                index + 1, item.Trip.User, ToSummary(item.Trip.Trip), item.Value))
-            .ToList();
+        var leaderboard = new List<TripRankingEntry>(LeaderboardSize + 1);
+        TripRankingEntry? currentTrip = null;
+        var rank = 0;
+        foreach (var item in ordered.ThenBy(item => item.Trip.Trip.TicketId))
+        {
+            rank++;
+            if (rank <= LeaderboardSize ||
+                (currentTrip is null && item.Trip.User.Id == currentUserId))
+            {
+                var entry = new TripRankingEntry(
+                    rank, item.Trip.User, ToSummary(item.Trip.Trip), item.Value);
+                if (rank <= LeaderboardSize) leaderboard.Add(entry);
+                if (item.Trip.User.Id == currentUserId) currentTrip = entry;
+            }
+            if (rank >= LeaderboardSize && currentTrip is not null) break;
+        }
+        if (currentTrip?.Rank > LeaderboardSize) leaderboard.Add(currentTrip);
+        return leaderboard;
     }
 
     private static PublicTripSummary ToSummary(PublicTrip trip) => new(

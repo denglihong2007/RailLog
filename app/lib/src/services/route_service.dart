@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path_util;
 import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/station_pair_distance.dart';
+import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -21,6 +22,23 @@ class RouteService {
   static Future<List<String>> getStationsForRoute(String routeName) async {
     final graph = await (_graphFuture ??= _loadGraph());
     return graph.stationsForRoute(routeName);
+  }
+
+  static Future<Map<String, List<String>>> resolveTripStations(
+    Iterable<TripRecord> source,
+  ) async {
+    final trips = source.where((trip) => trip.isRailTrip).toList();
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(
+      () => {
+        for (final trip in trips)
+          trip.clientId: graph.stationsForJourney(
+            trip.fromStation,
+            trip.toStation,
+            trip.viaRouteSegments,
+          ),
+      },
+    );
   }
 
   static Future<RouteResolution> resolveShortestJourney(
@@ -214,6 +232,44 @@ class _RouteGraph {
     return entries.map((entry) => entry.key).toList(growable: false);
   }
 
+  List<String> stationsForJourney(
+    String fromStation,
+    String toStation,
+    List<ViaRouteSegment> segments,
+  ) {
+    if (segments.isEmpty) return [fromStation, toStation];
+
+    final stations = <String>[];
+    void append(String station) {
+      if (station.isNotEmpty &&
+          (stations.isEmpty || stations.last != station)) {
+        stations.add(station);
+      }
+    }
+
+    append(fromStation.trim());
+    for (final segment in segments) {
+      final routeName = _resolveRouteName(segment.routeName);
+      final section = routeName == null
+          ? null
+          : _stationsBetweenOnRoute(
+              routeName,
+              segment.fromStation,
+              segment.toStation,
+            );
+      if (section == null || section.isEmpty) {
+        append(segment.fromStation.trim());
+        append(segment.toStation.trim());
+        continue;
+      }
+      for (final station in section) {
+        append(station);
+      }
+    }
+    append(toStation.trim());
+    return stations;
+  }
+
   factory _RouteGraph.fromRows(List<Map<String, Object?>> rows) {
     final adjacency = <String, List<_RouteEdge>>{};
     final routeStationIndexes = <String, Map<String, int>>{};
@@ -340,6 +396,56 @@ class _RouteGraph {
       return '$normalized站';
     }
     return null;
+  }
+
+  String? _resolveRouteName(String value) {
+    final routeName = value.trim();
+    if (routeStationIndexes.containsKey(routeName)) return routeName;
+    final normalized = routeName.replaceFirst(RegExp(r'(铁路|线)$'), '');
+    final matches = routeStationIndexes.keys.where(
+      (candidate) =>
+          candidate.replaceFirst(RegExp(r'(铁路|线)$'), '') == normalized,
+    );
+    return matches.length == 1 ? matches.single : null;
+  }
+
+  List<String>? _stationsBetweenOnRoute(
+    String routeName,
+    String fromStation,
+    String toStation,
+  ) {
+    final stationIndexes = routeStationIndexes[routeName];
+    if (stationIndexes == null) return null;
+    final ordered = stationIndexes.entries.toList()
+      ..sort((first, second) => first.value.compareTo(second.value));
+    final start = _routeStationPosition(ordered, fromStation);
+    final end = _routeStationPosition(ordered, toStation);
+    if (start == null || end == null) return null;
+    if (start <= end) {
+      return ordered
+          .sublist(start, end + 1)
+          .map((entry) => entry.key)
+          .toList(growable: false);
+    }
+    return ordered
+        .sublist(end, start + 1)
+        .reversed
+        .map((entry) => entry.key)
+        .toList(growable: false);
+  }
+
+  int? _routeStationPosition(
+    List<MapEntry<String, int>> ordered,
+    String value,
+  ) {
+    final station = value.trim();
+    var position = ordered.indexWhere((entry) => entry.key == station);
+    if (position >= 0) return position;
+    final alternate = station.endsWith('站')
+        ? station.substring(0, station.length - 1)
+        : '$station站';
+    position = ordered.indexWhere((entry) => entry.key == alternate);
+    return position < 0 ? null : position;
   }
 
   List<_RouteEdge>? _shortestPath(
