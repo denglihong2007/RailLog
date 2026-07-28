@@ -51,6 +51,8 @@ dependencies:
   cached_network_image: ^3.4.1
   excel: ^4.0.6
   file_saver: ^0.4.0
+  webview_flutter: ^4.14.1
+  webview_windows: ^0.4.0
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +74,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/db/routes.db
+    - assets/db/coordinates.csv
     - assets/icon/icon.png
 
   # The following line ensures that the Material Icons font is

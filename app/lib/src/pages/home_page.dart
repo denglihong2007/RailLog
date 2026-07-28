@@ -5,12 +5,14 @@ import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/achievements_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/trip_chart_page.dart';
+import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/intersection_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
@@ -194,6 +196,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                       stats: stats,
                       onChanged: _refresh,
                       openTrip: openTrip,
+                      mapTrips: dashboard.trips,
                       subject: 'TA',
                       enableTripManagement: false,
                     ),
@@ -771,6 +774,7 @@ class _OverviewSection extends StatelessWidget {
     required this.stats,
     required this.onChanged,
     this.openTrip,
+    this.mapTrips,
     this.subject = '你',
     this.enableTripManagement = true,
   });
@@ -778,6 +782,7 @@ class _OverviewSection extends StatelessWidget {
   final TripDashboardStats stats;
   final Future<void> Function() onChanged;
   final TripEntryOpener? openTrip;
+  final List<TripRecord>? mapTrips;
   final String subject;
   final bool enableTripManagement;
 
@@ -813,6 +818,18 @@ class _OverviewSection extends StatelessWidget {
               icon: const Icon(Icons.show_chart, size: 18),
               label: const Text('趋势'),
             ),
+            if (enableTripManagement || mapTrips != null)
+              TextButton.icon(
+                onPressed: stats.tripCount == 0
+                    ? null
+                    : () => Navigator.of(context).push<void>(
+                        m3PageRoute(
+                          builder: (_) => TripMapPage(trips: mapTrips),
+                        ),
+                      ),
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('地图'),
+              ),
             TextButton.icon(
               onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
               icon: const Icon(Icons.format_list_bulleted, size: 18),

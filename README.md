@@ -22,6 +22,15 @@ dotnet run --project api\RailLog.API.csproj --launch-profile http
 Legacy `AspNetUsers` and `TripRecords` tables are migrated in place on startup.
 Back up a production database before its first migration.
 
+The Flutter map loads AMap through API proxy endpoints. Configure the AMap key
+only on the API host; do not place it in the Flutter client:
+
+```powershell
+$env:Amap__WebApiKey = 'your-amap-web-api-key'
+```
+
+The SDK proxy endpoints are GET-only and IP rate-limited.
+
 The ticket generator reads its private fonts, ticket backgrounds, and station
 pinyin data only from a server-side directory. Configure that directory before
 using the authenticated generator endpoints:

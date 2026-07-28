@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
   file_saver
   url_launcher_windows
+  webview_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
