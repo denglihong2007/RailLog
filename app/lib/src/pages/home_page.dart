@@ -23,6 +23,7 @@ import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 const _dashboardMaxWidth = 1200.0;
 const _cardRadius = 8.0;
+const _dashboardPreviewLimit = 12;
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -417,23 +418,112 @@ class _OnlineIntersectionsSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (stationIntersections.isNotEmpty) ...[
-                  Text('车站交集', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  _IntersectionCardWrap(intersections: stationIntersections),
+                  _IntersectionGroup(
+                    title: '车站交集',
+                    intersections: stationIntersections,
+                  ),
                 ],
                 if (stationIntersections.isNotEmpty &&
                     trainIntersections.isNotEmpty)
                   const SizedBox(height: 20),
                 if (trainIntersections.isNotEmpty) ...[
-                  Text('车次交集', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  _IntersectionCardWrap(intersections: trainIntersections),
+                  _IntersectionGroup(
+                    title: '车次交集',
+                    intersections: trainIntersections,
+                  ),
                 ],
               ],
             );
           },
         ),
       ],
+    );
+  }
+}
+
+class _IntersectionGroup extends StatelessWidget {
+  const _IntersectionGroup({required this.title, required this.intersections});
+
+  final String title;
+  final List<OnlineIntersection> intersections;
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = intersections
+        .take(_dashboardPreviewLimit)
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+            ),
+            if (intersections.length > _dashboardPreviewLimit)
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push<void>(
+                  m3PageRoute(
+                    builder: (_) => _AllIntersectionsPage(
+                      title: title,
+                      intersections: intersections,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.arrow_forward, size: 18),
+                iconAlignment: IconAlignment.end,
+                label: const Text('查看更多'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _IntersectionCardWrap(intersections: preview),
+      ],
+    );
+  }
+}
+
+class _AllIntersectionsPage extends StatelessWidget {
+  const _AllIntersectionsPage({
+    required this.title,
+    required this.intersections,
+  });
+
+  final String title;
+  final List<OnlineIntersection> intersections;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _dashboardMaxWidth),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          '全部 ${intersections.length} 项',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      _IntersectionCardWrap(intersections: intersections),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -683,7 +773,9 @@ class _AchievementsSection extends StatelessWidget {
                 crossAxisSpacing: 12,
                 mainAxisExtent: 120,
               ),
-              itemCount: achievements.length > 9 ? 9 : achievements.length,
+              itemCount: achievements.length > _dashboardPreviewLimit
+                  ? _dashboardPreviewLimit
+                  : achievements.length,
               itemBuilder: (context, index) => M3Reveal(
                 duration: Duration(milliseconds: 620 + index * 45),
                 distance: 8,
