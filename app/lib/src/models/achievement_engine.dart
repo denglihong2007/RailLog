@@ -64,6 +64,15 @@ const _vibrantExpressModels = {
   'CRH380A-0257',
   'CRH380A-0258',
   'CRH380A-0259',
+  'MTR380A-0251',
+  'MTR380A-0252',
+  'MTR380A-0253',
+  'MTR380A-0254',
+  'MTR380A-0255',
+  'MTR380A-0256',
+  'MTR380A-0257',
+  'MTR380A-0258',
+  'MTR380A-0259',
 };
 const _commonTrainCategories = {
   'G',
