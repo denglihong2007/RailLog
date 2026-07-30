@@ -258,6 +258,9 @@ class TrainService {
       '3': '硬卧',
       '2': '软座',
       '1': '硬座',
+      '8': '二等软座',
+      '7': '一等软座',
+      'Q': '多功能座',
     };
     const berthNames = {'1': '下铺', '2': '中铺', '3': '上铺'};
     final options = <TicketSeatOption>[];
