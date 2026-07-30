@@ -9,7 +9,7 @@ import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-enum _TripSortField { departureTime, duration, price, mileage }
+enum _TripSortField { departureTime, mileage, duration, price }
 
 enum _TripKindFilter { all, rail, nonRail }
 

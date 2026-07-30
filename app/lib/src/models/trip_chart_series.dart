@@ -1,6 +1,6 @@
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 
-enum TripChartMetric { mileage, count, duration, spending }
+enum TripChartMetric { count, mileage, duration, spending }
 
 enum TripChartInterval { year, month, week }
 

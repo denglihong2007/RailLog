@@ -19,7 +19,7 @@ class TripChartPage extends StatefulWidget {
 }
 
 class _TripChartPageState extends State<TripChartPage> {
-  TripChartMetric _metric = TripChartMetric.mileage;
+  TripChartMetric _metric = TripChartMetric.count;
   TripChartInterval _interval = TripChartInterval.month;
   TripChartRailFilter _railFilter = TripChartRailFilter.all;
   _TripChartStyle _style = _TripChartStyle.line;
@@ -356,14 +356,14 @@ class _MetricSelector extends StatelessWidget {
         showSelectedIcon: false,
         segments: const [
           ButtonSegment(
-            value: TripChartMetric.mileage,
-            icon: Icon(Icons.route_outlined),
-            label: Text('里程'),
-          ),
-          ButtonSegment(
             value: TripChartMetric.count,
             icon: Icon(Icons.confirmation_number_outlined),
             label: Text('次数'),
+          ),
+          ButtonSegment(
+            value: TripChartMetric.mileage,
+            icon: Icon(Icons.route_outlined),
+            label: Text('里程'),
           ),
           ButtonSegment(
             value: TripChartMetric.duration,

@@ -913,12 +913,6 @@ class _OverviewMetrics extends StatelessWidget {
     final color = Theme.of(context).colorScheme.onPrimaryContainer;
     final metrics = [
       _OverviewMetric(
-        label: '累计花费',
-        value: _money(stats.totalCost),
-        description: '单次最高 ${_money(stats.maxCost)}',
-        icon: Icons.account_balance_wallet_outlined,
-      ),
-      _OverviewMetric(
         label: '累计里程',
         value: _km(stats.totalMileage),
         description: '单次最长 ${_km(stats.maxMileage)}',
@@ -929,6 +923,12 @@ class _OverviewMetrics extends StatelessWidget {
         value: _duration(stats.totalDuration),
         description: '单次最长 ${_duration(stats.maxDuration)}',
         icon: Icons.schedule_outlined,
+      ),
+      _OverviewMetric(
+        label: '累计花费',
+        value: _money(stats.totalCost),
+        description: '单次最高 ${_money(stats.maxCost)}',
+        icon: Icons.account_balance_wallet_outlined,
       ),
     ];
 
