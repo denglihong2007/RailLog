@@ -361,6 +361,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
                       controller: _rollingStockController,
                       decoration: const InputDecoration(
                         labelText: '车型',
+                        hintText: '重联车组车号请用“&”连接',
                         prefixIcon: Icon(Icons.train_outlined),
                       ),
                     ),
