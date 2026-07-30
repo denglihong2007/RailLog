@@ -84,6 +84,15 @@ public sealed class RailLogDatabase
                 CreatedAt TEXT NOT NULL,
                 ExpiresAt TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS UserAchievements (
+                UserId TEXT NOT NULL,
+                AchievementId TEXT NOT NULL,
+                TriggerTripId INTEGER NOT NULL,
+                EvaluatedAt TEXT NOT NULL,
+                PRIMARY KEY (UserId, AchievementId),
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
+                FOREIGN KEY (TriggerTripId) REFERENCES TripRecords (Id) ON DELETE CASCADE
+            );
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -119,7 +128,10 @@ public sealed class RailLogDatabase
                 ON TripRecords (UserId, ClientId);
             CREATE INDEX IF NOT EXISTS IX_TicketPdfDownloads_ExpiresAt
                 ON TicketPdfDownloads (ExpiresAt);
+            CREATE INDEX IF NOT EXISTS IX_UserAchievements_AchievementId
+                ON UserAchievements (AchievementId);
             """);
+        await RecalculateAllAchievementsAsync(connection);
     }
 
     public async Task CreateTicketPdfDownloadAsync(
@@ -476,8 +488,17 @@ public sealed class RailLogDatabase
             AddTripParameters(command, userId, trip);
             await command.ExecuteNonQueryAsync();
         }
+        await RecalculateAchievementsAsync(
+            connection, userId, (SqliteTransaction)transaction);
         await transaction.CommitAsync();
         return await GetTripsAsync(connection, userId);
+    }
+
+    public async Task<AchievementsResponse> GetAchievementsAsync(string userId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        return await GetAchievementsAsync(connection, userId);
     }
 
     public async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
@@ -665,7 +686,9 @@ public sealed class RailLogDatabase
                 NullableString(tripsReader, 12), tripsReader.GetDouble(13),
                 NullableString(tripsReader, 14), tripsReader.GetInt32(15) == 1));
         }
-        return new PublicUserDashboardResponse(user, trips);
+        await tripsReader.CloseAsync();
+        var achievements = await GetAchievementsAsync(connection, userId);
+        return new PublicUserDashboardResponse(user, trips, achievements);
     }
 
     public async Task<StatisticsResponse> GetStatisticsAsync(string currentUserId)
@@ -947,6 +970,148 @@ public sealed class RailLogDatabase
         trip.SeatNumber,
         trip.Price,
         trip.IsRailTrip);
+
+    private static async Task<IReadOnlyList<PublicTrip>> GetAchievementTripsAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction? transaction = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT Id, CreatedAt, TrainNumber, RollingStock, CompanyName,
+                   FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm,
+                   ViaRoutes, SeatType, SeatNumber, Price, Notes, IsRailTrip
+            FROM TripRecords
+            WHERE UserId = $userId AND DeletedAt IS NULL AND IsRailTrip = 1
+            ORDER BY DepartureTime, Id;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+        await using var reader = await command.ExecuteReaderAsync();
+        var trips = new List<PublicTrip>();
+        while (await reader.ReadAsync())
+        {
+            trips.Add(new PublicTrip(
+                reader.GetInt64(0), FromDb(reader.GetString(1)), reader.GetString(2),
+                NullableString(reader, 3), NullableString(reader, 4), reader.GetString(5),
+                reader.GetString(6), NullableDate(reader, 7), NullableDate(reader, 8),
+                reader.GetDouble(9), reader.GetString(10), NullableString(reader, 11),
+                NullableString(reader, 12), reader.GetDouble(13), NullableString(reader, 14),
+                reader.GetInt32(15) == 1));
+        }
+        return trips;
+    }
+
+    private static async Task RecalculateAchievementsAsync(
+        SqliteConnection connection,
+        string userId)
+    {
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+        await RecalculateAchievementsAsync(connection, userId, transaction);
+        await transaction.CommitAsync();
+    }
+
+    private static async Task RecalculateAchievementsAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction transaction)
+    {
+        var trips = await GetAchievementTripsAsync(connection, userId, transaction);
+        var unlocked = AchievementEngine.Evaluate(trips)
+            .Where(item => item.TriggerTripId.HasValue)
+            .ToList();
+
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText = "DELETE FROM UserAchievements WHERE UserId = $userId;";
+            delete.Parameters.AddWithValue("$userId", userId);
+            await delete.ExecuteNonQueryAsync();
+        }
+
+        foreach (var achievement in unlocked)
+        {
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO UserAchievements
+                    (UserId, AchievementId, TriggerTripId, EvaluatedAt)
+                VALUES ($userId, $achievementId, $triggerTripId, $evaluatedAt);
+                """;
+            insert.Parameters.AddWithValue("$userId", userId);
+            insert.Parameters.AddWithValue("$achievementId", achievement.Id);
+            insert.Parameters.AddWithValue("$triggerTripId", achievement.TriggerTripId!.Value);
+            insert.Parameters.AddWithValue("$evaluatedAt", ToDb(DateTime.Now));
+            await insert.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static async Task RecalculateAllAchievementsAsync(SqliteConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id FROM AspNetUsers ORDER BY Id;";
+        await using var reader = await command.ExecuteReaderAsync();
+        var userIds = new List<string>();
+        while (await reader.ReadAsync()) userIds.Add(reader.GetString(0));
+        await reader.CloseAsync();
+        foreach (var userId in userIds) await RecalculateAchievementsAsync(connection, userId);
+    }
+
+    private static async Task<AchievementsResponse> GetAchievementsAsync(
+        SqliteConnection connection,
+        string userId)
+    {
+        var triggers = new Dictionary<string, long>(StringComparer.Ordinal);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT AchievementId, TriggerTripId
+                FROM UserAchievements WHERE UserId = $userId;
+                """;
+            command.Parameters.AddWithValue("$userId", userId);
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) triggers[reader.GetString(0)] = reader.GetInt64(1);
+        }
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT AchievementId, COUNT(*)
+                FROM UserAchievements GROUP BY AchievementId;
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) counts[reader.GetString(0)] = reader.GetInt32(1);
+        }
+
+        int totalUsers;
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT COUNT(*) FROM AspNetUsers;";
+            totalUsers = Convert.ToInt32(await command.ExecuteScalarAsync());
+        }
+
+        var definitions = AchievementEngine.Evaluate([]);
+        var items = definitions
+            .Select((definition, index) => new
+            {
+                Definition = definition,
+                Index = index,
+                Trigger = triggers.GetValueOrDefault(definition.Id)
+            })
+            .OrderByDescending(item => item.Trigger != 0)
+            .ThenBy(item => item.Index)
+            .Select(item => new AchievementResponse(
+                item.Definition.Id,
+                item.Definition.Icon,
+                item.Definition.Title,
+                item.Definition.Description,
+                item.Trigger == 0 ? "locked" : "unlocked",
+                item.Trigger == 0 ? null : item.Trigger,
+                counts.GetValueOrDefault(item.Definition.Id)))
+            .ToList();
+        return new AchievementsResponse(totalUsers, items);
+    }
 
     private static IReadOnlyList<ElementRankingEntry> RankElements(
         IReadOnlyDictionary<string, int> counts) => counts

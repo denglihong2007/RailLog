@@ -1,28 +1,40 @@
 import 'dart:convert';
 
+import 'package:raillog/src/models/dashboard_achievement.dart';
+import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 
 class PublicUserDashboard {
-  const PublicUserDashboard({required this.user, required this.trips});
+  const PublicUserDashboard({
+    required this.user,
+    required this.trips,
+    required this.achievements,
+  });
 
   factory PublicUserDashboard.fromJson(Map<String, dynamic> json) {
     final userJson = json['user'] as Map<String, dynamic>;
+    final trips = (json['trips'] as List<dynamic>? ?? const [])
+        .map(
+          (row) => publicTripFromJson(
+            row as Map<String, dynamic>,
+            userJson['id'] as String,
+          ),
+        )
+        .toList(growable: false);
     return PublicUserDashboard(
       user: PublicUser.fromJson(userJson),
-      trips: (json['trips'] as List<dynamic>? ?? const [])
-          .map(
-            (row) => publicTripFromJson(
-              row as Map<String, dynamic>,
-              userJson['id'] as String,
-            ),
-          )
-          .toList(growable: false),
+      trips: trips,
+      achievements: dashboardAchievementsFromJson(
+        json['achievements'] as Map<String, dynamic>,
+        trips.map(DashboardTripEntry.fromTrip),
+      ),
     );
   }
 
   final PublicUser user;
   final List<TripRecord> trips;
+  final List<DashboardAchievement> achievements;
 }
 
 class PublicUser {

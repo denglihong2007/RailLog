@@ -1,5 +1,3 @@
-import 'package:raillog/src/models/dashboard_achievement.dart';
-import 'package:raillog/src/models/achievement_engine.dart';
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_record.dart';
@@ -19,7 +17,6 @@ class TripDashboardStats {
     required this.rollingStockUnlocks,
     required this.companyUnlocks,
     required this.stationUnlocks,
-    required this.achievements,
     required this.firstRecordAt,
     required this.lastRecordAt,
   });
@@ -40,7 +37,6 @@ class TripDashboardStats {
     rollingStockUnlocks: [],
     companyUnlocks: [],
     stationUnlocks: [],
-    achievements: buildDashboardAchievements(const []),
     firstRecordAt: null,
     lastRecordAt: null,
   );
@@ -123,7 +119,6 @@ class TripDashboardStats {
       rollingStockUnlocks: _newestFirst(rollingStockUnlocks.values),
       companyUnlocks: _newestFirst(companyUnlocks.values),
       stationUnlocks: _newestFirst(stationUnlocks.values),
-      achievements: buildDashboardAchievements(railTrips),
       firstRecordAt: railTrips.first.departureTime,
       lastRecordAt: railTrips.last.departureTime,
     );
@@ -142,7 +137,6 @@ class TripDashboardStats {
   final List<DashboardUnlockEntry> rollingStockUnlocks;
   final List<DashboardUnlockEntry> companyUnlocks;
   final List<DashboardUnlockEntry> stationUnlocks;
-  final List<DashboardAchievement> achievements;
   final DateTime? firstRecordAt;
   final DateTime? lastRecordAt;
 

@@ -151,7 +151,21 @@ public sealed record PublicTripDetailsResponse(PublicUser User, PublicTrip Trip)
 
 public sealed record PublicUserDashboardResponse(
     PublicUser User,
-    IReadOnlyList<PublicTrip> Trips);
+    IReadOnlyList<PublicTrip> Trips,
+    AchievementsResponse Achievements);
+
+public sealed record AchievementResponse(
+    string Id,
+    string Icon,
+    string Title,
+    string Description,
+    string Status,
+    long? TriggerTripId,
+    int UnlockedUserCount);
+
+public sealed record AchievementsResponse(
+    int TotalUserCount,
+    IReadOnlyList<AchievementResponse> Achievements);
 
 public sealed record SiteStatistics(
     int Total,
