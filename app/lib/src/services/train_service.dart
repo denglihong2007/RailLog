@@ -214,7 +214,8 @@ class TrainService {
         for (final row in rows.whereType<String>()) {
           final fields = row.split('|');
           if (fields.length <= 53 ||
-              fields[3].trim().toUpperCase() != normalizedTrainNumber) {
+              fields[3].trim().toUpperCase() != normalizedTrainNumber ||
+              fields[6] != fromCode || fields[7] != toCode) {
             continue;
           }
           final availability = parseTicketSeatPrices(fields[39], fields[53]);
