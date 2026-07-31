@@ -37,6 +37,7 @@ class TrainService {
   static final Map<String, String> _ticketCookies = {};
   static Future<void>? _ticketSessionRequest;
   static bool _browserSessionInitialized = false;
+  static final Map<String, DateTime> _trainLookupDateCache = {};
 
   TrainService._();
 
@@ -215,7 +216,8 @@ class TrainService {
           final fields = row.split('|');
           if (fields.length <= 53 ||
               fields[3].trim().toUpperCase() != normalizedTrainNumber ||
-              fields[6] != fromCode || fields[7] != toCode) {
+              fields[6] != fromCode ||
+              fields[7] != toCode) {
             continue;
           }
           final availability = parseTicketSeatPrices(fields[39], fields[53]);
@@ -327,7 +329,47 @@ class TrainService {
     String trainNumber,
     DateTime travelDate,
   ) async {
-    final queryDate = trainQueryDate(travelDate, now: DateTime.now());
+    final normalizedTrainNumber = trainNumber.trim().toUpperCase();
+    final queryDates = trainQueryDates(
+      travelDate,
+      trainNumber: normalizedTrainNumber,
+      now: DateTime.now(),
+    );
+    for (var offset = 0; offset < queryDates.length; offset += 4) {
+      final end = (offset + 4).clamp(0, queryDates.length);
+      final batchDates = queryDates.sublist(offset, end);
+      final batchResults = await Future.wait(
+        batchDates.map(
+          (queryDate) => _searchTrainsOnDate(normalizedTrainNumber, queryDate),
+        ),
+      );
+      for (var index = 0; index < batchResults.length; index++) {
+        final results = batchResults[index];
+        if (results.isEmpty) continue;
+        final queryDate = batchDates[index];
+        if (_isCompleteTrainNumber(normalizedTrainNumber)) {
+          final exactResults = results
+              .where(
+                (result) => _matchesTrainNumber(
+                  result.trainNumber,
+                  normalizedTrainNumber,
+                ),
+              )
+              .toList(growable: false);
+          if (exactResults.isEmpty) continue;
+          _trainLookupDateCache[normalizedTrainNumber] = queryDate;
+          return exactResults;
+        }
+        return results;
+      }
+    }
+    return const [];
+  }
+
+  static Future<List<TrainSearchResult>> _searchTrainsOnDate(
+    String trainNumber,
+    DateTime queryDate,
+  ) async {
     final String formattedDate =
         '${queryDate.year}'
         '${queryDate.month.toString().padLeft(2, '0')}'
@@ -346,8 +388,10 @@ class TrainService {
         if (dataList != null) {
           return dataList
               .map(
-                (item) =>
-                    TrainSearchResult.fromJson(item as Map<String, dynamic>),
+                (item) => TrainSearchResult.fromJson(
+                  item as Map<String, dynamic>,
+                  lookupDate: queryDate,
+                ),
               )
               .toList();
         }
@@ -451,6 +495,61 @@ class TrainService {
     if (selected.isBefore(earliest)) return earliest;
     if (selected.isAfter(latest)) return latest;
     return selected;
+  }
+
+  static List<DateTime> trainQueryDates(
+    DateTime selectedDate, {
+    String? trainNumber,
+    DateTime? now,
+  }) {
+    final chinaNow = (now ?? DateTime.now()).add(const Duration(hours: 8));
+    final today = DateTime(chinaNow.year, chinaNow.month, chinaNow.day);
+    final selected = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+    );
+    final earliest = today.subtract(const Duration(days: 2));
+    final latest = today.add(const Duration(days: 21));
+    if (!selected.isBefore(earliest) && !selected.isAfter(latest)) {
+      return List.unmodifiable([selected]);
+    }
+
+    final normalizedTrainNumber = trainNumber?.trim().toUpperCase() ?? '';
+    if (!_isCompleteTrainNumber(normalizedTrainNumber)) {
+      return List.unmodifiable([today]);
+    }
+
+    final dates = List.generate(
+      latest.difference(earliest).inDays + 1,
+      (index) => earliest.add(Duration(days: index)),
+    );
+    dates.sort((first, second) {
+      final firstSameWeekday = first.weekday == selected.weekday;
+      final secondSameWeekday = second.weekday == selected.weekday;
+      if (firstSameWeekday != secondSameWeekday) {
+        return firstSameWeekday ? -1 : 1;
+      }
+      final firstDistance = first.difference(today).inDays.abs();
+      final secondDistance = second.difference(today).inDays.abs();
+      return firstDistance.compareTo(secondDistance);
+    });
+    final cachedDate = _trainLookupDateCache[normalizedTrainNumber];
+    if (cachedDate != null && dates.remove(cachedDate)) {
+      dates.insert(0, cachedDate);
+    }
+    return List.unmodifiable(dates);
+  }
+
+  static bool _isCompleteTrainNumber(String value) =>
+      RegExp(r'^[A-Z]{0,2}\d{1,5}$').hasMatch(value);
+
+  static bool _matchesTrainNumber(String result, String query) {
+    final normalized = result
+        .toUpperCase()
+        .replaceAll('次', '')
+        .replaceAll(' ', '');
+    return normalized.split('/').contains(query);
   }
 
   static List<TrainScheduleStop> resolveScheduleDateTimes(

@@ -346,7 +346,7 @@ class _Import12306PageState extends State<Import12306Page> {
     if (train != null) {
       final schedule = await TrainService.fetchTrainSchedule(
         train.trainNo,
-        order.startTime,
+        train.lookupDate ?? order.startTime,
       );
       final departureIndex = schedule.indexWhere(
         (stop) => _sameStation(stop.stationName, order.fromStation),
