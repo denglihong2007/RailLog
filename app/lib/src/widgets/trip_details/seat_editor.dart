@@ -198,7 +198,7 @@ class _TicketSeatOptionList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('席别与票价', style: Theme.of(context).textTheme.labelLarge),
+        Text('座位信息', style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 8),
         for (var index = 0; index < groups.length; index++) ...[
           _TicketSeatGroupCard(

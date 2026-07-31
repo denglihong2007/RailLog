@@ -241,7 +241,7 @@ class _AddTripPageState extends State<AddTripPage> {
         EntryMethodCard(
           icon: Icons.edit_note_outlined,
           title: '手动录入',
-          description: '逐项填写车次、站点、席别与票价等信息',
+          description: '逐项填写车次、站点、座位等信息',
           onTap: _openManualEntry,
         ),
         const SizedBox(height: 12),
