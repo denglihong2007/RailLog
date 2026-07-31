@@ -16,6 +16,17 @@ abstract final class SeatOptions {
     '优选一等座',
     '特等座',
     '商务座',
+    '多功能座',
+    '二等软座',
+    '一等软座',
+    '特等软座',
+    '一人软包',
+    '混编软座',
+    '混编软卧',
+    '混编硬座',
+    '混编硬卧',
+    '包厢硬卧',
+    '二等包座',
   ];
 
   static const secondaryNumbers = [

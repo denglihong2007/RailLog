@@ -37,12 +37,15 @@ class Ticket12306Order {
   }
 
   String? get seatNumber {
-    final value = [if (coachName.isNotEmpty) '$coachName车', seatName].join();
+    final importedSeatName = coachName == '99' ? '不对号入座' : seatName;
+    final value = [
+      if (coachName.isNotEmpty) '$coachName车',
+      importedSeatName,
+    ].join();
     return value.isEmpty ? null : value;
   }
 
   bool get canImport => !const [
-    '退票',
     '改签',
     '变更到站',
   ].any((keyword) => statusText.contains(keyword));

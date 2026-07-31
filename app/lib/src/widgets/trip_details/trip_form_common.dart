@@ -349,7 +349,7 @@ class TripSeatSection extends StatelessWidget {
         if (lookupFailed) ...[
           const SizedBox(height: 8),
           Text(
-            '未获取到当前区间的席别与票价',
+            '未获取到当前区间的座位信息',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),

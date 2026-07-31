@@ -1,90 +1,68 @@
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 
-enum DashboardAchievementKind {
-  freeMeal,
-  overnightSeat,
-  tightTransfer,
-  wellPreparedTransfer,
-  sevenDayStreak,
-  thirtyDayStreak,
-  duration24Hours,
-  duration48Hours,
-  duration72Hours,
-  all25Series,
-  allEmuSeries,
-  allSeatTypes,
-  noSeat12Hours,
-  hundredTickets,
-  midnightBoarding,
-  wallFacingSeat,
-  hundredStations,
-  thousandKilometers,
-  airRail,
-  railFerry,
-  railwayWorkerPassenger,
-  verticalChina,
-  horizontalChina,
-  highSpeedExperiment,
-  slowCrawl,
-  slowerThanCycling,
-  fleetingMoment,
-  borderPorts,
-  lonelyPlanet,
-  hundredThousandKilometers,
-  fTrain,
-  axleOverheat,
-  permanentMagnetPower,
-  advantageIsMine,
-  platformSubsidence,
-  archaeologyTeam,
-  strategist,
-  eveOfTheStorm,
-  tenNumericTrains,
-  overnightSleeper,
-  tripleTransfer,
-  endsOfTheEarth,
-  fourFamousNorths,
-  youthPriceless,
-  zeroDisplacement,
-  dreamPath,
-  commuterSpecial,
-  grandSlam,
-  storedUpReward,
-  spontaneousTrip,
-  redFootprints,
-  greatWallWatch,
-  icyWorld,
-  unnecessaryExtra,
-  blessChina,
-  snowWelcomesSpring,
-  moistensJiangnan,
-  facingTheWorld,
-  revivalPrototype,
-  vibrantJourney,
-  multipleChoices,
-  publicDisplayOfAffection,
-  farsighted,
-  oneYuanJourney,
-  cardinalStations,
-  ancientLetters,
-  miniTurnaround,
-  verticalSleeper,
-  completeTrainLetters,
-  blueHorizon,
-}
-
 class DashboardAchievement {
   const DashboardAchievement({
-    required this.kind,
+    required this.id,
+    required this.iconKey,
     required this.title,
     required this.requirement,
+    required this.unlocked,
+    required this.triggerTripId,
+    required this.unlockedUserCount,
+    required this.totalUserCount,
     this.unlockedBy,
   });
 
-  final DashboardAchievementKind kind;
+  factory DashboardAchievement.fromJson(
+    Map<String, dynamic> json, {
+    required int totalUserCount,
+    required Map<int, DashboardTripEntry> tripsByTicketId,
+  }) {
+    final triggerTripId = (json['triggerTripId'] as num?)?.toInt();
+    return DashboardAchievement(
+      id: json['id'] as String,
+      iconKey: json['icon'] as String,
+      title: json['title'] as String,
+      requirement: json['description'] as String,
+      unlocked: json['status'] == 'unlocked',
+      triggerTripId: triggerTripId,
+      unlockedBy: triggerTripId == null ? null : tripsByTicketId[triggerTripId],
+      unlockedUserCount: (json['unlockedUserCount'] as num).toInt(),
+      totalUserCount: totalUserCount,
+    );
+  }
+
+  final String id;
+  final String iconKey;
   final String title;
   final String requirement;
+  final bool unlocked;
+  final int? triggerTripId;
+  final int unlockedUserCount;
+  final int totalUserCount;
   final DashboardTripEntry? unlockedBy;
 
-  bool get isUnlocked => unlockedBy != null;
+  bool get isUnlocked => unlocked;
+  double get unlockedPercentage =>
+      totalUserCount == 0 ? 0 : unlockedUserCount * 100 / totalUserCount;
+}
+
+List<DashboardAchievement> dashboardAchievementsFromJson(
+  Map<String, dynamic> json,
+  Iterable<DashboardTripEntry> trips,
+) {
+  final totalUserCount = (json['totalUserCount'] as num).toInt();
+  final tripsByTicketId = <int, DashboardTripEntry>{
+    for (final trip in trips)
+      if (trip.ticketId != null) trip.ticketId!: trip,
+  };
+  return (json['achievements'] as List<dynamic>)
+      .map(
+        (item) => DashboardAchievement.fromJson(
+          item as Map<String, dynamic>,
+          totalUserCount: totalUserCount,
+          tripsByTicketId: tripsByTicketId,
+        ),
+      )
+      .toList(growable: false);
 }

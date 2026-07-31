@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_chart_series.dart';
+import 'package:raillog/src/pages/all_trips_page.dart';
+
+enum _TripChartStyle { line, heatmap }
 
 class TripChartPage extends StatefulWidget {
   const TripChartPage({super.key, required this.trips});
@@ -15,10 +19,13 @@ class TripChartPage extends StatefulWidget {
 }
 
 class _TripChartPageState extends State<TripChartPage> {
-  TripChartMetric _metric = TripChartMetric.mileage;
+  TripChartMetric _metric = TripChartMetric.count;
   TripChartInterval _interval = TripChartInterval.month;
   TripChartRailFilter _railFilter = TripChartRailFilter.all;
+  _TripChartStyle _style = _TripChartStyle.line;
+  bool _isLoadingChart = false;
   late DateTimeRange _range;
+  final _heatmapScrollController = ScrollController();
 
   @override
   void initState() {
@@ -31,6 +38,12 @@ class _TripChartPageState extends State<TripChartPage> {
       final sorted = dates.toList()..sort();
       _range = DateTimeRange(start: sorted.first, end: sorted.last);
     }
+  }
+
+  @override
+  void dispose() {
+    _heatmapScrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -92,8 +105,7 @@ class _TripChartPageState extends State<TripChartPage> {
                           ),
                           _CompactIntervalSelector(
                             value: _interval,
-                            onChanged: (value) =>
-                                setState(() => _interval = value),
+                            onChanged: _changeInterval,
                           ),
                           OutlinedButton.icon(
                             onPressed: _selectDateRange,
@@ -105,6 +117,11 @@ class _TripChartPageState extends State<TripChartPage> {
                         ],
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  _ChartStyleSelector(
+                    value: _style,
+                    onChanged: _changeChartStyle,
                   ),
                   const SizedBox(height: 28),
                   Padding(
@@ -149,8 +166,18 @@ class _TripChartPageState extends State<TripChartPage> {
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 24, 16, 12),
-                      child: matchingTripCount == 0
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        _style == _TripChartStyle.heatmap ? 12 : 24,
+                        16,
+                        12,
+                      ),
+                      child: _isLoadingChart
+                          ? const SizedBox(
+                              height: 154,
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          : matchingTripCount == 0
                           ? SizedBox(
                               height: 300,
                               child: Center(
@@ -168,10 +195,20 @@ class _TripChartPageState extends State<TripChartPage> {
                                 ),
                               ),
                             )
-                          : _TripLineChart(
+                          : _style == _TripChartStyle.line
+                          ? _TripLineChart(
                               points: points,
                               metric: _metric,
                               interval: _interval,
+                            )
+                          : _CalendarHeatmap(
+                              points: points,
+                              trips: widget.trips,
+                              metric: _metric,
+                              interval: _interval,
+                              railFilter: _railFilter,
+                              onCellTap: _showBucketTrips,
+                              scrollController: _heatmapScrollController,
                             ),
                     ),
                   ),
@@ -217,8 +254,92 @@ class _TripChartPageState extends State<TripChartPage> {
       saveText: '确定',
       cancelText: '取消',
     );
-    if (selected != null && mounted) setState(() => _range = selected);
+    if (selected != null && mounted) {
+      setState(() => _range = selected);
+      if (_style == _TripChartStyle.heatmap) {
+        await _scrollHeatmapToEnd();
+      }
+    }
   }
+
+  void _changeInterval(TripChartInterval value) {
+    if (value == _interval) return;
+    setState(() => _interval = value);
+    if (_style == _TripChartStyle.heatmap) _scrollHeatmapToEnd();
+  }
+
+  Future<void> _changeChartStyle(_TripChartStyle value) async {
+    if (value == _style || _isLoadingChart) return;
+    setState(() => _isLoadingChart = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    setState(() => _style = value);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    setState(() => _isLoadingChart = false);
+    if (_style == _TripChartStyle.heatmap) await _scrollHeatmapToEnd();
+  }
+
+  Future<void> _scrollHeatmapToEnd() async {
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_heatmapScrollController.hasClients) return;
+    _heatmapScrollController.jumpTo(
+      _heatmapScrollController.position.maxScrollExtent,
+    );
+  }
+
+  Future<void> _showBucketTrips(TripChartPoint point) async {
+    final trips = widget.trips.where((trip) {
+      final date = _dateOnly(trip.departureTime);
+      final end = _nextBucket(point.bucketStart, _interval);
+      final matchesFilter = switch (_railFilter) {
+        TripChartRailFilter.all => true,
+        TripChartRailFilter.rail => trip.isRailTrip,
+        TripChartRailFilter.nonRail => !trip.isRailTrip,
+      };
+      return !date.isBefore(point.bucketStart) &&
+          date.isBefore(end) &&
+          matchesFilter;
+    }).toList()..sort((a, b) => b.departureTime.compareTo(a.departureTime));
+    if (!mounted || trips.isEmpty) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AllTripsPage(
+          trips: trips,
+          title:
+              '${_bucketTooltip(point.bucketStart, _interval)} · ${trips.length} 张车票',
+          showTripKindFilter: false,
+        ),
+      ),
+    );
+  }
+}
+
+class _ChartStyleSelector extends StatelessWidget {
+  const _ChartStyleSelector({required this.value, required this.onChanged});
+
+  final _TripChartStyle value;
+  final ValueChanged<_TripChartStyle> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SegmentedButton<_TripChartStyle>(
+    showSelectedIcon: false,
+    segments: const [
+      ButtonSegment(
+        value: _TripChartStyle.line,
+        icon: Icon(Icons.show_chart),
+        label: Text('折线图'),
+      ),
+      ButtonSegment(
+        value: _TripChartStyle.heatmap,
+        icon: Icon(Icons.grid_view),
+        label: Text('粒度图'),
+      ),
+    ],
+    selected: {value},
+    onSelectionChanged: (selection) => onChanged(selection.first),
+  );
 }
 
 class _MetricSelector extends StatelessWidget {
@@ -235,14 +356,14 @@ class _MetricSelector extends StatelessWidget {
         showSelectedIcon: false,
         segments: const [
           ButtonSegment(
-            value: TripChartMetric.mileage,
-            icon: Icon(Icons.route_outlined),
-            label: Text('里程'),
-          ),
-          ButtonSegment(
             value: TripChartMetric.count,
             icon: Icon(Icons.confirmation_number_outlined),
             label: Text('次数'),
+          ),
+          ButtonSegment(
+            value: TripChartMetric.mileage,
+            icon: Icon(Icons.route_outlined),
+            label: Text('里程'),
           ),
           ButtonSegment(
             value: TripChartMetric.duration,
@@ -450,6 +571,703 @@ class _TripLineChart extends StatelessWidget {
   }
 }
 
+class _TripHeatmap extends StatelessWidget {
+  const _TripHeatmap({
+    required this.points,
+    required this.trips,
+    required this.metric,
+    required this.interval,
+    required this.railFilter,
+    required this.onCellTap,
+    required this.scrollController,
+  });
+
+  final List<TripChartPoint> points;
+  final List<DashboardTripEntry> trips;
+  final TripChartMetric metric;
+  final TripChartInterval interval;
+  final TripChartRailFilter railFilter;
+  final ValueChanged<TripChartPoint> onCellTap;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final columns = points.length.clamp(1, 10000);
+    final scale = _heatmapScale(metric, interval);
+    final rowCount = scale.labels.length;
+    final tripCounts = <DateTime, int>{};
+    for (final trip in trips) {
+      final allowed = switch (railFilter) {
+        TripChartRailFilter.all => true,
+        TripChartRailFilter.rail => trip.isRailTrip,
+        TripChartRailFilter.nonRail => !trip.isRailTrip,
+      };
+      if (!allowed) continue;
+      final bucket = _bucketStart(_dateOnly(trip.departureTime), interval);
+      tripCounts[bucket] = (tripCounts[bucket] ?? 0) + 1;
+    }
+    return SizedBox(
+      height: 46 + rowCount * 20,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 58,
+            child: Column(
+              children: [
+                const SizedBox(height: 26),
+                ...scale.labels.indexed.map(
+                  (entry) => SizedBox(
+                    height: 20,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: Color.lerp(
+                              colors.primaryContainer,
+                              colors.primary,
+                              (rowCount - 1 - entry.$1) /
+                                  math.max(1, rowCount - 1),
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            entry.$2,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Listener(
+              onPointerSignal: (event) {
+                if (event is! PointerScrollEvent ||
+                    !scrollController.hasClients) {
+                  return;
+                }
+                final delta = event.scrollDelta.dx != 0
+                    ? event.scrollDelta.dx
+                    : event.scrollDelta.dy;
+                final position = scrollController.position;
+                scrollController.jumpTo(
+                  (position.pixels + delta).clamp(
+                    position.minScrollExtent,
+                    position.maxScrollExtent,
+                  ),
+                );
+              },
+              child: Scrollbar(
+                controller: scrollController,
+                thumbVisibility: true,
+                child: ScrollConfiguration(
+                  behavior: const _HeatmapScrollBehavior(),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: List.generate(
+                            columns,
+                            (column) => SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: OverflowBox(
+                                alignment: Alignment.centerLeft,
+                                maxWidth: 80,
+                                minHeight: 20,
+                                maxHeight: 20,
+                                child: Text(
+                                  _heatmapColumnLabel(points, column, interval),
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: List.generate(columns, (column) {
+                            final point = points[column];
+                            final pointRow =
+                                (rowCount - 1) -
+                                (_heatmapLevel(point.value, metric) *
+                                        (rowCount - 1) /
+                                        4)
+                                    .round();
+                            final tripsInBucket =
+                                tripCounts[point.bucketStart] ?? 0;
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                right: column == columns - 1 ? 0 : 4,
+                              ),
+                              child: Column(
+                                children: List.generate(rowCount, (row) {
+                                  if (row != pointRow) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Ink(
+                                        width: 16,
+                                        height: 16,
+                                        decoration: BoxDecoration(
+                                          color: colors.surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(
+                                            3,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Tooltip(
+                                      message:
+                                          '${_bucketTooltip(point.bucketStart, interval)}\n${_formatMetricValue(metric, point.value)}',
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(3),
+                                        onTap: tripsInBucket == 0
+                                            ? null
+                                            : () => onCellTap(point),
+                                        child: Ink(
+                                          width: 16,
+                                          height: 16,
+                                          decoration: BoxDecoration(
+                                            color: _heatmapColor(
+                                              colors,
+                                              point.value,
+                                              metric,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              3,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ),
+                            );
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarHeatmap extends _TripHeatmap {
+  const _CalendarHeatmap({
+    required super.points,
+    required super.trips,
+    required super.metric,
+    required super.interval,
+    required super.railFilter,
+    required super.onCellTap,
+    required super.scrollController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final columns = _buildHeatmapColumns(points, interval);
+    final rowCount = _heatmapRowCount(interval);
+    final thresholds = _heatmapThresholds(metric, interval);
+    final tripCounts = <DateTime, int>{};
+    for (final trip in trips) {
+      final allowed = switch (railFilter) {
+        TripChartRailFilter.all => true,
+        TripChartRailFilter.rail => trip.isRailTrip,
+        TripChartRailFilter.nonRail => !trip.isRailTrip,
+      };
+      if (!allowed) continue;
+      final bucket = _bucketStart(_dateOnly(trip.departureTime), interval);
+      tripCounts[bucket] = (tripCounts[bucket] ?? 0) + 1;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 42 + rowCount * 20,
+          child: _HeatmapScroller(
+            controller: scrollController,
+            child: SingleChildScrollView(
+              controller: scrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: columns
+                        .map(
+                          (column) => SizedBox(
+                            width: 20,
+                            height: 30,
+                            child: OverflowBox(
+                              alignment: Alignment.bottomLeft,
+                              maxWidth: 48,
+                              minHeight: 30,
+                              maxHeight: 30,
+                              child: Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Text(
+                                  column.label,
+                                  maxLines: 2,
+                                  softWrap: false,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                  textHeightBehavior: const TextHeightBehavior(
+                                    applyHeightToFirstAscent: false,
+                                    applyHeightToLastDescent: false,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: columns
+                        .map(
+                          (column) => SizedBox(
+                            width: 20,
+                            child: Column(
+                              children: column.points.map((point) {
+                                if (point == null) {
+                                  return _EmptyHeatmapCell(colors: colors);
+                                }
+                                final count =
+                                    tripCounts[point.bucketStart] ?? 0;
+                                return _HeatmapCell(
+                                  point: point,
+                                  color: _intervalHeatmapColor(
+                                    colors,
+                                    point.value,
+                                    thresholds,
+                                  ),
+                                  metric: metric,
+                                  interval: interval,
+                                  onTap: count == 0
+                                      ? null
+                                      : () => onCellTap(point),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _HeatmapLegend(
+            thresholds: thresholds,
+            colors: colors,
+            metric: metric,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HeatmapLegend extends StatelessWidget {
+  const _HeatmapLegend({
+    required this.thresholds,
+    required this.colors,
+    required this.metric,
+  });
+
+  final List<double> thresholds;
+  final ColorScheme colors;
+  final TripChartMetric metric;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = [
+      thresholds[3],
+      thresholds[2],
+      thresholds[1],
+      thresholds[0],
+      0.0,
+    ];
+    return Wrap(
+      spacing: 12,
+      runSpacing: 4,
+      children: values.indexed
+          .map(
+            (entry) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: _intervalHeatmapColor(colors, entry.$2, thresholds),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${_heatmapLegendValue(metric, entry.$2)}${entry.$1 == 0 ? '+' : ''}',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _HeatmapScrollBehavior extends MaterialScrollBehavior {
+  const _HeatmapScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.trackpad,
+  };
+}
+
+class _HeatmapScroller extends StatelessWidget {
+  const _HeatmapScroller({required this.controller, required this.child});
+
+  final ScrollController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerSignal: (event) {
+      if (event is! PointerScrollEvent || !controller.hasClients) return;
+      final delta = event.scrollDelta.dx != 0
+          ? event.scrollDelta.dx
+          : event.scrollDelta.dy;
+      final position = controller.position;
+      controller.jumpTo(
+        (position.pixels + delta).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+      );
+    },
+    child: Scrollbar(
+      controller: controller,
+      thumbVisibility: true,
+      child: ScrollConfiguration(
+        behavior: const _HeatmapScrollBehavior(),
+        child: child,
+      ),
+    ),
+  );
+}
+
+class _HeatmapCell extends StatelessWidget {
+  const _HeatmapCell({
+    required this.point,
+    required this.color,
+    required this.metric,
+    required this.interval,
+    this.onTap,
+  });
+
+  final TripChartPoint point;
+  final Color color;
+  final TripChartMetric metric;
+  final TripChartInterval interval;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Tooltip(
+      message:
+          '${_bucketTooltip(point.bucketStart, interval)}\n${_formatMetricValue(metric, point.value)}',
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.inverseSurface,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      textStyle: TextStyle(
+        color: Theme.of(context).colorScheme.onInverseSurface,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(3),
+        onTap: onTap,
+        child: Ink(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _EmptyHeatmapCell extends StatelessWidget {
+  const _EmptyHeatmapCell({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(3),
+      ),
+    ),
+  );
+}
+
+class _HeatmapColumn {
+  const _HeatmapColumn({required this.label, required this.points});
+
+  final String label;
+  final List<TripChartPoint?> points;
+}
+
+List<_HeatmapColumn> _buildHeatmapColumns(
+  List<TripChartPoint> points,
+  TripChartInterval interval,
+) {
+  if (points.isEmpty) return const [];
+  final rowCount = _heatmapRowCount(interval);
+  final result = <_HeatmapColumn>[];
+  for (var start = 0; start < points.length; start += rowCount) {
+    final cells = List<TripChartPoint?>.filled(rowCount, null);
+    String label = '';
+    for (var row = 0; row < rowCount && start + row < points.length; row++) {
+      final index = start + row;
+      final point = points[index];
+      cells[row] = point;
+      final group = _heatmapGroupStart(point.bucketStart, interval);
+      final previousGroup = index == 0
+          ? null
+          : _heatmapGroupStart(points[index - 1].bucketStart, interval);
+      if (label.isEmpty && group != previousGroup) {
+        label = _heatmapGroupLabel(group, interval);
+      }
+    }
+    result.add(_HeatmapColumn(label: label, points: cells));
+  }
+  return result;
+}
+
+int _heatmapRowCount(TripChartInterval interval) => switch (interval) {
+  TripChartInterval.year => 5,
+  TripChartInterval.month => 6,
+  TripChartInterval.week => 4,
+};
+
+DateTime _heatmapGroupStart(DateTime date, TripChartInterval interval) =>
+    switch (interval) {
+      TripChartInterval.year => DateTime(date.year ~/ 10 * 10),
+      TripChartInterval.month => DateTime(date.year),
+      TripChartInterval.week => DateTime(date.year, date.month),
+    };
+
+String _heatmapGroupLabel(DateTime group, TripChartInterval interval) =>
+    switch (interval) {
+      TripChartInterval.year => '${group.year}s',
+      TripChartInterval.month => '${group.year}',
+      TripChartInterval.week =>
+        group.month == 1 ? '${group.year}\n1' : '${group.month}',
+    };
+
+List<double> _heatmapThresholds(
+  TripChartMetric metric,
+  TripChartInterval interval,
+) => switch ((metric, interval)) {
+  (TripChartMetric.count, TripChartInterval.week) => const [1, 2, 4, 7],
+  (TripChartMetric.count, TripChartInterval.month) => const [2, 5, 10, 20],
+  (TripChartMetric.count, TripChartInterval.year) => const [12, 30, 60, 120],
+  (TripChartMetric.mileage, TripChartInterval.week) => const [
+    50,
+    200,
+    500,
+    1000,
+  ],
+  (TripChartMetric.mileage, TripChartInterval.month) => const [
+    500,
+    2000,
+    5000,
+    10000,
+  ],
+  (TripChartMetric.mileage, TripChartInterval.year) => const [
+    5000,
+    15000,
+    30000,
+    60000,
+  ],
+  (TripChartMetric.duration, TripChartInterval.week) => const [1, 4, 10, 24],
+  (TripChartMetric.duration, TripChartInterval.month) => const [
+    10,
+    30,
+    80,
+    160,
+  ],
+  (TripChartMetric.duration, TripChartInterval.year) => const [
+    100,
+    300,
+    800,
+    1600,
+  ],
+  (TripChartMetric.spending, TripChartInterval.week) => const [
+    50,
+    200,
+    500,
+    1000,
+  ],
+  (TripChartMetric.spending, TripChartInterval.month) => const [
+    500,
+    2000,
+    5000,
+    10000,
+  ],
+  (TripChartMetric.spending, TripChartInterval.year) => const [
+    5000,
+    15000,
+    30000,
+    60000,
+  ],
+};
+
+Color _intervalHeatmapColor(
+  ColorScheme colors,
+  double value,
+  List<double> thresholds,
+) {
+  if (value <= 0) return colors.surfaceContainerHighest;
+  final level =
+      thresholds.lastIndexWhere((threshold) => value >= threshold) + 1;
+  return Color.lerp(
+    colors.primaryContainer,
+    colors.primary,
+    level / thresholds.length,
+  )!;
+}
+
+String _heatmapLegendValue(TripChartMetric metric, double value) =>
+    switch (metric) {
+      TripChartMetric.mileage => '${_formatWithThousandsSeparator(value)}km',
+      TripChartMetric.count => '${_formatWithThousandsSeparator(value)}次',
+      TripChartMetric.duration => '${_formatWithThousandsSeparator(value)}h',
+      TripChartMetric.spending => '¥${_formatWithThousandsSeparator(value)}',
+    };
+
+String _formatWithThousandsSeparator(double value) {
+  final digits = value.round().toString();
+  final buffer = StringBuffer();
+  for (var index = 0; index < digits.length; index++) {
+    if (index > 0 && (digits.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(digits[index]);
+  }
+  return buffer.toString();
+}
+
+Color _heatmapColor(ColorScheme colors, double value, TripChartMetric metric) {
+  if (value <= 0) return colors.surfaceContainerHighest;
+  final level = _heatmapLevel(value, metric);
+  return Color.lerp(colors.primaryContainer, colors.primary, level / 4)!;
+}
+
+int _heatmapLevel(double value, TripChartMetric metric) {
+  final thresholds = switch (metric) {
+    TripChartMetric.count => const [1, 2, 3, 4],
+    TripChartMetric.mileage => const [50, 200, 500, 1000],
+    TripChartMetric.duration => const [1, 4, 10, 24],
+    TripChartMetric.spending => const [50, 200, 500, 1000],
+  };
+  return thresholds.lastIndexWhere((threshold) => value >= threshold) + 1;
+}
+
+class _HeatmapScale {
+  const _HeatmapScale(this.labels);
+
+  final List<String> labels;
+}
+
+_HeatmapScale _heatmapScale(
+  TripChartMetric metric,
+  TripChartInterval interval,
+) {
+  final thresholds = switch (metric) {
+    TripChartMetric.count => const [0, 1, 2, 3, 4],
+    TripChartMetric.mileage => const [0, 50, 200, 500, 1000],
+    TripChartMetric.duration => const [0, 1, 4, 10, 24],
+    TripChartMetric.spending => const [0, 50, 200, 500, 1000],
+  };
+  final fiveLevels = [
+    '${thresholds[4]}${metric == TripChartMetric.count ? '+' : ''}',
+    '${thresholds[3]}',
+    '${thresholds[2]}',
+    '${thresholds[1]}',
+    '${thresholds[0]}',
+  ];
+  return switch (interval) {
+    TripChartInterval.year => _HeatmapScale([
+      fiveLevels[0],
+      fiveLevels[2],
+      fiveLevels[4],
+    ]),
+    TripChartInterval.month => _HeatmapScale(fiveLevels),
+    TripChartInterval.week => _HeatmapScale([
+      fiveLevels[0],
+      fiveLevels[1],
+      fiveLevels[2],
+      fiveLevels[3],
+      '>0',
+      fiveLevels[4],
+    ]),
+  };
+}
+
 String _metricLabel(TripChartMetric metric) => switch (metric) {
   TripChartMetric.mileage => '累计里程',
   TripChartMetric.count => '行程次数',
@@ -472,6 +1290,23 @@ String _bucketLabel(DateTime date, TripChartInterval interval) =>
       TripChartInterval.week => '${date.month}/${date.day}',
     };
 
+String _heatmapColumnLabel(
+  List<TripChartPoint> points,
+  int index,
+  TripChartInterval interval,
+) {
+  final date = points[index].bucketStart;
+  final previous = index == 0 ? null : points[index - 1].bucketStart;
+  return switch (interval) {
+    TripChartInterval.year =>
+      index == 0 || date.year % 10 == 0 ? '${date.year ~/ 10 * 10}年代' : '',
+    TripChartInterval.month =>
+      index == 0 || previous!.year != date.year ? '${date.year}' : '',
+    TripChartInterval.week =>
+      index == 0 || previous!.month != date.month ? '${date.month}月' : '',
+  };
+}
+
 String _bucketTooltip(DateTime date, TripChartInterval interval) =>
     switch (interval) {
       TripChartInterval.year => '${date.year} 年',
@@ -493,6 +1328,20 @@ String _formatDate(DateTime date) =>
 
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
+
+DateTime _bucketStart(DateTime date, TripChartInterval interval) =>
+    switch (interval) {
+      TripChartInterval.year => DateTime(date.year),
+      TripChartInterval.month => DateTime(date.year, date.month),
+      TripChartInterval.week => date.subtract(Duration(days: date.weekday - 1)),
+    };
+
+DateTime _nextBucket(DateTime date, TripChartInterval interval) =>
+    switch (interval) {
+      TripChartInterval.year => DateTime(date.year + 1),
+      TripChartInterval.month => DateTime(date.year, date.month + 1),
+      TripChartInterval.week => date.add(const Duration(days: 7)),
+    };
 
 String _formatShortDate(DateTime date) =>
     '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';

@@ -9,7 +9,7 @@ import 'package:raillog/src/services/statistics_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
-enum _UserMetric { spending, trips, duration, mileage }
+enum _UserMetric { trips, mileage, duration, spending }
 
 enum _TripMetric {
   spending,
@@ -382,7 +382,7 @@ class _UserLeaderboardView extends StatefulWidget {
 }
 
 class _UserLeaderboardViewState extends State<_UserLeaderboardView> {
-  _UserMetric _metric = _UserMetric.spending;
+  _UserMetric _metric = _UserMetric.trips;
 
   List<UserRankingEntry> get _entries => switch (_metric) {
     _UserMetric.spending => widget.leaderboards.totalSpending,

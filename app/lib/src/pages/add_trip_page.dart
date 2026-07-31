@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
@@ -32,11 +34,13 @@ class _AddTripPageState extends State<AddTripPage> {
   bool _isLoadingSchedule = false;
   int _searchRequestId = 0;
   int _scheduleRequestId = 0;
+  Timer? _searchDebounce;
   int? _departureStopIndex;
   int? _arrivalStopIndex;
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _trainNumberController.dispose();
     super.dispose();
   }
@@ -84,6 +88,19 @@ class _AddTripPageState extends State<AddTripPage> {
     });
   }
 
+  void _onSearchChanged(String input) {
+    _searchDebounce?.cancel();
+    _searchRequestId++;
+    if (input.trim().isEmpty) {
+      _searchTrains(input);
+      return;
+    }
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => _searchTrains(input),
+    );
+  }
+
   Future<void> _selectTrain(TrainSearchResult result) async {
     final requestId = ++_scheduleRequestId;
     _trainNumberController.text = result.trainNumber.replaceFirst(' 次', '');
@@ -98,7 +115,7 @@ class _AddTripPageState extends State<AddTripPage> {
 
     final stops = await TrainService.fetchTrainSchedule(
       result.trainNo,
-      _travelDate,
+      result.lookupDate ?? _travelDate,
       source: _timetableSource,
     );
     if (!mounted || requestId != _scheduleRequestId) return;
@@ -210,7 +227,7 @@ class _AddTripPageState extends State<AddTripPage> {
           onSelectTimetableSource: _selectTimetableSource,
           isSearching: _isSearching,
           searchResults: _searchResults,
-          onSearchChanged: _searchTrains,
+          onSearchChanged: _onSearchChanged,
           onSelectTrain: _selectTrain,
           selectedTrain: _selectedTrain,
           isLoadingSchedule: _isLoadingSchedule,
@@ -224,7 +241,7 @@ class _AddTripPageState extends State<AddTripPage> {
         EntryMethodCard(
           icon: Icons.edit_note_outlined,
           title: '手动录入',
-          description: '逐项填写车次、站点、席别与票价等信息',
+          description: '逐项填写车次、站点、座位等信息',
           onTap: _openManualEntry,
         ),
         const SizedBox(height: 12),

@@ -14,6 +14,7 @@ import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/trip_chart_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/achievement_service.dart';
 import 'package:raillog/src/services/intersection_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
 import 'package:raillog/src/services/session_service.dart';
@@ -23,6 +24,7 @@ import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 const _dashboardMaxWidth = 1200.0;
 const _cardRadius = 8.0;
+const _dashboardPreviewLimit = 12;
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -34,26 +36,41 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<TripDashboardStats> _statsFuture;
   late Future<List<OnlineIntersection>> _intersectionsFuture;
+  Future<List<DashboardAchievement>>? _achievementsFuture;
 
   @override
   void initState() {
     super.initState();
     _statsFuture = DbHelper.instance.getDashboardStats();
     _intersectionsFuture = IntersectionService.fetch();
+    if (SessionService.instance.isSignedIn) {
+      _achievementsFuture = AchievementService.fetchCurrent();
+    }
   }
 
   Future<void> _refresh() async {
     final statsFuture = DbHelper.instance.getDashboardStats();
     final intersectionsFuture = IntersectionService.fetch();
+    final achievementsFuture = SessionService.instance.isSignedIn
+        ? AchievementService.fetchCurrent()
+        : null;
     setState(() {
       _statsFuture = statsFuture;
       _intersectionsFuture = intersectionsFuture;
+      _achievementsFuture = achievementsFuture;
     });
     await statsFuture;
     try {
       await intersectionsFuture;
     } on IntersectionException {
       // The online section renders its own retry state.
+    }
+    if (achievementsFuture != null) {
+      try {
+        await achievementsFuture;
+      } catch (_) {
+        // The achievement section renders its own offline state.
+      }
     }
   }
 
@@ -98,8 +115,10 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(height: 24),
                   _StatsGrid(stats: stats, onChanged: _refresh),
                   const SizedBox(height: 24),
-                  _AchievementsSection(
-                    achievements: stats.achievements,
+                  _AchievementsLoader(
+                    future: _achievementsFuture,
+                    signedIn: SessionService.instance.isSignedIn,
+                    onRetry: _refresh,
                     onChanged: _refresh,
                   ),
                   if (stats.tripCount == 0) ...[
@@ -208,7 +227,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                     ),
                     const SizedBox(height: 24),
                     _AchievementsSection(
-                      achievements: stats.achievements,
+                      achievements: dashboard.achievements,
                       onChanged: _refresh,
                       openTrip: openTrip,
                     ),
@@ -417,23 +436,112 @@ class _OnlineIntersectionsSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (stationIntersections.isNotEmpty) ...[
-                  Text('车站交集', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  _IntersectionCardWrap(intersections: stationIntersections),
+                  _IntersectionGroup(
+                    title: '车站交集',
+                    intersections: stationIntersections,
+                  ),
                 ],
                 if (stationIntersections.isNotEmpty &&
                     trainIntersections.isNotEmpty)
                   const SizedBox(height: 20),
                 if (trainIntersections.isNotEmpty) ...[
-                  Text('车次交集', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  _IntersectionCardWrap(intersections: trainIntersections),
+                  _IntersectionGroup(
+                    title: '车次交集',
+                    intersections: trainIntersections,
+                  ),
                 ],
               ],
             );
           },
         ),
       ],
+    );
+  }
+}
+
+class _IntersectionGroup extends StatelessWidget {
+  const _IntersectionGroup({required this.title, required this.intersections});
+
+  final String title;
+  final List<OnlineIntersection> intersections;
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = intersections
+        .take(_dashboardPreviewLimit)
+        .toList(growable: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+            ),
+            if (intersections.length > _dashboardPreviewLimit)
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push<void>(
+                  m3PageRoute(
+                    builder: (_) => _AllIntersectionsPage(
+                      title: title,
+                      intersections: intersections,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.arrow_forward, size: 18),
+                iconAlignment: IconAlignment.end,
+                label: const Text('查看更多'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _IntersectionCardWrap(intersections: preview),
+      ],
+    );
+  }
+}
+
+class _AllIntersectionsPage extends StatelessWidget {
+  const _AllIntersectionsPage({
+    required this.title,
+    required this.intersections,
+  });
+
+  final String title;
+  final List<OnlineIntersection> intersections;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _dashboardMaxWidth),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          '全部 ${intersections.length} 项',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      _IntersectionCardWrap(intersections: intersections),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -638,6 +746,94 @@ class _IntersectionTripAvatar extends StatelessWidget {
   }
 }
 
+class _AchievementsLoader extends StatelessWidget {
+  const _AchievementsLoader({
+    required this.future,
+    required this.signedIn,
+    required this.onRetry,
+    required this.onChanged,
+  });
+
+  final Future<List<DashboardAchievement>>? future;
+  final bool signedIn;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final achievementsFuture = future;
+    if (!signedIn || achievementsFuture == null) {
+      return const _AchievementServerStatus(
+        icon: Icons.cloud_off_outlined,
+        message: '成就由服务器计算，登录并同步行程后即可查看。',
+      );
+    }
+    return FutureBuilder<List<DashboardAchievement>>(
+      future: achievementsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return _AchievementsSection(
+            achievements: snapshot.data!,
+            onChanged: onChanged,
+          );
+        }
+        if (snapshot.hasError) {
+          return _AchievementServerStatus(
+            icon: Icons.cloud_off_outlined,
+            message: '当前无法获取成就。请联网并完成行程同步后重试。',
+            onRetry: onRetry,
+          );
+        }
+        return const Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SectionHeading(title: '成就'),
+            SizedBox(height: 12),
+            LinearProgressIndicator(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AchievementServerStatus extends StatelessWidget {
+  const _AchievementServerStatus({
+    required this.icon,
+    required this.message,
+    this.onRetry,
+  });
+
+  final IconData icon;
+  final String message;
+  final Future<void> Function()? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeading(title: '成就'),
+        const SizedBox(height: 12),
+        Card.outlined(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: Icon(icon),
+            title: Text(message),
+            trailing: onRetry == null
+                ? null
+                : IconButton(
+                    tooltip: '重试',
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _AchievementsSection extends StatelessWidget {
   const _AchievementsSection({
     required this.achievements,
@@ -683,7 +879,9 @@ class _AchievementsSection extends StatelessWidget {
                 crossAxisSpacing: 12,
                 mainAxisExtent: 120,
               ),
-              itemCount: achievements.length > 9 ? 9 : achievements.length,
+              itemCount: achievements.length > _dashboardPreviewLimit
+                  ? _dashboardPreviewLimit
+                  : achievements.length,
               itemBuilder: (context, index) => M3Reveal(
                 duration: Duration(milliseconds: 620 + index * 45),
                 distance: 8,
@@ -913,12 +1111,6 @@ class _OverviewMetrics extends StatelessWidget {
     final color = Theme.of(context).colorScheme.onPrimaryContainer;
     final metrics = [
       _OverviewMetric(
-        label: '累计花费',
-        value: _money(stats.totalCost),
-        description: '单次最高 ${_money(stats.maxCost)}',
-        icon: Icons.account_balance_wallet_outlined,
-      ),
-      _OverviewMetric(
         label: '累计里程',
         value: _km(stats.totalMileage),
         description: '单次最长 ${_km(stats.maxMileage)}',
@@ -929,6 +1121,12 @@ class _OverviewMetrics extends StatelessWidget {
         value: _duration(stats.totalDuration),
         description: '单次最长 ${_duration(stats.maxDuration)}',
         icon: Icons.schedule_outlined,
+      ),
+      _OverviewMetric(
+        label: '累计花费',
+        value: _money(stats.totalCost),
+        description: '单次最高 ${_money(stats.maxCost)}',
+        icon: Icons.account_balance_wallet_outlined,
       ),
     ];
 

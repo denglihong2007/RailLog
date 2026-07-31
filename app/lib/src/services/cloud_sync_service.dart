@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -20,6 +21,20 @@ class CloudSyncService extends ChangeNotifier {
   bool get autoSyncEnabled => _autoSyncEnabled;
   DateTime? get lastSyncedAt => _lastSyncedAt;
   String? get lastError => _lastError;
+
+  Future<void> waitForCurrentSync() async {
+    if (!_isSyncing) return;
+    final completer = Completer<void>();
+    void handleChanged() {
+      if (_isSyncing || completer.isCompleted) return;
+      removeListener(handleChanged);
+      completer.complete();
+    }
+
+    addListener(handleChanged);
+    if (!_isSyncing) handleChanged();
+    await completer.future;
+  }
 
   Future<void> initialize() async {
     final value = await DbHelper.instance.getSetting('last_synced_at');
