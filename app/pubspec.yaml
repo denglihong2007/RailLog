@@ -49,6 +49,7 @@ dependencies:
   dio: ^5.10.0
   package_info_plus: ^10.2.1
   url_launcher: ^6.3.2
+  image_picker: ^1.2.1
   fl_chart: ^1.1.1
   cached_network_image: ^3.4.1
   excel: ^4.0.6

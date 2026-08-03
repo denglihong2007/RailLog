@@ -1,13 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/timetable_source.dart';
+import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/train_service.dart';
+import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
 import 'package:raillog/src/widgets/add_trip/entry_method_card.dart';
 import 'package:raillog/src/widgets/add_trip/quick_add_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
@@ -44,6 +48,7 @@ class _AddTripPageState extends State<AddTripPage> {
   String _toStation = '';
   bool _isSearchingBetween = false;
   bool _hasSearchedBetween = false;
+  bool _isRecognizingTicket = false;
 
   @override
   void dispose() {
@@ -208,6 +213,157 @@ class _AddTripPageState extends State<AddTripPage> {
       context,
     ).push<bool>(m3PageRoute(builder: (context) => const ManualTripPage()));
     if (saved == true && mounted) widget.onTripSaved();
+  }
+
+  Future<void> _openTicketImport() async {
+    if (_isRecognizingTicket) return;
+    final credentials = await BaiduOcrSettings.load();
+    if (!mounted) return;
+    if (!credentials.isComplete) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先在设置中填写百度 OCR API Key 和 Secret Key')),
+        );
+      }
+      return;
+    }
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('拍照识别'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_upload_outlined),
+              title: const Text('选择车票文件'),
+              subtitle: const Text('支持图片文件'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    XFile? image;
+    TrainTicketOcrResult? recognized;
+    try {
+      image = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 88,
+        maxWidth: 2400,
+      );
+    } on StateError {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前平台不支持直接调用相机，请改用选择车票文件')),
+        );
+      }
+      return;
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('无法打开相机：${error.message ?? error.code}')),
+        );
+      }
+      return;
+    }
+    if (image == null || !mounted) return;
+    setState(() => _isRecognizingTicket = true);
+    try {
+      final bytes = await image.readAsBytes();
+      final ticket = recognized = await BaiduTrainTicketOcrService().recognize(
+        bytes,
+        credentials,
+      );
+      final source = TimetableSource.forYear(ticket.departureTime.year);
+      final candidates = source.isOnline
+          ? await TrainService.searchTrains(
+              ticket.trainNumber,
+              ticket.departureTime,
+            )
+          : await TrainService.searchHistoricalTrains(
+              ticket.trainNumber,
+              source.year!,
+            );
+      final train = candidates.cast<TrainSearchResult?>().firstWhere(
+        (candidate) =>
+            candidate!.trainNumber.replaceFirst(' 次', '').toUpperCase() ==
+            ticket.trainNumber.toUpperCase(),
+        orElse: () => candidates.isEmpty ? null : candidates.first,
+      );
+      if (train == null) throw const BaiduOcrException('无法匹配识别到的车次时刻表');
+      final stops = await TrainService.fetchTrainSchedule(
+        train.trainNo,
+        ticket.departureTime,
+        source: source,
+      );
+      final departureIndex = _findStopIndex(stops, ticket.fromStation);
+      final arrivalIndex = _findStopIndex(
+        stops,
+        ticket.toStation,
+        startAfter: departureIndex,
+      );
+      if (departureIndex == null || arrivalIndex == null) {
+        throw const BaiduOcrException('识别到的车站无法匹配车次时刻表');
+      }
+      final resolvedStops = TrainService.resolveScheduleDateTimes(
+        stops,
+        ticket.departureTime,
+        departureIndex,
+      );
+      if (!mounted) return;
+      final saved = await Navigator.of(context).push<bool>(
+        m3PageRoute(
+          builder: (context) => TrainTripFormPage(
+            trainNumber: train.trainNumber.replaceFirst(' 次', ''),
+            timetableSource: source,
+            scheduleStops: resolvedStops,
+            departureStopIndex: departureIndex,
+            arrivalStopIndex: arrivalIndex,
+            initialSeatType: ticket.seatType,
+            initialSeatNumber: ticket.seatNumber,
+            initialPrice: ticket.price,
+            initialPrompt: '车票信息已由百度 OCR 识别，请核对票面信息',
+          ),
+        ),
+      );
+      if (saved == true && mounted) widget.onTripSaved();
+    } catch (error) {
+      if (mounted) {
+        final ticket = recognized;
+        if (ticket != null) {
+          final saved = await Navigator.of(context).push<bool>(
+            m3PageRoute(
+              builder: (context) => ManualTripPage(
+                initialTrip: TripRecord(
+                  id: 0,
+                  trainNumber: ticket.trainNumber,
+                  fromStation: ticket.fromStation,
+                  toStation: ticket.toStation,
+                  departureTime: ticket.departureTime,
+                  viaRouteSegments: const [],
+                  seatType: ticket.seatType,
+                  seatNumber: ticket.seatNumber,
+                  price: ticket.price ?? 0,
+                ),
+              ),
+            ),
+          );
+          if (saved == true && mounted) widget.onTripSaved();
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('车票识别失败：$error')));
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isRecognizingTicket = false);
+    }
   }
 
   Future<void> _open12306Import() async {
@@ -382,6 +538,15 @@ class _AddTripPageState extends State<AddTripPage> {
           title: '12306 导入',
           description: '核验电子发票，导入近 180 天行程并逐条确认',
           onTap: _open12306Import,
+        ),
+        const SizedBox(height: 12),
+        EntryMethodCard(
+          icon: Icons.document_scanner_outlined,
+          title: '车票识别',
+          description: _isRecognizingTicket
+              ? '正在识别车票...'
+              : '拍摄纸质车票或选择车票图片，自动补全信息',
+          onTap: _openTicketImport,
         ),
       ],
     );

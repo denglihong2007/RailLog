@@ -6,6 +6,7 @@ import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
 import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
+import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
@@ -13,6 +14,7 @@ import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -102,6 +104,8 @@ class _SignedOutSettings extends StatelessWidget {
         _appearanceSettings(context),
         const SizedBox(height: 12),
         const _TicketGeneratorSettingsSection(),
+        const SizedBox(height: 12),
+        const _BaiduOcrSettingsSection(),
         const SizedBox(height: 24),
         const _SettingsCategoryHeader(title: '数据与存储'),
         const SizedBox(height: 8),
@@ -190,6 +194,8 @@ class _SignedInSettings extends StatelessWidget {
         _appearanceSettings(context),
         const SizedBox(height: 12),
         const _TicketGeneratorSettingsSection(),
+        const SizedBox(height: 12),
+        const _BaiduOcrSettingsSection(),
         const SizedBox(height: 24),
         const _SettingsCategoryHeader(title: '同步与数据'),
         const SizedBox(height: 8),
@@ -492,6 +498,116 @@ class _DataExportSectionState extends State<_DataExportSection> {
             : const Icon(Icons.download_outlined),
         onTap: _isExporting ? null : _export,
       ),
+    );
+  }
+}
+
+class _BaiduOcrSettingsSection extends StatefulWidget {
+  const _BaiduOcrSettingsSection();
+
+  @override
+  State<_BaiduOcrSettingsSection> createState() =>
+      _BaiduOcrSettingsSectionState();
+}
+
+class _BaiduOcrSettingsSectionState extends State<_BaiduOcrSettingsSection> {
+  final _apiKeyController = TextEditingController();
+  final _secretKeyController = TextEditingController();
+  bool _loading = true;
+  bool _obscureSecret = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    _secretKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final credentials = await BaiduOcrSettings.load();
+    if (!mounted) return;
+    _apiKeyController.text = credentials.apiKey;
+    _secretKeyController.text = credentials.secretKey;
+    setState(() => _loading = false);
+  }
+
+  Future<void> _save() async {
+    await BaiduOcrSettings.save(
+      apiKey: _apiKeyController.text,
+      secretKey: _secretKeyController.text,
+    );
+  }
+
+  Future<void> _openHelp() async {
+    final opened = await launchUrl(
+      Uri.parse('https://ai.baidu.com/tech/ocr_receipts/train_ticket'),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开百度火车票识别页面')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(
+      title: '百度车票识别',
+      icon: Icons.document_scanner_outlined,
+      child: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: _apiKeyController,
+                  autocorrect: false,
+                  onChanged: (_) => _save(),
+                  decoration: InputDecoration(
+                    labelText: 'API Key',
+                    helperText: '请从百度智能云控制台获取',
+                    prefixIcon: const Icon(Icons.key_outlined),
+                    suffixIcon: IconButton(
+                      tooltip: '查看百度火车票识别说明',
+                      onPressed: _openHelp,
+                      icon: const Icon(Icons.help_outline),
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _secretKeyController,
+                  obscureText: _obscureSecret,
+                  onChanged: (_) => _save(),
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: 'Secret Key',
+                    helperText: '请从百度智能云控制台获取',
+                    prefixIcon: const Icon(Icons.password_outlined),
+                    suffixIcon: IconButton(
+                      tooltip: _obscureSecret ? '显示密钥' : '隐藏密钥',
+                      onPressed: () =>
+                          setState(() => _obscureSecret = !_obscureSecret),
+                      icon: Icon(
+                        _obscureSecret
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
