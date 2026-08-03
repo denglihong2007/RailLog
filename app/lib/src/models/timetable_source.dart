@@ -15,7 +15,9 @@ enum TimetableSource {
   year2021('2021'),
   year2022('2022'),
   year2023('2023'),
-  year2024('2024');
+  year2024('2024'),
+  year2025('2025'),
+  year2026('2026');
 
   const TimetableSource(this.label);
 
@@ -39,6 +41,8 @@ enum TimetableSource {
     year2022 => 2022,
     year2023 => 2023,
     year2024 => 2024,
+    year2025 => 2025,
+    year2026 => 2026,
   };
 
   bool get isOnline => this == TimetableSource.online;
@@ -61,6 +65,7 @@ enum TimetableSource {
       2022 => year2022,
       2023 => year2023,
       2024 => year2024,
+      2025 => year2025,
       _ => online,
     };
   }

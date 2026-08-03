@@ -236,8 +236,13 @@ class _AboutPageState extends State<AboutPage> {
                       children: [
                         _InfoTile(
                           icon: Icons.favorite_outline,
-                          title: '冰镇杨梅汁儿、依神Sh1on',
+                          title: '冰镇杨梅汁儿 依神Sh1on 枫糖',
                           subtitle: '感谢对 RailLog 的资金支持',
+                        ),
+                        _InfoTile(
+                          icon: Icons.data_object_outlined,
+                          title: '枫糖 wangxiaole',
+                          subtitle: '收集相关数据',
                         ),
                         _InfoTile(
                           icon: Icons.texture_outlined,

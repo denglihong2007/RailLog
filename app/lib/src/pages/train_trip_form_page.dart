@@ -30,6 +30,7 @@ class TrainTripFormPage extends StatefulWidget {
     this.initialMileageKm,
     this.initialPrice,
     this.initialNotes,
+    this.initialPrompt,
     this.reviewPosition,
     this.reviewTotal,
   });
@@ -44,6 +45,7 @@ class TrainTripFormPage extends StatefulWidget {
   final double? initialMileageKm;
   final double? initialPrice;
   final String? initialNotes;
+  final String? initialPrompt;
   final int? reviewPosition;
   final int? reviewTotal;
 
@@ -99,6 +101,16 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     _initializeImportedTicket();
     _loadRuntimeInfo();
     _loadRouteCatalog();
+    final prompt = widget.initialPrompt;
+    if (prompt != null && prompt.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(prompt)));
+        }
+      });
+    }
   }
 
   @override
@@ -123,14 +135,11 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         TrainService.shouldFetchRollingStock(widget.trainNumber) &&
         widget.timetableSource.isOnline;
     final results = await Future.wait<dynamic>([
-      if (widget.timetableSource.isOnline)
-        TrainService.fetchDistanceInfo(
-          trainNumber: widget.trainNumber,
-          startStation: _departureStop.stationName,
-          endStation: _arrivalStop.stationName,
-        )
-      else
-        Future<TrainDistanceInfo?>.value(),
+      TrainService.fetchDistanceInfo(
+        trainNumber: widget.trainNumber,
+        startStation: _departureStop.stationName,
+        endStation: _arrivalStop.stationName,
+      ),
       if (shouldFetchRollingStock)
         TrainService.fetchRollingStock(
           trainNumber: widget.trainNumber,

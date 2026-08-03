@@ -1,8 +1,27 @@
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 
+enum AchievementCategory {
+  milestones('milestones', '历程丰碑'),
+  extremeChallenges('extremeChallenges', '极限挑战'),
+  railwayCatalog('railwayCatalog', '铁道图鉴'),
+  touring('touring', '巡游四方'),
+  funJourneys('funJourneys', '趣味旅程');
+
+  const AchievementCategory(this.apiKey, this.label);
+
+  final String apiKey;
+  final String label;
+
+  static AchievementCategory fromApiKey(String value) => values.firstWhere(
+    (category) => category.apiKey == value,
+    orElse: () => throw FormatException('未知成就类型：$value'),
+  );
+}
+
 class DashboardAchievement {
   const DashboardAchievement({
     required this.id,
+    required this.category,
     required this.iconKey,
     required this.title,
     required this.requirement,
@@ -21,6 +40,7 @@ class DashboardAchievement {
     final triggerTripId = (json['triggerTripId'] as num?)?.toInt();
     return DashboardAchievement(
       id: json['id'] as String,
+      category: AchievementCategory.fromApiKey(json['category'] as String),
       iconKey: json['icon'] as String,
       title: json['title'] as String,
       requirement: json['description'] as String,
@@ -33,6 +53,7 @@ class DashboardAchievement {
   }
 
   final String id;
+  final AchievementCategory category;
   final String iconKey;
   final String title;
   final String requirement;

@@ -6,13 +6,16 @@ namespace RailLog.API.Services;
 
 public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<TrainTimetableService> logger)
 {
+    public static bool SupportsYear(int year) =>
+        year >= 2009 && year <= 2026;
+
     public async Task<IReadOnlyList<TrainTimetableSearchItem>> SearchAsync(
         string trainNumberPrefix,
         int year,
         CancellationToken cancellationToken = default)
     {
         var prefix = trainNumberPrefix.Trim().ToUpperInvariant();
-        if (prefix.Length == 0 || year is < 2009 or > 2024) return [];
+        if (prefix.Length == 0 || !SupportsYear(year)) return [];
 
         await using var connection = await OpenConnectionAsync(year, cancellationToken);
         if (connection is null) return [];
@@ -64,13 +67,79 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
         return result;
     }
 
+    public async Task<IReadOnlyList<string>> GetStationsAsync(
+        int year,
+        CancellationToken cancellationToken = default)
+    {
+        if (!SupportsYear(year)) return [];
+        await using var connection = await OpenConnectionAsync(year, cancellationToken);
+        if (connection is null) return [];
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT DISTINCT trim(TrainStation) AS station_name
+            FROM {Quote(TableName(year))}
+            WHERE trim(TrainStation) <> ''
+            ORDER BY station_name;
+            """;
+        var result = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(reader.GetString(0));
+        return result;
+    }
+
+    public async Task<IReadOnlyList<TrainTimetableSearchItem>> SearchBetweenAsync(
+        string fromStation,
+        string toStation,
+        int year,
+        CancellationToken cancellationToken = default)
+    {
+        var from = fromStation.Trim();
+        var to = toStation.Trim();
+        if (from.Length == 0 || to.Length == 0 || from == to || !SupportsYear(year)) return [];
+        await using var connection = await OpenConnectionAsync(year, cancellationToken);
+        if (connection is null) return [];
+        await using var command = connection.CreateCommand();
+        var table = Quote(TableName(year));
+        command.CommandText = $"""
+            WITH train_stops AS (
+                SELECT trim(TrainCode1) AS train_number, OrderID, trim(TrainStation) AS station
+                FROM {table} WHERE trim(TrainCode1) <> ''
+                UNION ALL
+                SELECT trim(TrainCode2), OrderID, trim(TrainStation)
+                FROM {table} WHERE trim(TrainCode2) <> ''
+            ), matching AS (
+                SELECT train_number,
+                       MIN(CASE WHEN station = @fromStation THEN OrderID END) AS from_order,
+                       MIN(CASE WHEN station = @toStation THEN OrderID END) AS to_order
+                FROM train_stops
+                GROUP BY train_number
+            )
+            SELECT train_number, @fromStation, @toStation, train_number
+            FROM matching
+            WHERE from_order IS NOT NULL AND to_order IS NOT NULL AND from_order < to_order
+            ORDER BY train_number
+            LIMIT 100;
+            """;
+        command.Parameters.AddWithValue("@fromStation", from);
+        command.Parameters.AddWithValue("@toStation", to);
+        var result = new List<TrainTimetableSearchItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new TrainTimetableSearchItem(
+                ReadString(reader, "train_number"), from, to, ReadString(reader, "train_number")));
+        }
+        return result;
+    }
+
     public async Task<IReadOnlyList<TrainTimetableStop>> GetAsync(
         string trainNumber,
         int year,
         CancellationToken cancellationToken = default)
     {
         var normalizedTrainNumber = trainNumber.Trim().ToUpperInvariant();
-        if (normalizedTrainNumber.Length == 0 || year is < 2009 or > 2024)
+        if (normalizedTrainNumber.Length == 0 || !SupportsYear(year))
             return [];
 
         var databasePath = Path.Combine(environment.ContentRootPath, "Assets", "train_timetables.db");

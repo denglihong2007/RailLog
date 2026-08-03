@@ -83,12 +83,6 @@ String? validateViaRouteSegments(
         fromStation == toStation) {
       return '第${index + 1}段经由的始发站和终到站不能相同';
     }
-
-    if (index > 0 &&
-        segment.routeName.trim().isNotEmpty &&
-        segment.routeName.trim() == segments[index - 1].routeName.trim()) {
-      return '第$index段和第${index + 1}段经由的线路不能相同';
-    }
   }
 
   if (!hasValidRouteContinuity(

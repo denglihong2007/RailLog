@@ -278,12 +278,14 @@ class _DashboardScrollView extends StatelessWidget {
       slivers: [
         SliverPadding(
           padding: padding,
-          sliver: SliverList.builder(
-            itemCount: children.length,
-            itemBuilder: (context, index) => Center(
+          sliver: SliverToBoxAdapter(
+            child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: _dashboardMaxWidth),
-                child: SizedBox(width: double.infinity, child: children[index]),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(children: children),
+                ),
               ),
             ),
           ),

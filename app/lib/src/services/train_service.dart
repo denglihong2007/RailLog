@@ -501,6 +501,45 @@ class TrainService {
     }
   }
 
+  static Future<List<String>> fetchHistoricalStations(int year) async {
+    try {
+      final response = await ApiClient.instance.dio.get<dynamic>(
+        '/api/train-timetables/stations',
+        queryParameters: {'year': year},
+      );
+      final stations = response.data;
+      if (response.statusCode != 200 || stations is! List) return const [];
+      return stations.whereType<String>().toList(growable: false);
+    } on DioException catch (_) {
+      return const [];
+    }
+  }
+
+  static Future<List<TrainSearchResult>> searchHistoricalTrainsBetween({
+    required String fromStation,
+    required String toStation,
+    required int year,
+  }) async {
+    try {
+      final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
+        '/api/train-timetables/between',
+        queryParameters: {
+          'fromStation': fromStation,
+          'toStation': toStation,
+          'year': year,
+        },
+      );
+      final trains = response.data?['trains'];
+      if (response.statusCode != 200 || trains is! List) return const [];
+      return trains
+          .whereType<Map<String, dynamic>>()
+          .map(TrainSearchResult.fromJson)
+          .toList(growable: false);
+    } on DioException catch (_) {
+      return const [];
+    }
+  }
+
   static List<TrainSearchResult> normalizeTrainSuggestions(
     String query,
     Iterable<TrainSearchResult> results, {

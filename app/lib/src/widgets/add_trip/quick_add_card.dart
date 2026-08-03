@@ -12,6 +12,17 @@ class QuickAddCard extends StatelessWidget {
     required this.trainNumberController,
     required this.onPickDate,
     required this.onSelectTimetableSource,
+    required this.stationQueryMode,
+    required this.onLookupModeChanged,
+    required this.stationNames,
+    required this.fromStation,
+    required this.toStation,
+    required this.onFromStationChanged,
+    required this.onToStationChanged,
+    required this.isSearchingBetween,
+    required this.hasSearchedBetween,
+    required this.stationSearchResults,
+    required this.onSearchBetween,
     required this.isSearching,
     required this.searchResults,
     required this.onSearchChanged,
@@ -30,6 +41,17 @@ class QuickAddCard extends StatelessWidget {
   final TextEditingController trainNumberController;
   final VoidCallback onPickDate;
   final ValueChanged<TimetableSource> onSelectTimetableSource;
+  final bool stationQueryMode;
+  final ValueChanged<bool> onLookupModeChanged;
+  final List<String> stationNames;
+  final String fromStation;
+  final String toStation;
+  final ValueChanged<String> onFromStationChanged;
+  final ValueChanged<String> onToStationChanged;
+  final bool isSearchingBetween;
+  final bool hasSearchedBetween;
+  final List<TrainSearchResult> stationSearchResults;
+  final VoidCallback onSearchBetween;
   final bool isSearching;
   final List<TrainSearchResult> searchResults;
   final ValueChanged<String> onSearchChanged;
@@ -104,25 +126,47 @@ class QuickAddCard extends StatelessWidget {
             const SizedBox(height: 24),
             Text('车次信息', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            TextField(
-              controller: trainNumberController,
-              textCapitalization: TextCapitalization.characters,
-              onChanged: onSearchChanged,
-              decoration: const InputDecoration(
-                labelText: '车次',
-                hintText: '例如 G1234',
-                prefixIcon: Icon(Icons.train_outlined),
-                border: OutlineInputBorder(),
-              ),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.search_outlined),
+                  label: Text('车次查询'),
+                ),
+                ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.swap_horiz_outlined),
+                  label: Text('站站查询'),
+                ),
+              ],
+              selected: {stationQueryMode},
+              onSelectionChanged: (selection) =>
+                  onLookupModeChanged(selection.single),
             ),
-            AnimatedSize(
-              duration: m3MotionDuration,
-              curve: Curves.easeOutCubic,
-              child: M3FadeThroughSwitcher(
-                alignment: Alignment.topCenter,
-                child: _buildSearchState(context),
+            const SizedBox(height: 16),
+            if (stationQueryMode)
+              _buildStationLookup(context, colors)
+            else ...[
+              TextField(
+                controller: trainNumberController,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: onSearchChanged,
+                decoration: const InputDecoration(
+                  labelText: '车次',
+                  hintText: '例如 G1234',
+                  prefixIcon: Icon(Icons.train_outlined),
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
+              AnimatedSize(
+                duration: m3MotionDuration,
+                curve: Curves.easeOutCubic,
+                child: M3FadeThroughSwitcher(
+                  alignment: Alignment.topCenter,
+                  child: _buildSearchState(context),
+                ),
+              ),
+            ],
             AnimatedSize(
               duration: m3MotionDuration,
               curve: Curves.easeOutCubic,
@@ -135,6 +179,80 @@ class QuickAddCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildStationLookup(BuildContext context, ColorScheme colors) {
+    if (timetableSource.isOnline) {
+      return Card.outlined(
+        margin: EdgeInsets.zero,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('站站查询仅支持年度数据库，请先选择具体年份'),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _StationPickerTile(
+                label: '始发站',
+                icon: Icons.trip_origin_outlined,
+                value: fromStation,
+                enabled: stationNames.isNotEmpty,
+                onTap: () =>
+                    _showStationPicker(context, '选择始发站', onFromStationChanged),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _StationPickerTile(
+                label: '终到站',
+                icon: Icons.location_on_outlined,
+                value: toStation,
+                enabled: stationNames.isNotEmpty,
+                onTap: () =>
+                    _showStationPicker(context, '选择终到站', onToStationChanged),
+              ),
+            ),
+          ],
+        ),
+        if (isSearchingBetween)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: LinearProgressIndicator(),
+          ),
+        if (stationSearchResults.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('选择车次', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          _TrainSearchResults(
+            results: stationSearchResults,
+            onSelectTrain: onSelectTrain,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _showStationPicker(
+    BuildContext context,
+    String title,
+    ValueChanged<String> onSelected,
+  ) async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => _StationPickerSheet(
+        title: title,
+        stations: stationNames,
+        selectedValue: title.contains('始发') ? fromStation : toStation,
+      ),
+    );
+    if (result != null) onSelected(result);
   }
 
   PopupMenuItem<TimetableSource> _databaseMenuItem(
@@ -202,46 +320,89 @@ class QuickAddCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('选择乘车区间', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            '先点始发站，再点终到站',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: 12),
-          AnimatedSize(
-            duration: m3MotionDuration,
-            curve: Curves.easeOutCubic,
-            child: M3FadeThroughSwitcher(
-              alignment: Alignment.topCenter,
-              child: _buildScheduleState(),
+          if (stationQueryMode)
+            _buildStationTrainSelection(context, colors, train)
+          else ...[
+            Text('选择乘车区间', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              '先点始发站，再点终到站',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),
-          ),
-          AnimatedSize(
-            duration: m3MotionDurationShort,
-            curve: Curves.easeOutCubic,
-            child: M3FadeThroughSwitcher(
-              alignment: Alignment.centerRight,
-              child: departureStopIndex != null && arrivalStopIndex != null
-                  ? Padding(
-                      key: const ValueKey('continue-visible'),
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed: onContinue,
-                          icon: const Icon(Icons.arrow_forward),
-                          label: const Text('下一步'),
+            const SizedBox(height: 12),
+            AnimatedSize(
+              duration: m3MotionDuration,
+              curve: Curves.easeOutCubic,
+              child: M3FadeThroughSwitcher(
+                alignment: Alignment.topCenter,
+                child: _buildScheduleState(),
+              ),
+            ),
+            AnimatedSize(
+              duration: m3MotionDurationShort,
+              curve: Curves.easeOutCubic,
+              child: M3FadeThroughSwitcher(
+                alignment: Alignment.centerRight,
+                child: departureStopIndex != null && arrivalStopIndex != null
+                    ? Padding(
+                        key: const ValueKey('continue-visible'),
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.icon(
+                            onPressed: onContinue,
+                            icon: const Icon(Icons.arrow_forward),
+                            label: const Text('下一步'),
+                          ),
                         ),
-                      ),
-                    )
-                  : const SizedBox.shrink(key: ValueKey('continue-hidden')),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('continue-hidden')),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStationTrainSelection(
+    BuildContext context,
+    ColorScheme colors,
+    TrainSearchResult train,
+  ) {
+    final canContinue = departureStopIndex != null && arrivalStopIndex != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('已选择车次', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          '${train.departureStation} → ${train.arrivalStation}',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        if (isLoadingSchedule) ...[
+          const SizedBox(height: 16),
+          const Center(child: CircularProgressIndicator()),
+        ] else if (scheduleStops.isEmpty) ...[
+          const SizedBox(height: 16),
+          const Text('暂未获取到该车次的时刻表'),
+        ],
+        if (canContinue) ...[
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: onContinue,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('下一步'),
             ),
           ),
         ],
-      ),
+      ],
     );
   }
 
@@ -283,6 +444,118 @@ class _TrainSearchResults extends StatefulWidget {
 
   @override
   State<_TrainSearchResults> createState() => _TrainSearchResultsState();
+}
+
+class _StationPickerTile extends StatelessWidget {
+  const _StationPickerTile({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.enabled,
+    required this.onTap,
+  });
+  final String label, value;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(4),
+      child: InputDecorator(
+        isEmpty: value.isEmpty,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          suffixIcon: const Icon(Icons.arrow_drop_down),
+          enabled: enabled,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+        ),
+        child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
+}
+
+class _StationPickerSheet extends StatefulWidget {
+  const _StationPickerSheet({
+    required this.title,
+    required this.stations,
+    required this.selectedValue,
+  });
+  final String title;
+  final List<String> stations;
+  final String selectedValue;
+  @override
+  State<_StationPickerSheet> createState() => _StationPickerSheetState();
+}
+
+class _StationPickerSheetState extends State<_StationPickerSheet> {
+  String query = '';
+  @override
+  Widget build(BuildContext context) {
+    final normalizedQuery = query.trim().toLowerCase();
+    final filtered = normalizedQuery.isEmpty
+        ? widget.stations
+        : widget.stations
+              .where(
+                (station) => station.toLowerCase().contains(normalizedQuery),
+              )
+              .toList();
+    return FractionallySizedBox(
+      heightFactor: 0.78,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 32,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            SearchBar(
+              autoFocus: true,
+              leading: const Icon(Icons.search),
+              hintText: '搜索${widget.title}',
+              onChanged: (value) => setState(() => query = value),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(child: Text('没有匹配项'))
+                  : ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final station = filtered[index];
+                        return ListTile(
+                          title: Text(station),
+                          trailing: station == widget.selectedValue
+                              ? const Icon(Icons.check)
+                              : null,
+                          onTap: () => Navigator.pop(context, station),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _TrainSearchResultsState extends State<_TrainSearchResults> {
