@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/pages/main_navigation_page.dart';
@@ -68,6 +69,13 @@ class RailLogApp extends StatelessWidget {
                 );
           return MaterialApp(
             title: '轨记',
+            locale: const Locale('zh', 'CN'),
+            supportedLocales: const [Locale('zh', 'CN')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             themeMode: settings.themeMode,
             theme: _theme(lightScheme),
             darkTheme: _theme(darkScheme),
