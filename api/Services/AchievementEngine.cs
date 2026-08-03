@@ -112,7 +112,7 @@ public static partial class AchievementEngine
         "无座", "硬座", "软座", "一等座", "商务座", "硬卧", "软卧",
         "高级软卧", "动卧", "二等卧", "一等卧", "高级动卧"
     ];
-    private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡"];
+    private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥"];
     private static readonly HashSet<string> VariableGaugeModels =
         ["CR400BF-0031", "CR400BF-G-0051", "CR400AF-G-0021"];
     private static readonly HashSet<string> PrototypeModels =
