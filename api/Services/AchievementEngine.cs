@@ -6,6 +6,7 @@ namespace RailLog.API.Services;
 
 public sealed record AchievementEvaluation(
     string Id,
+    string Category,
     string Icon,
     string Title,
     string Description,
@@ -13,6 +14,91 @@ public sealed record AchievementEvaluation(
 
 public static partial class AchievementEngine
 {
+    private const string Milestones = "milestones";
+    private const string ExtremeChallenges = "extremeChallenges";
+    private const string RailwayCatalog = "railwayCatalog";
+    private const string Touring = "touring";
+    private const string FunJourneys = "funJourneys";
+
+    private static readonly IReadOnlyDictionary<string, string> AchievementCategories =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["sevenDayStreak"] = Milestones,
+            ["thirtyDayStreak"] = Milestones,
+            ["hundredTickets"] = Milestones,
+            ["hundredStations"] = Milestones,
+            ["thousandKilometers"] = Milestones,
+            ["hundredThousandKilometers"] = Milestones,
+            ["archaeologyTeam"] = Milestones,
+            ["tenNumericTrains"] = Milestones,
+
+            ["tightTransfer"] = ExtremeChallenges,
+            ["wellPreparedTransfer"] = ExtremeChallenges,
+            ["tripleTransfer"] = ExtremeChallenges,
+            ["duration24Hours"] = ExtremeChallenges,
+            ["duration48Hours"] = ExtremeChallenges,
+            ["duration72Hours"] = ExtremeChallenges,
+            ["overnightSeat"] = ExtremeChallenges,
+            ["midnightBoarding"] = ExtremeChallenges,
+            ["noSeat12Hours"] = ExtremeChallenges,
+            ["highSpeedExperiment"] = ExtremeChallenges,
+            ["slowCrawl"] = ExtremeChallenges,
+            ["slowerThanCycling"] = ExtremeChallenges,
+            ["miniTurnaround"] = ExtremeChallenges,
+            ["zeroDisplacement"] = ExtremeChallenges,
+            ["youthPriceless"] = ExtremeChallenges,
+
+            ["all25Series"] = RailwayCatalog,
+            ["allEmuSeries"] = RailwayCatalog,
+            ["allSeatTypes"] = RailwayCatalog,
+            ["grandSlam"] = RailwayCatalog,
+            ["completeTrainLetters"] = RailwayCatalog,
+            ["ancientLetters"] = RailwayCatalog,
+            ["fTrain"] = RailwayCatalog,
+            ["spontaneousTrip"] = RailwayCatalog,
+            ["railwayWorkerPassenger"] = RailwayCatalog,
+            ["blueHorizon"] = RailwayCatalog,
+            ["axleOverheat"] = RailwayCatalog,
+            ["permanentMagnetPower"] = RailwayCatalog,
+            ["dreamPath"] = RailwayCatalog,
+            ["snowWelcomesSpring"] = RailwayCatalog,
+            ["moistensJiangnan"] = RailwayCatalog,
+            ["facingTheWorld"] = RailwayCatalog,
+            ["revivalPrototype"] = RailwayCatalog,
+            ["vibrantJourney"] = RailwayCatalog,
+
+            ["verticalChina"] = Touring,
+            ["horizontalChina"] = Touring,
+            ["fourFamousNorths"] = Touring,
+            ["cardinalStations"] = Touring,
+            ["borderPorts"] = Touring,
+            ["lonelyPlanet"] = Touring,
+            ["airRail"] = Touring,
+            ["railFerry"] = Touring,
+            ["endsOfTheEarth"] = Touring,
+            ["greatWallWatch"] = Touring,
+            ["icyWorld"] = Touring,
+            ["redFootprints"] = Touring,
+            ["advantageIsMine"] = Touring,
+            ["platformSubsidence"] = Touring,
+            ["strategist"] = Touring,
+
+            ["freeMeal"] = FunJourneys,
+            ["wallFacingSeat"] = FunJourneys,
+            ["farsighted"] = FunJourneys,
+            ["verticalSleeper"] = FunJourneys,
+            ["overnightSleeper"] = FunJourneys,
+            ["commuterSpecial"] = FunJourneys,
+            ["eveOfTheStorm"] = FunJourneys,
+            ["blessChina"] = FunJourneys,
+            ["publicDisplayOfAffection"] = FunJourneys,
+            ["multipleChoices"] = FunJourneys,
+            ["unnecessaryExtra"] = FunJourneys,
+            ["storedUpReward"] = FunJourneys,
+            ["oneYuanJourney"] = FunJourneys,
+            ["fleetingMoment"] = FunJourneys,
+        };
+
     private static readonly HashSet<string> Regular25Models =
         ["25B", "25Z", "25G", "25K", "25T", "25DT"];
     private static readonly HashSet<string> EmuModels =
@@ -123,8 +209,8 @@ public static partial class AchievementEngine
                 FirstAirportStationCompletion(trips, 3)),
             A("railFerry", "directions_boat_outlined", "铁水联运", "乘坐经由粤海轮渡线的列车，或在大连与烟台间完成 24 小时内的跨海接续",
                 FirstRailFerryCompletion(trips)),
-            A("railwayWorkerPassenger", "engineering_outlined", "待旅客如职工", "乘坐一次路用列车",
-                First(trips, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^57\d{3}$"))),
+            A("railwayWorkerPassenger", "engineering_outlined", "待旅客如职工", "乘坐一次 57XXX 或 40XXX 路用列车",
+                First(trips, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^(?:57|40)\d{3}$"))),
             A("verticalChina", "swap_vert", "纵贯中国", "在 14 天内到访漠河站和三亚站",
                 FirstStationPairWithin(trips, "漠河", "三亚", TimeSpan.FromDays(14))),
             A("horizontalChina", "swap_horiz", "横贯中国", "在 14 天内到访阿克陶站和抚远站",
@@ -169,8 +255,8 @@ public static partial class AchievementEngine
                 FirstTransferChainCompletion(trips, 3)),
             A("endsOfTheEarth", "landscape_outlined", "天涯海角", "到访天涯海角站",
                 FirstStationVisit(trips, ["天涯海角"])),
-            A("fourFamousNorths", "explore_outlined", "四大名北", "分别到访阳泉北站、盘锦北站、孝感北站和邵阳北站",
-                FirstTargetStationCompletion(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"])),
+            A("fourFamousNorths", "explore_outlined", "四大名北", "到访阳泉北站、盘锦北站、孝感北站或邵阳北站",
+                FirstStationVisit(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"])),
             A("youthPriceless", "airline_seat_recline_normal", "青春没有售价", "乘坐全程硬座列车到达拉萨站",
                 First(trips, trip => NormalizedStation(trip.ToStation) == "拉萨" && NormalizedSeatType(trip.SeatType) == "硬座")),
             A("zeroDisplacement", "loop", "位移为零", "乘坐始发站与终到站相同的环线列车全程",
@@ -233,14 +319,22 @@ public static partial class AchievementEngine
                 FirstCountCompletion(trips, 10, trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0))
         };
 
+        if (values.Count != AchievementCategories.Count ||
+            values.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != values.Count)
+            throw new InvalidOperationException("Achievement category mapping is incomplete or contains duplicate IDs.");
+
         return values
             .OrderByDescending(item => item.TriggerTripId.HasValue)
             .ToList();
     }
 
     private static AchievementEvaluation A(
-        string id, string icon, string title, string description, PublicTrip? trip) =>
-        new(id, icon, title, description, trip?.TicketId);
+        string id, string icon, string title, string description, PublicTrip? trip)
+    {
+        if (!AchievementCategories.TryGetValue(id, out var category))
+            throw new InvalidOperationException($"Achievement {id} has no category.");
+        return new(id, category, icon, title, description, trip?.TicketId);
+    }
 
     private static DateTime Departure(PublicTrip trip) => trip.DepartureTime ?? trip.CreatedAt;
 
@@ -390,21 +484,6 @@ public static partial class AchievementEngine
         var values = targets.ToHashSet(StringComparer.Ordinal);
         return First(trips, trip => values.Contains(NormalizedStation(trip.FromStation)) ||
             values.Contains(NormalizedStation(trip.ToStation)));
-    }
-
-    private static PublicTrip? FirstTargetStationCompletion(List<PublicTrip> trips, IEnumerable<string> targets)
-    {
-        var required = targets.ToHashSet(StringComparer.Ordinal);
-        var visited = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var trip in trips)
-        {
-            var departure = NormalizedStation(trip.FromStation);
-            if (required.Contains(departure)) visited.Add(departure);
-            var arrival = NormalizedStation(trip.ToStation);
-            if (required.Contains(arrival)) visited.Add(arrival);
-            if (required.IsSubsetOf(visited)) return trip;
-        }
-        return null;
     }
 
     private static PublicTrip? FirstStationPairWithin(

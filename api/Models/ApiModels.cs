@@ -156,6 +156,7 @@ public sealed record PublicUserDashboardResponse(
 
 public sealed record AchievementResponse(
     string Id,
+    string Category,
     string Icon,
     string Title,
     string Description,

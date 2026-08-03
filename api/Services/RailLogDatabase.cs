@@ -1103,6 +1103,7 @@ public sealed class RailLogDatabase
             .ThenBy(item => item.Index)
             .Select(item => new AchievementResponse(
                 item.Definition.Id,
+                item.Definition.Category,
                 item.Definition.Icon,
                 item.Definition.Title,
                 item.Definition.Description,
