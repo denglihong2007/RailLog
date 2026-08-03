@@ -23,6 +23,31 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
         return Ok(new TrainTimetableSearchResponse(year, trains));
     }
 
+    [HttpGet("stations")]
+    public async Task<ActionResult<IReadOnlyList<string>>> Stations(
+        [FromQuery] int year,
+        CancellationToken cancellationToken)
+    {
+        if (!TrainTimetableService.SupportsYear(year))
+            return BadRequest(new { message = "历史时刻表年份必须在 2009-2026 之间" });
+        return Ok(await service.GetStationsAsync(year, cancellationToken));
+    }
+
+    [HttpGet("between")]
+    public async Task<ActionResult<TrainTimetableSearchResponse>> Between(
+        [FromQuery] string fromStation,
+        [FromQuery] string toStation,
+        [FromQuery] int year,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(fromStation) || string.IsNullOrWhiteSpace(toStation))
+            return BadRequest(new { message = "始发站和终到站不能为空" });
+        if (!TrainTimetableService.SupportsYear(year))
+            return BadRequest(new { message = "历史时刻表年份必须在 2009-2026 之间" });
+        var trains = await service.SearchBetweenAsync(fromStation, toStation, year, cancellationToken);
+        return Ok(new TrainTimetableSearchResponse(year, trains));
+    }
+
     [HttpGet]
     public async Task<ActionResult<TrainTimetableResponse>> Get(
         [FromQuery] string trainNumber,

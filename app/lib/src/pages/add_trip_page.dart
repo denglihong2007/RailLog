@@ -28,6 +28,8 @@ class _AddTripPageState extends State<AddTripPage> {
     DateTime.now().year,
   );
   List<TrainSearchResult> _searchResults = const [];
+  List<TrainSearchResult> _stationSearchResults = const [];
+  List<String> _stationNames = const [];
   TrainSearchResult? _selectedTrain;
   List<TrainScheduleStop> _scheduleStops = const [];
   bool _isSearching = false;
@@ -37,6 +39,11 @@ class _AddTripPageState extends State<AddTripPage> {
   Timer? _searchDebounce;
   int? _departureStopIndex;
   int? _arrivalStopIndex;
+  bool _stationQueryMode = false;
+  String _fromStation = '';
+  String _toStation = '';
+  bool _isSearchingBetween = false;
+  bool _hasSearchedBetween = false;
 
   @override
   void dispose() {
@@ -56,6 +63,12 @@ class _AddTripPageState extends State<AddTripPage> {
       setState(() {
         _travelDate = date;
         _timetableSource = TimetableSource.forYear(date.year);
+        _stationQueryMode = false;
+        _stationSearchResults = const [];
+        _hasSearchedBetween = false;
+        _stationNames = const [];
+        _fromStation = '';
+        _toStation = '';
         _clearSelectedTrain();
       });
       _searchTrains(_trainNumberController.text);
@@ -107,6 +120,8 @@ class _AddTripPageState extends State<AddTripPage> {
     setState(() {
       _selectedTrain = result;
       _searchResults = const [];
+      _stationSearchResults = const [];
+      _hasSearchedBetween = false;
       _scheduleStops = const [];
       _departureStopIndex = null;
       _arrivalStopIndex = null;
@@ -123,7 +138,26 @@ class _AddTripPageState extends State<AddTripPage> {
     setState(() {
       _scheduleStops = stops;
       _isLoadingSchedule = false;
+      if (_stationQueryMode) {
+        _departureStopIndex = _findStopIndex(
+          stops,
+          _fromStation,
+          fallback: result.departureStation,
+        );
+        _arrivalStopIndex = _findStopIndex(
+          stops,
+          _toStation,
+          fallback: result.arrivalStation,
+          startAfter: _departureStopIndex,
+        );
+      }
     });
+    if (_stationQueryMode &&
+        _departureStopIndex != null &&
+        _arrivalStopIndex != null) {
+      await _continueQuickAdd();
+    }
+    if (!mounted) return;
     if (stops.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -203,9 +237,96 @@ class _AddTripPageState extends State<AddTripPage> {
     if (source == _timetableSource) return;
     setState(() {
       _timetableSource = source;
+      _stationQueryMode = false;
+      _stationSearchResults = const [];
+      _hasSearchedBetween = false;
+      _stationNames = const [];
+      _fromStation = '';
+      _toStation = '';
       _clearSelectedTrain();
     });
     _searchTrains(_trainNumberController.text);
+  }
+
+  Future<void> _setLookupMode(bool stationMode) async {
+    if (stationMode && _timetableSource.isOnline) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('站站查询仅支持本地年度数据库')));
+      return;
+    }
+    setState(() {
+      _stationQueryMode = stationMode;
+      _searchResults = const [];
+      _stationSearchResults = const [];
+      _hasSearchedBetween = false;
+      _clearSelectedTrain();
+    });
+    if (stationMode && _stationNames.isEmpty) {
+      final names = await TrainService.fetchHistoricalStations(
+        _timetableSource.year!,
+      );
+      if (mounted && _stationQueryMode) setState(() => _stationNames = names);
+    }
+  }
+
+  void _setFromStation(String value) {
+    setState(() {
+      _fromStation = value;
+      _stationSearchResults = const [];
+      _hasSearchedBetween = false;
+      _clearSelectedTrain();
+    });
+    if (_toStation.trim().isNotEmpty) _searchBetweenStations();
+  }
+
+  void _setToStation(String value) {
+    setState(() {
+      _toStation = value;
+      _stationSearchResults = const [];
+      _hasSearchedBetween = false;
+      _clearSelectedTrain();
+    });
+    if (_fromStation.trim().isNotEmpty) _searchBetweenStations();
+  }
+
+  Future<void> _searchBetweenStations() async {
+    if (_fromStation.trim().isEmpty || _toStation.trim().isEmpty) return;
+    setState(() {
+      _isSearchingBetween = true;
+      _hasSearchedBetween = true;
+    });
+    final results = await TrainService.searchHistoricalTrainsBetween(
+      fromStation: _fromStation,
+      toStation: _toStation,
+      year: _timetableSource.year!,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSearchingBetween = false;
+      _stationSearchResults = results;
+    });
+    if (!mounted) return;
+    if (results.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('未找到符合条件的车次')));
+      return;
+    }
+  }
+
+  int? _findStopIndex(
+    List<TrainScheduleStop> stops,
+    String station, {
+    String? fallback,
+    int? startAfter,
+  }) {
+    final target = _stationKey(station.isEmpty ? fallback ?? '' : station);
+    if (target.isEmpty) return null;
+    for (var index = (startAfter ?? -1) + 1; index < stops.length; index++) {
+      if (_stationKey(stops[index].stationName) == target) return index;
+    }
+    return null;
   }
 
   @override
@@ -225,6 +346,17 @@ class _AddTripPageState extends State<AddTripPage> {
           trainNumberController: _trainNumberController,
           onPickDate: _pickTravelDate,
           onSelectTimetableSource: _selectTimetableSource,
+          stationQueryMode: _stationQueryMode,
+          onLookupModeChanged: _setLookupMode,
+          stationNames: _stationNames,
+          fromStation: _fromStation,
+          toStation: _toStation,
+          onFromStationChanged: _setFromStation,
+          onToStationChanged: _setToStation,
+          isSearchingBetween: _isSearchingBetween,
+          hasSearchedBetween: _hasSearchedBetween,
+          stationSearchResults: _stationSearchResults,
+          onSearchBetween: _searchBetweenStations,
           isSearching: _isSearching,
           searchResults: _searchResults,
           onSearchChanged: _onSearchChanged,
@@ -255,6 +387,11 @@ class _AddTripPageState extends State<AddTripPage> {
     );
   }
 }
+
+String _stationKey(String value) => value
+    .trim()
+    .replaceAll(RegExp(r'\s+'), '')
+    .replaceFirst(RegExp(r'(站|市)$'), '');
 
 class _PublicTripNotice extends StatelessWidget {
   const _PublicTripNotice();
