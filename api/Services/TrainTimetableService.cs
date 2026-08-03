@@ -6,13 +6,16 @@ namespace RailLog.API.Services;
 
 public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<TrainTimetableService> logger)
 {
+    public static bool SupportsYear(int year) =>
+        year >= 2009 && year <= 2026;
+
     public async Task<IReadOnlyList<TrainTimetableSearchItem>> SearchAsync(
         string trainNumberPrefix,
         int year,
         CancellationToken cancellationToken = default)
     {
         var prefix = trainNumberPrefix.Trim().ToUpperInvariant();
-        if (prefix.Length == 0 || year is < 2009 or > 2024) return [];
+        if (prefix.Length == 0 || !SupportsYear(year)) return [];
 
         await using var connection = await OpenConnectionAsync(year, cancellationToken);
         if (connection is null) return [];
@@ -70,7 +73,7 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
         CancellationToken cancellationToken = default)
     {
         var normalizedTrainNumber = trainNumber.Trim().ToUpperInvariant();
-        if (normalizedTrainNumber.Length == 0 || year is < 2009 or > 2024)
+        if (normalizedTrainNumber.Length == 0 || !SupportsYear(year))
             return [];
 
         var databasePath = Path.Combine(environment.ContentRootPath, "Assets", "train_timetables.db");

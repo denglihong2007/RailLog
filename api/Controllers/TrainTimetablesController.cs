@@ -16,8 +16,8 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
     {
         if (string.IsNullOrWhiteSpace(trainNumber))
             return BadRequest(new { message = "车次号不能为空" });
-        if (year is < 2009 or > 2024)
-            return BadRequest(new { message = "历史时刻表年份必须在 2009-2024 之间" });
+        if (!TrainTimetableService.SupportsYear(year))
+            return BadRequest(new { message = "历史时刻表年份必须在 2009-2026 之间" });
 
         var trains = await service.SearchAsync(trainNumber, year, cancellationToken);
         return Ok(new TrainTimetableSearchResponse(year, trains));
@@ -31,8 +31,8 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
     {
         if (string.IsNullOrWhiteSpace(trainNumber))
             return BadRequest(new { message = "车次号不能为空" });
-        if (year is < 2009 or > 2024)
-            return BadRequest(new { message = "历史时刻表年份必须在 2009-2024 之间" });
+        if (!TrainTimetableService.SupportsYear(year))
+            return BadRequest(new { message = "历史时刻表年份必须在 2009-2026 之间" });
 
         var stops = await service.GetAsync(trainNumber, year, cancellationToken);
         return Ok(new TrainTimetableResponse(trainNumber.Trim().ToUpperInvariant(), year, stops));
