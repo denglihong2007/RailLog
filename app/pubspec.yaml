@@ -53,6 +53,7 @@ dependencies:
   fl_chart: ^1.1.1
   cached_network_image: ^3.4.1
   excel: ^4.0.6
+  file_selector: ^1.0.4
   file_saver: ^0.4.0
   webview_flutter: ^4.14.1
   webview_windows: ^0.4.0
