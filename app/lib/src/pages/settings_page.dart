@@ -126,6 +126,8 @@ class _SignedOutSettings extends StatelessWidget {
         const SizedBox(height: 24),
         const _SettingsCategoryHeader(title: '应用'),
         const SizedBox(height: 8),
+        _communitySettings(),
+        const SizedBox(height: 12),
         _applicationSettings(context),
       ],
     );
@@ -285,6 +287,8 @@ class _SignedInSettings extends StatelessWidget {
         const SizedBox(height: 24),
         const _SettingsCategoryHeader(title: '应用'),
         const SizedBox(height: 8),
+        _communitySettings(),
+        const SizedBox(height: 12),
         _applicationSettings(context),
       ],
     );
@@ -1275,6 +1279,66 @@ Widget _applicationSettings(BuildContext context) {
       ],
     ),
   );
+}
+
+Widget _communitySettings() {
+  return _SettingsCard(
+    title: '社群',
+    icon: Icons.groups_outlined,
+    child: Column(
+      children: [
+        _communityLinkTile(
+          icon: Icons.groups_outlined,
+          title: 'QQ 交流群',
+          subtitle: '群号：972024237（密码：114514）',
+          url: 'https://qm.qq.com/q/pm5xqNdoE8',
+        ),
+        const Divider(height: 1),
+        _communityLinkTile(
+          icon: Icons.volunteer_activism_outlined,
+          title: '爱发电',
+          subtitle: '支持 RailLog 的开发与维护',
+          url: 'https://afdian.com/a/CRSim',
+        ),
+        const Divider(height: 1),
+        _communityLinkTile(
+          icon: Icons.ondemand_video_outlined,
+          title: 'Bilibili',
+          subtitle: 'RailLog 相关视频与动态',
+          url: 'https://space.bilibili.com/436826066',
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _communityLinkTile({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required String url,
+}) {
+  return Builder(
+    builder: (context) => ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.open_in_new, size: 20),
+      onTap: () => _openCommunityLink(context, url),
+    ),
+  );
+}
+
+Future<void> _openCommunityLink(BuildContext context, String value) async {
+  final uri = Uri.tryParse(value);
+  final opened =
+      uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('无法打开链接')));
+  }
 }
 
 Widget _aboutTile(BuildContext context, {EdgeInsetsGeometry? contentPadding}) {
