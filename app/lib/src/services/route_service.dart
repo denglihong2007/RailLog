@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path_util;
 import 'package:raillog/src/models/route_resolution.dart';
+import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/station_pair_distance.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
@@ -22,6 +23,17 @@ class RouteService {
   static Future<List<String>> getStationsForRoute(String routeName) async {
     final graph = await (_graphFuture ??= _loadGraph());
     return graph.stationsForRoute(routeName);
+  }
+
+  static Future<List<RouteStation>> getStationsBetweenRoute(
+    String routeName,
+    String fromStation,
+    String toStation,
+  ) async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(
+      () => graph.stationsBetweenOnRoute(routeName, fromStation, toStation),
+    );
   }
 
   static Future<Map<String, List<String>>> resolveTripStations(
@@ -207,7 +219,7 @@ class _RouteGraph {
   _RouteGraph(this.adjacency, this.routeStationIndexes);
 
   final Map<String, List<_RouteEdge>> adjacency;
-  final Map<String, Map<String, int>> routeStationIndexes;
+  final Map<String, Map<String, _RouteStationEntry>> routeStationIndexes;
 
   List<String> get routeNames {
     final names = adjacency.values
@@ -222,14 +234,37 @@ class _RouteGraph {
   List<String> stationsForRoute(String routeName) {
     final stations = routeStationIndexes[routeName];
     if (stations == null) return const [];
-    final entries = stations.entries.toList()
+    final entries = stations.values.toList()
       ..sort((first, second) {
-        final indexComparison = first.value.compareTo(second.value);
+        final indexComparison = first.index.compareTo(second.index);
         return indexComparison != 0
             ? indexComparison
-            : first.key.compareTo(second.key);
+            : first.name.compareTo(second.name);
       });
-    return entries.map((entry) => entry.key).toList(growable: false);
+    return entries.map((entry) => entry.name).toList(growable: false);
+  }
+
+  List<RouteStation> stationsBetweenOnRoute(
+    String routeName,
+    String fromStation,
+    String toStation,
+  ) {
+    final resolvedRouteName = _resolveRouteName(routeName);
+    if (resolvedRouteName == null) return const [];
+    final stationIndexes = routeStationIndexes[resolvedRouteName];
+    if (stationIndexes == null) return const [];
+    final ordered = stationIndexes.values.toList()
+      ..sort((first, second) => first.index.compareTo(second.index));
+    final start = _routeStationPosition(ordered, fromStation);
+    final end = _routeStationPosition(ordered, toStation);
+    if (start == null || end == null) return const [];
+    final selected = start <= end
+        ? ordered.sublist(start, end + 1)
+        : ordered.sublist(end, start + 1).reversed;
+    return [
+      for (final entry in selected)
+        RouteStation(name: entry.name, mileage: entry.mileage),
+    ];
   }
 
   List<String> stationsForJourney(
@@ -272,7 +307,7 @@ class _RouteGraph {
 
   factory _RouteGraph.fromRows(List<Map<String, Object?>> rows) {
     final adjacency = <String, List<_RouteEdge>>{};
-    final routeStationIndexes = <String, Map<String, int>>{};
+    final routeStationIndexes = <String, Map<String, _RouteStationEntry>>{};
     String? currentRouteId;
     String? previousStation;
     double? previousMileage;
@@ -295,9 +330,13 @@ class _RouteGraph {
         routeName,
         () => {},
       );
-      final existingIndex = stationIndexes[station];
-      if (existingIndex == null || stationIndex < existingIndex) {
-        stationIndexes[station] = stationIndex;
+      final existingStation = stationIndexes[station];
+      if (existingStation == null || stationIndex < existingStation.index) {
+        stationIndexes[station] = _RouteStationEntry(
+          name: station,
+          index: stationIndex,
+          mileage: mileage,
+        );
       }
 
       if (routeId != currentRouteId) {
@@ -416,35 +455,32 @@ class _RouteGraph {
   ) {
     final stationIndexes = routeStationIndexes[routeName];
     if (stationIndexes == null) return null;
-    final ordered = stationIndexes.entries.toList()
-      ..sort((first, second) => first.value.compareTo(second.value));
+    final ordered = stationIndexes.values.toList()
+      ..sort((first, second) => first.index.compareTo(second.index));
     final start = _routeStationPosition(ordered, fromStation);
     final end = _routeStationPosition(ordered, toStation);
     if (start == null || end == null) return null;
     if (start <= end) {
       return ordered
           .sublist(start, end + 1)
-          .map((entry) => entry.key)
+          .map((entry) => entry.name)
           .toList(growable: false);
     }
     return ordered
         .sublist(end, start + 1)
         .reversed
-        .map((entry) => entry.key)
+        .map((entry) => entry.name)
         .toList(growable: false);
   }
 
-  int? _routeStationPosition(
-    List<MapEntry<String, int>> ordered,
-    String value,
-  ) {
+  int? _routeStationPosition(List<_RouteStationEntry> ordered, String value) {
     final station = value.trim();
-    var position = ordered.indexWhere((entry) => entry.key == station);
+    var position = ordered.indexWhere((entry) => entry.name == station);
     if (position >= 0) return position;
     final alternate = station.endsWith('站')
         ? station.substring(0, station.length - 1)
         : '$station站';
-    position = ordered.indexWhere((entry) => entry.key == alternate);
+    position = ordered.indexWhere((entry) => entry.name == alternate);
     return position < 0 ? null : position;
   }
 
@@ -636,6 +672,18 @@ class _RouteGraph {
     }
     return edges.reversed.toList();
   }
+}
+
+class _RouteStationEntry {
+  const _RouteStationEntry({
+    required this.name,
+    required this.index,
+    required this.mileage,
+  });
+
+  final String name;
+  final int index;
+  final double mileage;
 }
 
 class _RouteEdge {
