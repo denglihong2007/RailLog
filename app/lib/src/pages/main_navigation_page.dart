@@ -82,6 +82,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   Widget build(BuildContext context) {
     return AdaptiveScaffold(
       appBar: AppBar(title: const Text('轨记')),
+      internalAnimations: false,
 
       selectedIndex: _currentIdx,
 

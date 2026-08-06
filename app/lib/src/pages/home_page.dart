@@ -1012,7 +1012,10 @@ class _OverviewSection extends StatelessWidget {
                   ? null
                   : () => Navigator.of(context).push(
                       m3PageRoute(
-                        builder: (_) => TripChartPage(trips: stats.allTrips),
+                        builder: (_) => TripChartPage(
+                          trips: stats.allTrips,
+                          openTrip: openTrip,
+                        ),
                       ),
                     ),
               icon: const Icon(Icons.show_chart, size: 18),

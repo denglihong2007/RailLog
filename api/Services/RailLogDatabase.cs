@@ -1091,7 +1091,8 @@ public sealed class RailLogDatabase
             totalUsers = Convert.ToInt32(await command.ExecuteScalarAsync());
         }
 
-        var definitions = AchievementEngine.Evaluate([]);
+        var definitions = AchievementEngine.Evaluate(
+            await GetAchievementTripsAsync(connection, userId));
         var items = definitions
             .Select((definition, index) => new
             {
@@ -1109,7 +1110,9 @@ public sealed class RailLogDatabase
                 item.Definition.Description,
                 item.Trigger == 0 ? "locked" : "unlocked",
                 item.Trigger == 0 ? null : item.Trigger,
-                counts.GetValueOrDefault(item.Definition.Id)))
+                counts.GetValueOrDefault(item.Definition.Id),
+                item.Definition.Progress?.Current,
+                item.Definition.Progress?.Target))
             .ToList();
         return new AchievementsResponse(totalUsers, items);
     }

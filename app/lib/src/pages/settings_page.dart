@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:raillog/src/models/user_profile.dart';
 import 'package:raillog/src/pages/about_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
@@ -12,6 +13,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
+import 'package:raillog/src/services/trip_excel_import_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -124,6 +126,8 @@ class _SignedOutSettings extends StatelessWidget {
         const SizedBox(height: 24),
         const _SettingsCategoryHeader(title: '应用'),
         const SizedBox(height: 8),
+        _communitySettings(),
+        const SizedBox(height: 12),
         _applicationSettings(context),
       ],
     );
@@ -283,6 +287,8 @@ class _SignedInSettings extends StatelessWidget {
         const SizedBox(height: 24),
         const _SettingsCategoryHeader(title: '应用'),
         const SizedBox(height: 8),
+        _communitySettings(),
+        const SizedBox(height: 12),
         _applicationSettings(context),
       ],
     );
@@ -444,6 +450,7 @@ class _DataExportSection extends StatefulWidget {
 
 class _DataExportSectionState extends State<_DataExportSection> {
   bool _isExporting = false;
+  bool _isImporting = false;
 
   Future<void> _export() async {
     setState(() => _isExporting = true);
@@ -480,26 +487,206 @@ class _DataExportSectionState extends State<_DataExportSection> {
     }
   }
 
+  Future<void> _showImportGuide() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.upload_file_outlined),
+        title: const Text('从 Excel 导入行程'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: const SingleChildScrollView(child: _ExcelImportGuide()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _pickAndImport();
+            },
+            icon: const Icon(Icons.folder_open_outlined),
+            label: const Text('选择 Excel 文件'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickAndImport() async {
+    const excelType = XTypeGroup(
+      label: 'Excel 工作簿',
+      extensions: ['xlsx'],
+      mimeTypes: [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ],
+    );
+    final selection = await openFile(acceptedTypeGroups: const [excelType]);
+    if (selection == null || !mounted) return;
+    setState(() => _isImporting = true);
+    try {
+      final bytes = await selection.readAsBytes();
+      final result = await TripExcelImportService.importBytes(bytes);
+      if (!mounted) return;
+      final skipped = result.skipped == 0 ? '' : '，跳过 ${result.skipped} 条重复行程';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已导入 ${result.imported} 条行程$skipped')),
+      );
+    } on TripExcelImportException catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: Icon(
+            Icons.error_outline,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: const Text('无法导入'),
+          content: SelectableText(error.message),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导入失败：$error')));
+    } finally {
+      if (mounted) setState(() => _isImporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _SettingsCard(
       title: '数据',
       icon: Icons.table_chart_outlined,
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.table_view_outlined),
-        title: const Text('导出行程到 Excel'),
-        subtitle: const Text('保存到系统默认位置，并导出当前可见的全部行程详情'),
-        trailing: _isExporting
-            ? const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.download_outlined),
-        onTap: _isExporting ? null : _export,
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.table_view_outlined),
+            title: const Text('导出行程到 Excel'),
+            subtitle: const Text('保存到系统默认位置，并导出当前可见的全部行程详情'),
+            trailing: _isExporting
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_outlined),
+            onTap: _isExporting || _isImporting ? null : _export,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.upload_file_outlined),
+            title: const Text('从 Excel 导入行程'),
+            subtitle: const Text('按照规范整理表格后批量导入，重复行程将自动跳过'),
+            trailing: _isImporting
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: _isImporting || _isExporting ? null : _showImportGuide,
+          ),
+        ],
       ),
     );
   }
+}
+
+class _ExcelImportGuide extends StatelessWidget {
+  const _ExcelImportGuide();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '请先按以下规范整理表格。最稳妥的做法是先导出一份 RailLog Excel，在其“行程”工作表中追加记录。',
+          style: TextStyle(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 20),
+        const _ImportGuideItem(
+          icon: Icons.view_column_outlined,
+          title: '必填列',
+          detail: '车次/班次、出发站、到达站、出发时间。首行必须是列名，列的顺序可以调整。',
+        ),
+        const SizedBox(height: 14),
+        const _ImportGuideItem(
+          icon: Icons.calendar_month_outlined,
+          title: '日期与数字',
+          detail: '时间使用 Excel 日期单元格，或 yyyy-MM-dd HH:mm:ss；里程和票价只填写数字。',
+        ),
+        const SizedBox(height: 14),
+        const _ImportGuideItem(
+          icon: Icons.description_outlined,
+          title: '文件与编码',
+          detail: '保存为 .xlsx 文件。该格式使用 Unicode，无需另选字符编码；不支持 .xls 或 .csv。',
+        ),
+        const SizedBox(height: 14),
+        const _ImportGuideItem(
+          icon: Icons.tune_outlined,
+          title: '其他字段',
+          detail: '可使用导出文件中的其他列；行程编号和乘坐时长会忽略，经由线路应保留 JSON 格式。',
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colors.secondaryContainer,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '重复判断：车次/班次 + 出发站 + 到达站 + 出发时间',
+            style: TextStyle(color: colors.onSecondaryContainer),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportGuideItem extends StatelessWidget {
+  const _ImportGuideItem({
+    required this.icon,
+    required this.title,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 20),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 3),
+            Text(detail),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 class _BaiduOcrSettingsSection extends StatefulWidget {
@@ -1092,6 +1279,66 @@ Widget _applicationSettings(BuildContext context) {
       ],
     ),
   );
+}
+
+Widget _communitySettings() {
+  return _SettingsCard(
+    title: '社群',
+    icon: Icons.groups_outlined,
+    child: Column(
+      children: [
+        _communityLinkTile(
+          icon: Icons.groups_outlined,
+          title: 'QQ 交流群',
+          subtitle: '群号：972024237（密码：114514）',
+          url: 'https://qm.qq.com/q/pm5xqNdoE8',
+        ),
+        const Divider(height: 1),
+        _communityLinkTile(
+          icon: Icons.volunteer_activism_outlined,
+          title: '爱发电',
+          subtitle: '支持 RailLog 的开发与维护',
+          url: 'https://afdian.com/a/CRSim',
+        ),
+        const Divider(height: 1),
+        _communityLinkTile(
+          icon: Icons.ondemand_video_outlined,
+          title: 'Bilibili',
+          subtitle: 'RailLog 相关视频与动态',
+          url: 'https://space.bilibili.com/436826066',
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _communityLinkTile({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required String url,
+}) {
+  return Builder(
+    builder: (context) => ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.open_in_new, size: 20),
+      onTap: () => _openCommunityLink(context, url),
+    ),
+  );
+}
+
+Future<void> _openCommunityLink(BuildContext context, String value) async {
+  final uri = Uri.tryParse(value);
+  final opened =
+      uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('无法打开链接')));
+  }
 }
 
 Widget _aboutTile(BuildContext context, {EdgeInsetsGeometry? contentPadding}) {

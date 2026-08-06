@@ -29,6 +29,8 @@ class DashboardAchievement {
     required this.triggerTripId,
     required this.unlockedUserCount,
     required this.totalUserCount,
+    this.progressCurrent,
+    this.progressTarget,
     this.unlockedBy,
   });
 
@@ -49,6 +51,8 @@ class DashboardAchievement {
       unlockedBy: triggerTripId == null ? null : tripsByTicketId[triggerTripId],
       unlockedUserCount: (json['unlockedUserCount'] as num).toInt(),
       totalUserCount: totalUserCount,
+      progressCurrent: (json['progressCurrent'] as num?)?.toDouble(),
+      progressTarget: (json['progressTarget'] as num?)?.toDouble(),
     );
   }
 
@@ -61,9 +65,19 @@ class DashboardAchievement {
   final int? triggerTripId;
   final int unlockedUserCount;
   final int totalUserCount;
+  final double? progressCurrent;
+  final double? progressTarget;
   final DashboardTripEntry? unlockedBy;
 
   bool get isUnlocked => unlocked;
+  bool get hasProgress => progressCurrent != null && progressTarget != null;
+  double get progressValue {
+    final current = progressCurrent;
+    final target = progressTarget;
+    if (current == null || target == null || target <= 0) return 0;
+    return (current / target).clamp(0, 1);
+  }
+
   double get unlockedPercentage =>
       totalUserCount == 0 ? 0 : unlockedUserCount * 100 / totalUserCount;
 }

@@ -211,22 +211,10 @@ class _AboutPageState extends State<AboutPage> {
                           url: 'https://www.raillog.top/',
                         ),
                         _LinkTile(
-                          icon: Icons.groups_outlined,
-                          title: 'QQ 交流群',
-                          subtitle: '群号：972024237（密码：114514）',
-                          url: 'https://qm.qq.com/q/pm5xqNdoE8',
-                        ),
-                        _LinkTile(
                           icon: Icons.person_outline,
                           title: '开发者',
                           subtitle: 'denglihong2007',
                           url: 'https://github.com/denglihong2007',
-                        ),
-                        _LinkTile(
-                          icon: Icons.volunteer_activism_outlined,
-                          title: '爱发电赞助',
-                          subtitle: 'CRSim',
-                          url: 'https://afdian.com/a/CRSim',
                         ),
                       ],
                     ),

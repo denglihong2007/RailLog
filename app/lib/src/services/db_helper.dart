@@ -134,6 +134,27 @@ class DbHelper {
     return result;
   }
 
+  Future<int> insertTrips(List<TripRecord> trips) async {
+    if (trips.isEmpty) return 0;
+    final db = await database;
+    final userId = activeUserId?.call();
+    await db.transaction((txn) async {
+      for (final trip in trips) {
+        final values = trip.toMap()..remove('id');
+        if (trip.isLocalOnly) {
+          values
+            ..['ticket_id'] = null
+            ..['owner_user_id'] = null;
+        } else {
+          values['owner_user_id'] ??= userId;
+        }
+        await txn.insert('trip_records', values);
+      }
+    });
+    _notifyTripsChanged();
+    return trips.length;
+  }
+
   Future<int> updateTrip(TripRecord trip) async {
     final db = await database;
     final updatedAt = DateTime.now().toIso8601String();

@@ -10,9 +10,10 @@ import 'package:raillog/src/pages/all_trips_page.dart';
 enum _TripChartStyle { line, heatmap }
 
 class TripChartPage extends StatefulWidget {
-  const TripChartPage({super.key, required this.trips});
+  const TripChartPage({super.key, required this.trips, this.openTrip});
 
   final List<DashboardTripEntry> trips;
+  final TripEntryOpener? openTrip;
 
   @override
   State<TripChartPage> createState() => _TripChartPageState();
@@ -310,6 +311,7 @@ class _TripChartPageState extends State<TripChartPage> {
           title:
               '${_bucketTooltip(point.bucketStart, _interval)} · ${trips.length} 张车票',
           showTripKindFilter: false,
+          openTrip: widget.openTrip,
         ),
       ),
     );

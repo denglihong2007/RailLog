@@ -162,7 +162,9 @@ public sealed record AchievementResponse(
     string Description,
     string Status,
     long? TriggerTripId,
-    int UnlockedUserCount);
+    int UnlockedUserCount,
+    double? ProgressCurrent,
+    double? ProgressTarget);
 
 public sealed record AchievementsResponse(
     int TotalUserCount,
