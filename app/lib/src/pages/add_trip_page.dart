@@ -14,6 +14,7 @@ import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
 import 'package:raillog/src/widgets/add_trip/entry_method_card.dart';
 import 'package:raillog/src/widgets/add_trip/quick_add_card.dart';
+import 'package:raillog/src/widgets/excel_import_action.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class AddTripPage extends StatefulWidget {
@@ -49,6 +50,7 @@ class _AddTripPageState extends State<AddTripPage> {
   bool _isSearchingBetween = false;
   bool _hasSearchedBetween = false;
   bool _isRecognizingTicket = false;
+  bool _isImportingExcel = false;
 
   @override
   void dispose() {
@@ -373,6 +375,19 @@ class _AddTripPageState extends State<AddTripPage> {
     if (saved == true && mounted) widget.onTripSaved();
   }
 
+  Future<void> _openExcelImport() async {
+    if (_isImportingExcel) return;
+    await showExcelImportGuide(context, onPick: _pickAndImportExcel);
+  }
+
+  Future<void> _pickAndImportExcel() async {
+    if (!mounted) return;
+    setState(() => _isImportingExcel = true);
+    final result = await pickAndImportExcel(context);
+    if (result != null && mounted) widget.onTripSaved();
+    if (mounted) setState(() => _isImportingExcel = false);
+  }
+
   void _clearSelectedTrain() {
     _selectedTrain = null;
     _scheduleStops = const [];
@@ -534,8 +549,17 @@ class _AddTripPageState extends State<AddTripPage> {
         ),
         const SizedBox(height: 12),
         EntryMethodCard(
+          icon: Icons.upload_file_outlined,
+          title: '从 Excel 导入',
+          description: _isImportingExcel
+              ? '正在导入行程...'
+              : '按照规范整理表格后批量导入，重复行程将自动跳过',
+          onTap: _openExcelImport,
+        ),
+        const SizedBox(height: 12),
+        EntryMethodCard(
           icon: Icons.download_for_offline_outlined,
-          title: '12306 导入',
+          title: '从 12306 导入',
           description: '核验电子发票，导入近 180 天行程并逐条确认',
           onTap: _open12306Import,
         ),
