@@ -46,6 +46,7 @@ void main() {
       );
 
       expect(data.tripCount, 1);
+      expect(data.mappedTripCount, 1);
       expect(data.routes, hasLength(1));
       expect(data.routes.single.points, hasLength(3));
     });
@@ -77,6 +78,7 @@ void main() {
       final data = TripMapService.buildData([trip], index);
 
       expect(data.tripCount, 1);
+      expect(data.mappedTripCount, 0);
       expect(data.routes, isEmpty);
       expect(data.missingViaRouteCount, 1);
     });
@@ -94,10 +96,80 @@ void main() {
       );
 
       expect(data.routes, hasLength(1));
-      expect(data.routes.single.fromCoordinate, isNull);
+      expect(data.routes.single.fromCoordinate, isNotNull);
       expect(data.routes.single.toCoordinate, isNotNull);
       expect(data.routes.single.points, hasLength(2));
     });
+
+    test(
+      'deduplicates forward and reverse trips into one bidirectional route',
+      () {
+        final index = StationCoordinateIndex.fromCsv(csv);
+        final forward = _trip(id: 20, date: DateTime(2026, 1, 1));
+        final reverse = _trip(
+          id: 21,
+          date: DateTime(2026, 1, 2),
+          fromStation: '上海虹桥站',
+          toStation: '北京站',
+        );
+
+        final data = TripMapService.buildData(
+          [forward, reverse],
+          index,
+          journeyStations: {
+            forward.clientId: const ['北京站', '济南西站', '上海虹桥站'],
+            reverse.clientId: const ['上海虹桥站', '济南西站', '北京站'],
+          },
+        );
+
+        expect(data.tripCount, 2);
+        expect(data.mappedTripCount, 2);
+        expect(data.routes, hasLength(1));
+        expect(
+          data.routes.every(
+            (route) =>
+                route.direction == TripMapDirection.bidirectional &&
+                route.entries
+                        .map((entry) => entry.trainNumber)
+                        .toSet()
+                        .length ==
+                    2,
+          ),
+          isTrue,
+        );
+      },
+    );
+  });
+
+  test('collects every train that shares part of a route', () {
+    final index = StationCoordinateIndex.fromCsv(csv);
+    final longTrip = _trip(id: 30, date: DateTime(2026, 1, 1));
+    final shortTrip = _trip(
+      id: 31,
+      date: DateTime(2026, 1, 2),
+      toStation: '济南西站',
+    );
+
+    final data = TripMapService.buildData(
+      [longTrip, shortTrip],
+      index,
+      journeyStations: {
+        longTrip.clientId: const ['北京站', '济南西站', '上海虹桥站'],
+        shortTrip.clientId: const ['北京站', '济南西站'],
+      },
+    );
+
+    expect(data.mappedTripCount, 2);
+    expect(data.routes, hasLength(2));
+    expect(
+      data.routes.map(
+        (route) => route.entries.map((entry) => entry.trainNumber).toSet(),
+      ),
+      containsAll([
+        {'G30', 'G31'},
+        {'G30'},
+      ]),
+    );
   });
 
   test('route database expands a trip into consecutive stations', () async {
@@ -138,8 +210,15 @@ void main() {
   });
 
   test('map HTML uses API proxies and script-safe route data', () {
-    const route = TripMapRoute(
+    final route = TripMapRoute(
       name: '</script>',
+      entries: [
+        TripMapRouteEntry(
+          trainNumber: 'G1<script>',
+          departureDate: DateTime(2026, 1, 1),
+          direction: TripMapDirection.direction1,
+        ),
+      ],
       fromStation: '北京站',
       toStation: '上海虹桥站',
       fromCoordinate: StationCoordinate(latitude: 39.9, longitude: 116.4),
@@ -151,7 +230,7 @@ void main() {
     );
 
     final html = buildAmapHtml(
-      const [route],
+      [route],
       darkMode: true,
       backgroundColor: '#111820',
       showStationMarkers: true,
@@ -166,19 +245,33 @@ void main() {
     expect(html, contains("headColor: '#ECFFB1'"));
     expect(html, isNot(contains('const routes = [{"name":"</script>')));
     expect(html, contains(r'\u003c/script>'));
+    expect(html, contains(r'G1\u003cscript>'));
     expect(route.points.first.amapPosition[0], closeTo(116.4062, 0.001));
-    expect(html, contains("label.textContent = endpoint.name"));
-    expect(html, contains("addEndpoint(route.fromStation"));
-    expect(html, contains("addEndpoint(route.toStation"));
+    expect(html, contains("label.textContent = endpoint.station"));
     expect(html, contains('markers/n/mark_r.png'));
     expect(html, isNot(contains('dir-via-marker.png')));
     expect(html, contains("offset: new AMap.Pixel(-13, -30)"));
     expect(html, contains('pointer-events: none'));
     expect(html, contains('scrollWheel: true'));
     expect(html, contains('touchZoomCenter: 1'));
+    expect(html, contains("hitLine.on('click'"));
+    expect(html, contains('route-popup-row'));
+    expect(html, contains('entry.departureDate'));
+    expect(
+      html,
+      contains('train.style.color = directionColor(entry.direction)'),
+    );
+    expect(
+      html,
+      contains('date.style.color = directionColor(entry.direction)'),
+    );
+    expect(html, contains('route.direction === \'bidirectional\''));
+    expect(html, contains('const endpoints = []'));
+    expect(html, contains('new AMap.InfoWindow'));
+    expect(html, contains("strokeOpacity: 0"));
 
     final lightHtml = buildAmapHtml(
-      const [route],
+      [route],
       darkMode: false,
       backgroundColor: '#fafafa',
       showStationMarkers: false,

@@ -108,6 +108,7 @@ class _TripMapPageState extends State<TripMapPage> {
                         darkMode: isDark,
                         backgroundColor: _cssColor(theme.colorScheme.surface),
                         showStationMarkers: _showStationMarkers,
+                        endpoints: data.endpoints,
                       ),
                     ),
             ),
@@ -238,7 +239,7 @@ class _FilterBar extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Text(
-              '${data.routes.length}/${data.tripCount} 段轨迹',
+              '${data.mappedTripCount}/${data.tripCount} 段轨迹',
               style: Theme.of(
                 context,
               ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
