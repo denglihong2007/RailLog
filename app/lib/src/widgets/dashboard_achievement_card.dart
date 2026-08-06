@@ -56,7 +56,9 @@ class DashboardAchievementCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   !unlocked
-                      ? '尚未解锁'
+                      ? achievement.hasProgress
+                            ? '尚未解锁 · ${_formatProgress(achievement.progressCurrent!)}/${_formatProgress(achievement.progressTarget!)}'
+                            : '尚未解锁'
                       : entry == null
                       ? '已解锁'
                       : '${_formatDate(entry.departureTime)} 乘坐 ${_trainLabel(entry.trainNumber)} 解锁',
@@ -82,16 +84,35 @@ class DashboardAchievementCard extends StatelessWidget {
         ],
       ),
     );
+    final cardContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        content,
+        if (!unlocked && achievement.hasProgress)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Semantics(
+              label: '${achievement.title}进度',
+              value:
+                  '${_formatProgress(achievement.progressCurrent!)}/${_formatProgress(achievement.progressTarget!)}',
+              child: LinearProgressIndicator(
+                value: achievement.progressValue,
+                minHeight: 4,
+              ),
+            ),
+          ),
+      ],
+    );
     return Card.filled(
       margin: EdgeInsets.zero,
       color: unlocked ? colors.tertiaryContainer : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       clipBehavior: Clip.antiAlias,
       child: onTap == null
-          ? content
+          ? cardContent
           : Semantics(
               button: true,
-              child: InkWell(onTap: onTap, child: content),
+              child: InkWell(onTap: onTap, child: cardContent),
             ),
     );
   }
@@ -179,4 +200,11 @@ String _formatPercentage(double value) {
   return value == rounded
       ? '${rounded.toInt()}%'
       : '${value.toStringAsFixed(1)}%';
+}
+
+String _formatProgress(double value) {
+  final rounded = value.roundToDouble();
+  return value == rounded
+      ? rounded.toInt().toString()
+      : value.toStringAsFixed(1);
 }

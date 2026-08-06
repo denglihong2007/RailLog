@@ -10,7 +10,12 @@ public sealed record AchievementEvaluation(
     string Icon,
     string Title,
     string Description,
-    long? TriggerTripId);
+    long? TriggerTripId)
+{
+    public AchievementProgress? Progress { get; init; }
+}
+
+public sealed record AchievementProgress(double Current, double Target);
 
 public static partial class AchievementEngine
 {
@@ -85,8 +90,8 @@ public static partial class AchievementEngine
 
             ["freeMeal"] = FunJourneys,
             ["wallFacingSeat"] = FunJourneys,
-            ["farsighted"] = FunJourneys,
-            ["verticalSleeper"] = FunJourneys,
+            ["farsighted"] = RailwayCatalog,
+            ["verticalSleeper"] = RailwayCatalog,
             ["overnightSleeper"] = FunJourneys,
             ["commuterSpecial"] = FunJourneys,
             ["eveOfTheStorm"] = FunJourneys,
@@ -240,7 +245,7 @@ public static partial class AchievementEngine
             A("platformSubsidence", "vertical_align_bottom_outlined", "站台沉降", "到访杭州东站",
                 FirstStationVisit(trips, ["杭州东"])),
             A("archaeologyTeam", "history_edu_outlined", "考古队", "录入至少 15 年前的行程",
-                First(trips, trip => Departure(trip) < fifteenYearsAgo)),
+                First(trips, trip => Departure(trip) <= fifteenYearsAgo)),
             A("strategist", "alt_route_outlined", "战略家", "乘坐定西北站至镇江南站的列车",
                 First(trips, trip => NormalizedStation(trip.FromStation) == "定西北" &&
                     NormalizedStation(trip.ToStation) == "镇江南")),
@@ -324,8 +329,160 @@ public static partial class AchievementEngine
             throw new InvalidOperationException("Achievement category mapping is incomplete or contains duplicate IDs.");
 
         return values
+            .Select(item => item with { Progress = ProgressFor(item.Id, trips, today, fifteenYearsAgo) })
             .OrderByDescending(item => item.TriggerTripId.HasValue)
             .ToList();
+    }
+
+    private static AchievementProgress? ProgressFor(
+        string id,
+        List<PublicTrip> trips,
+        DateTime today,
+        DateTime fifteenYearsAgo) => id switch
+    {
+        "sevenDayStreak" => P(LongestStreak(trips), 7),
+        "thirtyDayStreak" => P(LongestStreak(trips), 30),
+        "duration24Hours" => P(MaxDurationHours(trips), 24),
+        "duration48Hours" => P(MaxDurationHours(trips), 48),
+        "duration72Hours" => P(MaxDurationHours(trips), 72),
+        "all25Series" => P(CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, Regular25Models)), Regular25Models.Count),
+        "allEmuSeries" => P(CollectedCount(trips, trip => EmuMatches(trip.RollingStock)), EmuModels.Count),
+        "allSeatTypes" => P(CollectedCount(trips, trip => SeatTypeMatches(trip.SeatType)), RegularSeatTypes.Count),
+        "noSeat12Hours" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 12),
+        "hundredTickets" => P(trips.Count, 100),
+        "hundredStations" => P(trips.SelectMany(trip => new[] { trip.FromStation.Trim(), trip.ToStation.Trim() }).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).Count(), 100),
+        "thousandKilometers" => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 1000),
+        "airRail" => P(AirportStationCount(trips), 3),
+        "lonelyPlanet" => P(CollectedCount(trips, trip => new[] { "和若线", "格库线" }.Where(route => RouteNames(trip).Any(name => name.Contains(route, StringComparison.Ordinal)))), 2),
+        "hundredThousandKilometers" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
+        "archaeologyTeam" => P(OldestTripAgeYears(trips, today, fifteenYearsAgo), 15),
+        "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
+        "tripleTransfer" => P(MaxTransferCount(trips), 3),
+        "grandSlam" => P(RailwayBureauCount(trips), RailwayBureaus.Count),
+        "unnecessaryExtra" => P(MaxSameTrainTicketChain(trips), 3),
+        "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
+        "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
+        "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
+        "blueHorizon" => P(trips.Count(trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0), 10),
+        _ => null
+    };
+
+    private static AchievementProgress P(double current, double target) =>
+        new(Math.Clamp(current, 0, target), target);
+
+    private static double MaxDurationHours(IEnumerable<PublicTrip> trips) => trips
+        .Select(trip => ValidDuration(trip).TotalHours)
+        .DefaultIfEmpty(0)
+        .Max();
+
+    private static double OldestTripAgeYears(
+        IEnumerable<PublicTrip> trips,
+        DateTime today,
+        DateTime fifteenYearsAgo)
+    {
+        var oldest = trips.Select(Departure).Select(value => value.Date).DefaultIfEmpty(today).Min();
+        var targetDays = (today - fifteenYearsAgo).TotalDays;
+        return targetDays <= 0 ? 0 : (today - oldest).TotalDays * 15 / targetDays;
+    }
+
+    private static int CollectedCount(
+        IEnumerable<PublicTrip> trips,
+        Func<PublicTrip, IEnumerable<string>> valuesForTrip) =>
+        trips.SelectMany(valuesForTrip).Distinct(StringComparer.Ordinal).Count();
+
+    private static int LongestStreak(IEnumerable<PublicTrip> trips)
+    {
+        var longest = 0;
+        var streak = 0;
+        DateTime? previous = null;
+        foreach (var day in trips.Select(Departure).Select(value => value.Date).Distinct().Order())
+        {
+            streak = previous is not null && (day - previous.Value).Days == 1 ? streak + 1 : 1;
+            longest = Math.Max(longest, streak);
+            previous = day;
+        }
+        return longest;
+    }
+
+    private static int AirportStationCount(IEnumerable<PublicTrip> trips) => trips
+        .SelectMany(trip => new[] { trip.FromStation, trip.ToStation })
+        .Select(station => Regex.Replace(station.Trim(), "站$", string.Empty))
+        .Where(station => station.Contains("机场", StringComparison.Ordinal) || AirportStationsWithoutAirportSuffix.Contains(station))
+        .Distinct(StringComparer.Ordinal)
+        .Count();
+
+    private static int RailwayBureauCount(IEnumerable<PublicTrip> trips) => trips
+        .Select(trip => RailwayBureaus.FirstOrDefault(entry => entry.Value.Contains(trip.CompanyName?.Trim() ?? string.Empty)).Key)
+        .Where(value => value is not null)
+        .Distinct(StringComparer.Ordinal)
+        .Count();
+
+    private static int MaxDistinctTrainCountForRoute(IEnumerable<PublicTrip> trips) => trips
+        .Where(trip => NormalizedStation(trip.FromStation).Length > 0 && NormalizedStation(trip.ToStation).Length > 0)
+        .GroupBy(trip => (NormalizedStation(trip.FromStation), NormalizedStation(trip.ToStation)))
+        .Select(group => group.Select(trip => WhitespaceRegex().Replace(trip.TrainNumber, string.Empty).ToUpperInvariant())
+            .Where(train => train.Length > 0).Distinct(StringComparer.Ordinal).Count())
+        .DefaultIfEmpty(0)
+        .Max();
+
+    private static int MaxTransferCount(List<PublicTrip> trips)
+    {
+        var transferCounts = new int[trips.Count];
+        for (var outgoingIndex = 0; outgoingIndex < trips.Count; outgoingIndex++)
+        {
+            var outgoing = trips[outgoingIndex];
+            var station = NormalizedStation(outgoing.FromStation);
+            if (station.Length == 0) continue;
+            for (var incomingIndex = 0; incomingIndex < outgoingIndex; incomingIndex++)
+            {
+                var incoming = trips[incomingIndex];
+                if (incoming.ArrivalTime is null || NormalizedStation(incoming.ToStation) != station) continue;
+                var transfer = Departure(outgoing) - incoming.ArrivalTime.Value;
+                if (transfer >= TimeSpan.Zero && transfer <= TimeSpan.FromHours(3))
+                    transferCounts[outgoingIndex] = Math.Max(transferCounts[outgoingIndex], transferCounts[incomingIndex] + 1);
+            }
+        }
+        return transferCounts.DefaultIfEmpty(0).Max();
+    }
+
+    private static int MaxSameTrainTicketChain(List<PublicTrip> trips)
+    {
+        var chainLengths = Enumerable.Repeat(1, trips.Count).ToArray();
+        for (var currentIndex = 0; currentIndex < trips.Count; currentIndex++)
+        {
+            var current = trips[currentIndex];
+            var train = current.TrainNumber.Trim().ToUpperInvariant();
+            var from = NormalizedStation(current.FromStation);
+            if (train.Length == 0 || from.Length == 0) continue;
+            for (var previousIndex = 0; previousIndex < currentIndex; previousIndex++)
+            {
+                var previous = trips[previousIndex];
+                if (previous.ArrivalTime is null || previous.TrainNumber.Trim().ToUpperInvariant() != train ||
+                    NormalizedStation(previous.ToStation) != from || Departure(current) < previous.ArrivalTime) continue;
+                chainLengths[currentIndex] = Math.Max(chainLengths[currentIndex], chainLengths[previousIndex] + 1);
+            }
+        }
+        return trips.Count == 0 ? 0 : chainLengths.Max();
+    }
+
+    private static int MaxCardinalStationCount(IEnumerable<PublicTrip> trips)
+    {
+        var visited = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var station in trips.SelectMany(trip => new[] { trip.FromStation, trip.ToStation }))
+        {
+            var normalized = NormalizedStation(station);
+            if (normalized.Length == 0) continue;
+            var match = Regex.Match(normalized, @"^(.+)(东|西|南|北)$");
+            var city = match.Success ? match.Groups[1].Value : normalized;
+            var direction = match.Success ? match.Groups[2].Value : string.Empty;
+            if (!visited.TryGetValue(city, out var directions))
+            {
+                directions = new HashSet<string>(StringComparer.Ordinal);
+                visited[city] = directions;
+            }
+            directions.Add(direction);
+        }
+        return visited.Values.Select(directions => directions.Count).DefaultIfEmpty(0).Max();
     }
 
     private static AchievementEvaluation A(
