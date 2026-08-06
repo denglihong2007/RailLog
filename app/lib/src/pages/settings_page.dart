@@ -42,11 +42,54 @@ class SettingsPage extends StatelessWidget {
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 16),
+                      _accountSettings(
+                        context,
+                        user: user,
+                        onLogin: () => _openLogin(context),
+                      ),
+                      const SizedBox(height: 24),
+                      const _SettingsCategoryHeader(title: '个性化'),
+                      const SizedBox(height: 8),
+                      _appearanceSettings(context),
+                      const SizedBox(height: 12),
+                      const _TicketGeneratorSettingsSection(),
+                      const SizedBox(height: 12),
+                      const _BaiduOcrSettingsSection(),
+                      const SizedBox(height: 24),
+                      const _SettingsCategoryHeader(title: '数据与存储'),
+                      const SizedBox(height: 8),
+                      if (user != null) ...[
+                        _cloudSyncSettings(context),
+                        const SizedBox(height: 12),
+                      ],
+                      const _DataExportSection(),
+                      const SizedBox(height: 12),
                       user == null
-                          ? _SignedOutSettings(
-                              onLogin: () => _openLogin(context),
+                          ? const _SettingsCard(
+                              title: '存储',
+                              icon: Icons.storage_outlined,
+                              child: ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(Icons.cloud_off_outlined),
+                                title: Text('本地模式'),
+                                subtitle: Text('当前行程仅保存在此设备'),
+                              ),
                             )
-                          : _SignedInSettings(user: user),
+                          : const SizedBox.shrink(),
+                      const SizedBox(height: 24),
+                      const _SettingsCategoryHeader(title: '安全'),
+                      const SizedBox(height: 8),
+                      _securitySettings(
+                        context,
+                        user: user,
+                        onLogin: () => _openLogin(context),
+                      ),
+                      const SizedBox(height: 24),
+                      const _SettingsCategoryHeader(title: '应用'),
+                      const SizedBox(height: 8),
+                      _communitySettings(),
+                      const SizedBox(height: 12),
+                      _applicationSettings(context),
                     ],
                   ),
                 ),
@@ -65,195 +108,159 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-class _SignedOutSettings extends StatelessWidget {
-  const _SignedOutSettings({required this.onLogin});
-  final VoidCallback onLogin;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SettingsCategoryHeader(title: '账户'),
-        const SizedBox(height: 8),
-        _SettingsCard(
-          title: '账户',
-          icon: Icons.account_circle_outlined,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('登录 RailLog', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 4),
-              Text(
-                '登录后可同步行程和个人资料',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: onLogin,
-                icon: const Icon(Icons.login),
-                label: const Text('登录或注册'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '个性化'),
-        const SizedBox(height: 8),
-        _appearanceSettings(context),
-        const SizedBox(height: 12),
-        const _TicketGeneratorSettingsSection(),
-        const SizedBox(height: 12),
-        const _BaiduOcrSettingsSection(),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '数据与存储'),
-        const SizedBox(height: 8),
-        const _DataExportSection(),
-        const SizedBox(height: 12),
-        const _SettingsCard(
-          title: '存储',
-          icon: Icons.storage_outlined,
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.cloud_off_outlined),
-            title: Text('本地模式'),
-            subtitle: Text('当前行程仅保存在此设备'),
-          ),
-        ),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '应用'),
-        const SizedBox(height: 8),
-        _communitySettings(),
-        const SizedBox(height: 12),
-        _applicationSettings(context),
-      ],
-    );
-  }
-}
-
-class _SignedInSettings extends StatelessWidget {
-  const _SignedInSettings({required this.user});
-  final UserProfile user;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SettingsCategoryHeader(title: '账户'),
-        const SizedBox(height: 8),
-        _SettingsCard(
-          title: '个人资料',
-          icon: Icons.person_outline,
-          child: Row(
-            children: [
-              _Avatar(user: user, radius: 30),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user.displayName,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      user.email,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (user.bio?.isNotEmpty ?? false) ...[
-                      const SizedBox(height: 5),
-                      Text(
-                        user.bio!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              IconButton.filledTonal(
-                tooltip: '编辑个人资料',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ProfileEditPage(user: user),
-                  ),
-                ),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '个性化'),
-        const SizedBox(height: 8),
-        _appearanceSettings(context),
-        const SizedBox(height: 12),
-        const _TicketGeneratorSettingsSection(),
-        const SizedBox(height: 12),
-        const _BaiduOcrSettingsSection(),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '同步与数据'),
-        const SizedBox(height: 8),
-        _SettingsCard(
-          title: '云同步',
-          icon: Icons.cloud_sync_outlined,
-          child: AnimatedBuilder(
-            animation: CloudSyncService.instance,
-            builder: (context, _) {
-              final sync = CloudSyncService.instance;
-              return Column(
+Widget _accountSettings(
+  BuildContext context, {
+  required UserProfile? user,
+  required VoidCallback onLogin,
+}) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const _SettingsCategoryHeader(title: '账户'),
+      const SizedBox(height: 8),
+      _SettingsCard(
+        title: user == null ? '账户' : '个人资料',
+        icon: user == null
+            ? Icons.account_circle_outlined
+            : Icons.person_outline,
+        child: user == null
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    secondary: const Icon(Icons.sync_lock_outlined),
-                    title: const Text('自动同步'),
-                    subtitle: const Text('行程新增、修改或删除后自动同步到云端'),
-                    value: sync.autoSyncEnabled,
-                    onChanged: (value) => sync.setAutoSyncEnabled(value),
+                  Text(
+                    '登录 RailLog',
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                  const Divider(height: 1),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      sync.lastError == null
-                          ? Icons.cloud_done_outlined
-                          : Icons.cloud_off_outlined,
+                  const SizedBox(height: 4),
+                  Text(
+                    '登录后可同步行程和个人资料',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    title: Text(sync.isSyncing ? '正在同步' : '行程云同步'),
-                    subtitle: Text(_syncSubtitle(sync)),
-                    trailing: IconButton(
-                      tooltip: '立即同步',
-                      onPressed: sync.isSyncing ? null : () => _sync(context),
-                      icon: sync.isSyncing
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.sync),
-                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: onLogin,
+                    icon: const Icon(Icons.login),
+                    label: const Text('登录或注册'),
                   ),
                 ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        const _DataExportSection(),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '安全'),
-        const SizedBox(height: 8),
-        _SettingsCard(
-          title: '账号安全',
-          icon: Icons.security_outlined,
-          child: Column(
+              )
+            : Row(
+                children: [
+                  _Avatar(user: user, radius: 30),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.displayName,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          user.email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        if (user.bio?.isNotEmpty ?? false) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            user.bio!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    tooltip: '编辑个人资料',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ProfileEditPage(user: user),
+                      ),
+                    ),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                ],
+              ),
+      ),
+    ],
+  );
+}
+
+Widget _cloudSyncSettings(BuildContext context) {
+  return _SettingsCard(
+    title: '云同步',
+    icon: Icons.cloud_sync_outlined,
+    child: AnimatedBuilder(
+      animation: CloudSyncService.instance,
+      builder: (context, _) {
+        final sync = CloudSyncService.instance;
+        return Column(
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.sync_lock_outlined),
+              title: const Text('自动同步'),
+              subtitle: const Text('行程新增、修改或删除后自动同步到云端'),
+              value: sync.autoSyncEnabled,
+              onChanged: (value) => sync.setAutoSyncEnabled(value),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                sync.lastError == null
+                    ? Icons.cloud_done_outlined
+                    : Icons.cloud_off_outlined,
+              ),
+              title: Text(sync.isSyncing ? '正在同步' : '行程云同步'),
+              subtitle: Text(_syncSubtitle(sync)),
+              trailing: IconButton(
+                tooltip: '立即同步',
+                onPressed: sync.isSyncing ? null : () => _sync(context),
+                icon: sync.isSyncing
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+Widget _securitySettings(
+  BuildContext context, {
+  required UserProfile? user,
+  required VoidCallback onLogin,
+}) {
+  final colors = Theme.of(context).colorScheme;
+  return _SettingsCard(
+    title: '账号安全',
+    icon: Icons.security_outlined,
+    child: user == null
+        ? ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.login),
+            title: const Text('登录后管理账号安全'),
+            subtitle: const Text('登录后可重置密码、退出登录或注销账号'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: onLogin,
+          )
+        : Column(
             children: [
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -261,7 +268,7 @@ class _SignedInSettings extends StatelessWidget {
                 title: const Text('重置密码'),
                 subtitle: Text('通过 ${user.email} 接收验证码'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => _resetPassword(context),
+                onTap: () => _resetPassword(context, user),
               ),
               const Divider(height: 1),
               ListTile(
@@ -273,8 +280,8 @@ class _SignedInSettings extends StatelessWidget {
               const Divider(height: 1),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                textColor: Theme.of(context).colorScheme.error,
-                iconColor: Theme.of(context).colorScheme.error,
+                textColor: colors.error,
+                iconColor: colors.error,
                 leading: const Icon(Icons.person_remove_outlined),
                 title: const Text('注销账号'),
                 subtitle: const Text('云端账号和云端行程将永久删除'),
@@ -282,102 +289,93 @@ class _SignedInSettings extends StatelessWidget {
               ),
             ],
           ),
+  );
+}
+
+String _syncSubtitle(CloudSyncService sync) {
+  if (sync.lastError != null) return sync.lastError!;
+  final value = sync.lastSyncedAt;
+  if (value == null) return '尚未同步';
+  final local = value.toLocal();
+  return '上次同步 ${local.year}-${_two(local.month)}-${_two(local.day)} '
+      '${_two(local.hour)}:${_two(local.minute)}';
+}
+
+Future<void> _sync(BuildContext context) async {
+  try {
+    await CloudSyncService.instance.sync();
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('同步完成')));
+    }
+  } on SessionException catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+}
+
+Future<void> _logout(BuildContext context) async {
+  await SessionService.instance.logout();
+  if (context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已退出登录')));
+  }
+}
+
+Future<void> _resetPassword(BuildContext context, UserProfile user) async {
+  final changed = await Navigator.of(context).push<bool>(
+    MaterialPageRoute(
+      builder: (_) => PasswordResetPage(initialEmail: user.email),
+    ),
+  );
+  if (changed != true || !context.mounted) return;
+  await SessionService.instance.invalidate();
+  if (context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('密码已重置，请使用新密码重新登录')));
+  }
+}
+
+Future<void> _deleteAccount(BuildContext context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('注销账号？'),
+      content: const Text('此操作无法撤销。账号资料和所有云端行程都会永久删除，本机行程仍会保留。'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('取消'),
         ),
-        const SizedBox(height: 24),
-        const _SettingsCategoryHeader(title: '应用'),
-        const SizedBox(height: 8),
-        _communitySettings(),
-        const SizedBox(height: 12),
-        _applicationSettings(context),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          child: const Text('永久注销'),
+        ),
       ],
-    );
-  }
-
-  String _syncSubtitle(CloudSyncService sync) {
-    if (sync.lastError != null) return sync.lastError!;
-    final value = sync.lastSyncedAt;
-    if (value == null) return '尚未同步';
-    final local = value.toLocal();
-    return '上次同步 ${local.year}-${_two(local.month)}-${_two(local.day)} '
-        '${_two(local.hour)}:${_two(local.minute)}';
-  }
-
-  Future<void> _sync(BuildContext context) async {
-    try {
-      await CloudSyncService.instance.sync();
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('同步完成')));
-      }
-    } on SessionException catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.message)));
-      }
-    }
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    await SessionService.instance.logout();
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    await SessionService.instance.deleteAccount();
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已退出登录')));
+      ).showSnackBar(const SnackBar(content: Text('账号已注销')));
     }
-  }
-
-  Future<void> _resetPassword(BuildContext context) async {
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => PasswordResetPage(initialEmail: user.email),
-      ),
-    );
-    if (changed != true || !context.mounted) return;
-    await SessionService.instance.invalidate();
+  } on SessionException catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('密码已重置，请使用新密码重新登录')));
-    }
-  }
-
-  Future<void> _deleteAccount(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('注销账号？'),
-        content: const Text('此操作无法撤销。账号资料和所有云端行程都会永久删除，本机行程仍会保留。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('永久注销'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    try {
-      await SessionService.instance.deleteAccount();
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('账号已注销')));
-      }
-    } on SessionException catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.message)));
-      }
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 }
