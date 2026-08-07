@@ -14,9 +14,32 @@ class StationCoordinate {
   List<double> get amapPosition => _wgs84ToGcj02(latitude, longitude);
 }
 
+enum TripMapDirection { direction1, direction2, bidirectional }
+
+class TripMapRouteEntry {
+  const TripMapRouteEntry({
+    required this.trainNumber,
+    required this.departureDate,
+    required this.direction,
+  });
+
+  final String trainNumber;
+  final DateTime departureDate;
+  final TripMapDirection direction;
+}
+
+class TripMapEndpoint {
+  const TripMapEndpoint({required this.station, required this.coordinate});
+
+  final String station;
+  final StationCoordinate coordinate;
+}
+
 class TripMapRoute {
   const TripMapRoute({
     required this.name,
+    this.entries = const [],
+    this.direction = TripMapDirection.direction1,
     required this.fromStation,
     required this.toStation,
     required this.fromCoordinate,
@@ -25,6 +48,8 @@ class TripMapRoute {
   });
 
   final String name;
+  final List<TripMapRouteEntry> entries;
+  final TripMapDirection direction;
   final String fromStation;
   final String toStation;
   final StationCoordinate? fromCoordinate;
@@ -35,13 +60,17 @@ class TripMapRoute {
 class TripMapData {
   const TripMapData({
     required this.routes,
+    required this.endpoints,
     required this.tripCount,
+    required this.mappedTripCount,
     required this.missingViaRouteCount,
     required this.missingStations,
   });
 
   final List<TripMapRoute> routes;
+  final List<TripMapEndpoint> endpoints;
   final int tripCount;
+  final int mappedTripCount;
   final int missingViaRouteCount;
   final Set<String> missingStations;
 }
@@ -103,9 +132,11 @@ class TripMapService {
     DateTime? start,
     DateTime? endExclusive,
   }) {
-    final routes = <TripMapRoute>[];
+    final routeGroups = <String, _TripMapRouteGroup>{};
+    final endpoints = <String, TripMapEndpoint>{};
     final missingStations = <String>{};
     var tripCount = 0;
+    var mappedTripCount = 0;
     var missingViaRouteCount = 0;
 
     for (final trip in trips) {
@@ -131,7 +162,7 @@ class TripMapService {
             ...trip.viaRouteSegments.map((segment) => segment.toStation),
             trip.toStation,
           ];
-      final points = <StationCoordinate>[];
+      final locatedStations = <({String name, StationCoordinate coordinate})>[];
       for (final station in stationNames) {
         final coordinate = coordinates.find(station);
         if (coordinate == null) {
@@ -139,32 +170,52 @@ class TripMapService {
           if (normalized.isNotEmpty) missingStations.add(normalized);
           continue;
         }
-        if (points.isEmpty ||
-            points.last.latitude != coordinate.latitude ||
-            points.last.longitude != coordinate.longitude) {
-          points.add(coordinate);
+        if (locatedStations.isEmpty ||
+            locatedStations.last.coordinate.latitude != coordinate.latitude ||
+            locatedStations.last.coordinate.longitude != coordinate.longitude) {
+          locatedStations.add((name: station, coordinate: coordinate));
         }
       }
-      if (points.length < 2) continue;
+      if (locatedStations.length < 2) continue;
+      mappedTripCount++;
+      _addEndpoint(endpoints, trip.fromStation, coordinates);
+      _addEndpoint(endpoints, trip.toStation, coordinates);
 
-      final train = trip.trainNumber.trim();
-      routes.add(
-        TripMapRoute(
-          name: train.isEmpty
-              ? '${trip.fromStation} - ${trip.toStation}'
-              : '$train · ${trip.fromStation} - ${trip.toStation}',
-          fromStation: trip.fromStation,
-          toStation: trip.toStation,
-          fromCoordinate: coordinates.find(trip.fromStation),
-          toCoordinate: coordinates.find(trip.toStation),
-          points: points,
-        ),
-      );
+      for (var index = 0; index < locatedStations.length - 1; index++) {
+        final from = locatedStations[index];
+        final to = locatedStations[index + 1];
+        final forwardKey = _routeKey([from.coordinate, to.coordinate]);
+        final reverseKey = _routeKey([to.coordinate, from.coordinate]);
+        final key = forwardKey.compareTo(reverseKey) <= 0
+            ? forwardKey
+            : reverseKey;
+        final group = routeGroups.putIfAbsent(
+          key,
+          () => _TripMapRouteGroup(
+            fromStation: from.name,
+            toStation: to.name,
+            fromCoordinate: from.coordinate,
+            toCoordinate: to.coordinate,
+            points: [from.coordinate, to.coordinate],
+          ),
+        );
+        group.addTrip(
+          trip.trainNumber.trim(),
+          trip.departureTime,
+          from.coordinate,
+        );
+      }
     }
+
+    final routes = _mergeAdjacentRoutes(
+      routeGroups.values.map((group) => group.toRoute()).toList(),
+    );
 
     return TripMapData(
       routes: routes,
+      endpoints: endpoints.values.toList(),
       tripCount: tripCount,
+      mappedTripCount: mappedTripCount,
       missingViaRouteCount: missingViaRouteCount,
       missingStations: missingStations,
     );
@@ -176,6 +227,7 @@ String buildAmapHtml(
   required bool darkMode,
   required String backgroundColor,
   required bool showStationMarkers,
+  List<TripMapEndpoint> endpoints = const [],
 }) {
   final apiBaseUrl = ApiClient.baseUrl.replaceFirst(RegExp(r'/+$'), '');
   final routeJson = jsonEncode(
@@ -183,6 +235,16 @@ String buildAmapHtml(
         .map(
           (route) => {
             'name': route.name,
+            'direction': route.direction.name,
+            'entries': route.entries
+                .map(
+                  (entry) => {
+                    'trainNumber': entry.trainNumber,
+                    'departureDate': _dateOnly(entry.departureDate),
+                    'direction': entry.direction.name,
+                  },
+                )
+                .toList(),
             'fromStation': route.fromStation,
             'toStation': route.toStation,
             'fromPosition': route.fromCoordinate?.amapPosition,
@@ -190,6 +252,16 @@ String buildAmapHtml(
             'coordinates': route.points
                 .map((point) => point.amapPosition)
                 .toList(),
+          },
+        )
+        .toList(),
+  ).replaceAll('<', r'\u003c');
+  final endpointJson = jsonEncode(
+    endpoints
+        .map(
+          (endpoint) => {
+            'station': endpoint.station,
+            'position': endpoint.coordinate.amapPosition,
           },
         )
         .toList(),
@@ -204,6 +276,12 @@ String buildAmapHtml(
     html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: $backgroundColor; }
     .amap-logo, .amap-copyright { opacity: .62; }
     .amap-marker-label { pointer-events: none; padding: 3px 6px; border: 1px solid rgba(255,255,255,.28); border-radius: 3px; background: rgba(10,16,22,.9); color: #FFF; font: 12px/1.25 sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,.45); white-space: nowrap; }
+    .route-popup { width: 248px; max-width: calc(100vw - 32px); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid rgba(255,255,255,.24); border-radius: 4px; background: rgba(10,16,22,.94); color: #FFF; font: 12px/1.35 sans-serif; box-shadow: 0 3px 12px rgba(0,0,0,.32); }
+    .route-popup-list { display: flex; flex-direction: column; gap: 1px; }
+    .route-popup-row { display: grid; grid-template-columns: minmax(48px, 1fr) 86px; align-items: center; gap: 5px; padding: 4px 5px; border-bottom: 1px solid rgba(255,255,255,.1); white-space: nowrap; }
+    .route-popup-row:last-child { border-bottom: 0; }
+    .route-popup-row strong { overflow: hidden; text-overflow: ellipsis; }
+    .route-popup-row span { color: rgba(255,255,255,.76); }
   </style>
 </head>
 <body>
@@ -212,6 +290,8 @@ String buildAmapHtml(
   <script src="$apiBaseUrl/api/amap/sdk/loca.js"></script>
   <script>
     const routes = $routeJson;
+    const directionColor = (direction) =>
+      direction === 'direction1' ? '#7DD3FC' : '#FDBA74';
     const map = new AMap.Map('map', {
       zoom: 4.5,
       center: [104.2, 35.7],
@@ -227,11 +307,20 @@ String buildAmapHtml(
     map.addControl(new AMap.ToolBar({ position: 'RB' }));
 
     if (routes.length) {
-      const features = routes.map((route) => ({
-        type: 'Feature',
-        properties: { name: route.name },
-        geometry: { type: 'LineString', coordinates: route.coordinates }
-      }));
+      const features = routes.flatMap((route) => {
+        const feature = (coordinates) => ({
+          type: 'Feature',
+          properties: { name: route.name, direction: route.direction },
+          geometry: { type: 'LineString', coordinates }
+        });
+        if (route.direction === 'direction2') {
+          return [feature(route.coordinates.slice().reverse())];
+        }
+        if (route.direction === 'bidirectional') {
+          return [feature(route.coordinates), feature(route.coordinates.slice().reverse())];
+        }
+        return [feature(route.coordinates)];
+      });
       const source = new Loca.GeoJSONSource({
         data: { type: 'FeatureCollection', features }
       });
@@ -254,18 +343,56 @@ String buildAmapHtml(
       loca.add(lines);
       loca.animate.start();
 
-      ${showStationMarkers ? '''const endpoints = new Map();
-      const addEndpoint = (name, position) => {
-        const key = name + '|' + position.join(',');
-        if (!endpoints.has(key)) endpoints.set(key, { name, position });
-      };
-      routes.forEach((route) => {
-        if (route.fromPosition) addEndpoint(route.fromStation, route.fromPosition);
-        if (route.toPosition) addEndpoint(route.toStation, route.toPosition);
+      // Loca renders the animated line but does not expose a consistent hit
+      // target across WebView platforms. Add a transparent, wider AMap
+      // polyline for reliable click handling.
+      const hitLines = routes.map((route) => {
+        const hitLine = new AMap.Polyline({
+          path: route.coordinates,
+          strokeColor: '#000000',
+          strokeOpacity: 0,
+          strokeWeight: 16,
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 12,
+          bubble: false
+        });
+        hitLine.on('click', (event) => {
+          const content = document.createElement('div');
+          content.className = 'route-popup';
+          const list = document.createElement('div');
+          list.className = 'route-popup-list';
+          route.entries.forEach((entry) => {
+            const row = document.createElement('div');
+            row.className = 'route-popup-row';
+            const train = document.createElement('strong');
+            train.textContent = entry.trainNumber || '未填写车次';
+            const date = document.createElement('span');
+            date.textContent = entry.departureDate;
+            date.style.color = directionColor(entry.direction);
+            train.style.color = directionColor(entry.direction);
+            row.append(train, date);
+            list.append(row);
+          });
+          list.addEventListener('wheel', (wheelEvent) => wheelEvent.stopPropagation(), { passive: true });
+          if (!route.entries.length) list.textContent = '未填写车次';
+          content.append(list);
+          new AMap.InfoWindow({
+            isCustom: true,
+            autoMove: true,
+            closeWhenClickMap: true,
+            content,
+            offset: new AMap.Pixel(0, -8)
+          }).open(map, event.lnglat);
+        });
+        return hitLine;
       });
-      const markers = Array.from(endpoints.values()).map((endpoint) => {
+      map.add(hitLines);
+
+      ${showStationMarkers ? '''const endpoints = $endpointJson;
+      const markers = endpoints.map((endpoint) => {
         const label = document.createElement('span');
-        label.textContent = endpoint.name;
+            label.textContent = endpoint.station;
         return new AMap.Marker({
           position: new AMap.LngLat(endpoint.position[0], endpoint.position[1]),
           icon: new AMap.Icon({
@@ -295,6 +422,135 @@ String buildAmapHtml(
 </body>
 </html>''';
 }
+
+class _TripMapRouteGroup {
+  _TripMapRouteGroup({
+    required this.fromStation,
+    required this.toStation,
+    required this.fromCoordinate,
+    required this.toCoordinate,
+    required this.points,
+  });
+
+  final String fromStation;
+  final String toStation;
+  final StationCoordinate? fromCoordinate;
+  final StationCoordinate? toCoordinate;
+  final List<StationCoordinate> points;
+  final List<TripMapRouteEntry> _direction1Entries = [];
+  final List<TripMapRouteEntry> _direction2Entries = [];
+  bool _hasDirection1 = false;
+  bool _hasDirection2 = false;
+
+  void addTrip(
+    String trainNumber,
+    DateTime departureDate,
+    StationCoordinate fromCoordinate,
+  ) {
+    final isDirection1 = _sameCoordinate(fromCoordinate, points.first);
+    if (isDirection1) {
+      _hasDirection1 = true;
+    } else {
+      _hasDirection2 = true;
+    }
+    final entries = isDirection1 ? _direction1Entries : _direction2Entries;
+    entries.add(
+      TripMapRouteEntry(
+        trainNumber: trainNumber,
+        departureDate: departureDate,
+        direction: isDirection1
+            ? TripMapDirection.direction1
+            : TripMapDirection.direction2,
+      ),
+    );
+  }
+
+  TripMapRoute toRoute() {
+    final direction = _hasDirection1 && _hasDirection2
+        ? TripMapDirection.bidirectional
+        : _hasDirection2
+        ? TripMapDirection.direction2
+        : TripMapDirection.direction1;
+    final entries = [..._direction1Entries, ..._direction2Entries]
+      ..sort((a, b) => b.departureDate.compareTo(a.departureDate));
+    return TripMapRoute(
+      name: '$fromStation - $toStation',
+      entries: entries,
+      direction: direction,
+      fromStation: fromStation,
+      toStation: toStation,
+      fromCoordinate: fromCoordinate,
+      toCoordinate: toCoordinate,
+      points: points,
+    );
+  }
+}
+
+List<TripMapRoute> _mergeAdjacentRoutes(List<TripMapRoute> routes) {
+  final merged = <TripMapRoute>[];
+  for (final route in routes) {
+    if (merged.isNotEmpty) {
+      final previous = merged.last;
+      final sameEntries =
+          _entryKey(previous.entries) == _entryKey(route.entries);
+      final connected = _sameCoordinate(
+        previous.points.last,
+        route.points.first,
+      );
+      final sameDirection = previous.direction == route.direction;
+      if (sameEntries && connected && sameDirection) {
+        merged[merged.length - 1] = TripMapRoute(
+          name: previous.name,
+          entries: previous.entries,
+          direction: previous.direction,
+          fromStation: previous.fromStation,
+          toStation: route.toStation,
+          fromCoordinate: previous.fromCoordinate,
+          toCoordinate: route.toCoordinate,
+          points: [...previous.points, ...route.points.skip(1)],
+        );
+        continue;
+      }
+    }
+    merged.add(route);
+  }
+  return merged;
+}
+
+String _entryKey(List<TripMapRouteEntry> entries) => entries
+    .map(
+      (entry) =>
+          '${entry.trainNumber}|${entry.departureDate.toIso8601String()}|${entry.direction.name}',
+    )
+    .join(';');
+
+bool _sameCoordinate(StationCoordinate a, StationCoordinate b) =>
+    a.latitude == b.latitude && a.longitude == b.longitude;
+
+void _addEndpoint(
+  Map<String, TripMapEndpoint> endpoints,
+  String station,
+  StationCoordinateIndex coordinates,
+) {
+  final coordinate = coordinates.find(station);
+  if (coordinate == null) return;
+  final key =
+      '${station.trim()}|${coordinate.latitude}|${coordinate.longitude}';
+  endpoints.putIfAbsent(
+    key,
+    () => TripMapEndpoint(station: station, coordinate: coordinate),
+  );
+}
+
+String _dateOnly(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+String _routeKey(Iterable<StationCoordinate> points) => points
+    .map(
+      (point) =>
+          '${point.latitude.toStringAsFixed(6)},${point.longitude.toStringAsFixed(6)}',
+    )
+    .join(';');
 
 Iterable<String> _stationKeys(String value) sync* {
   final trimmed = value.trim().replaceAll('（', '(').replaceAll('）', ')');

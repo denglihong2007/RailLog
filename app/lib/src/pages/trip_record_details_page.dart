@@ -1,12 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
+import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/trip_record.dart';
-import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
+import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
@@ -328,25 +331,7 @@ class _TripDetailsContent extends StatelessWidget {
                 title: '经由线路 · ${trip.viaRouteSegments.length} 段',
                 child: trip.viaRouteSegments.isEmpty
                     ? const Text('未记录')
-                    : ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        childrenPadding: const EdgeInsets.only(top: 4),
-                        title: const Text('展开查看完整经由'),
-                        children: [
-                          for (
-                            var index = 0;
-                            index < trip.viaRouteSegments.length;
-                            index++
-                          ) ...[
-                            _RouteSegmentRow(
-                              index: index + 1,
-                              segment: trip.viaRouteSegments[index],
-                            ),
-                            if (index < trip.viaRouteSegments.length - 1)
-                              const Divider(height: 20, indent: 40),
-                          ],
-                        ],
-                      ),
+                    : _ViaRouteDiagram(trip: trip),
               ),
               _DetailsSection(
                 icon: Icons.notes_outlined,
@@ -952,52 +937,705 @@ class _InfoItem extends StatelessWidget {
   }
 }
 
-class _RouteSegmentRow extends StatelessWidget {
-  const _RouteSegmentRow({required this.index, required this.segment});
+class _ViaRouteDiagram extends StatefulWidget {
+  const _ViaRouteDiagram({required this.trip});
 
-  final int index;
-  final ViaRouteSegment segment;
+  final TripRecord trip;
+
+  @override
+  State<_ViaRouteDiagram> createState() => _ViaRouteDiagramState();
+}
+
+class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
+    with AutomaticKeepAliveClientMixin<_ViaRouteDiagram> {
+  static const _rowHeight = 88.0;
+  Map<int, List<RouteStation>> _routeStations = const {};
+  bool _isLoading = true;
+  int _stationRequestId = 0;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRouteStations();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ViaRouteDiagram oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trip.clientId != widget.trip.clientId ||
+        oldWidget.trip.updatedAt != widget.trip.updatedAt) {
+      _loadRouteStations();
+    }
+  }
+
+  Future<void> _loadRouteStations() async {
+    final requestId = ++_stationRequestId;
+    if (mounted && !_isLoading) {
+      setState(() {
+        _isLoading = true;
+        _routeStations = const {};
+      });
+    }
+    final results = <int, List<RouteStation>>{};
+    await Future.wait([
+      for (var index = 0; index < widget.trip.viaRouteSegments.length; index++)
+        _loadRouteSection(index, results),
+    ]);
+    if (!mounted || requestId != _stationRequestId) return;
+    setState(() {
+      _routeStations = results;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadRouteSection(
+    int index,
+    Map<int, List<RouteStation>> results,
+  ) async {
+    final segment = widget.trip.viaRouteSegments[index];
+    if (segment.routeName.trim().isEmpty) return;
+    try {
+      final stations = await RouteService.getStationsBetweenRoute(
+        segment.routeName,
+        segment.fromStation,
+        segment.toStation,
+      );
+      if (stations.length >= 2) results[index] = stations;
+    } catch (_) {
+      // 手动线路或数据库读取失败时保留区间端点。
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final colors = Theme.of(context).colorScheme;
+    if (_isLoading) {
+      return const SizedBox(
+        height: 112,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              SizedBox(height: 12),
+              Text('正在展开经由站点'),
+            ],
+          ),
+        ),
+      );
+    }
+    final segments = widget.trip.viaRouteSegments;
+    final routeColors = <String, Color>{};
+    const routeColorSeeds = [
+      Color(0xFF005AC1),
+      Color(0xFFC43E00),
+      Color(0xFF006B5E),
+      Color(0xFF8E24AA),
+      Color(0xFF7A5900),
+      Color(0xFFB0005A),
+    ];
+    final palette = [
+      for (final seed in routeColorSeeds)
+        ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: colors.brightness,
+        ).primary,
+    ];
+    for (final segment in segments) {
+      final route = _routeLabel(segment.routeName);
+      routeColors.putIfAbsent(
+        route,
+        () => palette[routeColors.length % palette.length],
+      );
+    }
+    final segmentColors = <Color>[];
+    final routeNames = <String>[];
+    final stations = <String>[widget.trip.fromStation];
+    final cumulativeMileage = <double>[0];
+    for (var index = 0; index < segments.length; index++) {
+      final segment = segments[index];
+      final route = _routeLabel(segment.routeName);
+      final color = routeColors[route]!;
+      final routeStations = _routeStations[index];
+      if (routeStations == null) {
+        _appendStation(
+          stations,
+          cumulativeMileage,
+          segment.toStation,
+          segment.mileageKm,
+          segmentColors,
+          routeNames,
+          color,
+          route,
+        );
+        continue;
+      }
+      var expandedMileage = 0.0;
+      for (
+        var stationIndex = 1;
+        stationIndex < routeStations.length;
+        stationIndex++
+      ) {
+        expandedMileage +=
+            (routeStations[stationIndex].mileage -
+                    routeStations[stationIndex - 1].mileage)
+                .abs();
+      }
+      final mileageScale = segment.mileageKm > 0 && expandedMileage > 0
+          ? segment.mileageKm / expandedMileage
+          : 1.0;
+      var previousMileage = routeStations.first.mileage;
+      for (final station in routeStations.skip(1)) {
+        final stationMileage = station.mileage;
+        _appendStation(
+          stations,
+          cumulativeMileage,
+          station.name,
+          (stationMileage - previousMileage).abs() * mileageScale,
+          segmentColors,
+          routeNames,
+          color,
+          route,
+        );
+        previousMileage = stationMileage;
+      }
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = stations.length == 1
+            ? 1
+            : math.max(2, math.min(8, (constraints.maxWidth / 80).floor()));
+        final rowCount = (stations.length + columns - 1) ~/ columns;
+        final height = rowCount * _rowHeight;
+        return SizedBox(
+          height: height,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _ViaRoutePainter(
+                    segmentColors: segmentColors,
+                    routeNames: routeNames,
+                    rowHeight: _rowHeight,
+                    stationCount: stations.length,
+                    columns: columns,
+                    labelBackgroundColor: colors.surfaceContainerHigh,
+                    labelForegroundColor: colors.onSurface,
+                    trackUnderlayColor: colors.surfaceContainerHighest,
+                  ),
+                ),
+              ),
+              for (var index = 0; index < stations.length; index++)
+                _buildStation(
+                  context,
+                  index: index,
+                  station: stations[index],
+                  mileage: cumulativeMileage[index],
+                  leftColor: _stationSideColor(
+                    index,
+                    left: true,
+                    segmentColors: segmentColors,
+                    fallback: colors.primary,
+                    columns: columns,
+                  ),
+                  rightColor: _stationSideColor(
+                    index,
+                    left: false,
+                    segmentColors: segmentColors,
+                    fallback: colors.primary,
+                    columns: columns,
+                  ),
+                  width: constraints.maxWidth,
+                  columns: columns,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Color _stationSideColor(
+    int index, {
+    required bool left,
+    required List<Color> segmentColors,
+    required Color fallback,
+    required int columns,
+  }) {
+    if (segmentColors.isEmpty) return fallback;
+    final incoming = index > 0 ? segmentColors[index - 1] : segmentColors.first;
+    final outgoing = index < segmentColors.length
+        ? segmentColors[index]
+        : segmentColors.last;
+    final incomingIsLeft = (index ~/ columns).isEven;
+    return left == incomingIsLeft ? incoming : outgoing;
+  }
+
+  void _appendStation(
+    List<String> stations,
+    List<double> cumulativeMileage,
+    String station,
+    double mileage,
+    List<Color> segmentColors,
+    List<String> routeNames,
+    Color color,
+    String route,
+  ) {
+    final normalized = station.trim();
+    if (normalized.isEmpty || _sameStation(stations.last, normalized)) return;
+    stations.add(normalized);
+    cumulativeMileage.add(cumulativeMileage.last + (mileage > 0 ? mileage : 0));
+    segmentColors.add(color);
+    routeNames.add(route);
+  }
+
+  bool _sameStation(String first, String second) {
+    final normalizedFirst = first.trim();
+    final normalizedSecond = second.trim();
+    if (normalizedFirst == normalizedSecond) return true;
+    return normalizedFirst.replaceFirst(RegExp(r'站$'), '') ==
+        normalizedSecond.replaceFirst(RegExp(r'站$'), '');
+  }
+
+  Widget _buildStation(
+    BuildContext context, {
+    required int index,
+    required String station,
+    required double mileage,
+    required Color leftColor,
+    required Color rightColor,
+    required double width,
+    required int columns,
+  }) {
+    final row = index ~/ columns;
+    final x = _viaStationX(index, width, columns);
+    final labelWidth = math.min(104.0, width / columns);
+    return Positioned(
+      top: row * _rowHeight + 25,
+      left: 0,
+      width: width,
+      height: _rowHeight - 25,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: x - _ViaStationDot.size / 2,
+            child: _ViaStationDot(leftColor: leftColor, rightColor: rightColor),
+          ),
+          Positioned(
+            top: _ViaStationDot.size + 2,
+            left: math.max(0, math.min(width - labelWidth, x - labelWidth / 2)),
+            width: labelWidth,
+            child: _ViaStationLabel(
+              station: station,
+              mileage: mileage,
+              alignEnd: false,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViaRoutePainter extends CustomPainter {
+  const _ViaRoutePainter({
+    required this.segmentColors,
+    required this.routeNames,
+    required this.rowHeight,
+    required this.stationCount,
+    required this.columns,
+    required this.labelBackgroundColor,
+    required this.labelForegroundColor,
+    required this.trackUnderlayColor,
+  });
+
+  final List<Color> segmentColors;
+  final List<String> routeNames;
+  final double rowHeight;
+  final int stationCount;
+  final int columns;
+  final Color labelBackgroundColor;
+  final Color labelForegroundColor;
+  final Color trackUnderlayColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final underlayPaint = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = trackUnderlayColor;
+    final routePaint = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    var firstSegment = 0;
+    while (firstSegment < stationCount - 1) {
+      var lastSegment = firstSegment;
+      while (lastSegment + 1 < stationCount - 1 &&
+          routeNames[lastSegment + 1] == routeNames[firstSegment]) {
+        lastSegment++;
+      }
+      final points = [
+        for (var index = firstSegment; index <= lastSegment + 1; index++)
+          _viaStationOffset(index, size.width, columns, rowHeight),
+      ];
+      final path = _roundedRoutePath(_addTurnaroundPoints(points, size.width));
+      canvas.drawPath(path, underlayPaint);
+      routePaint.color = segmentColors[firstSegment];
+      canvas.drawPath(path, routePaint);
+      firstSegment = lastSegment + 1;
+    }
+
+    final paintedRoutes = <String>{};
+    for (var index = 0; index < routeNames.length; index++) {
+      if (paintedRoutes.add(routeNames[index])) {
+        _paintRouteLabel(
+          canvas,
+          size,
+          _firstRowSegmentCenter(index, size),
+          routeNames[index],
+          segmentColors[index],
+        );
+      }
+    }
+  }
+
+  List<Offset> _addTurnaroundPoints(List<Offset> stations, double width) {
+    const turnPadding = 12.0;
+    final points = <Offset>[stations.first];
+    for (var index = 1; index < stations.length; index++) {
+      final start = stations[index - 1];
+      final end = stations[index];
+      if ((start.dy - end.dy).abs() >= 1) {
+        final turnX = start.dx < width / 2 ? turnPadding : width - turnPadding;
+        points
+          ..add(Offset(turnX, start.dy))
+          ..add(Offset(turnX, end.dy));
+      }
+      points.add(end);
+    }
+    return points;
+  }
+
+  Offset _firstRowSegmentCenter(int firstSegment, Size size) {
+    var lastSegment = firstSegment;
+    while (lastSegment + 1 < routeNames.length &&
+        routeNames[lastSegment + 1] == routeNames[firstSegment]) {
+      lastSegment++;
+    }
+
+    final startsAtTurn = firstSegment % columns == columns - 1;
+    final start = _viaStationOffset(
+      firstSegment,
+      size.width,
+      columns,
+      rowHeight,
+    );
+    if (startsAtTurn && lastSegment == firstSegment) return start;
+
+    final firstRowSegment = startsAtTurn ? firstSegment + 1 : firstSegment;
+    final firstRow = firstRowSegment ~/ columns;
+    final rowStart = _viaStationOffset(
+      firstRowSegment,
+      size.width,
+      columns,
+      rowHeight,
+    );
+    var endX = rowStart.dx;
+    for (var index = firstRowSegment; index <= lastSegment; index++) {
+      if (index ~/ columns != firstRow) break;
+      final end = _viaStationOffset(index + 1, size.width, columns, rowHeight);
+      if (index ~/ columns == (index + 1) ~/ columns) {
+        endX = end.dx;
+      } else {
+        final turnStart = _viaStationOffset(
+          index,
+          size.width,
+          columns,
+          rowHeight,
+        );
+        endX = turnStart.dx;
+        break;
+      }
+    }
+    return Offset((rowStart.dx + endX) / 2, rowStart.dy);
+  }
+
+  Path _roundedRoutePath(List<Offset> points) {
+    const radius = 14.0;
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (var index = 1; index < points.length - 1; index++) {
+      final previous = points[index - 1];
+      final current = points[index];
+      final next = points[index + 1];
+      final incoming = current - previous;
+      final outgoing = next - current;
+      final incomingLength = incoming.distance;
+      final outgoingLength = outgoing.distance;
+      if (incomingLength == 0 || outgoingLength == 0) continue;
+      final cornerRadius = math.min(
+        radius,
+        math.min(incomingLength, outgoingLength) / 2,
+      );
+      final before = current - incoming / incomingLength * cornerRadius;
+      final after = current + outgoing / outgoingLength * cornerRadius;
+      path
+        ..lineTo(before.dx, before.dy)
+        ..quadraticBezierTo(current.dx, current.dy, after.dx, after.dy);
+    }
+    path.lineTo(points.last.dx, points.last.dy);
+    return path;
+  }
+
+  void _paintRouteLabel(
+    Canvas canvas,
+    Size size,
+    Offset segmentCenter,
+    String route,
+    Color color,
+  ) {
+    const horizontalPadding = 8.0;
+    const verticalPadding = 3.0;
+    final centeredTextWidth = math.min(
+      96.0,
+      math.max(
+        8.0,
+        math.min(segmentCenter.dx, size.width - segmentCenter.dx) * 2 -
+            horizontalPadding * 2 -
+            8,
+      ),
+    );
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: route,
+        style: TextStyle(
+          color: labelForegroundColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: centeredTextWidth);
+    final lineY = segmentCenter.dy;
+    final labelHeight = textPainter.height + verticalPadding * 2;
+    final labelWidth = textPainter.width + horizontalPadding * 2;
+    final bounds = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(
+          segmentCenter.dx,
+          lineY - _ViaStationDot.size / 2 - 4 - labelHeight / 2,
+        ),
+        width: labelWidth,
+        height: labelHeight,
+      ),
+      const Radius.circular(8),
+    );
+    canvas.drawRRect(bounds, Paint()..color = labelBackgroundColor);
+    canvas.drawRRect(
+      bounds,
+      Paint()
+        ..color = color.withValues(alpha: 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    textPainter.paint(
+      canvas,
+      Offset(
+        bounds.center.dx - textPainter.width / 2,
+        bounds.center.dy - textPainter.height / 2,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ViaRoutePainter oldDelegate) =>
+      oldDelegate.rowHeight != rowHeight ||
+      oldDelegate.stationCount != stationCount ||
+      oldDelegate.columns != columns ||
+      oldDelegate.labelBackgroundColor != labelBackgroundColor ||
+      oldDelegate.labelForegroundColor != labelForegroundColor ||
+      oldDelegate.trackUnderlayColor != trackUnderlayColor ||
+      !_sameStrings(oldDelegate.routeNames, routeNames) ||
+      !_sameColors(oldDelegate.segmentColors, segmentColors);
+
+  bool _sameStrings(List<String> first, List<String> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index] != second[index]) return false;
+    }
+    return true;
+  }
+
+  bool _sameColors(List<Color> first, List<Color> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index] != second[index]) return false;
+    }
+    return true;
+  }
+}
+
+Offset _viaStationOffset(
+  int index,
+  double width,
+  int columns,
+  double rowHeight,
+) {
+  return Offset(
+    _viaStationX(index, width, columns),
+    index ~/ columns * rowHeight + 34,
+  );
+}
+
+double _viaStationX(int index, double width, int columns) {
+  final horizontalPadding = math.min(44.0, width / 4);
+  final step = columns == 1
+      ? 0.0
+      : (width - horizontalPadding * 2) / (columns - 1);
+  final slot = index % columns;
+  final row = index ~/ columns;
+  final actualSlot = row.isEven ? slot : columns - 1 - slot;
+  return horizontalPadding + actualSlot * step;
+}
+
+class _ViaStationLabel extends StatelessWidget {
+  const _ViaStationLabel({
+    required this.station,
+    required this.mileage,
+    required this.alignEnd,
+  });
+
+  final String station;
+  final double mileage;
+  final bool alignEnd;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.center,
       children: [
-        SizedBox(
-          width: 32,
-          child: Text(
-            index.toString(),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w700,
-            ),
+        Text(
+          station,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignEnd ? TextAlign.end : TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '${_number(mileage)} km',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                segment.routeName,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 3),
-              Text('${segment.fromStation} → ${segment.toStation}'),
-            ],
-          ),
-        ),
-        if (segment.mileageKm > 0) ...[
-          const SizedBox(width: 12),
-          Text('${_number(segment.mileageKm)} km'),
-        ],
       ],
     );
   }
+}
+
+class _ViaStationDot extends StatelessWidget {
+  const _ViaStationDot({required this.leftColor, required this.rightColor});
+
+  static const size = 18.0;
+
+  final Color leftColor;
+  final Color rightColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: colors.shadow.withValues(alpha: 0.16),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        painter: _ViaStationDotPainter(
+          leftColor: leftColor,
+          rightColor: rightColor,
+        ),
+      ),
+    );
+  }
+}
+
+class _ViaStationDotPainter extends CustomPainter {
+  const _ViaStationDotPainter({
+    required this.leftColor,
+    required this.rightColor,
+  });
+
+  final Color leftColor;
+  final Color rightColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const strokeWidth = 4.0;
+    final rect =
+        Offset(strokeWidth / 2, strokeWidth / 2) &
+        Size(size.width - strokeWidth, size.height - strokeWidth);
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt;
+    if (leftColor == rightColor) {
+      canvas.drawOval(rect, paint..color = leftColor);
+      return;
+    }
+    canvas.drawArc(rect, math.pi / 2, math.pi, false, paint..color = leftColor);
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      math.pi,
+      false,
+      paint..color = rightColor,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ViaStationDotPainter oldDelegate) =>
+      oldDelegate.leftColor != leftColor ||
+      oldDelegate.rightColor != rightColor;
+}
+
+String _routeLabel(String routeName) {
+  final value = routeName.trim();
+  return value.isEmpty ? '手动线路' : value;
 }
 
 class _MessageState extends StatelessWidget {

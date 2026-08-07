@@ -1166,7 +1166,7 @@ class _CompactOverviewMetrics extends StatelessWidget {
 
     return Table(
       columnWidths: const {
-        0: FixedColumnWidth(92),
+        0: FixedColumnWidth(74),
         1: FlexColumnWidth(4),
         2: FlexColumnWidth(5),
       },
@@ -1193,7 +1193,7 @@ class _CompactOverviewMetrics extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.only(left: 4),
                   child: Text(
                     metric.value,
                     maxLines: 1,
@@ -1206,7 +1206,7 @@ class _CompactOverviewMetrics extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(left: 12),
+                  padding: const EdgeInsets.only(left: 8),
                   child: Text(
                     metric.description,
                     maxLines: 1,
@@ -1456,7 +1456,7 @@ class _MetricGrid extends StatelessWidget {
 }
 
 int _dashboardGridColumns(double width) => switch (width) {
-  < 360 => 1,
+  < 295 => 1,
   < 840 => 2,
   < 1120 => 3,
   _ => 4,
