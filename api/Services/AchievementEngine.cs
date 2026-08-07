@@ -87,6 +87,7 @@ public static partial class AchievementEngine
             ["advantageIsMine"] = Touring,
             ["platformSubsidence"] = Touring,
             ["strategist"] = Touring,
+            ["eastRedSunRises"] = Touring,
 
             ["freeMeal"] = FunJourneys,
             ["wallFacingSeat"] = FunJourneys,
@@ -102,6 +103,8 @@ public static partial class AchievementEngine
             ["storedUpReward"] = FunJourneys,
             ["oneYuanJourney"] = FunJourneys,
             ["fleetingMoment"] = FunJourneys,
+            ["newYearsEve"] = FunJourneys,
+            ["monotonousTrainNumber"] = FunJourneys,
         };
 
     private static readonly HashSet<string> Regular25Models =
@@ -220,6 +223,8 @@ public static partial class AchievementEngine
                 FirstStationPairWithin(trips, "漠河", "三亚", TimeSpan.FromDays(14))),
             A("horizontalChina", "swap_horiz", "横贯中国", "在 14 天内到访阿克陶站和抚远站",
                 FirstStationPairWithin(trips, "阿克陶", "抚远", TimeSpan.FromDays(14))),
+            A("eastRedSunRises", "wb_sunny_outlined", "东方红，太阳升", "到访东方红站和太阳升站",
+                FirstStationPairCompletion(trips, "东方红", "太阳升")),
             A("highSpeedExperiment", "speed_outlined", "冲高实验", "完成时长超过 1 小时且均速超过 300 公里/小时的行程",
                 First(trips, trip => ValidDuration(trip) > TimeSpan.FromHours(1) && AverageSpeed(trip) > 300)),
             A("slowCrawl", "slow_motion_video_outlined", "龟速爬行", "完成时长超过 1 小时且均速不超过 50 公里/小时的行程",
@@ -286,6 +291,10 @@ public static partial class AchievementEngine
                 FirstThreeTicketSameTrainCompletion(trips)),
             A("blessChina", "flag_outlined", "祝福祖国", "在 10 月 1 日乘坐列车",
                 First(trips, trip => Departure(trip).Month == 10 && Departure(trip).Day == 1)),
+            A("newYearsEve", "celebration_outlined", "跨年夜", "在列车上完成跨年",
+                First(trips, UnlocksNewYearsEve)),
+            A("monotonousTrainNumber", "format_list_numbered_outlined", "千篇一律", "乘坐数字部分为三或四个相同数字的车次",
+                First(trips, UnlocksMonotonousTrainNumber)),
             A("snowWelcomesSpring", "ac_unit_outlined", "瑞雪迎春", "乘坐一次北京冬奥会限定车型 CR400BF-C-5162",
                 FirstRollingStockMatch(trips, ["CR400BF-C-5162"])),
             A("moistensJiangnan", "water_drop_outlined", "润泽江南", "乘坐一次杭州亚运会限定车型 CR400BF-Z-0524",
@@ -362,6 +371,7 @@ public static partial class AchievementEngine
         "unnecessaryExtra" => P(MaxSameTrainTicketChain(trips), 3),
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
+        "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0), 10),
         _ => null
@@ -389,6 +399,19 @@ public static partial class AchievementEngine
         IEnumerable<PublicTrip> trips,
         Func<PublicTrip, IEnumerable<string>> valuesForTrip) =>
         trips.SelectMany(valuesForTrip).Distinct(StringComparer.Ordinal).Count();
+
+    private static int VisitedStationCount(
+        IEnumerable<PublicTrip> trips,
+        IEnumerable<string> targets)
+    {
+        var stations = targets.Select(NormalizedStation).ToHashSet(StringComparer.Ordinal);
+        return trips
+            .SelectMany(trip => new[] { trip.FromStation, trip.ToStation })
+            .Select(NormalizedStation)
+            .Where(stations.Contains)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+    }
 
     private static int LongestStreak(IEnumerable<PublicTrip> trips)
     {
@@ -659,6 +682,20 @@ public static partial class AchievementEngine
         return null;
     }
 
+    private static PublicTrip? FirstStationPairCompletion(
+        List<PublicTrip> trips, string first, string second)
+    {
+        var targets = new HashSet<string>([NormalizedStation(first), NormalizedStation(second)], StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var visit in StationVisits(trips))
+        {
+            if (!targets.Contains(visit.Station)) continue;
+            visited.Add(visit.Station);
+            if (targets.IsSubsetOf(visited)) return visit.Trip;
+        }
+        return null;
+    }
+
     private static List<StationVisit> StationVisits(List<PublicTrip> trips)
     {
         var visits = new List<StationVisit>();
@@ -862,6 +899,20 @@ public static partial class AchievementEngine
         if (NormalizedStation(trip.FromStation) == "根河" && Departure(trip).Month is 12 or 1 or 2) return true;
         var arrival = trip.ArrivalTime ?? Departure(trip);
         return NormalizedStation(trip.ToStation) == "根河" && arrival.Month is 12 or 1 or 2;
+    }
+
+    private static bool UnlocksNewYearsEve(PublicTrip trip)
+    {
+        if (trip.ArrivalTime is null || trip.ArrivalTime < Departure(trip)) return false;
+        var departure = Departure(trip);
+        return trip.ArrivalTime.Value.Year > departure.Year;
+    }
+
+    private static bool UnlocksMonotonousTrainNumber(PublicTrip trip)
+    {
+        var digits = Regex.Replace(trip.TrainNumber ?? string.Empty, "[A-Za-z]", string.Empty)
+            .Replace(" ", string.Empty);
+        return Regex.IsMatch(digits, @"^(\d)\1{2,3}$");
     }
 
     private static PublicTrip? FirstThreeTicketSameTrainCompletion(List<PublicTrip> trips)
