@@ -117,7 +117,7 @@ public static partial class AchievementEngine
     ];
     private static readonly HashSet<string> RegularSeatTypes =
     [
-        "无座", "硬座", "软座", "一等座", "商务座", "硬卧", "软卧",
+        "无座", "硬座", "软座", "一等座", "优选一等座","特等座", "商务座", "硬卧", "软卧",
         "高级软卧", "动卧", "二等卧", "一等卧", "高级动卧"
     ];
     private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥"];
@@ -130,7 +130,7 @@ public static partial class AchievementEngine
         "CR300BF-0002", "CR300BF-0005", "CR300BF-0006"
     ];
     private static readonly HashSet<string> VibrantExpressModels = Enumerable.Range(251, 9)
-        .SelectMany(number => new[] { $"CRH380A-0{number}", $"MTR380A-0{number}" })
+        .SelectMany(number => new[] { $"CRH380A-0{number}", $"MTR380A-0{number}", "MTR380A" })
         .ToHashSet(StringComparer.Ordinal);
     private static readonly HashSet<string> CommonTrainCategories =
         ["G", "D", "C", "Z", "T", "K", "Y", "S", "numeric"];
