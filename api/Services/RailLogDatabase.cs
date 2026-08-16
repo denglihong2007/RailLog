@@ -514,12 +514,12 @@ public sealed class RailLogDatabase
             VisitEvents AS (
                 SELECT Id AS TripId, UserId, trim(FromStation) AS Location,
                        DepartureTime AS OccurredAt,
-                       date(DepartureTime, '+8 hours') AS EventDay
+                       date(DepartureTime) AS EventDay
                 FROM ActiveTrips
                 WHERE DepartureTime IS NOT NULL AND trim(FromStation) <> ''
                 UNION ALL
                 SELECT Id, UserId, trim(ToStation), ArrivalTime,
-                       date(ArrivalTime, '+8 hours')
+                       date(ArrivalTime)
                 FROM ActiveTrips
                 WHERE ArrivalTime IS NOT NULL AND trim(ToStation) <> ''
             ),
@@ -532,7 +532,7 @@ public sealed class RailLogDatabase
             ),
             MineTrains AS (
                 SELECT DISTINCT upper(trim(TrainNumber)) AS TrainKey,
-                       date(DepartureTime, '+8 hours') AS EventDay
+                       date(DepartureTime) AS EventDay
                 FROM ActiveTrips
                 WHERE UserId = $userId AND DepartureTime IS NOT NULL
                   AND trim(TrainNumber) <> ''
@@ -564,7 +564,7 @@ public sealed class RailLogDatabase
                    CASE WHEN EXISTS (
                        SELECT 1 FROM MineTrains exact
                        WHERE exact.TrainKey = upper(trim(trip.TrainNumber))
-                         AND exact.EventDay = date(trip.DepartureTime, '+8 hours')
+                         AND exact.EventDay = date(trip.DepartureTime)
                    ) THEN 1 ELSE 0 END,
                    trip.TrainNumber
             FROM MineTrainKeys mine

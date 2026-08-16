@@ -71,6 +71,8 @@ public static partial class AchievementEngine
             ["facingTheWorld"] = RailwayCatalog,
             ["revivalPrototype"] = RailwayCatalog,
             ["vibrantJourney"] = RailwayCatalog,
+            ["railwayTrailblazer"] = RailwayCatalog,
+            ["whatAgeIsThis"] = RailwayCatalog,
 
             ["verticalChina"] = Touring,
             ["horizontalChina"] = Touring,
@@ -88,6 +90,7 @@ public static partial class AchievementEngine
             ["platformSubsidence"] = Touring,
             ["strategist"] = Touring,
             ["eastRedSunRises"] = Touring,
+            ["centuryMeterGauge"] = Touring,
 
             ["freeMeal"] = FunJourneys,
             ["wallFacingSeat"] = FunJourneys,
@@ -105,10 +108,15 @@ public static partial class AchievementEngine
             ["fleetingMoment"] = FunJourneys,
             ["newYearsEve"] = FunJourneys,
             ["monotonousTrainNumber"] = FunJourneys,
+            ["modestAppetite"] = FunJourneys,
         };
 
     private static readonly HashSet<string> Regular25Models =
         ["25B", "25Z", "25G", "25K", "25T", "25DT"];
+    private static readonly HashSet<string> EarlyEmuModels =
+        ["X2000", "KDZ1A", "DJF1", "DJF2", "DJF3", "DJJ1", "DJJ2", "NZJ1", "NZJ2", "NDJ3", "NYJ1"];
+    private static readonly HashSet<string> EarlyPassengerCoachModels =
+        ["21", "22", "22A", "22B", "22C", "23", "24", "25", "25A", "25C", "31"];
     private static readonly HashSet<string> EmuModels =
     [
         "CRH1", "CRH2", "CRH3", "CRH5", "CRH6", "CR200J", "CR300AF",
@@ -117,7 +125,7 @@ public static partial class AchievementEngine
     ];
     private static readonly HashSet<string> RegularSeatTypes =
     [
-        "无座", "硬座", "软座", "一等座", "商务座", "硬卧", "软卧",
+        "无座", "硬座", "软座", "一等座", "优选一等座","特等座", "商务座", "硬卧", "软卧",
         "高级软卧", "动卧", "二等卧", "一等卧", "高级动卧"
     ];
     private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥"];
@@ -130,7 +138,7 @@ public static partial class AchievementEngine
         "CR300BF-0002", "CR300BF-0005", "CR300BF-0006"
     ];
     private static readonly HashSet<string> VibrantExpressModels = Enumerable.Range(251, 9)
-        .SelectMany(number => new[] { $"CRH380A-0{number}", $"MTR380A-0{number}" })
+        .SelectMany(number => new[] { $"CRH380A-0{number}", $"MTR380A-0{number}", "MTR380A" })
         .ToHashSet(StringComparer.Ordinal);
     private static readonly HashSet<string> CommonTrainCategories =
         ["G", "D", "C", "Z", "T", "K", "Y", "S", "numeric"];
@@ -240,7 +248,7 @@ public static partial class AchievementEngine
             A("hundredThousandKilometers", "gps_fixed_outlined", "我就是GPS", "累计乘车里程至少 100,000 公里",
                 FirstCumulativeMileageCompletion(trips, 100000)),
             A("fTrain", "u_turn_left_outlined", "中途遣返", "乘坐一次 F 字头列车",
-                First(trips, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^F\s*\d", RegexOptions.IgnoreCase))),
+                First(trips, trip => trip.TrainNumber.Trim().StartsWith("F", StringComparison.OrdinalIgnoreCase))),
             A("axleOverheat", "device_thermostat_outlined", "轴温过高", "乘坐一次 CR400BF-5033 型列车",
                 FirstRollingStockMatch(trips, ["CR400BF-5033"])),
             A("permanentMagnetPower", "bolt_outlined", "永磁动力", "乘坐一次 CRH380AN 型列车",
@@ -330,7 +338,16 @@ public static partial class AchievementEngine
                     return category is null ? [] : [category];
                 })),
             A("blueHorizon", "water_drop_outlined", "一碧千里", "至少坐过 10 次动集列车",
-                FirstCountCompletion(trips, 10, trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0))
+                FirstCountCompletion(trips, 10, trip => ContainsRollingStock(trip, "CR200J"))),
+            A("railwayTrailblazer", "train_outlined", "开路先锋", "乘坐一次早期动车组列车（不含后期编入普通列车的 25DT）",
+                FirstRollingStockMatch(trips, EarlyEmuModels)),
+            A("modestAppetite", "route_outlined", "腹犹果然", "完成单程不超过 20 公里的行程",
+                First(trips, trip => trip.MileageKm <= 20)),
+            A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 25C 型或更早上线的客车",
+                FirstRollingStockMatch(trips, EarlyPassengerCoachModels)),
+            A("centuryMeterGauge", "map_outlined", "百年米轨", "乘坐经由昆河线的列车",
+                First(trips, trip => RouteNames(trip).Any(
+                    route => route.Contains("昆河线", StringComparison.Ordinal))))
         };
 
         if (values.Count != AchievementCategories.Count ||
@@ -373,7 +390,7 @@ public static partial class AchievementEngine
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
-        "blueHorizon" => P(trips.Count(trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0), 10),
+        "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
         _ => null
     };
 
@@ -567,7 +584,7 @@ public static partial class AchievementEngine
     {
         var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
         return models.Where(model => Regex.IsMatch(
-                normalized, $"{Regex.Escape(model)}(?![A-Z0-9])"))
+                normalized, $"^{Regex.Escape(model)}(?![A-Z0-9])"))
             .ToHashSet(StringComparer.Ordinal);
     }
 
@@ -576,6 +593,9 @@ public static partial class AchievementEngine
         var values = models.ToHashSet(StringComparer.Ordinal);
         return First(trips, trip => RollingStockMatches(trip.RollingStock, values).Count > 0);
     }
+
+    private static bool ContainsRollingStock(PublicTrip trip, string value) =>
+        trip.RollingStock?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false;
 
     private static PublicTrip? FirstDistinctTrainCountForRoute(List<PublicTrip> trips, int target)
     {
@@ -605,8 +625,8 @@ public static partial class AchievementEngine
         foreach (var model in EmuModels)
         {
             var pattern = model is "CRH1" or "CRH2" or "CRH3" or "CRH5" or "CRH6"
-                ? $"(^|[^A-Z0-9]){model}(?![0-9])"
-                : $"(^|[^A-Z0-9]){model}";
+                ? $"^{model}(?![0-9])"
+                : $"^{model}";
             if (Regex.IsMatch(normalized, pattern)) result.Add(model);
         }
         return result;
