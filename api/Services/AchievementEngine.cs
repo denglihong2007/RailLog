@@ -338,7 +338,7 @@ public static partial class AchievementEngine
                     return category is null ? [] : [category];
                 })),
             A("blueHorizon", "water_drop_outlined", "一碧千里", "至少坐过 10 次动集列车",
-                FirstCountCompletion(trips, 10, trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0)),
+                FirstCountCompletion(trips, 10, trip => ContainsRollingStock(trip, "CR200J"))),
             A("railwayTrailblazer", "train_outlined", "开路先锋", "乘坐一次早期动车组列车（不含后期编入普通列车的 25DT）",
                 FirstRollingStockMatch(trips, EarlyEmuModels)),
             A("modestAppetite", "route_outlined", "腹犹果然", "完成单程不超过 20 公里的行程",
@@ -390,7 +390,7 @@ public static partial class AchievementEngine
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
-        "blueHorizon" => P(trips.Count(trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0), 10),
+        "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
         _ => null
     };
 
@@ -593,6 +593,9 @@ public static partial class AchievementEngine
         var values = models.ToHashSet(StringComparer.Ordinal);
         return First(trips, trip => RollingStockMatches(trip.RollingStock, values).Count > 0);
     }
+
+    private static bool ContainsRollingStock(PublicTrip trip, string value) =>
+        trip.RollingStock?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false;
 
     private static PublicTrip? FirstDistinctTrainCountForRoute(List<PublicTrip> trips, int target)
     {
