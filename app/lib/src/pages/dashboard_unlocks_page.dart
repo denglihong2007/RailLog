@@ -15,6 +15,7 @@ class DashboardUnlocksPage extends StatefulWidget {
     required this.icon,
     required this.entries,
     required this.allTrips,
+    this.progressCatalog,
     this.showTrainNumber = true,
     this.openTrip,
   });
@@ -23,6 +24,7 @@ class DashboardUnlocksPage extends StatefulWidget {
   final IconData icon;
   final List<DashboardUnlockEntry> entries;
   final List<DashboardTripEntry> allTrips;
+  final Future<List<String>>? progressCatalog;
   final bool showTrainNumber;
   final TripEntryOpener? openTrip;
 
@@ -136,6 +138,16 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
     });
   }
 
+  Future<void> _openPieChart() => Navigator.of(context).push<void>(
+    m3PageRoute(
+      builder: (context) => _UnlockPieChartPage(
+        title: widget.title,
+        icon: widget.icon,
+        entries: widget.entries,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -144,6 +156,11 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          IconButton(
+            tooltip: '次数占比',
+            onPressed: _openPieChart,
+            icon: const Icon(Icons.donut_large_outlined),
+          ),
           IconButton(
             tooltip: '排序方式',
             onPressed: _showSortPanel,
@@ -157,38 +174,49 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
             constraints: const BoxConstraints(maxWidth: 760),
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              itemCount: entries.length + 2,
-              separatorBuilder: (context, index) => index <= 1
+              itemCount: entries.length + 1,
+              separatorBuilder: (context, index) => index == 0
                   ? const SizedBox(height: 8)
                   : const Divider(height: 1, indent: 56),
               itemBuilder: (context, index) {
                 if (index == 0) {
-                  return _UnlockPieChart(entries: entries, icon: widget.icon);
-                }
-                if (index == 1) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 12,
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(widget.icon, color: colors.primary),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            '${entries.length} 项 · '
-                            '${_sortFieldLabel(_sortField)}'
-                            '${_descending ? '降序' : '升序'}',
-                            style: Theme.of(context).textTheme.titleMedium,
+                        if (widget.progressCatalog == null)
+                          Row(
+                            children: [
+                              Icon(widget.icon, color: colors.primary),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  '${entries.length} 项 · '
+                                  '${_sortFieldLabel(_sortField)}'
+                                  '${_descending ? '降序' : '升序'}',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          _UnlockProgress(
+                            entries: widget.entries,
+                            catalog: widget.progressCatalog!,
+                            icon: widget.icon,
                           ),
-                        ),
                       ],
                     ),
                   );
                 }
 
-                final entry = entries[index - 2];
+                final entry = entries[index - 1];
                 final animationStep = index > 8 ? 8 : index;
                 return M3Reveal(
                   duration: Duration(milliseconds: 220 + animationStep * 30),
@@ -202,7 +230,7 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
                     leading: SizedBox(
                       width: 32,
                       child: Text(
-                        (index - 1).toString(),
+                        index.toString(),
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: colors.primary,
@@ -283,6 +311,128 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
   }
 }
 
+class _UnlockProgress extends StatelessWidget {
+  const _UnlockProgress({
+    required this.entries,
+    required this.catalog,
+    required this.icon,
+  });
+
+  final List<DashboardUnlockEntry> entries;
+  final Future<List<String>> catalog;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return FutureBuilder<List<String>>(
+      future: catalog,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Text(
+            '解锁进度暂不可用',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const LinearProgressIndicator();
+        }
+        final available = snapshot.data!
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet();
+        final unlocked = entries
+            .map((entry) => entry.name.trim())
+            .where(available.contains)
+            .toSet()
+            .length;
+        final total = available.length;
+        final value = total == 0 ? 0.0 : unlocked / total;
+        return Semantics(
+          label: '解锁进度',
+          value: '$unlocked/$total',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 18, color: colors.primary),
+                  const SizedBox(width: 6),
+                  const Expanded(child: Text('解锁进度')),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '$unlocked / $total',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(value * 100).round()}%',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: value.clamp(0, 1),
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(6),
+                color: colors.primary,
+                backgroundColor: colors.primary.withValues(alpha: 0.14),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _UnlockPieChartPage extends StatelessWidget {
+  const _UnlockPieChartPage({
+    required this.title,
+    required this.icon,
+    required this.entries,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<DashboardUnlockEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('$title · 次数占比')),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: _UnlockPieChart(entries: entries, icon: icon),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _UnlockPieChart extends StatelessWidget {
   const _UnlockPieChart({required this.entries, required this.icon});
 
@@ -296,107 +446,65 @@ class _UnlockPieChart extends StatelessWidget {
     final total = slices.fold<int>(0, (sum, slice) => sum + slice.count);
     final pieColors = _pieColors(colors, slices.length);
 
-    return Card.outlined(
-      margin: EdgeInsets.zero,
-      color: colors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: colors.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: colors.secondaryContainer,
-                    shape: BoxShape.circle,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (slices.isEmpty)
+          SizedBox(
+            height: 144,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.donut_large_outlined,
+                    size: 32,
+                    color: colors.onSurfaceVariant,
                   ),
-                  child: Icon(
-                    icon,
-                    size: 21,
-                    color: colors.onSecondaryContainer,
+                  const SizedBox(height: 10),
+                  Text(
+                    '暂无统计数据',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '次数占比',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            if (slices.isEmpty)
-              SizedBox(
-                height: 144,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.donut_large_outlined,
-                        size: 32,
-                        color: colors.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '暂无统计数据',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final chart = _Pie(
-                    slices: slices,
-                    total: total,
-                    colors: pieColors,
-                  );
-                  final legend = _PieLegend(
-                    slices: slices,
-                    total: total,
-                    colors: pieColors,
-                  );
-                  if (constraints.maxWidth < 600) {
-                    return Column(
-                      children: [
-                        SizedBox(height: 260, child: chart),
-                        const SizedBox(height: 16),
-                        legend,
-                      ],
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SizedBox(width: 288, height: 288, child: chart),
-                      const SizedBox(width: 24),
-                      Expanded(child: legend),
-                    ],
-                  );
-                },
+                ],
               ),
-          ],
-        ),
-      ),
+            ),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final chart = _Pie(
+                slices: slices,
+                total: total,
+                colors: pieColors,
+              );
+              final legend = _PieLegend(
+                slices: slices,
+                total: total,
+                colors: pieColors,
+              );
+              if (constraints.maxWidth < 600) {
+                return Column(
+                  children: [
+                    SizedBox(height: 260, child: chart),
+                    const SizedBox(height: 16),
+                    legend,
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(width: 288, height: 288, child: chart),
+                  const SizedBox(width: 24),
+                  Expanded(child: legend),
+                ],
+              );
+            },
+          ),
+      ],
     );
   }
 }

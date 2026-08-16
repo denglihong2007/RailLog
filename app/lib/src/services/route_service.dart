@@ -20,6 +20,11 @@ class RouteService {
     return graph.routeNames;
   }
 
+  static Future<List<String>> getStationNames() async {
+    final graph = await (_graphFuture ??= _loadGraph());
+    return graph.stationNames;
+  }
+
   static Future<List<String>> getStationsForRoute(String routeName) async {
     final graph = await (_graphFuture ??= _loadGraph());
     return graph.stationsForRoute(routeName);
@@ -228,6 +233,11 @@ class _RouteGraph {
         .toSet()
         .toList();
     names.sort();
+    return names;
+  }
+
+  List<String> get stationNames {
+    final names = adjacency.keys.toList()..sort();
     return names;
   }
 

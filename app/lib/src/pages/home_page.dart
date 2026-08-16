@@ -4,6 +4,7 @@ import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
+import 'package:raillog/src/models/railway_bureau.dart';
 import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
@@ -17,6 +18,7 @@ import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/achievement_service.dart';
 import 'package:raillog/src/services/intersection_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
+import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
@@ -1351,6 +1353,7 @@ class _StatsGrid extends StatelessWidget {
           icon: Icons.route_outlined,
           entries: stats.routeUnlocks,
           allTrips: stats.allTrips,
+          progressCatalog: RouteService.getRouteNames(),
         ),
       ),
       _Metric(
@@ -1391,6 +1394,11 @@ class _StatsGrid extends StatelessWidget {
           icon: Icons.business_outlined,
           entries: stats.companyUnlocks,
           allTrips: stats.allTrips,
+          progressCatalog: Future.value(
+            railwayBureauSegments.values
+                .expand((companies) => companies)
+                .toList(growable: false),
+          ),
         ),
       ),
       _Metric(
@@ -1404,6 +1412,7 @@ class _StatsGrid extends StatelessWidget {
           icon: Icons.location_on_outlined,
           entries: stats.stationUnlocks,
           allTrips: stats.allTrips,
+          progressCatalog: RouteService.getStationNames(),
         ),
       ),
     ];
@@ -1423,6 +1432,7 @@ class _StatsGrid extends StatelessWidget {
     required IconData icon,
     required List<DashboardUnlockEntry> entries,
     required List<DashboardTripEntry> allTrips,
+    Future<List<String>>? progressCatalog,
     bool showTrainNumber = true,
   }) async {
     final changed = await _openUnlocks(
@@ -1431,6 +1441,7 @@ class _StatsGrid extends StatelessWidget {
       icon: icon,
       entries: entries,
       allTrips: allTrips,
+      progressCatalog: progressCatalog,
       showTrainNumber: showTrainNumber,
       openTrip: openTrip,
     );
@@ -1663,6 +1674,7 @@ Future<bool?> _openUnlocks(
   required IconData icon,
   required List<DashboardUnlockEntry> entries,
   required List<DashboardTripEntry> allTrips,
+  Future<List<String>>? progressCatalog,
   bool showTrainNumber = true,
   TripEntryOpener? openTrip,
 }) {
@@ -1673,6 +1685,7 @@ Future<bool?> _openUnlocks(
         icon: icon,
         entries: entries,
         allTrips: allTrips,
+        progressCatalog: progressCatalog,
         showTrainNumber: showTrainNumber,
         openTrip: openTrip,
       ),
