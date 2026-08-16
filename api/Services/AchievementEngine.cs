@@ -248,7 +248,7 @@ public static partial class AchievementEngine
             A("hundredThousandKilometers", "gps_fixed_outlined", "我就是GPS", "累计乘车里程至少 100,000 公里",
                 FirstCumulativeMileageCompletion(trips, 100000)),
             A("fTrain", "u_turn_left_outlined", "中途遣返", "乘坐一次 F 字头列车",
-                First(trips, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^F\s*\d", RegexOptions.IgnoreCase))),
+                First(trips, trip => trip.TrainNumber.Trim().StartsWith("F", StringComparison.OrdinalIgnoreCase))),
             A("axleOverheat", "device_thermostat_outlined", "轴温过高", "乘坐一次 CR400BF-5033 型列车",
                 FirstRollingStockMatch(trips, ["CR400BF-5033"])),
             A("permanentMagnetPower", "bolt_outlined", "永磁动力", "乘坐一次 CRH380AN 型列车",
