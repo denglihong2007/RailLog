@@ -71,6 +71,8 @@ public static partial class AchievementEngine
             ["facingTheWorld"] = RailwayCatalog,
             ["revivalPrototype"] = RailwayCatalog,
             ["vibrantJourney"] = RailwayCatalog,
+            ["railwayTrailblazer"] = RailwayCatalog,
+            ["whatAgeIsThis"] = RailwayCatalog,
 
             ["verticalChina"] = Touring,
             ["horizontalChina"] = Touring,
@@ -88,6 +90,7 @@ public static partial class AchievementEngine
             ["platformSubsidence"] = Touring,
             ["strategist"] = Touring,
             ["eastRedSunRises"] = Touring,
+            ["centuryMeterGauge"] = Touring,
 
             ["freeMeal"] = FunJourneys,
             ["wallFacingSeat"] = FunJourneys,
@@ -105,10 +108,15 @@ public static partial class AchievementEngine
             ["fleetingMoment"] = FunJourneys,
             ["newYearsEve"] = FunJourneys,
             ["monotonousTrainNumber"] = FunJourneys,
+            ["modestAppetite"] = FunJourneys,
         };
 
     private static readonly HashSet<string> Regular25Models =
         ["25B", "25Z", "25G", "25K", "25T", "25DT"];
+    private static readonly HashSet<string> EarlyEmuModels =
+        ["X2000", "KDZ1A", "DJF1", "DJF2", "DJF3", "DJJ1", "DJJ2", "NZJ1", "NZJ2", "NDJ3", "NYJ1"];
+    private static readonly HashSet<string> EarlyPassengerCoachModels =
+        ["21", "22", "22A", "22B", "22C", "23", "24", "25", "25A", "25C", "31"];
     private static readonly HashSet<string> EmuModels =
     [
         "CRH1", "CRH2", "CRH3", "CRH5", "CRH6", "CR200J", "CR300AF",
@@ -330,7 +338,16 @@ public static partial class AchievementEngine
                     return category is null ? [] : [category];
                 })),
             A("blueHorizon", "water_drop_outlined", "一碧千里", "至少坐过 10 次动集列车",
-                FirstCountCompletion(trips, 10, trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0))
+                FirstCountCompletion(trips, 10, trip => RollingStockMatches(trip.RollingStock, ["CR200J"]).Count > 0)),
+            A("railwayTrailblazer", "train_outlined", "开路先锋", "乘坐一次早期动车组列车（不含后期编入普通列车的 25DT）",
+                FirstRollingStockMatch(trips, EarlyEmuModels)),
+            A("modestAppetite", "route_outlined", "腹犹果然", "完成单程不超过 20 公里的行程",
+                First(trips, trip => trip.MileageKm <= 20)),
+            A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 25C 型或更早上线的客车",
+                FirstRollingStockMatch(trips, EarlyPassengerCoachModels)),
+            A("centuryMeterGauge", "map_outlined", "百年米轨", "乘坐经由昆河线的列车",
+                First(trips, trip => RouteNames(trip).Any(
+                    route => route.Contains("昆河线", StringComparison.Ordinal))))
         };
 
         if (values.Count != AchievementCategories.Count ||
