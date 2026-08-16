@@ -653,26 +653,54 @@ class _IntersectionCard extends StatelessWidget {
   }
 }
 
-class _IntersectionDetailsPage extends StatelessWidget {
+class _IntersectionDetailsPage extends StatefulWidget {
   const _IntersectionDetailsPage({required this.intersection});
 
   final OnlineIntersection intersection;
 
   @override
+  State<_IntersectionDetailsPage> createState() =>
+      _IntersectionDetailsPageState();
+}
+
+class _IntersectionDetailsPageState extends State<_IntersectionDetailsPage> {
+  bool _strictOnly = false;
+
+  @override
   Widget build(BuildContext context) {
+    final intersection = widget.intersection;
     final kindLabel = intersection.kind == OnlineIntersectionKind.station
         ? '车站交集'
         : '车次交集';
+    final trips = _strictOnly
+        ? intersection.trips.where((trip) => trip.isStrict).toList()
+        : intersection.trips;
     return Scaffold(
       appBar: AppBar(title: Text('$kindLabel · ${intersection.location}')),
-      body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        itemCount: intersection.trips.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, index) => Center(
+      body: SafeArea(
+        child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
-            child: _IntersectionTripRow(trip: intersection.trips[index]),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('严格匹配'),
+                  value: _strictOnly,
+                  onChanged: (value) => setState(() => _strictOnly = value),
+                ),
+                Expanded(
+                  child: trips.isEmpty
+                      ? const Center(child: Text('暂无严格匹配'))
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                          itemCount: trips.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) =>
+                              _IntersectionTripRow(trip: trips[index]),
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

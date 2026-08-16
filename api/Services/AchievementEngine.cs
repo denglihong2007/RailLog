@@ -584,7 +584,7 @@ public static partial class AchievementEngine
     {
         var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
         return models.Where(model => Regex.IsMatch(
-                normalized, $"{Regex.Escape(model)}(?![A-Z0-9])"))
+                normalized, $"^{Regex.Escape(model)}(?![A-Z0-9])"))
             .ToHashSet(StringComparer.Ordinal);
     }
 
@@ -625,8 +625,8 @@ public static partial class AchievementEngine
         foreach (var model in EmuModels)
         {
             var pattern = model is "CRH1" or "CRH2" or "CRH3" or "CRH5" or "CRH6"
-                ? $"(^|[^A-Z0-9]){model}(?![0-9])"
-                : $"(^|[^A-Z0-9]){model}";
+                ? $"^{model}(?![0-9])"
+                : $"^{model}";
             if (Regex.IsMatch(normalized, pattern)) result.Add(model);
         }
         return result;
