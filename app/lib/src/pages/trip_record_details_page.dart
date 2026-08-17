@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/route_station.dart';
+import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
+import 'package:raillog/src/pages/ct_photo_search_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
@@ -210,6 +212,20 @@ class _TripDetailsContent extends StatelessWidget {
   final String? ownerBio;
   final VoidCallback? onOwnerTap;
 
+  VoidCallback? _photoSearch(
+    BuildContext context,
+    String label,
+    String? value,
+  ) {
+    final keyword = rollingStockModelCode(value).trim();
+    if (keyword.isEmpty) return null;
+    return () => Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => CtPhotoSearchPage(keyword: keyword, fieldLabel: label),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -258,6 +274,18 @@ class _TripDetailsContent extends StatelessWidget {
                       value: trip.isRailTrip ? '铁路行程' : '非铁路行程',
                     ),
                     _InfoItem(
+                      label: '车次/班次',
+                      value: _optionalText(trip.trainNumber),
+                    ),
+                    _InfoItem(
+                      label: '始发站',
+                      value: _optionalText(trip.fromStation),
+                    ),
+                    _InfoItem(
+                      label: '终到站',
+                      value: _optionalText(trip.toStation),
+                    ),
+                    _InfoItem(
                       label: '录入时间',
                       value: _formatDateTime(trip.createdAt),
                     ),
@@ -282,6 +310,7 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车型',
                       value: _optionalText(trip.rollingStock),
+                      onTap: _photoSearch(context, '车型', trip.rollingStock),
                     ),
                     _InfoItem(
                       label: '承运单位',
@@ -913,15 +942,16 @@ class _InfoGrid extends StatelessWidget {
 }
 
 class _InfoItem extends StatelessWidget {
-  const _InfoItem({required this.label, required this.value});
+  const _InfoItem({required this.label, required this.value, this.onTap});
 
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Column(
+    final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -931,9 +961,35 @@ class _InfoItem extends StatelessWidget {
           ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
         const SizedBox(height: 3),
-        SelectableText(value, style: Theme.of(context).textTheme.bodyLarge),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: SelectableText(
+                value,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
+            if (onTap != null && value != '未记录') ...[
+              const SizedBox(width: 2),
+              IconButton(
+                tooltip: '搜索车型照片',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                onPressed: onTap,
+                icon: Icon(
+                  Icons.photo_library_outlined,
+                  size: 16,
+                  color: colors.primary,
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
+    return content;
   }
 }
 
@@ -1530,7 +1586,7 @@ class _ViaStationLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Column(
+    final content = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: alignEnd
           ? CrossAxisAlignment.end
@@ -1555,6 +1611,7 @@ class _ViaStationLabel extends StatelessWidget {
         ),
       ],
     );
+    return content;
   }
 }
 
