@@ -4,6 +4,7 @@ import 'package:raillog/src/models/user_profile.dart';
 import 'package:raillog/src/pages/about_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
+import 'package:raillog/src/pages/partner_applications_page.dart';
 import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
@@ -1157,6 +1158,17 @@ Widget _applicationSettings(BuildContext context) {
     icon: Icons.apps_outlined,
     child: Column(
       children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.handshake_outlined),
+          title: const Text('合作应用'),
+          subtitle: const Text('查看 RailLog 的合作应用'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PartnerApplicationsPage()),
+          ),
+        ),
+        const Divider(height: 1),
         _updateLogTile(context, contentPadding: EdgeInsets.zero),
         const Divider(height: 1),
         _aboutTile(context, contentPadding: EdgeInsets.zero),

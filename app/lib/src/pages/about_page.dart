@@ -260,18 +260,6 @@ class _AboutPageState extends State<AboutPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
-                    const _AboutSection(
-                      title: '友情链接',
-                      children: [
-                        _LinkTile(
-                          icon: Icons.travel_explore_outlined,
-                          title: '铁路快查',
-                          subtitle: 'railgo.dev',
-                          url: 'https://railgo.dev/',
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
