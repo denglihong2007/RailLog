@@ -1117,14 +1117,46 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     final segmentColors = <Color>[];
     final routeNames = <String>[];
     final routeSectionIds = <int>[];
+    final expandableRouteSectionIds = <int>{};
     final stations = <String>[widget.trip.fromStation];
     final cumulativeMileage = <double>[0];
+    String? previousRoute;
+    var routeSectionId = 0;
+    var collapsedMileage = 0.0;
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
       final route = _routeLabel(segment.routeName);
+      if (index == 0 || route != previousRoute) {
+        routeSectionId = index;
+        collapsedMileage = 0;
+      }
+      previousRoute = route;
       final color = routeColors[route]!;
       final routeStations = _routeStations[index];
-      if (!_expandedRouteSections.contains(index) || routeStations == null) {
+      if ((routeStations?.length ?? 0) > 2) {
+        expandableRouteSectionIds.add(routeSectionId);
+      }
+      if (!_expandedRouteSections.contains(routeSectionId)) {
+        collapsedMileage += segment.mileageKm;
+        final nextRoute = index + 1 < segments.length
+            ? _routeLabel(segments[index + 1].routeName)
+            : null;
+        if (nextRoute == route) continue;
+        _appendStation(
+          stations,
+          cumulativeMileage,
+          segment.toStation,
+          collapsedMileage,
+          segmentColors,
+          routeNames,
+          routeSectionIds,
+          color,
+          route,
+          routeSectionId,
+        );
+        continue;
+      }
+      if (routeStations == null) {
         _appendStation(
           stations,
           cumulativeMileage,
@@ -1135,7 +1167,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           routeSectionIds,
           color,
           route,
-          index,
+          routeSectionId,
         );
         continue;
       }
@@ -1166,7 +1198,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           routeSectionIds,
           color,
           route,
-          index,
+          routeSectionId,
         );
         previousMileage = stationMileage;
       }
@@ -1222,6 +1254,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                 context,
                 routeNames: routeNames,
                 routeSectionIds: routeSectionIds,
+                expandableRouteSectionIds: expandableRouteSectionIds,
                 segmentColors: segmentColors,
                 width: constraints.maxWidth,
                 columns: columns,
@@ -1237,6 +1270,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     BuildContext context, {
     required List<String> routeNames,
     required List<int> routeSectionIds,
+    required Set<int> expandableRouteSectionIds,
     required List<Color> segmentColors,
     required double width,
     required int columns,
@@ -1245,7 +1279,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     var firstSegment = 0;
     while (firstSegment < routeSectionIds.length) {
       final sectionId = routeSectionIds[firstSegment];
-      final canExpand = (_routeStations[sectionId]?.length ?? 0) > 2;
+      final canExpand = expandableRouteSectionIds.contains(sectionId);
       var lastSegment = firstSegment;
       while (lastSegment + 1 < routeSectionIds.length &&
           routeSectionIds[lastSegment + 1] == sectionId) {

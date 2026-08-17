@@ -36,6 +36,9 @@ public static partial class AchievementEngine
             ["hundredThousandKilometers"] = Milestones,
             ["archaeologyTeam"] = Milestones,
             ["tenNumericTrains"] = Milestones,
+            ["traverseOneRegion"] = Milestones,
+            ["halfTheRealm"] = Milestones,
+            ["centuryDreamFulfilled"] = Milestones,
 
             ["tightTransfer"] = ExtremeChallenges,
             ["wellPreparedTransfer"] = ExtremeChallenges,
@@ -111,6 +114,7 @@ public static partial class AchievementEngine
             ["modestAppetite"] = FunJourneys,
             ["dejaVu"] = FunJourneys,
             ["vowAtQinling"] = FunJourneys,
+            ["spendsLikeWater"] = FunJourneys,
         };
 
     private static readonly HashSet<string> Regular25Models =
@@ -344,7 +348,7 @@ public static partial class AchievementEngine
             A("railwayTrailblazer", "train_outlined", "开路先锋", "乘坐一次早期动车组列车（不含后期编入普通列车的 25DT）",
                 FirstRollingStockMatch(trips, EarlyEmuModels)),
             A("modestAppetite", "route_outlined", "腹犹果然", "完成单程不超过 20 公里的行程",
-                First(trips, trip => trip.MileageKm <= 20)),
+                First(trips, trip => trip.MileageKm is > 0 and <= 20)),
             A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 25C 型或更早上线的客车",
                 FirstRollingStockMatch(trips, EarlyPassengerCoachModels)),
             A("centuryMeterGauge", "map_outlined", "百年米轨", "乘坐经由昆河线的列车",
@@ -353,7 +357,15 @@ public static partial class AchievementEngine
             A("vowAtQinling", "landscape_outlined", "海誓山盟", "在 5 月 20 日到访海拔 1,314 米的秦岭站",
                 First(trips, UnlocksVowAtQinling)),
             A("dejaVu", "loop", "似曾相识", "至少两次乘坐除日期和车号外均完全一致的行程",
-                FirstRepeatedTripCompletion(trips, 2))
+                FirstRepeatedTripCompletion(trips, 2)),
+            A("traverseOneRegion", "route_outlined", "遍历一方", "经由区间去重后的累计里程达到 5,000 公里",
+                FirstUniqueRouteMileageCompletion(trips, 5000)),
+            A("halfTheRealm", "route_outlined", "半壁江山", "经由区间去重后的累计里程达到 80,000 公里",
+                FirstUniqueRouteMileageCompletion(trips, 80000)),
+            A("centuryDreamFulfilled", "route_outlined", "世纪梦圆", "经由区间去重后的累计里程达到 160,000 公里",
+                FirstUniqueRouteMileageCompletion(trips, 160000)),
+            A("spendsLikeWater", "currency_yen", "挥金如土", "单程票价超过 2,000 元",
+                First(trips, trip => trip.Price > 2000))
         };
 
         if (values.Count != AchievementCategories.Count ||
@@ -397,7 +409,9 @@ public static partial class AchievementEngine
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
-        "dejaVu" => P(MaxRepeatedTripCount(trips), 2),
+        "traverseOneRegion" => P(UniqueRouteMileage(trips), 5000),
+        "halfTheRealm" => P(UniqueRouteMileage(trips), 80000),
+        "centuryDreamFulfilled" => P(UniqueRouteMileage(trips), 160000),
         _ => null
     };
 
@@ -591,7 +605,7 @@ public static partial class AchievementEngine
     {
         var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
         return models.Where(model => Regex.IsMatch(
-                normalized, $"(^|[^0-9]){Regex.Escape(model)}(?![0-9])"))
+                normalized, $"(^|[^0-9]){Regex.Escape(model)}(?![A-Z0-9])"))
             .ToHashSet(StringComparer.Ordinal);
     }
 
@@ -617,18 +631,41 @@ public static partial class AchievementEngine
         return null;
     }
 
-    private static int MaxRepeatedTripCount(List<PublicTrip> trips)
+    private static PublicTrip? FirstUniqueRouteMileageCompletion(
+        List<PublicTrip> trips, double target)
     {
-        var counts = new Dictionary<RepeatedTripKey, int>();
-        var maximum = 0;
+        var sections = new HashSet<RouteSectionKey>();
+        var mileage = 0d;
         foreach (var trip in trips)
         {
-            var key = RepeatedTripKeyFor(trip);
-            var count = counts.GetValueOrDefault(key) + 1;
-            counts[key] = count;
-            maximum = Math.Max(maximum, count);
+            foreach (var segment in RouteSegments(trip))
+            {
+                if (segment.MileageKm <= 0 || !sections.Add(RouteSectionKeyFor(segment))) continue;
+                mileage += segment.MileageKm;
+            }
+            if (mileage >= target) return trip;
         }
-        return maximum;
+        return null;
+    }
+
+    private static double UniqueRouteMileage(List<PublicTrip> trips)
+    {
+        var sections = new HashSet<RouteSectionKey>();
+        var mileage = 0d;
+        foreach (var segment in trips.SelectMany(RouteSegments))
+        {
+            if (segment.MileageKm <= 0 || !sections.Add(RouteSectionKeyFor(segment))) continue;
+            mileage += segment.MileageKm;
+        }
+        return mileage;
+    }
+
+    private static RouteSectionKey RouteSectionKeyFor(RouteSegment segment)
+    {
+        var first = NormalizedStation(segment.FromStation);
+        var second = NormalizedStation(segment.ToStation);
+        if (StringComparer.Ordinal.Compare(first, second) > 0) (first, second) = (second, first);
+        return new RouteSectionKey(segment.RouteName, first, second);
     }
 
     private static RepeatedTripKey RepeatedTripKeyFor(PublicTrip trip)
@@ -687,7 +724,7 @@ public static partial class AchievementEngine
         var result = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in EmuModels)
         {
-            var pattern = $"(^|[^0-9]){model}(?![0-9])";
+            var pattern = $"(^|[^0-9]){model}(?![A-Z0-9])";
             if (Regex.IsMatch(normalized, pattern)) result.Add(model);
         }
         return result;
@@ -1104,6 +1141,39 @@ public static partial class AchievementEngine
         }
     }
 
+    private static IReadOnlyList<RouteSegment> RouteSegments(PublicTrip trip)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(trip.ViaRoutes);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
+            var segments = new List<RouteSegment>();
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object ||
+                    !item.TryGetProperty("routeName", out var routeValue) ||
+                    !item.TryGetProperty("fromStation", out var fromValue) ||
+                    !item.TryGetProperty("toStation", out var toValue) ||
+                    !item.TryGetProperty("mileageKm", out var mileageValue) ||
+                    routeValue.ValueKind != JsonValueKind.String ||
+                    fromValue.ValueKind != JsonValueKind.String ||
+                    toValue.ValueKind != JsonValueKind.String ||
+                    mileageValue.ValueKind != JsonValueKind.Number ||
+                    !mileageValue.TryGetDouble(out var mileage)) continue;
+                var route = routeValue.GetString()?.Trim() ?? string.Empty;
+                var from = fromValue.GetString()?.Trim() ?? string.Empty;
+                var to = toValue.GetString()?.Trim() ?? string.Empty;
+                if (route.Length == 0 || from.Length == 0 || to.Length == 0) continue;
+                segments.Add(new RouteSegment(route, from, to, mileage));
+            }
+            return segments;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     private sealed record RepeatedTripKey(
         string TrainNumber,
         string RollingStockModel,
@@ -1118,6 +1188,17 @@ public static partial class AchievementEngine
         string SeatType,
         string SeatNumber,
         double Price);
+
+    private sealed record RouteSegment(
+        string RouteName,
+        string FromStation,
+        string ToStation,
+        double MileageKm);
+
+    private sealed record RouteSectionKey(
+        string RouteName,
+        string FirstStation,
+        string SecondStation);
 
     private sealed record StationVisit(string Station, DateTime Time, PublicTrip Trip);
 
