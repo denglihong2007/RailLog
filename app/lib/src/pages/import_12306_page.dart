@@ -451,7 +451,6 @@ class _Import12306PageState extends State<Import12306Page> {
         selectable.isNotEmpty &&
         selectable.every((order) => _selectedIds.contains(order.id));
     return Scaffold(
-      backgroundColor: colors.surfaceContainerLowest,
       appBar: AppBar(title: const Text('12306 行程'), scrolledUnderElevation: 0),
       body: CustomScrollView(
         slivers: [
