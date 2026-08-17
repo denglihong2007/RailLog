@@ -8,10 +8,12 @@ class CtPhotoSearchPage extends StatefulWidget {
     super.key,
     required this.keyword,
     required this.fieldLabel,
+    this.filter = CtPhotoSearchFilter.model,
   });
 
   final String keyword;
   final String fieldLabel;
+  final CtPhotoSearchFilter filter;
 
   @override
   State<CtPhotoSearchPage> createState() => _CtPhotoSearchPageState();
@@ -44,6 +46,7 @@ class _CtPhotoSearchPageState extends State<CtPhotoSearchPage> {
     try {
       final result = await CtPhotoService.search(
         widget.keyword,
+        filter: widget.filter,
         page: more ? _page + 1 : 1,
       );
       if (!mounted) return;
@@ -123,10 +126,10 @@ class _CtPhotoSearchPageState extends State<CtPhotoSearchPage> {
                             ),
                             gridDelegate:
                                 const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 240,
+                                  maxCrossAxisExtent: 320,
                                   mainAxisSpacing: 12,
                                   crossAxisSpacing: 12,
-                                  childAspectRatio: 1.04,
+                                  childAspectRatio: 1.20,
                                 ),
                           ),
                         ),
@@ -201,11 +204,29 @@ class _PhotoTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    photo.title.isEmpty ? '照片 #${photo.id}' : photo.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelLarge,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          photo.title.isEmpty ? '照片 #${photo.id}' : photo.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                      ),
+                      if (photo.shootDate.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        const Tooltip(
+                          message: '拍摄日期',
+                          child: Icon(Icons.calendar_today_outlined, size: 13),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          photo.shootDate,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Row(

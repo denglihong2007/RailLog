@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+enum CtPhotoSearchFilter { model, station, train }
+
 class CtPhoto {
   const CtPhoto({
     required this.id,
@@ -65,8 +67,12 @@ class CtPhotoService {
 
   static Future<CtPhotoSearchResult> search(
     String keyword, {
+    CtPhotoSearchFilter filter = CtPhotoSearchFilter.model,
     int page = 1,
   }) async {
+    if (filter != CtPhotoSearchFilter.model) {
+      return _searchPhotos(keyword, filter: filter, page: page);
+    }
     final response = await _dio.get<Map<String, dynamic>>(
       '/model_search.php',
       queryParameters: {'q': keyword.trim(), 'page': page, 'per_page': 20},
@@ -90,6 +96,40 @@ class CtPhotoService {
     }
     return CtPhotoSearchResult(
       photos: photos,
+      page: _int(data['page'], fallback: page),
+      pages: _int(data['pages'], fallback: page),
+    );
+  }
+
+  static Future<CtPhotoSearchResult> _searchPhotos(
+    String keyword, {
+    required CtPhotoSearchFilter filter,
+    required int page,
+  }) async {
+    final parameter = switch (filter) {
+      CtPhotoSearchFilter.station => 'station',
+      CtPhotoSearchFilter.train => 'train',
+      CtPhotoSearchFilter.model => throw ArgumentError.value(filter),
+    };
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/photo_search.php',
+      queryParameters: {
+        parameter: keyword.trim(),
+        'page': page,
+        'per_page': 20,
+      },
+    );
+    final data = response.data ?? const <String, dynamic>{};
+    if (data['success'] != true) {
+      throw StateError(
+        _string(data['message']).isEmpty ? '照片搜索失败' : _string(data['message']),
+      );
+    }
+    return CtPhotoSearchResult(
+      photos: [
+        for (final photo in (data['photos'] as List? ?? const []))
+          if (photo is Map) CtPhoto.fromJson(Map<String, dynamic>.from(photo)),
+      ],
       page: _int(data['page'], fallback: page),
       pages: _int(data['pages'], fallback: page),
     );

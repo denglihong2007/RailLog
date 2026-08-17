@@ -9,6 +9,7 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/ct_photo_search_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/route_service.dart';
@@ -216,12 +217,17 @@ class _TripDetailsContent extends StatelessWidget {
     BuildContext context,
     String label,
     String? value,
+    CtPhotoSearchFilter filter,
   ) {
-    final keyword = rollingStockModelCode(value).trim();
+    final keyword = value?.trim() ?? '';
     if (keyword.isEmpty) return null;
     return () => Navigator.of(context).push(
       m3PageRoute(
-        builder: (_) => CtPhotoSearchPage(keyword: keyword, fieldLabel: label),
+        builder: (_) => CtPhotoSearchPage(
+          keyword: keyword,
+          fieldLabel: label,
+          filter: filter,
+        ),
       ),
     );
   }
@@ -276,14 +282,35 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车次',
                       value: _optionalText(trip.trainNumber),
+                      onTap: _photoSearch(
+                        context,
+                        '车次',
+                        trip.trainNumber,
+                        CtPhotoSearchFilter.train,
+                      ),
+                      photoTooltip: '查看车次图片',
                     ),
                     _InfoItem(
                       label: '始发站',
                       value: _optionalText(trip.fromStation),
+                      onTap: _photoSearch(
+                        context,
+                        '始发站',
+                        trip.fromStation,
+                        CtPhotoSearchFilter.station,
+                      ),
+                      photoTooltip: '查看车站图片',
                     ),
                     _InfoItem(
                       label: '终到站',
                       value: _optionalText(trip.toStation),
+                      onTap: _photoSearch(
+                        context,
+                        '终到站',
+                        trip.toStation,
+                        CtPhotoSearchFilter.station,
+                      ),
+                      photoTooltip: '查看车站图片',
                     ),
                     _InfoItem(
                       label: '录入时间',
@@ -310,7 +337,13 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车型',
                       value: _optionalText(trip.rollingStock),
-                      onTap: _photoSearch(context, '车型', trip.rollingStock),
+                      onTap: _photoSearch(
+                        context,
+                        '车型',
+                        rollingStockModelCode(trip.rollingStock),
+                        CtPhotoSearchFilter.model,
+                      ),
+                      photoTooltip: '查看车型图片',
                     ),
                     _InfoItem(
                       label: '承运单位',
@@ -942,11 +975,17 @@ class _InfoGrid extends StatelessWidget {
 }
 
 class _InfoItem extends StatelessWidget {
-  const _InfoItem({required this.label, required this.value, this.onTap});
+  const _InfoItem({
+    required this.label,
+    required this.value,
+    this.onTap,
+    this.photoTooltip = '查看相关图片',
+  });
 
   final String label;
   final String value;
   final VoidCallback? onTap;
+  final String photoTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -973,7 +1012,7 @@ class _InfoItem extends StatelessWidget {
             if (onTap != null && value != '未记录') ...[
               const SizedBox(width: 2),
               IconButton(
-                tooltip: '搜索车型照片',
+                tooltip: photoTooltip,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
@@ -1211,56 +1250,68 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
             : math.max(2, math.min(8, (constraints.maxWidth / 80).floor()));
         final rowCount = (stations.length + columns - 1) ~/ columns;
         final height = rowCount * _rowHeight;
-        return SizedBox(
-          height: height,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _ViaRoutePainter(
-                    segmentColors: segmentColors,
-                    routeSectionIds: routeSectionIds,
-                    rowHeight: _rowHeight,
-                    stationCount: stations.length,
-                    columns: columns,
-                    trackUnderlayColor: colors.surfaceContainerHighest,
-                  ),
-                ),
-              ),
-              for (var index = 0; index < stations.length; index++)
-                _buildStation(
-                  context,
-                  index: index,
-                  station: stations[index],
-                  mileage: cumulativeMileage[index],
-                  leftColor: _stationSideColor(
-                    index,
-                    left: true,
-                    segmentColors: segmentColors,
-                    fallback: colors.primary,
-                    columns: columns,
-                  ),
-                  rightColor: _stationSideColor(
-                    index,
-                    left: false,
-                    segmentColors: segmentColors,
-                    fallback: colors.primary,
-                    columns: columns,
-                  ),
-                  width: constraints.maxWidth,
-                  columns: columns,
-                ),
-              ..._buildRouteLabels(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '点击车站名查看图片',
+              style: Theme.of(
                 context,
-                routeNames: routeNames,
-                routeSectionIds: routeSectionIds,
-                expandableRouteSectionIds: expandableRouteSectionIds,
-                segmentColors: segmentColors,
-                width: constraints.maxWidth,
-                columns: columns,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: height,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _ViaRoutePainter(
+                        segmentColors: segmentColors,
+                        routeSectionIds: routeSectionIds,
+                        rowHeight: _rowHeight,
+                        stationCount: stations.length,
+                        columns: columns,
+                        trackUnderlayColor: colors.surfaceContainerHighest,
+                      ),
+                    ),
+                  ),
+                  for (var index = 0; index < stations.length; index++)
+                    _buildStation(
+                      context,
+                      index: index,
+                      station: stations[index],
+                      mileage: cumulativeMileage[index],
+                      leftColor: _stationSideColor(
+                        index,
+                        left: true,
+                        segmentColors: segmentColors,
+                        fallback: colors.primary,
+                        columns: columns,
+                      ),
+                      rightColor: _stationSideColor(
+                        index,
+                        left: false,
+                        segmentColors: segmentColors,
+                        fallback: colors.primary,
+                        columns: columns,
+                      ),
+                      width: constraints.maxWidth,
+                      columns: columns,
+                    ),
+                  ..._buildRouteLabels(
+                    context,
+                    routeNames: routeNames,
+                    routeSectionIds: routeSectionIds,
+                    expandableRouteSectionIds: expandableRouteSectionIds,
+                    segmentColors: segmentColors,
+                    width: constraints.maxWidth,
+                    columns: columns,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
@@ -1435,9 +1486,24 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
               station: station,
               mileage: mileage,
               alignEnd: false,
+              onTap: () => _openStationPhotos(context, station),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openStationPhotos(BuildContext context, String station) {
+    final keyword = station.trim();
+    if (keyword.isEmpty) return;
+    Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => CtPhotoSearchPage(
+          keyword: keyword,
+          fieldLabel: '车站',
+          filter: CtPhotoSearchFilter.station,
+        ),
       ),
     );
   }
@@ -1657,11 +1723,13 @@ class _ViaStationLabel extends StatelessWidget {
     required this.station,
     required this.mileage,
     required this.alignEnd,
+    this.onTap,
   });
 
   final String station;
   final double mileage;
   final bool alignEnd;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1672,14 +1740,21 @@ class _ViaStationLabel extends StatelessWidget {
           ? CrossAxisAlignment.end
           : CrossAxisAlignment.center,
       children: [
-        Text(
-          station,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: alignEnd ? TextAlign.end : TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+        Tooltip(
+          message: '查看$station图片',
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(4),
+            child: Text(
+              station,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: alignEnd ? TextAlign.end : TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
         ),
         const SizedBox(height: 3),
         Text(
