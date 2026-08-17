@@ -174,7 +174,7 @@ Widget _accountSettings(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '用户 ID  ',
+                              'ID  ',
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(
                                     color: Theme.of(
@@ -184,7 +184,7 @@ Widget _accountSettings(
                             ),
                             Expanded(
                               child: Tooltip(
-                                message: '长按复制用户 ID',
+                                message: '长按复制 ID',
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
                                   onLongPress: () =>
@@ -232,7 +232,7 @@ Future<void> _copyUserId(BuildContext context, String userId) async {
   if (!context.mounted) return;
   ScaffoldMessenger.of(
     context,
-  ).showSnackBar(const SnackBar(content: Text('用户 ID 已复制')));
+  ).showSnackBar(const SnackBar(content: Text('ID 已复制')));
 }
 
 Widget _cloudSyncSettings(BuildContext context) {
