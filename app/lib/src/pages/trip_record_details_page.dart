@@ -274,7 +274,7 @@ class _TripDetailsContent extends StatelessWidget {
                       value: trip.isRailTrip ? '铁路行程' : '非铁路行程',
                     ),
                     _InfoItem(
-                      label: '车次/班次',
+                      label: '车次',
                       value: _optionalText(trip.trainNumber),
                     ),
                     _InfoItem(
@@ -1006,6 +1006,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     with AutomaticKeepAliveClientMixin<_ViaRouteDiagram> {
   static const _rowHeight = 88.0;
   Map<int, List<RouteStation>> _routeStations = const {};
+  final Set<int> _expandedRouteSections = {};
   bool _isLoading = true;
   int _stationRequestId = 0;
 
@@ -1033,6 +1034,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       setState(() {
         _isLoading = true;
         _routeStations = const {};
+        _expandedRouteSections.clear();
       });
     }
     final results = <int, List<RouteStation>>{};
@@ -1082,7 +1084,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                 child: CircularProgressIndicator(strokeWidth: 3),
               ),
               SizedBox(height: 12),
-              Text('正在展开经由站点'),
+              Text('正在读取经由线路'),
             ],
           ),
         ),
@@ -1114,6 +1116,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     }
     final segmentColors = <Color>[];
     final routeNames = <String>[];
+    final routeSectionIds = <int>[];
     final stations = <String>[widget.trip.fromStation];
     final cumulativeMileage = <double>[0];
     for (var index = 0; index < segments.length; index++) {
@@ -1121,7 +1124,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       final route = _routeLabel(segment.routeName);
       final color = routeColors[route]!;
       final routeStations = _routeStations[index];
-      if (routeStations == null) {
+      if (!_expandedRouteSections.contains(index) || routeStations == null) {
         _appendStation(
           stations,
           cumulativeMileage,
@@ -1129,8 +1132,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           segment.mileageKm,
           segmentColors,
           routeNames,
+          routeSectionIds,
           color,
           route,
+          index,
         );
         continue;
       }
@@ -1158,8 +1163,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           (stationMileage - previousMileage).abs() * mileageScale,
           segmentColors,
           routeNames,
+          routeSectionIds,
           color,
           route,
+          index,
         );
         previousMileage = stationMileage;
       }
@@ -1180,12 +1187,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                 child: CustomPaint(
                   painter: _ViaRoutePainter(
                     segmentColors: segmentColors,
-                    routeNames: routeNames,
+                    routeSectionIds: routeSectionIds,
                     rowHeight: _rowHeight,
                     stationCount: stations.length,
                     columns: columns,
-                    labelBackgroundColor: colors.surfaceContainerHigh,
-                    labelForegroundColor: colors.onSurface,
                     trackUnderlayColor: colors.surfaceContainerHighest,
                   ),
                 ),
@@ -1213,11 +1218,109 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                   width: constraints.maxWidth,
                   columns: columns,
                 ),
+              ..._buildRouteLabels(
+                context,
+                routeNames: routeNames,
+                routeSectionIds: routeSectionIds,
+                segmentColors: segmentColors,
+                width: constraints.maxWidth,
+                columns: columns,
+              ),
             ],
           ),
         );
       },
     );
+  }
+
+  List<Widget> _buildRouteLabels(
+    BuildContext context, {
+    required List<String> routeNames,
+    required List<int> routeSectionIds,
+    required List<Color> segmentColors,
+    required double width,
+    required int columns,
+  }) {
+    final labels = <Widget>[];
+    var firstSegment = 0;
+    while (firstSegment < routeSectionIds.length) {
+      final sectionId = routeSectionIds[firstSegment];
+      final canExpand = (_routeStations[sectionId]?.length ?? 0) > 2;
+      var lastSegment = firstSegment;
+      while (lastSegment + 1 < routeSectionIds.length &&
+          routeSectionIds[lastSegment + 1] == sectionId) {
+        lastSegment++;
+      }
+      final center = _routeLabelCenter(
+        firstSegment,
+        lastSegment,
+        width,
+        columns,
+      );
+      final labelWidth = math.min(112.0, width);
+      labels.add(
+        Positioned(
+          left: math.max(
+            0,
+            math.min(width - labelWidth, center.dx - labelWidth / 2),
+          ),
+          top: math.max(0, center.dy - 34),
+          width: labelWidth,
+          height: 25,
+          child: Center(
+            child: _ViaRouteLabel(
+              key: ValueKey(sectionId),
+              route: routeNames[firstSegment],
+              color: segmentColors[firstSegment],
+              expanded: canExpand && _expandedRouteSections.contains(sectionId),
+              onTap: canExpand
+                  ? () {
+                      setState(() {
+                        if (!_expandedRouteSections.add(sectionId)) {
+                          _expandedRouteSections.remove(sectionId);
+                        }
+                      });
+                    }
+                  : null,
+            ),
+          ),
+        ),
+      );
+      firstSegment = lastSegment + 1;
+    }
+    return labels;
+  }
+
+  Offset _routeLabelCenter(
+    int firstSegment,
+    int lastSegment,
+    double width,
+    int columns,
+  ) {
+    final startsAtTurn = firstSegment % columns == columns - 1;
+    final start = _viaStationOffset(firstSegment, width, columns, _rowHeight);
+    if (startsAtTurn && lastSegment == firstSegment) return start;
+
+    final firstRowSegment = startsAtTurn ? firstSegment + 1 : firstSegment;
+    final firstRow = firstRowSegment ~/ columns;
+    final rowStart = _viaStationOffset(
+      firstRowSegment,
+      width,
+      columns,
+      _rowHeight,
+    );
+    var endX = rowStart.dx;
+    for (var index = firstRowSegment; index <= lastSegment; index++) {
+      if (index ~/ columns != firstRow) break;
+      final end = _viaStationOffset(index + 1, width, columns, _rowHeight);
+      if (index ~/ columns == (index + 1) ~/ columns) {
+        endX = end.dx;
+      } else {
+        endX = _viaStationOffset(index, width, columns, _rowHeight).dx;
+        break;
+      }
+    }
+    return Offset((rowStart.dx + endX) / 2, rowStart.dy);
   }
 
   Color _stationSideColor(
@@ -1243,8 +1346,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     double mileage,
     List<Color> segmentColors,
     List<String> routeNames,
+    List<int> routeSectionIds,
     Color color,
     String route,
+    int routeSectionId,
   ) {
     final normalized = station.trim();
     if (normalized.isEmpty || _sameStation(stations.last, normalized)) return;
@@ -1252,6 +1357,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     cumulativeMileage.add(cumulativeMileage.last + (mileage > 0 ? mileage : 0));
     segmentColors.add(color);
     routeNames.add(route);
+    routeSectionIds.add(routeSectionId);
   }
 
   bool _sameStation(String first, String second) {
@@ -1303,25 +1409,86 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
   }
 }
 
+class _ViaRouteLabel extends StatelessWidget {
+  const _ViaRouteLabel({
+    super.key,
+    required this.route,
+    required this.color,
+    required this.expanded,
+    this.onTap,
+  });
+
+  final String route;
+  final Color color;
+  final bool expanded;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              route,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 2),
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 14,
+              color: colors.onSurfaceVariant,
+            ),
+          ],
+        ],
+      ),
+    );
+    final label = Material(
+      color: colors.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: color.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null
+          ? content
+          : InkWell(
+              onTap: onTap,
+              splashFactory: NoSplash.splashFactory,
+              highlightColor: Colors.transparent,
+              child: content,
+            ),
+    );
+    return onTap == null
+        ? label
+        : Tooltip(message: expanded ? '收起$route' : '展开$route', child: label);
+  }
+}
+
 class _ViaRoutePainter extends CustomPainter {
   const _ViaRoutePainter({
     required this.segmentColors,
-    required this.routeNames,
+    required this.routeSectionIds,
     required this.rowHeight,
     required this.stationCount,
     required this.columns,
-    required this.labelBackgroundColor,
-    required this.labelForegroundColor,
     required this.trackUnderlayColor,
   });
 
   final List<Color> segmentColors;
-  final List<String> routeNames;
+  final List<int> routeSectionIds;
   final double rowHeight;
   final int stationCount;
   final int columns;
-  final Color labelBackgroundColor;
-  final Color labelForegroundColor;
   final Color trackUnderlayColor;
 
   @override
@@ -1344,7 +1511,7 @@ class _ViaRoutePainter extends CustomPainter {
     while (firstSegment < stationCount - 1) {
       var lastSegment = firstSegment;
       while (lastSegment + 1 < stationCount - 1 &&
-          routeNames[lastSegment + 1] == routeNames[firstSegment]) {
+          routeSectionIds[lastSegment + 1] == routeSectionIds[firstSegment]) {
         lastSegment++;
       }
       final points = [
@@ -1356,19 +1523,6 @@ class _ViaRoutePainter extends CustomPainter {
       routePaint.color = segmentColors[firstSegment];
       canvas.drawPath(path, routePaint);
       firstSegment = lastSegment + 1;
-    }
-
-    final paintedRoutes = <String>{};
-    for (var index = 0; index < routeNames.length; index++) {
-      if (paintedRoutes.add(routeNames[index])) {
-        _paintRouteLabel(
-          canvas,
-          size,
-          _firstRowSegmentCenter(index, size),
-          routeNames[index],
-          segmentColors[index],
-        );
-      }
     }
   }
 
@@ -1387,50 +1541,6 @@ class _ViaRoutePainter extends CustomPainter {
       points.add(end);
     }
     return points;
-  }
-
-  Offset _firstRowSegmentCenter(int firstSegment, Size size) {
-    var lastSegment = firstSegment;
-    while (lastSegment + 1 < routeNames.length &&
-        routeNames[lastSegment + 1] == routeNames[firstSegment]) {
-      lastSegment++;
-    }
-
-    final startsAtTurn = firstSegment % columns == columns - 1;
-    final start = _viaStationOffset(
-      firstSegment,
-      size.width,
-      columns,
-      rowHeight,
-    );
-    if (startsAtTurn && lastSegment == firstSegment) return start;
-
-    final firstRowSegment = startsAtTurn ? firstSegment + 1 : firstSegment;
-    final firstRow = firstRowSegment ~/ columns;
-    final rowStart = _viaStationOffset(
-      firstRowSegment,
-      size.width,
-      columns,
-      rowHeight,
-    );
-    var endX = rowStart.dx;
-    for (var index = firstRowSegment; index <= lastSegment; index++) {
-      if (index ~/ columns != firstRow) break;
-      final end = _viaStationOffset(index + 1, size.width, columns, rowHeight);
-      if (index ~/ columns == (index + 1) ~/ columns) {
-        endX = end.dx;
-      } else {
-        final turnStart = _viaStationOffset(
-          index,
-          size.width,
-          columns,
-          rowHeight,
-        );
-        endX = turnStart.dx;
-        break;
-      }
-    }
-    return Offset((rowStart.dx + endX) / 2, rowStart.dy);
   }
 
   Path _roundedRoutePath(List<Offset> points) {
@@ -1459,80 +1569,16 @@ class _ViaRoutePainter extends CustomPainter {
     return path;
   }
 
-  void _paintRouteLabel(
-    Canvas canvas,
-    Size size,
-    Offset segmentCenter,
-    String route,
-    Color color,
-  ) {
-    const horizontalPadding = 8.0;
-    const verticalPadding = 3.0;
-    final centeredTextWidth = math.min(
-      96.0,
-      math.max(
-        8.0,
-        math.min(segmentCenter.dx, size.width - segmentCenter.dx) * 2 -
-            horizontalPadding * 2 -
-            8,
-      ),
-    );
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: route,
-        style: TextStyle(
-          color: labelForegroundColor,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: centeredTextWidth);
-    final lineY = segmentCenter.dy;
-    final labelHeight = textPainter.height + verticalPadding * 2;
-    final labelWidth = textPainter.width + horizontalPadding * 2;
-    final bounds = RRect.fromRectAndRadius(
-      Rect.fromCenter(
-        center: Offset(
-          segmentCenter.dx,
-          lineY - _ViaStationDot.size / 2 - 4 - labelHeight / 2,
-        ),
-        width: labelWidth,
-        height: labelHeight,
-      ),
-      const Radius.circular(8),
-    );
-    canvas.drawRRect(bounds, Paint()..color = labelBackgroundColor);
-    canvas.drawRRect(
-      bounds,
-      Paint()
-        ..color = color.withValues(alpha: 0.45)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-    textPainter.paint(
-      canvas,
-      Offset(
-        bounds.center.dx - textPainter.width / 2,
-        bounds.center.dy - textPainter.height / 2,
-      ),
-    );
-  }
-
   @override
   bool shouldRepaint(covariant _ViaRoutePainter oldDelegate) =>
       oldDelegate.rowHeight != rowHeight ||
       oldDelegate.stationCount != stationCount ||
       oldDelegate.columns != columns ||
-      oldDelegate.labelBackgroundColor != labelBackgroundColor ||
-      oldDelegate.labelForegroundColor != labelForegroundColor ||
       oldDelegate.trackUnderlayColor != trackUnderlayColor ||
-      !_sameStrings(oldDelegate.routeNames, routeNames) ||
+      !_sameInts(oldDelegate.routeSectionIds, routeSectionIds) ||
       !_sameColors(oldDelegate.segmentColors, segmentColors);
 
-  bool _sameStrings(List<String> first, List<String> second) {
+  bool _sameInts(List<int> first, List<int> second) {
     if (first.length != second.length) return false;
     for (var index = 0; index < first.length; index++) {
       if (first[index] != second[index]) return false;
