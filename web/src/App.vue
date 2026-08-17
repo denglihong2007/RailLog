@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowRight, CheckCircle2, Code2, Download, Monitor, Route, Search, Smartphone, TrainFront, TriangleAlert } from '@lucide/vue'
+import { ArrowRight, BookOpen, CheckCircle2, Code2, Download, Monitor, Route, Search, Smartphone, TrainFront, TriangleAlert, UserRound } from '@lucide/vue'
+import ApiDocs from './components/ApiDocs.vue'
 import TripLookup from './components/TripLookup.vue'
 import TicketPdfDownloader from './components/TicketPdfDownloader.vue'
+import UserLookup from './components/UserLookup.vue'
 
 interface LatestRelease {
   version: string
@@ -29,13 +31,16 @@ const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
 const pageParams = new URLSearchParams(window.location.search)
 const tripLanding = window.location.pathname.startsWith('/trip') || pageParams.has('trip')
 const ticketPdfLanding = window.location.pathname.startsWith('/ticket-pdf') || pageParams.has('ticket-pdf')
-const downloadLanding = !tripLanding && !ticketPdfLanding && (window.location.pathname.startsWith('/download') || pageParams.has('download'))
+const userLanding = window.location.pathname.startsWith('/user') || pageParams.has('user')
+const apiLanding = window.location.pathname.startsWith('/api-docs') || pageParams.has('api-docs')
+const utilityLanding = tripLanding || ticketPdfLanding || userLanding || apiLanding
+const downloadLanding = !utilityLanding && (window.location.pathname.startsWith('/download') || pageParams.has('download'))
 const windowsUrl = computed(() => release.value?.windowsDownloadUrl ?? release.value?.releaseUrl ?? fallbackReleaseUrl)
 const androidUrl = computed(() => release.value?.androidDownloadUrl ?? release.value?.releaseUrl ?? fallbackReleaseUrl)
 const versionLabel = computed(() => release.value ? `最新版本 ${release.value.version}` : 'GitHub Releases')
 
 onMounted(async () => {
-  if (tripLanding || ticketPdfLanding) return
+  if (utilityLanding) return
   try {
     const response = await fetch(`${apiBase}/api/updates/downloads`)
     if (response.ok) downloadLinks.value = (await response.json()) as DownloadLinks
@@ -58,7 +63,9 @@ onMounted(async () => {
     <a class="brand" href="/" aria-label="RailLog 首页"><img src="/raillog-icon.png" alt="" /><span>RailLog 轨记</span></a>
     <nav aria-label="主导航">
       <a href="/trip"><Search :size="19" /><span>行程查询</span></a>
-      <a class="download-nav" :href="tripLanding ? '/download' : '#download'">下载</a>
+      <a href="/user"><UserRound :size="19" /><span>用户查询</span></a>
+      <a href="/api-docs"><BookOpen :size="19" /><span>开放 API</span></a>
+      <a class="download-nav" :href="utilityLanding ? '/download' : '#download'">下载</a>
       <a class="source-nav" href="https://github.com/denglihong2007/RailLog" target="_blank" rel="noreferrer" aria-label="GitHub"><Code2 :size="19" /><span>GitHub</span></a>
     </nav>
   </header>
@@ -66,6 +73,8 @@ onMounted(async () => {
   <main>
     <TicketPdfDownloader v-if="ticketPdfLanding" :api-base="apiBase" />
     <TripLookup v-else-if="tripLanding" :api-base="apiBase" />
+    <UserLookup v-else-if="userLanding" :api-base="apiBase" />
+    <ApiDocs v-else-if="apiLanding" :api-base="apiBase" />
     <template v-else>
     <section v-if="!downloadLanding" class="intro" aria-labelledby="page-title">
       <div class="intro-watermark" aria-hidden="true"></div>

@@ -2,8 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/update_service.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/update_prompt.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+const _financialSponsors = [
+  '冰镇杨梅汁儿',
+  '星星不闪包退包换',
+  '依神Sh1on',
+  '枫糖',
+  '爱发电用户_vtDT',
+  '爱发电用户_9a6ec',
+  '爱发电用户_VPwv',
+];
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -219,35 +230,33 @@ class _AboutPageState extends State<AboutPage> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    const _AboutSection(
-                      title: '赞助者名单',
+                    _AboutSection(
+                      title: '鸣谢',
                       children: [
                         _InfoTile(
-                          icon: Icons.favorite_outline,
-                          title: '冰镇杨梅汁儿 依神Sh1on 枫糖',
-                          subtitle: '感谢对 RailLog 的资金支持',
+                          icon: Icons.money_outlined,
+                          title: '资金赞助者',
+                          subtitle: '感谢 ${_financialSponsors.length} 位赞助者的支持',
+                          onTap: () => Navigator.of(context).push<void>(
+                            m3PageRoute(
+                              builder: (_) => const _FinancialSponsorsPage(),
+                            ),
+                          ),
                         ),
-                        _InfoTile(
+                        const _InfoTile(
                           icon: Icons.data_object_outlined,
                           title: '枫糖 wangxiaole',
                           subtitle: '收集相关数据',
                         ),
-                        _InfoTile(
+                        const _InfoTile(
+                          icon: Icons.emoji_events_outlined,
+                          title: '西行寺启动子',
+                          subtitle: '提供部分成就',
+                        ),
+                        const _InfoTile(
                           icon: Icons.texture_outlined,
                           title: '杰瑞瞎搞（Bilibili）',
                           subtitle: '提供车票底纹、字体',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    const _AboutSection(
-                      title: '友情链接',
-                      children: [
-                        _LinkTile(
-                          icon: Icons.travel_explore_outlined,
-                          title: '铁路快查',
-                          subtitle: 'railgo.dev',
-                          url: 'https://railgo.dev/',
                         ),
                       ],
                     ),
@@ -302,11 +311,13 @@ class _InfoTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -314,6 +325,33 @@ class _InfoTile extends StatelessWidget {
       leading: Icon(icon),
       title: Text(title),
       subtitle: Text(subtitle),
+      trailing: onTap == null ? null : const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
+  }
+}
+
+class _FinancialSponsorsPage extends StatelessWidget {
+  const _FinancialSponsorsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('资金赞助者')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              itemCount: _financialSponsors.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (context, index) =>
+                  ListTile(title: Text(_financialSponsors[index])),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

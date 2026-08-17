@@ -40,6 +40,24 @@ public sealed record DownloadLinksResponse(
     string? WindowsDomesticDownloadUrl,
     string? AndroidDomesticDownloadUrl);
 
+public sealed record PartnerApplicationResponse(
+    string Id,
+    string Name,
+    string Title,
+    string Description,
+    string WebsiteUrl,
+    string PosterUrl,
+    string IconUrl);
+
+public sealed record PartnerAdvertisementResponse(
+    string PartnerId,
+    string Text,
+    int Weight);
+
+public sealed record PartnerAdvertisementConfigResponse(
+    int HiddenWeight,
+    IReadOnlyList<PartnerAdvertisementResponse> Advertisements);
+
 public sealed record GenerateTicketRequest(
     long TripId,
     string Style,

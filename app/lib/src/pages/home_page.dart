@@ -3,6 +3,7 @@ import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/online_intersection.dart';
+import 'package:raillog/src/models/partner_advertisement.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/railway_bureau.dart';
 import 'package:raillog/src/models/trip_dashboard_stats.dart';
@@ -11,12 +12,14 @@ import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/achievements_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
+import 'package:raillog/src/pages/partner_applications_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/trip_chart_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/achievement_service.dart';
 import 'package:raillog/src/services/intersection_service.dart';
+import 'package:raillog/src/services/partner_application_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
@@ -38,6 +41,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Future<TripDashboardStats> _statsFuture;
   late Future<List<OnlineIntersection>> _intersectionsFuture;
+  late Future<PartnerAdvertisement?> _advertisementFuture;
   Future<List<DashboardAchievement>>? _achievementsFuture;
 
   @override
@@ -45,20 +49,31 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _statsFuture = DbHelper.instance.getDashboardStats();
     _intersectionsFuture = IntersectionService.fetch();
+    _advertisementFuture = _loadAdvertisement();
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
+    }
+  }
+
+  Future<PartnerAdvertisement?> _loadAdvertisement() async {
+    try {
+      return await PartnerApplicationService.fetchAdvertisement();
+    } catch (_) {
+      return null;
     }
   }
 
   Future<void> _refresh() async {
     final statsFuture = DbHelper.instance.getDashboardStats();
     final intersectionsFuture = IntersectionService.fetch();
+    final advertisementFuture = _loadAdvertisement();
     final achievementsFuture = SessionService.instance.isSignedIn
         ? AchievementService.fetchCurrent()
         : null;
     setState(() {
       _statsFuture = statsFuture;
       _intersectionsFuture = intersectionsFuture;
+      _advertisementFuture = advertisementFuture;
       _achievementsFuture = achievementsFuture;
     });
     await statsFuture;
@@ -67,6 +82,7 @@ class _HomePageState extends State<HomePage> {
     } on IntersectionException {
       // The online section renders its own retry state.
     }
+    await advertisementFuture;
     if (achievementsFuture != null) {
       try {
         await achievementsFuture;
@@ -107,6 +123,7 @@ class _HomePageState extends State<HomePage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
                 children: [
+                  _PartnerAdvertisementLoader(future: _advertisementFuture),
                   if (!SessionService.instance.isSignedIn) ...[
                     const M3Reveal(child: _SignInBanner()),
                     const SizedBox(height: 16),
@@ -140,6 +157,143 @@ class _HomePageState extends State<HomePage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _PartnerAdvertisementLoader extends StatefulWidget {
+  const _PartnerAdvertisementLoader({required this.future});
+
+  final Future<PartnerAdvertisement?> future;
+
+  @override
+  State<_PartnerAdvertisementLoader> createState() =>
+      _PartnerAdvertisementLoaderState();
+}
+
+class _PartnerAdvertisementLoaderState
+    extends State<_PartnerAdvertisementLoader> {
+  bool _dismissed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_dismissed) return const SizedBox.shrink();
+    return FutureBuilder<PartnerAdvertisement?>(
+      future: widget.future,
+      builder: (context, snapshot) {
+        final advertisement = snapshot.data;
+        if (advertisement == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: M3Reveal(
+            child: _PartnerAdvertisementBanner(
+              advertisement: advertisement,
+              onClose: () => setState(() => _dismissed = true),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PartnerAdvertisementBanner extends StatelessWidget {
+  const _PartnerAdvertisementBanner({
+    required this.advertisement,
+    required this.onClose,
+  });
+
+  final PartnerAdvertisement advertisement;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: colors.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_cardRadius),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => Navigator.of(context).push(
+                m3PageRoute(builder: (_) => const PartnerApplicationsPage()),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: colors.secondaryContainer,
+                        borderRadius: BorderRadius.circular(_cardRadius),
+                      ),
+                      child: Icon(
+                        Icons.campaign_outlined,
+                        size: 20,
+                        color: colors.onSecondaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '合作应用',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: colors.primary,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            advertisement.text,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                  letterSpacing: 0,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onClose,
+            tooltip: '关闭广告',
+            icon: const Icon(Icons.close),
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            style: IconButton.styleFrom(
+              foregroundColor: colors.onSurfaceVariant,
+              backgroundColor: colors.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
     );
   }
 }

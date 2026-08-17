@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using RailLog.API.Models;
 using RailLog.API.Services;
@@ -13,6 +14,7 @@ public sealed class TripsController(RailLogDatabase database) : ControllerBase
 {
     [HttpGet("{ticketId:long}")]
     [AllowAnonymous]
+    [EnableCors("public-api")]
     public async Task<ActionResult<PublicTripDetailsResponse>> Get(long ticketId)
     {
         var details = await database.GetPublicTripDetailsAsync(ticketId);

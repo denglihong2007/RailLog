@@ -74,7 +74,7 @@ class TripDashboardStats {
       _recordUnlock(trainUnlocks, trip.trainNumber, trip);
       _recordUnlock(
         rollingStockUnlocks,
-        _rollingStockModel(trip.rollingStock),
+        rollingStockModelCode(trip.rollingStock),
         trip,
       );
       _recordUnlock(companyUnlocks, trip.companyName, trip);
@@ -158,7 +158,7 @@ List<DashboardUnlockEntry> _newestFirst(
   return List.unmodifiable(result);
 }
 
-String _rollingStockModel(String? rawValue) {
+String rollingStockModelCode(String? rawValue) {
   final value = rawValue?.trim() ?? '';
   final emuMatch = RegExp(
     r'^([A-Z][A-Z0-9-]*)-\d{4}(?:&\d{4})*$',

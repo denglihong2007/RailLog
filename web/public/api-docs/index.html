@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>开放 API - RailLog 轨记</title>
+    <script>
+      const target = new URL('/', location.origin)
+      target.searchParams.set('api-docs', '1')
+      if (location.hash) target.hash = location.hash
+      location.replace(target)
+    </script>
+  </head>
+  <body></body>
+</html>
