@@ -169,6 +169,37 @@ Widget _accountSettings(
                             ).colorScheme.onSurfaceVariant,
                           ),
                         ),
+                        const SizedBox(height: 5),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '用户 ID  ',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            Expanded(
+                              child: Tooltip(
+                                message: '长按复制用户 ID',
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onLongPress: () =>
+                                      _copyUserId(context, user.id),
+                                  child: Text(
+                                    user.id,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelSmall,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                         if (user.bio?.isNotEmpty ?? false) ...[
                           const SizedBox(height: 5),
                           Text(
@@ -194,6 +225,14 @@ Widget _accountSettings(
       ),
     ],
   );
+}
+
+Future<void> _copyUserId(BuildContext context, String userId) async {
+  await Clipboard.setData(ClipboardData(text: userId));
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('用户 ID 已复制')));
 }
 
 Widget _cloudSyncSettings(BuildContext context) {

@@ -15,6 +15,7 @@ import {
 } from '@lucide/vue'
 
 interface PublicUser {
+  id: string
   displayName: string
   avatarUrl: string | null
   bio: string | null
@@ -221,7 +222,7 @@ function formatNumber(value: number): string {
     </div>
 
     <div v-else-if="details && trip" class="trip-result" aria-live="polite">
-      <section class="owner-panel" aria-label="行程归属">
+      <a class="owner-panel" :href="`/user?id=${encodeURIComponent(details.user.id)}`" aria-label="查看行程归属用户">
         <img v-if="details.user.avatarUrl && !avatarFailed" :src="details.user.avatarUrl" alt="" @error="avatarFailed = true" />
         <span v-else class="owner-initial" aria-hidden="true">{{ ownerInitial }}</span>
         <div>
@@ -230,7 +231,7 @@ function formatNumber(value: number): string {
           <p>{{ optionalText(details.user.bio) }}</p>
         </div>
         <CircleUserRound :size="24" aria-hidden="true" />
-      </section>
+      </a>
 
       <article class="ticket-panel">
         <header>
@@ -322,6 +323,7 @@ function formatNumber(value: number): string {
 .loading-indicator { width:32px; height:32px; margin-bottom:8px; border:3px solid var(--line); border-top-color:var(--brand); border-radius:50%; animation:spin .8s linear infinite; }
 .trip-result { margin-top:22px; display:grid; gap:14px; }
 .owner-panel { min-width:0; padding:14px 16px; display:grid; grid-template-columns:48px minmax(0,1fr) auto; gap:13px; align-items:center; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.owner-panel:hover { border-color:color-mix(in srgb,var(--brand) 55%,var(--line)); background:var(--surface-low); }
 .owner-panel img,.owner-initial { width:48px; height:48px; border-radius:50%; object-fit:cover; }
 .owner-initial { display:grid; place-items:center; background:var(--surface-low); color:var(--brand); font-size:20px; font-weight:750; }
 .owner-panel div>span { color:var(--muted); font-size:12px; }

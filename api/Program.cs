@@ -83,6 +83,8 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 }));
 builder.Services.AddCors(options => options.AddPolicy("amap-proxy", policy =>
     policy.AllowAnyOrigin().WithMethods("GET").AllowAnyHeader()));
+builder.Services.AddCors(options => options.AddPolicy("public-api", policy =>
+    policy.AllowAnyOrigin().WithMethods("GET").AllowAnyHeader()));
 builder.Services.AddControllers();
 
 var app = builder.Build();

@@ -1,8 +1,27 @@
+@font-face {
+  font-family: 'Material Icons';
+  src: url('/fonts/materialicons-regular.otf') format('opentype');
+  font-display: block;
+}
 :root {
   color-scheme: light dark; font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   font-synthesis: none; text-rendering: optimizeLegibility;
   --ink:#202124; --muted:#62676f; --surface:#fff; --surface-low:#f5f6f7; --line:#dfe2e5;
   --brand:#b3261e; --brand-dark:#7f1711; --blue:#2867a8;
+}
+.material-icon {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 76px; }

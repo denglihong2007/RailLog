@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using RailLog.API.Services;
 using System.Text.Json.Serialization;
@@ -6,6 +7,7 @@ namespace RailLog.API.Controllers;
 
 [ApiController]
 [Route("api/train-timetables")]
+[EnableCors("public-api")]
 public sealed class TrainTimetablesController(TrainTimetableService service) : ControllerBase
 {
     [HttpGet("search")]

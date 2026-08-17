@@ -58,6 +58,11 @@ footer a { display:inline-flex; align-items:center; gap:5px; color:var(--ink); }
   .download-actions { display:grid; grid-template-columns:1fr; } .product-band { padding:48px 20px; }
   footer { align-items:flex-start; flex-direction:column; gap:8px; } footer p { margin:6px 0; }
 }
+@media (max-width:620px) {
+  .site-header nav a span { display:none; }
+  .site-header nav a { width:38px; padding-inline:0; justify-content:center; }
+  .site-header .brand span { display:none; }
+}
 @media (max-width:460px) {
   nav .source-nav span { display:none; }
   nav .source-nav { padding-inline:10px; }
