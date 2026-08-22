@@ -129,7 +129,7 @@ class _CtPhotoSearchPageState extends State<CtPhotoSearchPage> {
                                   maxCrossAxisExtent: 320,
                                   mainAxisSpacing: 12,
                                   crossAxisSpacing: 12,
-                                  childAspectRatio: 1.20,
+                                  childAspectRatio: 4 / 3,
                                 ),
                           ),
                         ),
