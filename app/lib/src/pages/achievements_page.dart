@@ -27,36 +27,11 @@ class AchievementsPage extends StatelessWidget {
           title: const Text('成就'),
           scrolledUnderElevation: 3,
           bottom: TabBar(
-            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-            labelStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
-            ),
-            indicatorSize: TabBarIndicatorSize.tab,
-            indicator: UnderlineTabIndicator(
-              borderSide: BorderSide(
-                width: 3,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              insets: const EdgeInsets.symmetric(horizontal: 8),
-            ),
+            dividerHeight: 1,
+            dividerColor: Theme.of(context).colorScheme.outlineVariant,
             tabs: [
               for (final category in AchievementCategory.values)
-                Tab(
-                  height: 64,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(_categoryIcon(category), size: 20),
-                      const SizedBox(height: 4),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(category.label),
-                      ),
-                    ],
-                  ),
-                ),
+                Tab(icon: Icon(_categoryIcon(category)), text: category.label),
             ],
           ),
         ),
@@ -127,22 +102,20 @@ class _AchievementCategoryView extends StatelessWidget {
           key: PageStorageKey(category.apiKey),
           slivers: [
             SliverToBoxAdapter(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1200),
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      horizontalPadding,
-                      14,
-                      horizontalPadding,
-                      18,
-                    ),
-                    child: _AchievementProgressSummary(
-                      category: category,
-                      categoryUnlocked: unlocked,
-                      categoryTotal: total,
-                      totalUnlocked: totalUnlocked,
-                      totalAchievements: totalAchievements,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 14, bottom: 12),
+                      child: _AchievementProgressSummary(
+                        category: category,
+                        categoryUnlocked: unlocked,
+                        categoryTotal: total,
+                        totalUnlocked: totalUnlocked,
+                        totalAchievements: totalAchievements,
+                      ),
                     ),
                   ),
                 ),

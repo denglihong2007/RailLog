@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using RailLog.API.Models;
 
 namespace RailLog.API.Services;
@@ -19,6 +20,7 @@ public sealed record AchievementProgress(double Current, double Target);
 
 public static partial class AchievementEngine
 {
+    private static readonly ChineseLunisolarCalendar ChineseCalendar = new();
     private const string Milestones = "milestones";
     private const string ExtremeChallenges = "extremeChallenges";
     private const string RailwayCatalog = "railwayCatalog";
@@ -114,6 +116,7 @@ public static partial class AchievementEngine
             ["modestAppetite"] = FunJourneys,
             ["dejaVu"] = FunJourneys,
             ["vowAtQinling"] = FunJourneys,
+            ["differentRoutesSameDestination"] = FunJourneys,
             ["spendsLikeWater"] = FunJourneys,
         };
 
@@ -122,7 +125,7 @@ public static partial class AchievementEngine
     private static readonly HashSet<string> EarlyEmuModels =
         ["X2000", "KDZ1A", "DJF1", "DJF2", "DJF3", "DJJ1", "DJJ2", "NZJ1", "NZJ2", "NDJ3", "NYJ1"];
     private static readonly HashSet<string> EarlyPassengerCoachModels =
-        ["21", "22", "22A", "22B", "22C", "23", "24", "25", "25A", "25C", "31"];
+        ["21", "22", "22A", "22B", "22C", "23", "24", "25A", "25Z", "25C", "31", "19", "30"];
     private static readonly HashSet<string> EmuModels =
     [
         "CRH1", "CRH2", "CRH3", "CRH5", "CRH6", "CR200J", "CR300AF",
@@ -221,7 +224,7 @@ public static partial class AchievementEngine
                 trips.Count >= 100 ? trips[99] : null),
             A("midnightBoarding", "nightlight_outlined", "夜半钟声", "在 00:00 至 05:00 乘车或下车",
                 FirstMidnightBoarding(trips)),
-            A("wallFacingSeat", "airline_seat_recline_normal", "面壁者", "乘坐车厢第 1 排或第 18 排的二等座",
+            A("wallFacingSeat", "visibility_off_outlined", "一墙障目", "乘坐车厢第 1 排或第 18 排的二等座",
                 First(trips, UnlocksWallFacingSeat)),
             A("hundredStations", "location_on_outlined", "百站印记", "累计到访至少 100 座不同的客运车站",
                 FirstStationCompletion(trips, 100)),
@@ -231,13 +234,13 @@ public static partial class AchievementEngine
                 FirstAirportStationCompletion(trips, 3)),
             A("railFerry", "directions_boat_outlined", "铁水联运", "乘坐经由粤海轮渡线的列车，或在大连与烟台间完成 24 小时内的跨海接续",
                 FirstRailFerryCompletion(trips)),
-            A("railwayWorkerPassenger", "engineering_outlined", "待旅客如职工", "乘坐一次 57XXX 或 40XXX 路用列车",
+            A("railwayWorkerPassenger", "directions_railway_outlined", "顺风班车", "乘坐一次 57XXX 或 40XXX 路用列车",
                 First(trips, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^(?:57|40)\d{3}$"))),
             A("verticalChina", "swap_vert", "纵贯中国", "在 14 天内到访漠河站和三亚站",
                 FirstStationPairWithin(trips, "漠河", "三亚", TimeSpan.FromDays(14))),
             A("horizontalChina", "swap_horiz", "横贯中国", "在 14 天内到访阿克陶站和抚远站",
                 FirstStationPairWithin(trips, "阿克陶", "抚远", TimeSpan.FromDays(14))),
-            A("eastRedSunRises", "wb_sunny_outlined", "东方红，太阳升", "到访东方红站和太阳升站",
+            A("eastRedSunRises", "wb_sunny_outlined", "其道大光", "到访东方红站和太阳升站",
                 FirstStationPairCompletion(trips, "东方红", "太阳升")),
             A("highSpeedExperiment", "speed_outlined", "冲高实验", "完成时长超过 1 小时且均速超过 300 公里/小时的行程",
                 First(trips, trip => ValidDuration(trip) > TimeSpan.FromHours(1) && AverageSpeed(trip) > 300)),
@@ -251,7 +254,7 @@ public static partial class AchievementEngine
                 FirstStationVisit(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"])),
             A("lonelyPlanet", "map_outlined", "孤独星球", "分别乘坐经由和若线与格库线的列车",
                 FirstRouteCollectionCompletion(trips, ["和若线", "格库线"])),
-            A("hundredThousandKilometers", "gps_fixed_outlined", "我就是GPS", "累计乘车里程至少 100,000 公里",
+            A("hundredThousandKilometers", "route_outlined", "轻车熟路", "累计乘车里程至少 100,000 公里",
                 FirstCumulativeMileageCompletion(trips, 100000)),
             A("fTrain", "u_turn_left_outlined", "中途遣返", "乘坐一次 F 字头列车",
                 First(trips, trip => trip.TrainNumber.Trim().StartsWith("F", StringComparison.OrdinalIgnoreCase))),
@@ -263,9 +266,9 @@ public static partial class AchievementEngine
                 FirstStationVisit(trips, ["徐州", "徐州东"])),
             A("platformSubsidence", "vertical_align_bottom_outlined", "站台沉降", "到访杭州东站",
                 FirstStationVisit(trips, ["杭州东"])),
-            A("archaeologyTeam", "history_edu_outlined", "考古队", "录入至少 15 年前的行程",
+            A("archaeologyTeam", "history_edu_outlined", "朝花夕拾", "录入至少 15 年前的行程",
                 First(trips, trip => Departure(trip) <= fifteenYearsAgo)),
-            A("strategist", "alt_route_outlined", "战略家", "乘坐定西北站至镇江南站的列车",
+            A("strategist", "psychology_outlined", "文韬武略", "乘坐定西北站至镇江南站的列车",
                 First(trips, trip => NormalizedStation(trip.FromStation) == "定西北" &&
                     NormalizedStation(trip.ToStation) == "镇江南")),
             A("eveOfTheStorm", "thunderstorm_outlined", "风雨前夜", "在 2019-12-01 至 2020-01-23 到访武汉站、汉口站或武昌站",
@@ -289,7 +292,7 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, ["25DT"])),
             A("commuterSpecial", "work_outline", "牛马专列", "乘坐北京与上海间经由京沪高铁的一等座、优选一等座、商务座或特等座",
                 First(trips, UnlocksCommuterSpecial)),
-            A("grandSlam", "emoji_events_outlined", "大满贯", "分别乘坐全部铁路局担当的列车",
+            A("grandSlam", "palette_outlined", "十人十色", "分别乘坐全部铁路局担当的列车",
                 FirstRailwayBureauCompletion(trips)),
             A("storedUpReward", "redeem_outlined", "厚积薄发", "使用积分兑换里程超过 50 公里的商务座或特等座车票",
                 First(trips, UnlocksStoredUpReward)),
@@ -305,7 +308,7 @@ public static partial class AchievementEngine
                 FirstThreeTicketSameTrainCompletion(trips)),
             A("blessChina", "flag_outlined", "祝福祖国", "在 10 月 1 日乘坐列车",
                 First(trips, trip => Departure(trip).Month == 10 && Departure(trip).Day == 1)),
-            A("newYearsEve", "celebration_outlined", "跨年夜", "在列车上完成跨年",
+            A("newYearsEve", "celebration_outlined", "新年快乐", "在列车上完成跨年",
                 First(trips, UnlocksNewYearsEve)),
             A("monotonousTrainNumber", "format_list_numbered_outlined", "千篇一律", "乘坐数字部分为三或四个相同数字的车次",
                 First(trips, UnlocksMonotonousTrainNumber)),
@@ -321,8 +324,8 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, VibrantExpressModels)),
             A("multipleChoices", "format_list_numbered_outlined", "多重选择", "在同一乘车区间累计乘坐至少 10 个不同车次",
                 FirstDistinctTrainCountForRoute(trips, 10)),
-            A("publicDisplayOfAffection", "favorite_outline", "秀恩爱", "在 5 月 20 日乘坐重联动车组列车",
-                First(trips, trip => Departure(trip).Month == 5 && Departure(trip).Day == 20 &&
+            A("publicDisplayOfAffection", "people_outline", "成双成对", "在 5 月 20 日、2 月 14 日或七夕乘坐重联动车组列车",
+                First(trips, trip => IsRomanticDate(Departure(trip)) &&
                     (trip.RollingStock?.Contains('&') ?? false))),
             A("farsighted", "visibility_outlined", "高瞻远瞩", "乘坐双层车厢的上层席位",
                 First(trips, trip => trip.SeatNumber is not null && Regex.IsMatch(trip.SeatNumber, @"上(?!铺)"))),
@@ -349,13 +352,15 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, EarlyEmuModels)),
             A("modestAppetite", "route_outlined", "腹犹果然", "完成单程不超过 20 公里的行程",
                 First(trips, trip => trip.MileageKm is > 0 and <= 20)),
-            A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 25C 型或更早上线的客车",
+            A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 2000 年之前停产的客车",
                 FirstRollingStockMatch(trips, EarlyPassengerCoachModels)),
             A("centuryMeterGauge", "map_outlined", "百年米轨", "乘坐经由昆河线的列车",
                 First(trips, trip => RouteNames(trip).Any(
                     route => route.Contains("昆河线", StringComparison.Ordinal)))),
-            A("vowAtQinling", "landscape_outlined", "海誓山盟", "在 5 月 20 日到访海拔 1,314 米的秦岭站",
+            A("vowAtQinling", "landscape_outlined", "海誓山盟", "在 5 月 20 日、2 月 14 日或七夕到访海拔 1,314 米的秦岭站",
                 First(trips, UnlocksVowAtQinling)),
+            A("differentRoutesSameDestination", "alt_route_outlined", "殊途同归", "在相同起终点（方向不限）间，经由至少 3 种不同路线",
+                FirstDifferentRoutesSameDestination(trips)),
             A("dejaVu", "loop", "似曾相识", "至少两次乘坐除日期和车号外均完全一致的行程",
                 FirstRepeatedTripCompletion(trips, 2)),
             A("traverseOneRegion", "route_outlined", "遍历一方", "经由区间去重后的累计里程达到 5,000 公里",
@@ -407,6 +412,7 @@ public static partial class AchievementEngine
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
+        "differentRoutesSameDestination" => P(MaxDifferentRoutesSameDestination(trips), 3),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
         "traverseOneRegion" => P(UniqueRouteMileage(trips), 5000),
@@ -555,6 +561,22 @@ public static partial class AchievementEngine
     }
 
     private static DateTime Departure(PublicTrip trip) => trip.DepartureTime ?? trip.CreatedAt;
+
+    private static bool IsRomanticDate(DateTime value) =>
+        value is { Month: 5, Day: 20 } or { Month: 2, Day: 14 } || IsQixi(value);
+
+    private static bool IsQixi(DateTime value)
+    {
+        try
+        {
+            return ChineseCalendar.GetMonth(value) == 7 &&
+                ChineseCalendar.GetDayOfMonth(value) == 7;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
 
     private static PublicTrip? First(IEnumerable<PublicTrip> trips, Func<PublicTrip, bool> predicate) =>
         trips.FirstOrDefault(predicate);
@@ -896,6 +918,40 @@ public static partial class AchievementEngine
             .ToHashSet(StringComparer.Ordinal));
     }
 
+    private static PublicTrip? FirstDifferentRoutesSameDestination(List<PublicTrip> trips)
+    {
+        var groups = new Dictionary<(string From, string To), HashSet<string>>();
+        foreach (var trip in trips)
+        {
+            var from = NormalizedStation(trip.FromStation);
+            var to = NormalizedStation(trip.ToStation);
+            var route = string.Join("|", RouteNames(trip));
+            if (from.Length == 0 || to.Length == 0 || route.Length == 0) continue;
+            var key = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
+            if (!groups.TryGetValue(key, out var routes))
+                groups[key] = routes = new(StringComparer.Ordinal);
+            if (routes.Add(route) && routes.Count >= 3) return trip;
+        }
+        return null;
+    }
+
+    private static int MaxDifferentRoutesSameDestination(List<PublicTrip> trips)
+    {
+        var groups = new Dictionary<(string From, string To), HashSet<string>>();
+        foreach (var trip in trips)
+        {
+            var from = NormalizedStation(trip.FromStation);
+            var to = NormalizedStation(trip.ToStation);
+            var route = string.Join("|", RouteNames(trip));
+            if (from.Length == 0 || to.Length == 0 || route.Length == 0) continue;
+            var key = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
+            if (!groups.TryGetValue(key, out var routes))
+                groups[key] = routes = new(StringComparer.Ordinal);
+            routes.Add(route);
+        }
+        return groups.Values.Select(routes => routes.Count).DefaultIfEmpty(0).Max();
+    }
+
     private static PublicTrip? FirstRailFerryCompletion(List<PublicTrip> trips)
     {
         for (var currentIndex = 0; currentIndex < trips.Count; currentIndex++)
@@ -1022,10 +1078,10 @@ public static partial class AchievementEngine
     private static bool UnlocksVowAtQinling(PublicTrip trip)
     {
         var departure = Departure(trip);
-        if (NormalizedStation(trip.FromStation) == "秦岭" && departure is { Month: 5, Day: 20 })
+        if (NormalizedStation(trip.FromStation) == "秦岭" && IsRomanticDate(departure))
             return true;
         var arrival = trip.ArrivalTime ?? departure;
-        return NormalizedStation(trip.ToStation) == "秦岭" && arrival is { Month: 5, Day: 20 };
+        return NormalizedStation(trip.ToStation) == "秦岭" && IsRomanticDate(arrival);
     }
 
     private static bool UnlocksNewYearsEve(PublicTrip trip)

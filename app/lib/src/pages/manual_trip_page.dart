@@ -8,6 +8,7 @@ import 'package:raillog/src/widgets/trip_details/form_section.dart';
 import 'package:raillog/src/widgets/trip_details/company_editor.dart';
 import 'package:raillog/src/widgets/trip_details/route_segments_editor.dart';
 import 'package:raillog/src/widgets/trip_details/trip_form_common.dart';
+import 'package:raillog/src/widgets/rolling_stock_input_help.dart';
 
 class ManualTripPage extends StatefulWidget {
   const ManualTripPage({super.key, this.initialTrip});
@@ -359,10 +360,14 @@ class _ManualTripPageState extends State<ManualTripPage> {
                     CompanyEditor(controller: _companyController),
                     TextFormField(
                       controller: _rollingStockController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '车型',
-                        hintText: '重联车组车号请用“&”连接',
-                        prefixIcon: Icon(Icons.train_outlined),
+                        prefixIcon: const Icon(Icons.train_outlined),
+                        suffixIcon: IconButton(
+                          tooltip: '车型输入指引',
+                          onPressed: () => showRollingStockInputHelp(context),
+                          icon: const Icon(Icons.help_outline),
+                        ),
                       ),
                     ),
                   ],
