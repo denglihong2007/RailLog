@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using RailLog.API.Models;
 
 namespace RailLog.API.Services;
@@ -19,6 +20,7 @@ public sealed record AchievementProgress(double Current, double Target);
 
 public static partial class AchievementEngine
 {
+    private static readonly ChineseLunisolarCalendar ChineseCalendar = new();
     private const string Milestones = "milestones";
     private const string ExtremeChallenges = "extremeChallenges";
     private const string RailwayCatalog = "railwayCatalog";
@@ -114,6 +116,7 @@ public static partial class AchievementEngine
             ["modestAppetite"] = FunJourneys,
             ["dejaVu"] = FunJourneys,
             ["vowAtQinling"] = FunJourneys,
+            ["differentRoutesSameDestination"] = FunJourneys,
             ["spendsLikeWater"] = FunJourneys,
         };
 
@@ -122,7 +125,7 @@ public static partial class AchievementEngine
     private static readonly HashSet<string> EarlyEmuModels =
         ["X2000", "KDZ1A", "DJF1", "DJF2", "DJF3", "DJJ1", "DJJ2", "NZJ1", "NZJ2", "NDJ3", "NYJ1"];
     private static readonly HashSet<string> EarlyPassengerCoachModels =
-        ["21", "22", "22A", "22B", "22C", "23", "24", "25", "25A", "25C", "31"];
+        ["21", "22", "22A", "22B", "22C", "23", "24", "25A", "25Z", "25C", "31", "19", "30"];
     private static readonly HashSet<string> EmuModels =
     [
         "CRH1", "CRH2", "CRH3", "CRH5", "CRH6", "CR200J", "CR300AF",
@@ -321,8 +324,8 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, VibrantExpressModels)),
             A("multipleChoices", "format_list_numbered_outlined", "多重选择", "在同一乘车区间累计乘坐至少 10 个不同车次",
                 FirstDistinctTrainCountForRoute(trips, 10)),
-            A("publicDisplayOfAffection", "people_outline", "成双成对", "在 5 月 20 日乘坐重联动车组列车",
-                First(trips, trip => Departure(trip).Month == 5 && Departure(trip).Day == 20 &&
+            A("publicDisplayOfAffection", "people_outline", "成双成对", "在 5 月 20 日、2 月 14 日或七夕乘坐重联动车组列车",
+                First(trips, trip => IsRomanticDate(Departure(trip)) &&
                     (trip.RollingStock?.Contains('&') ?? false))),
             A("farsighted", "visibility_outlined", "高瞻远瞩", "乘坐双层车厢的上层席位",
                 First(trips, trip => trip.SeatNumber is not null && Regex.IsMatch(trip.SeatNumber, @"上(?!铺)"))),
@@ -349,13 +352,15 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, EarlyEmuModels)),
             A("modestAppetite", "route_outlined", "腹犹果然", "完成单程不超过 20 公里的行程",
                 First(trips, trip => trip.MileageKm is > 0 and <= 20)),
-            A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 25C 型或更早上线的客车",
+            A("whatAgeIsThis", "history_edu_outlined", "今乃何世", "乘坐一次 2000 年之前停产的客车",
                 FirstRollingStockMatch(trips, EarlyPassengerCoachModels)),
             A("centuryMeterGauge", "map_outlined", "百年米轨", "乘坐经由昆河线的列车",
                 First(trips, trip => RouteNames(trip).Any(
                     route => route.Contains("昆河线", StringComparison.Ordinal)))),
-            A("vowAtQinling", "landscape_outlined", "海誓山盟", "在 5 月 20 日到访海拔 1,314 米的秦岭站",
+            A("vowAtQinling", "landscape_outlined", "海誓山盟", "在 5 月 20 日、2 月 14 日或七夕到访海拔 1,314 米的秦岭站",
                 First(trips, UnlocksVowAtQinling)),
+            A("differentRoutesSameDestination", "alt_route_outlined", "殊途同归", "在相同起终点（方向不限）间，经由至少 3 种不同路线",
+                FirstDifferentRoutesSameDestination(trips)),
             A("dejaVu", "loop", "似曾相识", "至少两次乘坐除日期和车号外均完全一致的行程",
                 FirstRepeatedTripCompletion(trips, 2)),
             A("traverseOneRegion", "route_outlined", "遍历一方", "经由区间去重后的累计里程达到 5,000 公里",
@@ -407,6 +412,7 @@ public static partial class AchievementEngine
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
+        "differentRoutesSameDestination" => P(MaxDifferentRoutesSameDestination(trips), 3),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
         "traverseOneRegion" => P(UniqueRouteMileage(trips), 5000),
@@ -555,6 +561,22 @@ public static partial class AchievementEngine
     }
 
     private static DateTime Departure(PublicTrip trip) => trip.DepartureTime ?? trip.CreatedAt;
+
+    private static bool IsRomanticDate(DateTime value) =>
+        value is { Month: 5, Day: 20 } or { Month: 2, Day: 14 } || IsQixi(value);
+
+    private static bool IsQixi(DateTime value)
+    {
+        try
+        {
+            return ChineseCalendar.GetMonth(value) == 7 &&
+                ChineseCalendar.GetDayOfMonth(value) == 7;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
 
     private static PublicTrip? First(IEnumerable<PublicTrip> trips, Func<PublicTrip, bool> predicate) =>
         trips.FirstOrDefault(predicate);
@@ -896,6 +918,40 @@ public static partial class AchievementEngine
             .ToHashSet(StringComparer.Ordinal));
     }
 
+    private static PublicTrip? FirstDifferentRoutesSameDestination(List<PublicTrip> trips)
+    {
+        var groups = new Dictionary<(string From, string To), HashSet<string>>();
+        foreach (var trip in trips)
+        {
+            var from = NormalizedStation(trip.FromStation);
+            var to = NormalizedStation(trip.ToStation);
+            var route = string.Join("|", RouteNames(trip));
+            if (from.Length == 0 || to.Length == 0 || route.Length == 0) continue;
+            var key = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
+            if (!groups.TryGetValue(key, out var routes))
+                groups[key] = routes = new(StringComparer.Ordinal);
+            if (routes.Add(route) && routes.Count >= 3) return trip;
+        }
+        return null;
+    }
+
+    private static int MaxDifferentRoutesSameDestination(List<PublicTrip> trips)
+    {
+        var groups = new Dictionary<(string From, string To), HashSet<string>>();
+        foreach (var trip in trips)
+        {
+            var from = NormalizedStation(trip.FromStation);
+            var to = NormalizedStation(trip.ToStation);
+            var route = string.Join("|", RouteNames(trip));
+            if (from.Length == 0 || to.Length == 0 || route.Length == 0) continue;
+            var key = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
+            if (!groups.TryGetValue(key, out var routes))
+                groups[key] = routes = new(StringComparer.Ordinal);
+            routes.Add(route);
+        }
+        return groups.Values.Select(routes => routes.Count).DefaultIfEmpty(0).Max();
+    }
+
     private static PublicTrip? FirstRailFerryCompletion(List<PublicTrip> trips)
     {
         for (var currentIndex = 0; currentIndex < trips.Count; currentIndex++)
@@ -1022,10 +1078,10 @@ public static partial class AchievementEngine
     private static bool UnlocksVowAtQinling(PublicTrip trip)
     {
         var departure = Departure(trip);
-        if (NormalizedStation(trip.FromStation) == "秦岭" && departure is { Month: 5, Day: 20 })
+        if (NormalizedStation(trip.FromStation) == "秦岭" && IsRomanticDate(departure))
             return true;
         var arrival = trip.ArrivalTime ?? departure;
-        return NormalizedStation(trip.ToStation) == "秦岭" && arrival is { Month: 5, Day: 20 };
+        return NormalizedStation(trip.ToStation) == "秦岭" && IsRomanticDate(arrival);
     }
 
     private static bool UnlocksNewYearsEve(PublicTrip trip)
