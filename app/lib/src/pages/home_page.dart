@@ -32,7 +32,9 @@ const _cardRadius = 8.0;
 const _dashboardPreviewLimit = 12;
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.refreshToken = 0});
+
+  final int refreshToken;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -43,6 +45,7 @@ class _HomePageState extends State<HomePage> {
   late Future<List<OnlineIntersection>> _intersectionsFuture;
   late Future<PartnerAdvertisement?> _advertisementFuture;
   Future<List<DashboardAchievement>>? _achievementsFuture;
+  TripDashboardStats? _lastStats;
 
   @override
   void initState() {
@@ -52,6 +55,16 @@ class _HomePageState extends State<HomePage> {
     _advertisementFuture = _loadAdvertisement();
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshToken != oldWidget.refreshToken) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refresh();
+      });
     }
   }
 
@@ -96,6 +109,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return FutureBuilder<TripDashboardStats>(
       future: _statsFuture,
+      initialData: _lastStats,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _HomeStatus(
@@ -110,6 +124,7 @@ class _HomePageState extends State<HomePage> {
         }
 
         final stats = snapshot.data!;
+        _lastStats = stats;
         return RefreshIndicator(
           onRefresh: _refresh,
           child: LayoutBuilder(

@@ -21,6 +21,7 @@ class MainNavigationPage extends StatefulWidget {
 
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIdx = 0;
+  int _homeRefreshToken = 0;
   late final List<Widget> _pages;
 
   @override
@@ -49,14 +50,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   void _refreshHome() {
     if (!mounted) return;
     setState(() {
-      _pages[0] = HomePage(key: UniqueKey());
+      // Keep HomePage's state (and its currently rendered data) while asking
+      // it to refresh. Replacing it with a UniqueKey causes a second full
+      // loading screen during the startup cloud sync.
+      _pages[0] = HomePage(refreshToken: ++_homeRefreshToken);
       _pages[2] = StatisticsPage(key: UniqueKey());
     });
   }
 
   void _showHomeAfterSave() {
     setState(() {
-      _pages[0] = HomePage(key: UniqueKey());
+      _pages[0] = HomePage(refreshToken: ++_homeRefreshToken);
       _currentIdx = 0;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
