@@ -16,6 +16,7 @@ import 'package:raillog/src/widgets/trip_details/company_editor.dart';
 import 'package:raillog/src/widgets/trip_details/route_segments_editor.dart';
 import 'package:raillog/src/widgets/trip_details/trip_ticket.dart';
 import 'package:raillog/src/widgets/trip_details/trip_form_common.dart';
+import 'package:raillog/src/widgets/rolling_stock_input_help.dart';
 
 class TrainTripFormPage extends StatefulWidget {
   const TrainTripFormPage({
@@ -464,6 +465,11 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
                       decoration: InputDecoration(
                         labelText: '车型',
                         prefixIcon: const Icon(Icons.train_outlined),
+                        suffixIcon: IconButton(
+                          tooltip: '车型输入指引',
+                          onPressed: () => showRollingStockInputHelp(context),
+                          icon: const Icon(Icons.help_outline),
+                        ),
                         helperText: _usedLatestRollingStock
                             ? '按照${_formatDate(_rollingStockReferenceTravelDate!)}乘车日期填入，请确认'
                             : _rollingStockLookupFailed

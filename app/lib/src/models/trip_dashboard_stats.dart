@@ -72,11 +72,9 @@ class TripDashboardStats {
       if (trip.price > maxCost) maxCost = trip.price;
 
       _recordUnlock(trainUnlocks, trip.trainNumber, trip);
-      _recordUnlock(
-        rollingStockUnlocks,
-        rollingStockModelCode(trip.rollingStock),
-        trip,
-      );
+      for (final model in rollingStockModelCodes(trip.rollingStock)) {
+        _recordUnlock(rollingStockUnlocks, model, trip);
+      }
       _recordUnlock(companyUnlocks, trip.companyName, trip);
       _recordUnlock(
         stationUnlocks,
@@ -159,21 +157,37 @@ List<DashboardUnlockEntry> _newestFirst(
 }
 
 String rollingStockModelCode(String? rawValue) {
+  final models = rollingStockModelCodes(rawValue);
+  return models.isEmpty ? '' : models.first;
+}
+
+List<String> rollingStockModelCodes(String? rawValue) {
   final value = rawValue?.trim() ?? '';
+  if (value.isEmpty) return const [];
+
+  return value
+      .split('+')
+      .map(_rollingStockModelCode)
+      .where((model) => model.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
+}
+
+String _rollingStockModelCode(String component) {
+  final value = component.trim();
+  if (value.isEmpty) return '';
+
+  // EMU notation: CR400BF-5033&5034. The four-digit numbers belong to the
+  // model's vehicle numbers and are excluded from the statistics key.
   final emuMatch = RegExp(
-    r'^([A-Z][A-Z0-9-]*)-\d{4}(?:&\d{4})*$',
+    r'^(.+?)-\d{4}(?:&\d{4})*$',
     caseSensitive: false,
   ).firstMatch(value);
   if (emuMatch != null) return emuMatch.group(1)!.trim();
 
-  final conventionalMatch = RegExp(
-    r'^([A-Z][A-Z0-9-]*)\s+\d{6}$',
-    caseSensitive: false,
-  ).firstMatch(value);
-  if (conventionalMatch != null) {
-    return conventionalMatch.group(1)!.trim();
-  }
-  return value;
+  // Conventional notation: HXD1D 0001&0002. A missing vehicle number is
+  // valid, so a component without whitespace is already a model name.
+  return value.split(RegExp(r'\s+')).first.trim();
 }
 
 void _recordUnlock(
