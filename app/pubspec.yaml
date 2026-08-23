@@ -63,6 +63,7 @@ dev_dependencies:
     sdk: flutter
   json_serializable: ^6.9.0
   flutter_launcher_icons: ^0.14.4
+  msix: ^3.16.8
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -109,6 +110,14 @@ flutter_launcher_icons:
   macos:
     generate: true
     image_path: assets/icon/icon_opaque.png
+
+msix_config:
+  display_name: RailLog
+  identity_name: 53D4FFDC.RailLog
+  publisher: CN=A0D23678-D7D4-4933-B369-1877DD38719C
+  publisher_display_name: 电排骨工坊
+  logo_path: assets/icon/icon.png
+  store: true
 
   # To add assets to your application, add an assets section, like this:
   # assets:
