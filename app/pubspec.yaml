@@ -118,6 +118,7 @@ msix_config:
   publisher_display_name: 电排骨工坊
   logo_path: assets/icon/icon.png
   store: true
+  languages: zh-cn
 
   # To add assets to your application, add an assets section, like this:
   # assets:
