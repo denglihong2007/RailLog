@@ -41,6 +41,7 @@ public static partial class AchievementEngine
             ["traverseOneRegion"] = Milestones,
             ["halfTheRealm"] = Milestones,
             ["centuryDreamFulfilled"] = Milestones,
+            ["nonOrdinary"] = Milestones,
 
             ["tightTransfer"] = ExtremeChallenges,
             ["wellPreparedTransfer"] = ExtremeChallenges,
@@ -78,6 +79,8 @@ public static partial class AchievementEngine
             ["vibrantJourney"] = RailwayCatalog,
             ["railwayTrailblazer"] = RailwayCatalog,
             ["whatAgeIsThis"] = RailwayCatalog,
+            ["meritAndHonor"] = RailwayCatalog,
+            ["friendshipForever"] = RailwayCatalog,
 
             ["verticalChina"] = Touring,
             ["horizontalChina"] = Touring,
@@ -151,6 +154,14 @@ public static partial class AchievementEngine
         .ToHashSet(StringComparer.Ordinal);
     private static readonly HashSet<string> CommonTrainCategories =
         ["G", "D", "C", "Z", "T", "K", "Y", "S", "numeric"];
+    private static readonly HashSet<string> HonorLocomotives =
+    [
+        "HXD3CA 8161", "HXD3D 0035", "HXD3D 0039", "HXD3D 0631", "HXD3D 1886",
+        "HXD3D 1893", "HXD3D 1921", "HXD1 1937", "HXD1C 1927", "HXD1D 1898",
+        "HXD2B 0001", "SS3B 5151"
+    ];
+    private static readonly HashSet<string> EarlyImportedLocomotives =
+        ["6Y2", "6G", "6K", "8G", "8K", "DJ1", "ND2", "ND4", "ND5", "NY5", "NY6", "NY7", "NJ2"];
 
     private static readonly IReadOnlyDictionary<string, HashSet<string>> RailwayBureaus =
         new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
@@ -370,8 +381,27 @@ public static partial class AchievementEngine
             A("centuryDreamFulfilled", "route_outlined", "世纪梦圆", "经由区间去重后的累计里程达到 160,000 公里",
                 FirstUniqueRouteMileageCompletion(trips, 160000)),
             A("spendsLikeWater", "currency_yen", "挥金如土", "单程票价超过 2,000 元",
-                First(trips, trip => trip.Price > 2000))
+                First(trips, trip => trip.Price > 2000)),
+            A("meritAndHonor", "military_tech_outlined", "功成名就", "乘坐至少一种荣誉机车牵引的列车",
+                FirstRollingStockMatch(trips, HonorLocomotives)),
+            A("nonOrdinary", "workspace_premium_outlined", "非同凡人", "完成除本成就外其他所有成就（该成就可能随其他成就增补而失去）",
+                null),
+            A("friendshipForever", "handshake_outlined", "友谊长存", "乘坐至少一种早期进口机车牵引的列车",
+                FirstRollingStockMatch(trips, EarlyImportedLocomotives)),
         };
+
+        var nonOrdinaryIndex = values.FindIndex(item => item.Id == "nonOrdinary");
+        var otherAchievements = values.Where(item => item.Id != "nonOrdinary").ToList();
+        if (otherAchievements.All(item => item.TriggerTripId.HasValue))
+        {
+            var tripOrder = trips.Select((trip, index) => (trip.TicketId, index))
+                .ToDictionary(item => item.TicketId, item => item.index);
+            var triggerTripId = otherAchievements
+                .Select(item => item.TriggerTripId!.Value)
+                .OrderBy(id => tripOrder.GetValueOrDefault(id, -1))
+                .Last();
+            values[nonOrdinaryIndex] = values[nonOrdinaryIndex] with { TriggerTripId = triggerTripId };
+        }
 
         if (values.Count != AchievementCategories.Count ||
             values.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != values.Count)
