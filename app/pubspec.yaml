@@ -82,6 +82,10 @@ flutter:
     - assets/db/routes.db
     - assets/db/coordinates.csv
     - assets/icon/icon.png
+  fonts:
+    - family: HVCB
+      fonts:
+        - asset: assets/fonts/HVCB.TTF
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
