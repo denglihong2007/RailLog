@@ -21,7 +21,7 @@ enum _TripMetric {
   highSpeed,
 }
 
-enum _ElementMetric { stations, routes, trains }
+enum _ElementMetric { stations, routes, trains, rollingStocks, companies }
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -484,6 +484,8 @@ class _ElementLeaderboardViewState extends State<_ElementLeaderboardView> {
     _ElementMetric.stations => widget.leaderboards.stations,
     _ElementMetric.routes => widget.leaderboards.routes,
     _ElementMetric.trains => widget.leaderboards.trains,
+    _ElementMetric.rollingStocks => widget.leaderboards.rollingStocks,
+    _ElementMetric.companies => widget.leaderboards.companies,
   };
 
   @override
@@ -923,6 +925,8 @@ String _elementMetricLabel(_ElementMetric metric) => switch (metric) {
   _ElementMetric.stations => '车站',
   _ElementMetric.routes => '线路',
   _ElementMetric.trains => '车次',
+  _ElementMetric.rollingStocks => '车型',
+  _ElementMetric.companies => '承运单位',
 };
 
 String _formatUserValue(_UserMetric metric, double value) => switch (metric) {
