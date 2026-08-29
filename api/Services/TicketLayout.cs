@@ -101,7 +101,7 @@ internal static class TicketLayout
             new TicketFont(58, Bold: true), Black, scaleX: .95f);
         var qrBounds = blue
             ? new TicketRect(1443, identityY, 240, 240)
-            : new TicketRect(1352, 745, 327, 327);
+            : new TicketRect(1352, identityY, 346, 346);
         canvas.DrawQr(qrBounds, Black);
         if (ticketType != "pdf")
         {
@@ -171,8 +171,8 @@ internal static class TicketLayout
     private static void DrawIdAndName(ITicketDrawingBackend canvas, string id, string name,
         float x, float y)
     {
-        var idFont = new TicketFont(64, TicketFontFamily.IdCode);
-        var songFont = new TicketFont(64, TicketFontFamily.Song, Bold: true);
+        var idFont = new TicketFont(69, TicketFontFamily.IdCode);
+        var songFont = new TicketFont(69, TicketFontFamily.Song, Bold: true);
         foreach (var character in id)
         {
             var value = character.ToString();
@@ -180,7 +180,7 @@ internal static class TicketLayout
             canvas.DrawText(value, x, y, currentFont, Black);
             x += canvas.Measure(value, currentFont).Width - 2.2f;
         }
-        canvas.DrawText(name, x + 22, y + 3, new TicketFont(63, Bold: true), Black);
+        canvas.DrawText(name, x + 22, y + 3, new TicketFont(66, Bold: true), Black);
     }
 
     private static void DrawCenteredLines(ITicketDrawingBackend canvas, IReadOnlyList<string> lines,

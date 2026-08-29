@@ -27,11 +27,18 @@ class AchievementsPage extends StatelessWidget {
           title: const Text('成就'),
           scrolledUnderElevation: 3,
           bottom: TabBar(
+            labelPadding: EdgeInsets.zero,
             dividerHeight: 1,
             dividerColor: Theme.of(context).colorScheme.outlineVariant,
             tabs: [
               for (final category in AchievementCategory.values)
-                Tab(icon: Icon(_categoryIcon(category)), text: category.label),
+                Tab(
+                  icon: Icon(_categoryIcon(category)),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(category.label),
+                  ),
+                ),
             ],
           ),
         ),

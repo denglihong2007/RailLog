@@ -238,7 +238,9 @@ public sealed record ElementRankingEntry(
 public sealed record ElementLeaderboards(
     IReadOnlyList<ElementRankingEntry> Stations,
     IReadOnlyList<ElementRankingEntry> Routes,
-    IReadOnlyList<ElementRankingEntry> Trains);
+    IReadOnlyList<ElementRankingEntry> Trains,
+    IReadOnlyList<ElementRankingEntry> RollingStocks,
+    IReadOnlyList<ElementRankingEntry> Companies);
 
 public sealed record StatisticsResponse(
     SiteStatistics Site,

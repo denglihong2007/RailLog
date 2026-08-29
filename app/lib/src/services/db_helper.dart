@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/services/database_path_service.dart';
 
 class DbHelper {
   DbHelper._privateConstructor();
@@ -17,8 +17,10 @@ class DbHelper {
   }
 
   Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'raillog.db');
+    final path = await DatabasePathService.writablePath(
+      'raillog.db',
+      migrateLegacyDesktopDatabase: true,
+    );
 
     return await openDatabase(
       path,

@@ -337,6 +337,9 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车型',
                       value: _optionalText(trip.rollingStock),
+                      valueFontFamily: _usesHvcbFont(trip.rollingStock)
+                          ? 'HVCB'
+                          : null,
                       onTap: _photoSearch(
                         context,
                         '车型',
@@ -980,12 +983,14 @@ class _InfoItem extends StatelessWidget {
     required this.value,
     this.onTap,
     this.photoTooltip = '查看相关图片',
+    this.valueFontFamily,
   });
 
   final String label;
   final String value;
   final VoidCallback? onTap;
   final String photoTooltip;
+  final String? valueFontFamily;
 
   @override
   Widget build(BuildContext context) {
@@ -1006,7 +1011,9 @@ class _InfoItem extends StatelessWidget {
             Flexible(
               child: SelectableText(
                 value,
-                style: Theme.of(context).textTheme.bodyLarge,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontFamily: valueFontFamily,
+                ),
               ),
             ),
             if (onTap != null && value != '未记录') ...[
@@ -1882,6 +1889,9 @@ String _optionalText(String? value) {
   final text = value?.trim() ?? '';
   return text.isEmpty ? '未记录' : text;
 }
+
+bool _usesHvcbFont(String? value) =>
+    value?.toUpperCase().contains('CR') ?? false;
 
 Duration? _duration(TripRecord trip) {
   final arrivalTime = trip.arrivalTime;

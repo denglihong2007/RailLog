@@ -116,21 +116,36 @@ class _CtPhotoSearchPageState extends State<CtPhotoSearchPage> {
                       slivers: [
                         SliverPadding(
                           padding: const EdgeInsets.all(12),
-                          sliver: SliverGrid(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _PhotoTile(
-                                photo: _photos[index],
-                                onTap: () => _openPhoto(_photos[index]),
-                              ),
-                              childCount: _photos.length,
-                            ),
-                            gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 320,
-                                  mainAxisSpacing: 12,
-                                  crossAxisSpacing: 12,
-                                  childAspectRatio: 4 / 3,
+                          sliver: SliverLayoutBuilder(
+                            builder: (context, constraints) {
+                              const spacing = 12.0;
+                              final columns =
+                                  ((constraints.crossAxisExtent + spacing) /
+                                          (200 + spacing))
+                                      .floor()
+                                      .clamp(1, 100);
+                              final tileWidth =
+                                  (constraints.crossAxisExtent -
+                                      spacing * (columns - 1)) /
+                                  columns;
+                              final tileHeight = tileWidth * 3 / 4 + 53;
+                              return SliverGrid(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) => _PhotoTile(
+                                    photo: _photos[index],
+                                    onTap: () => _openPhoto(_photos[index]),
+                                  ),
+                                  childCount: _photos.length,
                                 ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: columns,
+                                      mainAxisSpacing: spacing,
+                                      crossAxisSpacing: spacing,
+                                      mainAxisExtent: tileHeight,
+                                    ),
+                              );
+                            },
                           ),
                         ),
                         if (_page < _pages)
@@ -179,7 +194,8 @@ class _PhotoTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
+            AspectRatio(
+              aspectRatio: 4 / 3,
               child: photo.thumbnailUrl.isEmpty
                   ? ColoredBox(
                       color: colors.surfaceContainerHighest,

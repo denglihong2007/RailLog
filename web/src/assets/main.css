@@ -7,15 +7,15 @@ nav { display:flex; align-items:center; gap:6px; }
 nav a { min-height:40px; padding:8px 12px; display:inline-flex; align-items:center; gap:7px; border-radius:6px; }
 nav a:hover { background:var(--surface-low); }
 .intro { position:relative; min-height:min(640px,calc(100svh - 116px)); overflow:hidden; display:grid; align-items:center; padding:72px max(24px,calc((100vw - 1180px)/2)); border-bottom:1px solid var(--line); }
-.intro-watermark { position:absolute; inset:0; background:url('/raillog-icon.png') no-repeat center/cover; opacity:.08; pointer-events:none; }
-.intro-content { position:relative; width:100%; min-width:0; max-width:680px; }
+.intro-watermark { position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.66) 0%,rgba(0,0,0,.46) 38%,rgba(0,0,0,.14) 72%,rgba(0,0,0,.24) 100%),#080a0f url('/background.png') no-repeat center/cover; opacity:.96; pointer-events:none; }
+.intro-content { position:relative; width:100%; min-width:0; max-width:680px; color:#fff; text-shadow:0 2px 18px rgba(0,0,0,.4); }
 .eyebrow,.section-kicker { margin:0 0 14px; color:var(--brand); font-weight:700; }
-.eyebrow { display:flex; align-items:center; gap:8px; }
+.eyebrow { display:flex; align-items:center; gap:8px; color:#ffb4ab; }
 h1 { margin:0; display:flex; flex-wrap:wrap; column-gap:.22em; font-size:clamp(48px,8vw,92px); line-height:1.02; letter-spacing:0; }
-.intro-copy { max-width:620px; margin:24px 0 30px; color:var(--muted); font-size:clamp(18px,2vw,22px); line-height:1.75; overflow-wrap:anywhere; }
+.intro-copy { max-width:620px; margin:24px 0 30px; color:rgba(255,255,255,.82); font-size:clamp(18px,2vw,22px); line-height:1.75; overflow-wrap:anywhere; }
 .primary-action,.download-card a { display:inline-flex; align-items:center; justify-content:center; gap:9px; min-height:48px; padding:0 18px; border-radius:7px; background:var(--brand); color:#fff; font-weight:700; }
 .primary-action:hover,.download-card a:hover { background:var(--brand-dark); }
-.platform-note { margin-left:16px; color:var(--muted); font-size:14px; }
+.platform-note { margin-left:16px; color:rgba(255,255,255,.72); font-size:14px; }
 .download-section { padding:72px max(24px,calc((100vw - 1180px)/2)); background:var(--surface-low); scroll-margin-top:68px; }
 .upgrade-alert { margin:0 0 32px; padding:18px 20px; display:grid; grid-template-columns:auto minmax(0,1fr); gap:14px; align-items:start; border:2px solid var(--brand); border-radius:8px; background:color-mix(in srgb,var(--brand) 9%,var(--surface)); color:var(--ink); }
 .upgrade-alert>svg { margin-top:1px; color:var(--brand); }
@@ -49,7 +49,7 @@ footer a { display:inline-flex; align-items:center; gap:5px; color:var(--ink); }
 @media (max-width:700px) {
   .site-header { padding-inline:16px; } nav .download-nav { display:none; }
   .intro { min-height:calc(100svh - 190px); padding:52px 20px 44px; align-items:end; }
-  .intro-watermark { opacity:.07; }
+  .intro-watermark { background:linear-gradient(0deg,rgba(0,0,0,.72) 0%,rgba(0,0,0,.38) 48%,rgba(0,0,0,.2) 100%),#080a0f url('/background.png') no-repeat center/cover; opacity:.96; }
   h1 { font-size:clamp(46px,14vw,58px); } .intro-copy { font-size:17px; }
   .primary-action { width:100%; } .platform-note { display:block; margin:12px 0 0; text-align:center; }
   .download-section { width:100%; max-width:100vw; overflow:hidden; padding:52px 16px; } .section-heading { align-items:start; flex-direction:column; }

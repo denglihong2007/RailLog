@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using RailLog.API.Models;
 
@@ -8,7 +9,7 @@ namespace RailLog.API.Services;
 
 public sealed class RailLogDatabase
 {
-    private const int LeaderboardSize = 15;
+    private const int LeaderboardSize = 20;
     private readonly string _connectionString;
 
     public RailLogDatabase(IConfiguration configuration, IWebHostEnvironment environment)
@@ -794,6 +795,8 @@ public sealed class RailLogDatabase
         var stationCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var routeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var trainCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var rollingStockCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var companyCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var trip in trips)
         {
             if (trip.Trip.DepartureTime is not null)
@@ -803,9 +806,13 @@ public sealed class RailLogDatabase
             foreach (var route in trip.RouteNames.Distinct(StringComparer.OrdinalIgnoreCase))
                 Increment(routeCounts, route);
             Increment(trainCounts, trip.Trip.TrainNumber.Trim().ToUpperInvariant());
+            foreach (var model in RollingStockModelCodes(trip.Trip.RollingStock))
+                Increment(rollingStockCounts, model);
+            Increment(companyCounts, trip.Trip.CompanyName?.Trim() ?? string.Empty);
         }
         var elementBoards = new ElementLeaderboards(
-            RankElements(stationCounts), RankElements(routeCounts), RankElements(trainCounts));
+            RankElements(stationCounts), RankElements(routeCounts), RankElements(trainCounts),
+            RankElements(rollingStockCounts), RankElements(companyCounts));
         return new StatisticsResponse(site, userBoards, tripBoards, elementBoards);
     }
 
@@ -1129,6 +1136,24 @@ public sealed class RailLogDatabase
     {
         if (name.Length == 0) return;
         counts[name] = counts.TryGetValue(name, out var count) ? count + 1 : 1;
+    }
+
+    private static IReadOnlyList<string> RollingStockModelCodes(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue)) return [];
+        return rawValue.Split('+', StringSplitOptions.RemoveEmptyEntries)
+            .Select(component =>
+            {
+                var value = component.Trim();
+                if (value.Length == 0) return string.Empty;
+                var emu = Regex.Match(value, @"^(.+?)-\d{4}(?:&\d{4})*$",
+                    RegexOptions.IgnoreCase);
+                return (emu.Success ? emu.Groups[1].Value :
+                    Regex.Split(value, @"\s+")[0]).Trim();
+            })
+            .Where(model => model.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static IReadOnlyList<string> ParseRouteNames(string json)

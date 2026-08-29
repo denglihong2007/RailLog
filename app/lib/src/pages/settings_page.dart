@@ -15,6 +15,7 @@ import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
+import 'package:raillog/src/widgets/help_dialog.dart';
 import 'package:raillog/src/widgets/excel_import_action.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -817,27 +818,16 @@ class _TicketGeneratorSettingsSectionState
     );
   }
 
-  Future<void> _showSerialNumberHelp(BuildContext context) => showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('铁路磁票票号说明'),
-      content: const SingleChildScrollView(
-        child: Text(
-          '铁路磁票（报销凭证）的21位票号由以下五部分顺序构成：\n\n'
-          '• 前5位：数字格式的车站TMIS码（可前往 rail.re 查询具体车站）；\n'
-          '• 第6至7位：出票机器类型（00-09为人工售票窗口，20-29为车票代售点，30-39为自动售票机）；\n'
-          '• 第8至10位：3位数字的出票机器编号；\n'
-          '• 第11至14位：MMDD格式的4位结算日期（一般为乘车日期的下一天，由软件自动生成而无需设置）；\n'
-          '• 最后7位：票纸编号（通常由1位字母和6位数字组合而成，由软件自动生成而无需设置）。',
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('知道了'),
-        ),
-      ],
-    ),
+  Future<void> _showSerialNumberHelp(BuildContext context) => showHelpDialog(
+    context,
+    title: '铁路磁票票号说明',
+    message:
+        '铁路磁票（报销凭证）的21位票号由以下五部分顺序构成：\n\n'
+        '• 前5位：数字格式的车站TMIS码（可前往 rail.re 查询具体车站）；\n'
+        '• 第6至7位：出票机器类型（00-09为人工售票窗口，20-29为车票代售点，30-39为自动售票机）；\n'
+        '• 第8至10位：3位数字的出票机器编号；\n'
+        '• 第11至14位：MMDD格式的4位结算日期（一般为乘车日期的下一天，由软件自动生成而无需设置）；\n'
+        '• 最后7位：票纸编号（通常由1位字母和6位数字组合而成，由软件自动生成而无需设置）。',
   );
 }
 

@@ -215,6 +215,8 @@ class ElementLeaderboards {
     required this.stations,
     required this.routes,
     required this.trains,
+    required this.rollingStocks,
+    required this.companies,
   });
 
   factory ElementLeaderboards.fromJson(Map<String, dynamic> json) =>
@@ -222,11 +224,15 @@ class ElementLeaderboards {
         stations: _elements(json['stations']),
         routes: _elements(json['routes']),
         trains: _elements(json['trains']),
+        rollingStocks: _elements(json['rollingStocks']),
+        companies: _elements(json['companies']),
       );
 
   final List<ElementRankingEntry> stations;
   final List<ElementRankingEntry> routes;
   final List<ElementRankingEntry> trains;
+  final List<ElementRankingEntry> rollingStocks;
+  final List<ElementRankingEntry> companies;
 }
 
 List<UserRankingEntry> _users(Object? value) =>

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.6.1+1
+version: 1.6.2+1
 
 environment:
   sdk: ^3.12.2
@@ -41,6 +41,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   json_annotation: ^4.9.0
   path: ^1.9.1
+  path_provider: ^2.1.5
   convert: ^3.1.2
   flutter_adaptive_scaffold: ^0.3.0
   sqflite: ^2.4.3
@@ -63,6 +64,7 @@ dev_dependencies:
     sdk: flutter
   json_serializable: ^6.9.0
   flutter_launcher_icons: ^0.14.4
+  msix: ^3.16.8
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -80,6 +82,10 @@ flutter:
     - assets/db/routes.db
     - assets/db/coordinates.csv
     - assets/icon/icon.png
+  fonts:
+    - family: HVCB
+      fonts:
+        - asset: assets/fonts/HVCB.TTF
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
@@ -109,6 +115,15 @@ flutter_launcher_icons:
   macos:
     generate: true
     image_path: assets/icon/icon_opaque.png
+
+msix_config:
+  display_name: RailLog
+  identity_name: 53D4FFDC.RailLog
+  publisher: CN=A0D23678-D7D4-4933-B369-1877DD38719C
+  publisher_display_name: 电排骨工坊
+  logo_path: assets/icon/icon.png
+  store: true
+  languages: zh-cn
 
   # To add assets to your application, add an assets section, like this:
   # assets:

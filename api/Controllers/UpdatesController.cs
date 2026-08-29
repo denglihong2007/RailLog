@@ -18,7 +18,7 @@ public sealed class UpdatesController(
     public ActionResult<DownloadLinksResponse> Downloads() => Ok(
         new DownloadLinksResponse(
             _options.DomesticDownloadName,
-            OptionalUrl(_options.WindowsDomesticDownloadUrl),
+            UpdateOptions.WindowsDomesticDownloadUrl,
             OptionalUrl(_options.AndroidDomesticDownloadUrl)));
 
     [HttpGet("latest")]
