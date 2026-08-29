@@ -21,6 +21,5 @@ npm run build
 
 国内网盘链接由 API 服务端配置维护：
 
-- `Updates__WindowsDomesticDownloadUrl`
 - `Updates__AndroidDomesticDownloadUrl`
 - `Updates__DomesticDownloadName`

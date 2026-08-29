@@ -7,6 +7,7 @@ public sealed class UpdateOptions
     public int CacheMinutes { get; init; } = 15;
     public string DownloadPageUrl { get; init; } = "https://www.raillog.top/download";
     public string DomesticDownloadName { get; init; } = "国内网盘";
-    public string? WindowsDomesticDownloadUrl { get; init; }
     public string? AndroidDomesticDownloadUrl { get; init; }
+
+    public const string WindowsDomesticDownloadUrl = "https://apps.microsoft.com/detail/9P2XGJRHLZXS";
 }

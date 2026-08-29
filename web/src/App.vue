@@ -104,8 +104,7 @@ onMounted(async () => {
           <Monitor :size="34" /><div><h3>Windows</h3><p>适用于 Windows 10 与 Windows 11</p></div>
           <div class="download-actions">
             <a :href="windowsUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a>
-            <a v-if="downloadLinks?.windowsDomesticDownloadUrl" class="secondary-download" :href="downloadLinks.windowsDomesticDownloadUrl" target="_blank" rel="noreferrer"><Download :size="19" />{{ downloadLinks.domesticDownloadName }}</a>
-            <span v-else class="disabled-download"><Download :size="19" />国内网盘待更新</span>
+            <a class="secondary-download" href="https://apps.microsoft.com/detail/9P2XGJRHLZXS" target="_blank" rel="noopener noreferrer"><Download :size="19" />微软商店</a>
           </div>
         </article>
         <article class="download-card android-card">

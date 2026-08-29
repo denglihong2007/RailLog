@@ -44,7 +44,7 @@ public sealed class GitHubReleaseService(
             SelectWindowsAsset(assets)?.Url,
             SelectAndroidAsset(assets)?.Url,
             _options.DomesticDownloadName,
-            NormalizeOptionalUrl(_options.WindowsDomesticDownloadUrl),
+            UpdateOptions.WindowsDomesticDownloadUrl,
             NormalizeOptionalUrl(_options.AndroidDomesticDownloadUrl),
             _options.DownloadPageUrl);
         cache.Set(
