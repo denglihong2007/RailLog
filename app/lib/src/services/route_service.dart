@@ -8,6 +8,7 @@ import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/station_pair_distance.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
+import 'package:raillog/src/services/database_path_service.dart';
 import 'package:sqflite/sqflite.dart';
 
 class RouteService {
@@ -154,7 +155,7 @@ class RouteService {
 
   static Future<_RouteGraph> _loadGraph() async {
     final data = await rootBundle.load('assets/db/routes.db');
-    final databasesPath = await getDatabasesPath();
+    final databasesPath = await DatabasePathService.directory();
     final databasePath = path_util.join(databasesPath, 'routes_reference.db');
     await Directory(databasesPath).create(recursive: true);
     await File(databasePath).writeAsBytes(
