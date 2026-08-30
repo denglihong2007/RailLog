@@ -30,6 +30,7 @@ class TripExcelExportException implements Exception {
 
 abstract final class TripExcelExportService {
   static const headers = [
+    '本地记录号',
     '行程编号',
     '行程类型',
     '车次/班次',
@@ -105,6 +106,7 @@ abstract final class TripExcelExportService {
   }
 
   static List<CellValue> _rowForTrip(TripRecord trip) => [
+    IntCellValue(trip.id),
     TextCellValue(trip.ticketLabel),
     TextCellValue(trip.isRailTrip ? '铁路行程' : '非铁路行程'),
     TextCellValue(trip.trainNumber),
@@ -131,6 +133,7 @@ abstract final class TripExcelExportService {
   ];
 
   static const _columnWidths = <double>[
+    14,
     14,
     12,
     14,

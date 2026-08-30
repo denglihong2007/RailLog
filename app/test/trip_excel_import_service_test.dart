@@ -40,6 +40,7 @@ void main() {
 
       expect(trips, hasLength(1));
       final imported = trips.single;
+      expect(imported.id, 42);
       expect(imported.trainNumber, 'G1');
       expect(imported.fromStation, '北京南');
       expect(imported.toStation, '上海虹桥');
@@ -55,12 +56,14 @@ void main() {
       final workbook = Excel.createExcel();
       final sheet = workbook['行程'];
       sheet.appendRow([
+        TextCellValue('本地记录号'),
         TextCellValue('出发时间'),
         TextCellValue('到达站'),
         TextCellValue('车次/班次'),
         TextCellValue('出发站'),
       ]);
       sheet.appendRow([
+        TextCellValue(''),
         DateTimeCellValue.fromDateTime(DateTime(2025, 1, 2, 8, 15)),
         TextCellValue('南京南'),
         TextCellValue('G101'),
@@ -96,6 +99,7 @@ void main() {
         TripExcelImportService.requiredHeaders.map(TextCellValue.new).toList(),
       );
       sheet.appendRow([
+        TextCellValue(''),
         TextCellValue('G1'),
         TextCellValue('北京南'),
         TextCellValue('上海虹桥'),
