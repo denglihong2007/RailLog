@@ -502,6 +502,39 @@ public sealed class RailLogDatabase
         return await GetAchievementsAsync(connection, userId);
     }
 
+    public async Task<AchievementUnlockTripsResponse> GetAchievementUnlockTripsAsync(
+        string achievementId,
+        string currentUserId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT trip.Id, user.Id, user.DisplayName, user.AvatarUrl,
+                   COALESCE(trip.DepartureTime, trip.CreatedAt), trip.TrainNumber,
+                   trip.FromStation, trip.ToStation,
+                   CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END
+            FROM UserAchievements achievement
+            JOIN TripRecords trip ON trip.Id = achievement.TriggerTripId
+            JOIN AspNetUsers user ON user.Id = achievement.UserId
+            WHERE achievement.AchievementId = $achievementId
+              AND trip.DeletedAt IS NULL
+            ORDER BY CASE WHEN user.Id = $currentUserId THEN 0 ELSE 1 END,
+                     COALESCE(trip.DepartureTime, trip.CreatedAt) DESC,
+                     trip.Id DESC;
+            """;
+        command.Parameters.AddWithValue("$achievementId", achievementId);
+        command.Parameters.AddWithValue("$currentUserId", currentUserId);
+        await using var reader = await command.ExecuteReaderAsync();
+        var trips = new List<AchievementUnlockTrip>();
+        while (await reader.ReadAsync())
+            trips.Add(new AchievementUnlockTrip(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
+                NullableString(reader, 3), FromDb(reader.GetString(4)), reader.GetString(5),
+                reader.GetString(6), reader.GetString(7), reader.GetInt32(8) == 1));
+        return new AchievementUnlockTripsResponse(achievementId, trips);
+    }
+
     public async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
     {
         await using var connection = OpenConnection();
@@ -770,7 +803,8 @@ public sealed class RailLogDatabase
             RankUsers(users.Select(item => (item.User, item.Spending)), currentUserId),
             RankUsers(users.Select(item => (item.User, item.Count)), currentUserId),
             RankUsers(users.Select(item => (item.User, item.Duration)), currentUserId),
-            RankUsers(users.Select(item => (item.User, item.Mileage)), currentUserId));
+            RankUsers(users.Select(item => (item.User, item.Mileage)), currentUserId),
+            await GetAchievementCountRankingAsync(connection, currentUserId));
 
         var durationTrips = trips
             .Select(trip => (Trip: trip, Duration: ValidDurationSeconds(trip.Trip)))
@@ -935,6 +969,31 @@ public sealed class RailLogDatabase
         }
         if (currentUser?.Rank > LeaderboardSize) leaderboard.Add(currentUser);
         return leaderboard;
+    }
+
+    private static async Task<IReadOnlyList<UserRankingEntry>> GetAchievementCountRankingAsync(
+        SqliteConnection connection,
+        string currentUserId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
+                   CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   COUNT(achievement.AchievementId)
+            FROM AspNetUsers user
+            LEFT JOIN UserAchievements achievement ON achievement.UserId = user.Id
+            GROUP BY user.Id;
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var values = new List<(PublicUser User, double Value)>();
+        while (await reader.ReadAsync())
+        {
+            var user = new PublicUser(
+                reader.GetString(0), reader.GetString(1), NullableString(reader, 2),
+                NullableString(reader, 3), NullableString(reader, 4));
+            values.Add((user, reader.GetInt32(5)));
+        }
+        return RankUsers(values, currentUserId);
     }
 
     private static IReadOnlyList<TripRankingEntry> RankTrips(

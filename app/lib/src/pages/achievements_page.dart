@@ -1,21 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
-import 'package:raillog/src/models/dashboard_trip_entry.dart';
-import 'package:raillog/src/pages/all_trips_page.dart';
-import 'package:raillog/src/pages/trip_record_details_page.dart';
+import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class AchievementsPage extends StatelessWidget {
-  const AchievementsPage({
-    super.key,
-    required this.achievements,
-    this.openTrip,
-  });
+  const AchievementsPage({super.key, required this.achievements});
 
   final List<DashboardAchievement> achievements;
-  final TripEntryOpener? openTrip;
 
   @override
   Widget build(BuildContext context) {
@@ -67,14 +60,16 @@ class AchievementsPage extends StatelessWidget {
 
   Future<void> _openAchievement(
     BuildContext context,
-    DashboardTripEntry trip,
+    DashboardAchievement achievement,
   ) async {
-    final changed = openTrip == null
-        ? await Navigator.of(context).push<bool>(
-            m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: trip.id)),
-          )
-        : await openTrip!(context, trip);
-    if (changed == true && context.mounted) Navigator.of(context).pop(true);
+    await Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => AchievementUnlockTripsPage(
+          achievementId: achievement.id,
+          title: achievement.title,
+        ),
+      ),
+    );
   }
 }
 
@@ -91,7 +86,8 @@ class _AchievementCategoryView extends StatelessWidget {
   final List<DashboardAchievement> achievements;
   final int totalUnlocked;
   final int totalAchievements;
-  final Future<void> Function(BuildContext, DashboardTripEntry) openAchievement;
+  final Future<void> Function(BuildContext, DashboardAchievement)
+  openAchievement;
 
   @override
   Widget build(BuildContext context) {
@@ -158,10 +154,7 @@ class _AchievementCategoryView extends StatelessWidget {
                           achievement: achievement,
                           onTap: achievement.unlockedBy == null
                               ? null
-                              : () => openAchievement(
-                                  context,
-                                  achievement.unlockedBy!,
-                                ),
+                              : () => openAchievement(context, achievement),
                         );
                       }, childCount: achievements.length),
                     ),

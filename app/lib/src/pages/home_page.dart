@@ -10,6 +10,7 @@ import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/achievements_page.dart';
+import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
 import 'package:raillog/src/pages/partner_applications_page.dart';
@@ -1090,10 +1091,7 @@ class _AchievementsSection extends StatelessWidget {
                   achievement: achievements[index],
                   onTap: achievements[index].unlockedBy == null
                       ? null
-                      : () => _openAchievement(
-                          context,
-                          achievements[index].unlockedBy!,
-                        ),
+                      : () => _openAchievement(context, achievements[index]),
                 ),
               ),
             );
@@ -1105,24 +1103,23 @@ class _AchievementsSection extends StatelessWidget {
 
   Future<void> _openAllAchievements(BuildContext context) async {
     final changed = await Navigator.of(context).push<bool>(
-      m3PageRoute(
-        builder: (_) =>
-            AchievementsPage(achievements: achievements, openTrip: openTrip),
-      ),
+      m3PageRoute(builder: (_) => AchievementsPage(achievements: achievements)),
     );
     if (changed == true) await onChanged();
   }
 
   Future<void> _openAchievement(
     BuildContext context,
-    DashboardTripEntry trip,
+    DashboardAchievement achievement,
   ) async {
-    final changed = openTrip == null
-        ? await Navigator.of(context).push<bool>(
-            m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: trip.id)),
-          )
-        : await openTrip!(context, trip);
-    if (changed == true) await onChanged();
+    await Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => AchievementUnlockTripsPage(
+          achievementId: achievement.id,
+          title: achievement.title,
+        ),
+      ),
+    );
   }
 }
 
