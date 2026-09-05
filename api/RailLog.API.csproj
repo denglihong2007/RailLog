@@ -9,6 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Update="Assets\db\routes.db">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Assets\train_timetables.db">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
