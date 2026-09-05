@@ -188,6 +188,21 @@ public sealed record AchievementsResponse(
     int TotalUserCount,
     IReadOnlyList<AchievementResponse> Achievements);
 
+public sealed record AchievementUnlockTrip(
+    long TicketId,
+    string UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    DateTime OccurredAt,
+    string TrainNumber,
+    string FromStation,
+    string ToStation,
+    bool IsCurrentUser);
+
+public sealed record AchievementUnlockTripsResponse(
+    string AchievementId,
+    IReadOnlyList<AchievementUnlockTrip> Trips);
+
 public sealed record SiteStatistics(
     int Total,
     int ThisYear,
@@ -213,7 +228,8 @@ public sealed record UserLeaderboards(
     IReadOnlyList<UserRankingEntry> TotalSpending,
     IReadOnlyList<UserRankingEntry> TripCount,
     IReadOnlyList<UserRankingEntry> DurationSeconds,
-    IReadOnlyList<UserRankingEntry> MileageKm);
+    IReadOnlyList<UserRankingEntry> MileageKm,
+    IReadOnlyList<UserRankingEntry> AchievementCount);
 
 public sealed record TripRankingEntry(
     int Rank,

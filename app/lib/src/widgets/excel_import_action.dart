@@ -98,7 +98,7 @@ class ExcelImportGuide extends StatelessWidget {
         const _ImportGuideItem(
           icon: Icons.view_column_outlined,
           title: '必填列',
-          detail: '车次/班次、出发站、到达站、出发时间。首行必须是列名，列的顺序可以调整。',
+          detail: '本地记录号、车次/班次、出发站、到达站、出发时间。首行必须是列名，列的顺序可以调整。本地记录号可留空。',
         ),
         const SizedBox(height: 14),
         const _ImportGuideItem(
@@ -127,7 +127,7 @@ class ExcelImportGuide extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
-            '重复判断：车次/班次 + 出发站 + 到达站 + 出发时间',
+            '导入规则：本地记录号匹配时更新原行程；记录号为空或不存在时新增行程。',
             style: TextStyle(color: colors.onSecondaryContainer),
           ),
         ),

@@ -121,7 +121,7 @@ class _CtPhotoSearchPageState extends State<CtPhotoSearchPage> {
                               const spacing = 12.0;
                               final columns =
                                   ((constraints.crossAxisExtent + spacing) /
-                                          (200 + spacing))
+                                          (150 + spacing))
                                       .floor()
                                       .clamp(1, 100);
                               final tileWidth =

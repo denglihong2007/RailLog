@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Globalization;
+using Microsoft.Data.Sqlite;
 using RailLog.API.Models;
 
 namespace RailLog.API.Services;
@@ -37,7 +38,7 @@ public static partial class AchievementEngine
             ["thousandKilometers"] = Milestones,
             ["hundredThousandKilometers"] = Milestones,
             ["archaeologyTeam"] = Milestones,
-            ["tenNumericTrains"] = Milestones,
+            ["tenNumericTrains"] = RailwayCatalog,
             ["traverseOneRegion"] = Milestones,
             ["halfTheRealm"] = Milestones,
             ["centuryDreamFulfilled"] = Milestones,
@@ -87,6 +88,12 @@ public static partial class AchievementEngine
             ["fourFamousNorths"] = Touring,
             ["cardinalStations"] = Touring,
             ["borderPorts"] = Touring,
+            ["singleBikeBorder"] = Touring,
+            ["travelerAbroad"] = Touring,
+            ["skyAndSea"] = Touring,
+            ["greatWallExpress"] = RailwayCatalog,
+            ["qinlingPassage"] = Touring,
+            ["heavenlyThoroughfare"] = Touring,
             ["lonelyPlanet"] = Touring,
             ["airRail"] = Touring,
             ["railFerry"] = Touring,
@@ -98,11 +105,11 @@ public static partial class AchievementEngine
             ["platformSubsidence"] = Touring,
             ["strategist"] = Touring,
             ["eastRedSunRises"] = Touring,
-            ["centuryMeterGauge"] = Touring,
+            ["centuryMeterGauge"] = RailwayCatalog,
 
             ["freeMeal"] = FunJourneys,
             ["wallFacingSeat"] = FunJourneys,
-            ["farsighted"] = RailwayCatalog,
+            ["farsighted"] = FunJourneys,
             ["verticalSleeper"] = RailwayCatalog,
             ["overnightSleeper"] = FunJourneys,
             ["commuterSpecial"] = FunJourneys,
@@ -121,6 +128,7 @@ public static partial class AchievementEngine
             ["vowAtQinling"] = FunJourneys,
             ["differentRoutesSameDestination"] = FunJourneys,
             ["spendsLikeWater"] = FunJourneys,
+            ["wealthyTraveler"] = ExtremeChallenges,
         };
 
     private static readonly HashSet<string> Regular25Models =
@@ -148,6 +156,11 @@ public static partial class AchievementEngine
         "CR400BF-0305", "CR400BF-0503", "CR400BF-0507", "CR400AF-0207",
         "CR400AF-0208", "CR300AF-0001", "CR300AF-0003", "CR300AF-0004",
         "CR300BF-0002", "CR300BF-0005", "CR300BF-0006"
+    ];
+    private static readonly HashSet<string> GreatWallExpressModels =
+    [
+        "CR400AF-B", "CR400AF-BZ", "CR400AF-BS", "CR400AF-BX",
+        "CR400BF-B", "CR400BF-BZ", "CR400BF-BS", "CR400BF-BX"
     ];
     private static readonly HashSet<string> VibrantExpressModels = Enumerable.Range(251, 9)
         .SelectMany(number => new[] { $"CRH380A-0{number}", $"MTR380A-0{number}", "MTR380A" })
@@ -186,6 +199,9 @@ public static partial class AchievementEngine
             ["西安局"] = ["西安局西安段"],
             ["南宁局"] = ["南宁局南宁客运段", "广西沿海铁路公司"]
         };
+
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> RouteStations = new(LoadRouteStations);
+    private static readonly string[] BorderRouteMarkers = ["丹东国境线", "绥芬河交界", "满洲里交界", "二连交界", "阿拉山口交界", "凭祥交界"];
 
     public static IReadOnlyList<AchievementEvaluation> Evaluate(
         IEnumerable<PublicTrip> sourceTrips,
@@ -263,6 +279,18 @@ public static partial class AchievementEngine
                 First(trips, UnlocksFleetingMoment)),
             A("borderPorts", "language_outlined", "异域风情", "到访阿拉山口、二连、满洲里、绥芬河、丹东、崇左或磨憨站",
                 FirstStationVisit(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"])),
+            A("singleBikeBorder", "directions_railway_outlined", "单车问边", "乘坐联运列车从任一口岸车站出入境",
+                First(trips, UnlocksBorderCrossing)),
+            A("travelerAbroad", "luggage_outlined", "他乡旅人", "从任一口岸车站入境后 14 天内由另一口岸车站出境",
+                FirstDifferentBorderCompletion(trips)),
+            A("skyAndSea", "public_outlined", "上天入海", "在 14 天内到访雁石坪站和香港西九龙站",
+                FirstStationPairWithin(trips, "雁石坪", "香港西九龙", TimeSpan.FromDays(14))),
+            A("greatWallExpress", "speed_outlined", "飞驰长城", "乘坐一次 17 节编组的动力分散型动车组",
+                FirstRollingStockMatch(trips, GreatWallExpressModels)),
+            A("qinlingPassage", "landscape_outlined", "蜀道不难", "行经任一横穿秦岭的铁路客运区间",
+                First(trips, UnlocksQinlingPassage)),
+            A("heavenlyThoroughfare", "route_outlined", "天堑通途", "行经京广线的汉西到武昌区间",
+                First(trips, UnlocksHanxiWuchang)),
             A("lonelyPlanet", "map_outlined", "孤独星球", "分别乘坐经由和若线与格库线的列车",
                 FirstRouteCollectionCompletion(trips, ["和若线", "格库线"])),
             A("hundredThousandKilometers", "route_outlined", "轻车熟路", "累计乘车里程至少 100,000 公里",
@@ -289,8 +317,8 @@ public static partial class AchievementEngine
                 FirstCountCompletion(trips, 10, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$"))),
             A("overnightSleeper", "bedtime_outlined", "夕发朝至", "乘坐 18:00 至 00:00 发车且 05:00 至 11:00 到达的卧铺列车",
                 First(trips, UnlocksOvernightSleeper)),
-            A("tripleTransfer", "multiple_stop_outlined", "辗转挪移", "连续换乘至少 3 次，每次换乘间隔不超过 3 小时",
-                FirstTransferChainCompletion(trips, 3)),
+            A("tripleTransfer", "multiple_stop_outlined", "辗转挪移", "连续换乘至少 2 次，每次换乘间隔不超过 3 小时",
+                FirstTransferChainCompletion(trips, 2)),
             A("endsOfTheEarth", "landscape_outlined", "天涯海角", "到访天涯海角站",
                 FirstStationVisit(trips, ["天涯海角"])),
             A("fourFamousNorths", "explore_outlined", "四大名北", "到访阳泉北站、盘锦北站、孝感北站或邵阳北站",
@@ -382,6 +410,8 @@ public static partial class AchievementEngine
                 FirstUniqueRouteMileageCompletion(trips, 160000)),
             A("spendsLikeWater", "currency_yen", "挥金如土", "单程票价超过 2,000 元",
                 First(trips, trip => trip.Price > 2000)),
+            A("wealthyTraveler", "account_balance_outlined", "腰缠万贯", "任意 30 天内的车票总支出超过 10,000 元",
+                FirstThirtyDaySpendingCompletion(trips, 10000)),
             A("meritAndHonor", "military_tech_outlined", "功成名就", "乘坐至少一种荣誉机车牵引的列车",
                 FirstRollingStockMatch(trips, HonorLocomotives)),
             A("nonOrdinary", "workspace_premium_outlined", "非同凡人", "完成除本成就外其他所有成就（该成就可能随其他成就增补而失去）",
@@ -436,7 +466,7 @@ public static partial class AchievementEngine
         "hundredThousandKilometers" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
         "archaeologyTeam" => P(OldestTripAgeYears(trips, today, fifteenYearsAgo), 15),
         "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
-        "tripleTransfer" => P(MaxTransferCount(trips), 3),
+        "tripleTransfer" => P(MaxTransferCount(trips), 2),
         "grandSlam" => P(RailwayBureauCount(trips), RailwayBureaus.Count),
         "unnecessaryExtra" => P(MaxSameTrainTicketChain(trips), 3),
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
@@ -448,6 +478,9 @@ public static partial class AchievementEngine
         "traverseOneRegion" => P(UniqueRouteMileage(trips), 5000),
         "halfTheRealm" => P(UniqueRouteMileage(trips), 80000),
         "centuryDreamFulfilled" => P(UniqueRouteMileage(trips), 160000),
+        "spendsLikeWater" => P(
+            trips.Select(trip => trip.Price).DefaultIfEmpty(0).Max(), 2000),
+        "wealthyTraveler" => P(MaxThirtyDaySpending(trips), 10000),
         _ => null
     };
 
@@ -898,6 +931,41 @@ public static partial class AchievementEngine
         return null;
     }
 
+    private static PublicTrip? FirstThirtyDaySpendingCompletion(List<PublicTrip> trips, double target)
+    {
+        var ordered = trips.OrderBy(Departure).ThenBy(trip => trip.TicketId).ToList();
+        for (var end = 0; end < ordered.Count; end++)
+        {
+            var endTime = Departure(ordered[end]);
+            var total = 0d;
+            for (var start = end; start >= 0; start--)
+            {
+                if (endTime - Departure(ordered[start]) > TimeSpan.FromDays(30)) break;
+                total += ordered[start].Price;
+            }
+            if (total > target) return ordered[end];
+        }
+        return null;
+    }
+
+    private static double MaxThirtyDaySpending(List<PublicTrip> trips)
+    {
+        var ordered = trips.OrderBy(Departure).ToList();
+        var maximum = 0d;
+        for (var end = 0; end < ordered.Count; end++)
+        {
+            var endTime = Departure(ordered[end]);
+            var total = 0d;
+            for (var start = end; start >= 0; start--)
+            {
+                if (endTime - Departure(ordered[start]) > TimeSpan.FromDays(30)) break;
+                total += ordered[start].Price;
+            }
+            maximum = Math.Max(maximum, total);
+        }
+        return maximum;
+    }
+
     private static PublicTrip? FirstCardinalStationCompletion(List<PublicTrip> trips)
     {
         var directions = new HashSet<string>(["东", "西", "南", "北", ""], StringComparer.Ordinal);
@@ -1078,6 +1146,116 @@ public static partial class AchievementEngine
             (from == "香港西九龙" && to is "福田" or "深圳北");
     }
 
+    private static bool UnlocksBorderCrossing(PublicTrip trip) => RouteSegments(trip).Any(segment =>
+        BorderRouteMarkers.Any(marker => segment.RouteName.Contains(marker, StringComparison.Ordinal)) ||
+        (segment.RouteName.Contains("中老昆万铁路昆磨段", StringComparison.Ordinal) &&
+            (NormalizedStation(segment.FromStation) == "磨憨（境）" || NormalizedStation(segment.ToStation) == "磨憨（境）")));
+
+    private static PublicTrip? FirstDifferentBorderCompletion(List<PublicTrip> trips)
+    {
+        var visits = new List<(string Border, bool Entry, DateTime Time, PublicTrip Trip)>();
+        foreach (var trip in trips)
+        foreach (var segment in RouteSegments(trip))
+        {
+            var border = BorderName(segment);
+            if (border is null) continue;
+            var entry = IsEntryDirection(segment);
+            visits.Add((border, entry, entry ? Departure(trip) : (trip.ArrivalTime ?? Departure(trip)), trip));
+        }
+        visits.Sort((a, b) => a.Time != b.Time ? a.Time.CompareTo(b.Time) : a.Trip.TicketId.CompareTo(b.Trip.TicketId));
+        foreach (var current in visits.Where(item => !item.Entry))
+            if (visits.Any(previous => previous.Entry && previous.Border != current.Border && current.Time >= previous.Time && current.Time - previous.Time <= TimeSpan.FromDays(14)))
+                return current.Trip;
+        return null;
+    }
+
+    private static string? BorderName(RouteSegment segment)
+    {
+        var marker = BorderRouteMarkers.FirstOrDefault(value => segment.RouteName.Contains(value, StringComparison.Ordinal));
+        if (marker is not null) return marker;
+        return segment.RouteName.Contains("中老昆万铁路昆磨段", StringComparison.Ordinal) &&
+            (NormalizedStation(segment.FromStation) == "磨憨（境）" || NormalizedStation(segment.ToStation) == "磨憨（境）") ? "磨憨（境）" : null;
+    }
+
+    private static bool IsEntryDirection(RouteSegment segment)
+    {
+        var from = NormalizedStation(segment.FromStation);
+        var to = NormalizedStation(segment.ToStation);
+        return from.Contains("交接", StringComparison.Ordinal) || from == "新义州" || from == "磨憨（境）" || from.Contains("（境）", StringComparison.Ordinal);
+    }
+
+    private static bool UnlocksQinlingPassage(PublicTrip trip)
+    {
+        var segments = RouteSegments(trip);
+        return segments.Any(segment =>
+                CoversRouteSection(segment, "兰渝线兰渭段", "渭源", "广元") ||
+                CoversRouteSection(segment, "宝成线", "宝鸡", "阳平关") ||
+                CoversRouteSection(segment, "西成客专线", "西安西", "汉中")) ||
+            UnlocksXikangPassage(segments);
+    }
+
+    private static bool UnlocksXikangPassage(IReadOnlyList<RouteSegment> segments)
+    {
+        if (segments.Any(segment => CoversRouteSection(segment, "西康线", "西安东", "安康"))) return true;
+        for (var index = 0; index + 1 < segments.Count; index++)
+        {
+            var first = segments[index];
+            var second = segments[index + 1];
+            if (CoversRouteSection(first, "西康线", "西安东", "大岭铺") &&
+                IsXikangDirectSection(second, "大岭铺", "安康")) return true;
+            if (IsXikangDirectSection(first, "安康", "大岭铺") &&
+                CoversRouteSection(second, "西康线", "大岭铺", "西安东")) return true;
+        }
+        return false;
+    }
+
+    private static bool IsXikangDirectSection(RouteSegment segment, string from, string to)
+    {
+        if (!segment.RouteName.Contains("西康直通线", StringComparison.Ordinal)) return false;
+        var actualFrom = NormalizedStation(segment.FromStation);
+        var actualTo = NormalizedStation(segment.ToStation);
+        var expectedFrom = NormalizedStation(from);
+        var expectedTo = NormalizedStation(to);
+        return (actualFrom == expectedFrom || expectedFrom == "安康" && actualFrom == "安康东") &&
+            (actualTo == expectedTo || expectedTo == "安康" && actualTo == "安康东");
+    }
+
+    private static bool UnlocksHanxiWuchang(PublicTrip trip) => RouteSegments(trip).Any(segment =>
+        CoversRouteSection(segment, "京广线", "汉西", "武昌"));
+
+    private static bool CoversRouteSection(RouteSegment segment, string routeName, string first, string second)
+    {
+        if (!segment.RouteName.Contains(routeName, StringComparison.Ordinal)) return false;
+        var stations = RouteStations.Value.GetValueOrDefault(routeName) ??
+            RouteStations.Value.FirstOrDefault(item => item.Key.Contains(routeName, StringComparison.Ordinal)).Value;
+        if (stations is null) return false;
+        if (!stations.TryGetValue(NormalizedStation(segment.FromStation), out var from) ||
+            !stations.TryGetValue(NormalizedStation(segment.ToStation), out var to)) return false;
+        if (!stations.TryGetValue(first, out var start) || !stations.TryGetValue(second, out var end))
+            return false;
+        var low = Math.Min(start, end); var high = Math.Max(start, end);
+        return Math.Min(from, to) <= low && Math.Max(from, to) >= high;
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> LoadRouteStations()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "db", "routes.db");
+        if (!File.Exists(path)) return new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.Ordinal);
+        using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT r.route_name, s.station_name, s.station_index FROM routes r JOIN stations s USING(route_version_id)";
+        using var reader = command.ExecuteReader();
+        var result = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
+        while (reader.Read())
+        {
+            var route = reader.GetString(0); var station = NormalizedStation(reader.GetString(1));
+            if (!result.TryGetValue(route, out var stations)) result[route] = stations = new(StringComparer.Ordinal);
+            stations.TryAdd(station, reader.GetInt32(2));
+        }
+        return result.ToDictionary(item => item.Key, item => (IReadOnlyDictionary<string, int>)item.Value, StringComparer.Ordinal);
+    }
+
     private static bool UnlocksCommuterSpecial(PublicTrip trip)
     {
         if (NormalizedSeatType(trip.SeatType) is not ("优选一等座" or "一等座" or "商务座" or "特等座")) return false;
@@ -1118,7 +1296,16 @@ public static partial class AchievementEngine
     {
         if (trip.ArrivalTime is null || trip.ArrivalTime < Departure(trip)) return false;
         var departure = Departure(trip);
-        return trip.ArrivalTime.Value.Year > departure.Year;
+        var arrival = trip.ArrivalTime.Value;
+        if (arrival.Year > departure.Year) return true;
+        try
+        {
+            return ChineseCalendar.GetYear(arrival) > ChineseCalendar.GetYear(departure);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
     }
 
     private static bool UnlocksMonotonousTrainNumber(PublicTrip trip)

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,12 +10,14 @@ import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/ct_photo_search_page.dart';
+import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
@@ -232,6 +236,94 @@ class _TripDetailsContent extends StatelessWidget {
     );
   }
 
+  VoidCallback? _railGoInfo(
+    BuildContext context,
+    TripRecord trip, {
+    required String kind,
+    String? value,
+  }) {
+    final keyword = value?.trim() ?? '';
+    if (keyword.isEmpty) return null;
+    return () async {
+      Uri? appUri;
+      Uri? webUri;
+      if (kind == 'station') {
+        final codes = await TrainService.initializeStationCodes();
+        final telecode = codes[keyword];
+        if (telecode == null || telecode.isEmpty) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('未找到$keyword的车站代码')));
+          }
+          return;
+        }
+        appUri = Uri.parse('railgo://pages/station/result?keyword=$telecode');
+        webUri = Uri.parse(
+          'https://railgo.dev/station/result?telecode=$telecode',
+        );
+      } else if (kind == 'train') {
+        final now = DateTime.now();
+        final cutoff = DateTime(now.year, now.month - 1, now.day);
+        final date = trip.departureTime.isBefore(cutoff)
+            ? now
+            : trip.departureTime;
+        final dateText =
+            '${date.year.toString().padLeft(4, '0')}'
+            '${date.month.toString().padLeft(2, '0')}'
+            '${date.day.toString().padLeft(2, '0')}';
+        final encoded = Uri.encodeQueryComponent(keyword);
+        appUri = Uri.parse(
+          'railgo://pages/train/trainResult?keyword=$encoded&date=$dateText',
+        );
+        webUri = Uri.parse(
+          'https://railgo.dev/train/result?keyword=$encoded&date=$dateText',
+        );
+      } else {
+        final model = rollingStockModelCode(keyword);
+        if (model.isEmpty || !_usesHvcbFont(keyword)) return;
+        // RailGo only needs the leading vehicle number for coupled EMUs.
+        final leadingEmu = keyword
+            .split('+')
+            .first
+            .trim()
+            .split('&')
+            .first
+            .trim();
+        final encodedEmu = Uri.encodeQueryComponent(leadingEmu);
+        appUri = Uri.parse('railgo://pages/emu/info?emu=$encodedEmu');
+        webUri = Uri.parse('https://railgo.dev/emu/info?emu=$encodedEmu');
+      }
+
+      var opened = false;
+      if (Platform.isAndroid || Platform.isIOS) {
+        try {
+          opened = await launchUrl(
+            appUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+      }
+      if (!opened) {
+        try {
+          opened = await launchUrl(
+            webUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+      }
+      if (!opened && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法打开 RailGo 链接')));
+      }
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -289,6 +381,12 @@ class _TripDetailsContent extends StatelessWidget {
                         CtPhotoSearchFilter.train,
                       ),
                       photoTooltip: '查看车次图片',
+                      infoTap: _railGoInfo(
+                        context,
+                        trip,
+                        kind: 'train',
+                        value: trip.trainNumber,
+                      ),
                     ),
                     _InfoItem(
                       label: '始发站',
@@ -300,6 +398,12 @@ class _TripDetailsContent extends StatelessWidget {
                         CtPhotoSearchFilter.station,
                       ),
                       photoTooltip: '查看车站图片',
+                      infoTap: _railGoInfo(
+                        context,
+                        trip,
+                        kind: 'station',
+                        value: trip.fromStation,
+                      ),
                     ),
                     _InfoItem(
                       label: '终到站',
@@ -311,6 +415,12 @@ class _TripDetailsContent extends StatelessWidget {
                         CtPhotoSearchFilter.station,
                       ),
                       photoTooltip: '查看车站图片',
+                      infoTap: _railGoInfo(
+                        context,
+                        trip,
+                        kind: 'station',
+                        value: trip.toStation,
+                      ),
                     ),
                     _InfoItem(
                       label: '录入时间',
@@ -347,6 +457,14 @@ class _TripDetailsContent extends StatelessWidget {
                         CtPhotoSearchFilter.model,
                       ),
                       photoTooltip: '查看车型图片',
+                      infoTap: _usesHvcbFont(trip.rollingStock)
+                          ? _railGoInfo(
+                              context,
+                              trip,
+                              kind: 'emu',
+                              value: trip.rollingStock,
+                            )
+                          : null,
                     ),
                     _InfoItem(
                       label: '承运单位',
@@ -394,6 +512,18 @@ class _TripDetailsContent extends StatelessWidget {
               _DetailsSection(
                 icon: Icons.alt_route,
                 title: '经由线路 · ${trip.viaRouteSegments.length} 段',
+                trailing: trip.viaRouteSegments.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '查看单次行程轨迹',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => Navigator.of(context).push(
+                          m3PageRoute(
+                            builder: (_) => TripMapPage(trips: [trip]),
+                          ),
+                        ),
+                        icon: const Icon(Icons.map_outlined),
+                      ),
                 child: trip.viaRouteSegments.isEmpty
                     ? const Text('未记录')
                     : _ViaRouteDiagram(trip: trip),
@@ -651,10 +781,31 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
         ),
       );
       if (!mounted || openTaobao != true) return;
-      final opened = await launchUrl(
-        Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM'),
-        mode: LaunchMode.externalApplication,
+      final webUri = Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM');
+      final appUri = Uri.parse(
+        'taobao://shop.m.taobao.com/shop/shop_index.htm?shop_id=587947567',
       );
+      var opened = false;
+      if (Platform.isAndroid || Platform.isIOS) {
+        try {
+          opened = await launchUrl(
+            appUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+      }
+      if (!opened) {
+        try {
+          opened = await launchUrl(
+            webUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+      }
       if (!opened && mounted) {
         ScaffoldMessenger.of(
           context,
@@ -911,11 +1062,13 @@ class _DetailsSection extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.child,
+    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final Widget child;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -937,7 +1090,13 @@ class _DetailsSection extends StatelessWidget {
                   children: [
                     Icon(icon, size: 18, color: colors.primary),
                     const SizedBox(width: 8),
-                    Text(title, style: Theme.of(context).textTheme.titleSmall),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    ?trailing,
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -982,6 +1141,7 @@ class _InfoItem extends StatelessWidget {
     required this.label,
     required this.value,
     this.onTap,
+    this.infoTap,
     this.photoTooltip = '查看相关图片',
     this.valueFontFamily,
   });
@@ -989,6 +1149,7 @@ class _InfoItem extends StatelessWidget {
   final String label;
   final String value;
   final VoidCallback? onTap;
+  final VoidCallback? infoTap;
   final String photoTooltip;
   final String? valueFontFamily;
 
@@ -1011,11 +1172,22 @@ class _InfoItem extends StatelessWidget {
             Flexible(
               child: SelectableText(
                 value,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontFamily: valueFontFamily,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontFamily: valueFontFamily),
               ),
             ),
+            if (infoTap != null && value != '未记录') ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: '在 RailGo 中查看',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                onPressed: infoTap,
+                icon: Icon(Icons.info_outline, size: 16, color: colors.primary),
+              ),
+            ],
             if (onTap != null && value != '未记录') ...[
               const SizedBox(width: 2),
               IconButton(

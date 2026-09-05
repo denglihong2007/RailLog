@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
@@ -328,10 +330,25 @@ class _AllTripsPageState extends State<AllTripsPage> {
       ),
     );
     if (!mounted || openTaobao != true) return;
-    final opened = await launchUrl(
-      Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM'),
-      mode: LaunchMode.externalApplication,
+    final webUri = Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM');
+    final appUri = Uri.parse(
+      'taobao://shop.m.taobao.com/shop/shop_index.htm?shop_id=587947567',
     );
+    var opened = false;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
+    }
+    if (!opened) {
+      try {
+        opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
+    }
     if (!opened && mounted) {
       ScaffoldMessenger.of(
         context,

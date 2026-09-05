@@ -1,6 +1,7 @@
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_record.dart';
+import 'package:raillog/src/services/train_service.dart';
 
 class TripDashboardStats {
   const TripDashboardStats({
@@ -19,6 +20,8 @@ class TripDashboardStats {
     required this.stationUnlocks,
     required this.firstRecordAt,
     required this.lastRecordAt,
+    required this.routePairUnlocks,
+    required this.cityUnlocks,
   });
 
   factory TripDashboardStats.empty({
@@ -39,6 +42,8 @@ class TripDashboardStats {
     stationUnlocks: [],
     firstRecordAt: null,
     lastRecordAt: null,
+    routePairUnlocks: const [],
+    cityUnlocks: const [],
   );
 
   factory TripDashboardStats.fromTrips(Iterable<TripRecord> trips) {
@@ -58,6 +63,8 @@ class TripDashboardStats {
     final rollingStockUnlocks = <String, DashboardUnlockEntry>{};
     final companyUnlocks = <String, DashboardUnlockEntry>{};
     final stationUnlocks = <String, DashboardUnlockEntry>{};
+    final routePairUnlocks = <String, DashboardUnlockEntry>{};
+    final cityUnlocks = <String, DashboardUnlockEntry>{};
     var totalMileage = 0.0;
     var totalCost = 0.0;
     var maxMileage = 0.0;
@@ -82,6 +89,21 @@ class TripDashboardStats {
         trip,
         action: DashboardUnlockAction.departStation,
       );
+      final from = trip.fromStation.trim();
+      final to = trip.toStation.trim();
+      if (from.isNotEmpty && to.isNotEmpty && from != to) {
+        final pair = [from, to]..sort();
+        _recordUnlock(routePairUnlocks, '${pair[0]} <-> ${pair[1]}', trip);
+      }
+      final cityMap = TrainService.stationCities;
+      final fromCity = _cityForStation(cityMap, from);
+      final toCity = _cityForStation(cityMap, to);
+      if (fromCity != null && fromCity.isNotEmpty) {
+        _recordUnlock(cityUnlocks, fromCity, trip);
+      }
+      if (toCity != null && toCity.isNotEmpty) {
+        _recordUnlock(cityUnlocks, toCity, trip);
+      }
       _recordUnlock(
         stationUnlocks,
         trip.toStation,
@@ -119,6 +141,8 @@ class TripDashboardStats {
       stationUnlocks: _newestFirst(stationUnlocks.values),
       firstRecordAt: railTrips.first.departureTime,
       lastRecordAt: railTrips.last.departureTime,
+      routePairUnlocks: _newestFirst(routePairUnlocks.values),
+      cityUnlocks: _newestFirst(cityUnlocks.values),
     );
   }
 
@@ -137,12 +161,25 @@ class TripDashboardStats {
   final List<DashboardUnlockEntry> stationUnlocks;
   final DateTime? firstRecordAt;
   final DateTime? lastRecordAt;
+  final List<DashboardUnlockEntry> routePairUnlocks;
+  final List<DashboardUnlockEntry> cityUnlocks;
 
   int get routeCount => routeUnlocks.length;
   int get trainCount => trainUnlocks.length;
   int get rollingStockCount => rollingStockUnlocks.length;
   int get companyCount => companyUnlocks.length;
   int get stationCount => stationUnlocks.length;
+  int get routePairCount => routePairUnlocks.length;
+  int get cityCount => cityUnlocks.length;
+}
+
+String? _cityForStation(Map<String, String> cities, String station) {
+  final direct = cities[station];
+  if (direct != null) return direct;
+  if (station.endsWith('站')) {
+    return cities[station.substring(0, station.length - 1)];
+  }
+  return cities['$station站'];
 }
 
 List<DashboardUnlockEntry> _newestFirst(

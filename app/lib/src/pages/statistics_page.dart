@@ -9,7 +9,7 @@ import 'package:raillog/src/services/statistics_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
-enum _UserMetric { trips, mileage, duration, spending }
+enum _UserMetric { trips, mileage, duration, spending, achievements }
 
 enum _TripMetric {
   spending,
@@ -389,6 +389,7 @@ class _UserLeaderboardViewState extends State<_UserLeaderboardView> {
     _UserMetric.trips => widget.leaderboards.tripCount,
     _UserMetric.duration => widget.leaderboards.durationSeconds,
     _UserMetric.mileage => widget.leaderboards.mileageKm,
+    _UserMetric.achievements => widget.leaderboards.achievementCount,
   };
 
   @override
@@ -909,6 +910,7 @@ String _userMetricLabel(_UserMetric metric) => switch (metric) {
   _UserMetric.trips => '行程次数',
   _UserMetric.duration => '累计时长',
   _UserMetric.mileage => '累计里程',
+  _UserMetric.achievements => '解锁成就',
 };
 
 String _tripMetricLabel(_TripMetric metric) => switch (metric) {
@@ -934,6 +936,7 @@ String _formatUserValue(_UserMetric metric, double value) => switch (metric) {
   _UserMetric.trips => '${value.round()} 次',
   _UserMetric.duration => _formatSeconds(value),
   _UserMetric.mileage => '${value.round()} km',
+  _UserMetric.achievements => '${value.round()} 项',
 };
 
 String _formatTripValue(_TripMetric metric, double value) => switch (metric) {

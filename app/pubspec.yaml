@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.6.2+1
+version: 1.7.0+1
 
 environment:
   sdk: ^3.12.2
@@ -110,7 +110,7 @@ flutter_launcher_icons:
     theme_color: "#FFFFFF"
   windows:
     generate: true
-    image_path: assets/icon/icon.png
+    image_path: assets/icon/icon_windows.png
     icon_size: 256
   macos:
     generate: true
@@ -121,7 +121,7 @@ msix_config:
   identity_name: 53D4FFDC.RailLog
   publisher: CN=A0D23678-D7D4-4933-B369-1877DD38719C
   publisher_display_name: 电排骨工坊
-  logo_path: assets/icon/icon.png
+  logo_path: assets/icon/icon_windows.png
   store: true
   languages: zh-cn
 

@@ -24,24 +24,49 @@ class TripExcelImportException implements Exception {
 }
 
 abstract final class TripExcelImportService {
-  static const requiredHeaders = ['车次/班次', '出发站', '到达站', '出发时间'];
+  static const requiredHeaders = ['本地记录号', '车次/班次', '出发站', '到达站', '出发时间'];
   static const supportedHeaders = TripExcelExportService.headers;
 
   static Future<TripExcelImportResult> importBytes(Uint8List bytes) async {
     final parsed = parseWorkbook(bytes);
     final existing = await DbHelper.instance.getAllTrips();
-    final keys = existing.map(_tripKey).toSet();
-    final newTrips = <TripRecord>[];
-    var skipped = 0;
+    final existingById = {for (final trip in existing) trip.id: trip};
+    var imported = 0;
     for (final trip in parsed) {
-      if (!keys.add(_tripKey(trip))) {
-        skipped++;
+      final current = trip.id > 0 ? existingById[trip.id] : null;
+      if (current == null) {
+        await DbHelper.instance.insertTrip(trip);
       } else {
-        newTrips.add(trip);
+        await DbHelper.instance.updateTrip(
+          TripRecord(
+            id: current.id,
+            ticketId: current.ticketId,
+            clientId: current.clientId,
+            ownerUserId: current.ownerUserId,
+            trainNumber: trip.trainNumber,
+            createdAt: current.createdAt,
+            updatedAt: current.updatedAt,
+            deletedAt: current.deletedAt,
+            rollingStock: trip.rollingStock,
+            companyName: trip.companyName,
+            fromStation: trip.fromStation,
+            toStation: trip.toStation,
+            departureTime: trip.departureTime,
+            arrivalTime: trip.arrivalTime,
+            mileageKm: trip.mileageKm,
+            viaRouteSegments: trip.viaRouteSegments,
+            seatType: trip.seatType,
+            seatNumber: trip.seatNumber,
+            price: trip.price,
+            isRailTrip: trip.isRailTrip,
+            isLocalOnly: current.isLocalOnly,
+            notes: trip.notes,
+          ),
+        );
       }
+      imported++;
     }
-    await DbHelper.instance.insertTrips(newTrips);
-    return TripExcelImportResult(imported: newTrips.length, skipped: skipped);
+    return TripExcelImportResult(imported: imported, skipped: 0);
   }
 
   static List<TripRecord> parseWorkbook(Uint8List bytes) {
@@ -104,6 +129,7 @@ abstract final class TripExcelImportService {
       return result;
     }
 
+    final localId = _id(value('本地记录号'), rowNumber);
     final departure = _dateTime(value('出发时间'), rowNumber, '出发时间', true)!;
     final arrival = _dateTime(value('到达时间'), rowNumber, '到达时间', false);
     if (arrival != null && arrival.isBefore(departure)) {
@@ -117,7 +143,6 @@ abstract final class TripExcelImportService {
 
     final from = requiredText('出发站');
     final to = requiredText('到达站');
-    if (from == to) _rowError(rowNumber, '出发站和到达站不能相同');
     final segments = _segments(text('经由线路(JSON)'), rowNumber);
     final routeError = validateViaRouteSegments(
       segments,
@@ -127,7 +152,7 @@ abstract final class TripExcelImportService {
     if (routeError != null) _rowError(rowNumber, routeError);
 
     return TripRecord(
-      id: 0,
+      id: localId,
       trainNumber: requiredText('车次/班次'),
       createdAt: createdAt,
       rollingStock: _optional(text('车型')),
@@ -188,6 +213,18 @@ DateTime? _dateTime(CellValue? value, int row, String column, bool required) {
   return result;
 }
 
+int _id(CellValue? value, int row) {
+  if (value == null || value.toString().trim().isEmpty) return 0;
+  final result = switch (value) {
+    IntCellValue() => value.value,
+    DoubleCellValue() =>
+      value.value == value.value.roundToDouble() ? value.value.toInt() : null,
+    _ => int.tryParse(value.toString().trim()),
+  };
+  if (result == null || result <= 0) _rowError(row, '本地记录号必须是正整数');
+  return result;
+}
+
 double _number(CellValue? value, int row, String column) {
   if (value == null || value.toString().trim().isEmpty) return 0;
   final result = switch (value) {
@@ -218,10 +255,3 @@ bool _railTrip(String value, int row) {
 }
 
 String? _optional(String value) => value.isEmpty ? null : value;
-
-String _tripKey(TripRecord trip) => [
-  trip.trainNumber.trim().toUpperCase(),
-  trip.fromStation.trim(),
-  trip.toStation.trim(),
-  trip.departureTime.toIso8601String(),
-].join('|');

@@ -179,27 +179,46 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
         style: Theme.of(context).textTheme.bodyMedium,
       );
     }
-    return Column(
+    return ReorderableListView.builder(
       key: const ValueKey('routes-list'),
-      children: [
-        for (var index = 0; index < segments.length; index++) ...[
-          if (index > 0) const SizedBox(height: 10),
-          _SegmentEditor(
-            key: _segmentKeys[index],
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: segments.length,
+      onReorderItem: _reorderSegments,
+      itemBuilder: (context, index) => KeyedSubtree(
+        key: _segmentKeys[index],
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: index == segments.length - 1 ? 0 : 10,
+          ),
+          child: _SegmentEditor(
             index: index,
             isLast: index == segments.length - 1,
             initiallyManual: _manualSegments[index],
             segment: segments[index],
             routeNames: routeNames,
             fixedEndStation: endStation,
+            showReorderHandle: segments.length > 1,
             onChanged: (segment) => _updateSegment(index, segment),
             onRemove: () => _removeSegment(index),
             resolveDistance: resolveDistance,
             resolveStations: resolveStations,
           ),
-        ],
-      ],
+        ),
+      ),
     );
+  }
+
+  void _reorderSegments(int oldIndex, int newIndex) {
+    final updated = [...segments];
+    final segment = updated.removeAt(oldIndex);
+    updated.insert(newIndex, segment);
+    final key = _segmentKeys.removeAt(oldIndex);
+    _segmentKeys.insert(newIndex, key);
+    final manual = _manualSegments.removeAt(oldIndex);
+    _manualSegments.insert(newIndex, manual);
+    onChanged(_normalize(updated));
   }
 
   void _addSegment({required bool isManual}) {
@@ -378,13 +397,13 @@ class _EditorHeader extends StatelessWidget {
 
 class _SegmentEditor extends StatefulWidget {
   const _SegmentEditor({
-    super.key,
     required this.index,
     required this.isLast,
     required this.initiallyManual,
     required this.segment,
     required this.routeNames,
     required this.fixedEndStation,
+    required this.showReorderHandle,
     required this.onChanged,
     required this.onRemove,
     required this.resolveDistance,
@@ -397,6 +416,7 @@ class _SegmentEditor extends StatefulWidget {
   final ViaRouteSegment segment;
   final List<String> routeNames;
   final String fixedEndStation;
+  final bool showReorderHandle;
   final ValueChanged<ViaRouteSegment> onChanged;
   final VoidCallback onRemove;
   final RouteDistanceResolver resolveDistance;
@@ -471,6 +491,20 @@ class _SegmentEditorState extends State<_SegmentEditor> {
           children: [
             Row(
               children: [
+                if (widget.showReorderHandle)
+                  Tooltip(
+                    message: '拖动调整顺序',
+                    child: ReorderableDragStartListener(
+                      index: widget.index,
+                      child: IconButton(
+                        tooltip: '拖动调整顺序',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        onPressed: () {},
+                        icon: const Icon(Icons.drag_indicator),
+                      ),
+                    ),
+                  ),
                 Text(
                   '第 ${widget.index + 1} 段',
                   style: Theme.of(context).textTheme.labelMedium,
@@ -484,6 +518,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
             if (_isManual)
               TextFormField(
                 initialValue: widget.segment.routeName,
@@ -551,6 +586,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                           value: widget.segment.toStation,
                           options: _routeStations,
                           isLoading: _isLoadingStations,
+                          showSearchIcon: false,
                           searchAutoFocus: false,
                           onSelected: _selectEndStation,
                           validator: (value) => !_routeStations.contains(value)
@@ -737,6 +773,7 @@ class _SearchPickerFormField extends StatelessWidget {
     required this.validator,
     this.icon,
     this.isLoading = false,
+    this.showSearchIcon = true,
     this.searchAutoFocus = true,
   });
 
@@ -747,6 +784,7 @@ class _SearchPickerFormField extends StatelessWidget {
   final FormFieldValidator<String> validator;
   final IconData? icon;
   final bool isLoading;
+  final bool showSearchIcon;
   final bool searchAutoFocus;
 
   @override
@@ -788,7 +826,9 @@ class _SearchPickerFormField extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     )
-                  : const Icon(Icons.search),
+                  : showSearchIcon
+                  ? const Icon(Icons.search)
+                  : null,
             ),
             child: Text(
               field.value?.isNotEmpty == true ? field.value! : '请选择',
