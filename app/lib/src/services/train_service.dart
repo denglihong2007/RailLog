@@ -33,6 +33,15 @@ class TrainService {
     ),
   );
   static Map<String, String> _stationCodes = const {};
+  static Map<String, String> _stationCities = const {};
+  static String _lastStationScript = '';
+  static Map<String, String> get stationCities => _stationCities;
+
+  static Future<List<String>> getCityNames() async {
+    await initializeStationCodes();
+    return _stationCities.values.toSet().toList()..sort();
+  }
+
   static Future<Map<String, String>>? _stationCodeRequest;
   static final Map<String, String> _ticketCookies = {};
   static Future<void>? _ticketSessionRequest;
@@ -51,6 +60,7 @@ class TrainService {
     final result = await request;
     if (result.isNotEmpty) {
       _stationCodes = Map.unmodifiable(result);
+      _stationCities = Map.unmodifiable(parseStationCities(_lastStationScript));
     } else {
       _stationCodeRequest = null;
     }
@@ -70,7 +80,8 @@ class TrainService {
         options: _ticketRequestOptions(),
       );
       if (response.statusCode != 200) return const {};
-      return parseStationCodes(response.data ?? '');
+      _lastStationScript = response.data ?? '';
+      return parseStationCodes(_lastStationScript);
     } on DioException {
       return const {};
     }
@@ -141,6 +152,18 @@ class TrainService {
       if (stationName.isNotEmpty && telecode.isNotEmpty) {
         result[stationName] = telecode;
       }
+    }
+    return result;
+  }
+
+  static Map<String, String> parseStationCities(String script) {
+    final result = <String, String>{};
+    for (final entry in script.split('@').skip(1)) {
+      final fields = entry.split('|');
+      if (fields.length < 8) continue;
+      final station = fields[1].trim();
+      final city = fields[7].trim();
+      if (station.isNotEmpty && city.isNotEmpty) result[station] = city;
     }
     return result;
   }
