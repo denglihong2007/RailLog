@@ -8,6 +8,7 @@ import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/ct_photo_search_page.dart';
+import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
@@ -394,6 +395,18 @@ class _TripDetailsContent extends StatelessWidget {
               _DetailsSection(
                 icon: Icons.alt_route,
                 title: '经由线路 · ${trip.viaRouteSegments.length} 段',
+                trailing: trip.viaRouteSegments.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '查看单次行程轨迹',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => Navigator.of(context).push(
+                          m3PageRoute(
+                            builder: (_) => TripMapPage(trips: [trip]),
+                          ),
+                        ),
+                        icon: const Icon(Icons.map_outlined),
+                      ),
                 child: trip.viaRouteSegments.isEmpty
                     ? const Text('未记录')
                     : _ViaRouteDiagram(trip: trip),
@@ -911,11 +924,13 @@ class _DetailsSection extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.child,
+    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final Widget child;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -937,7 +952,13 @@ class _DetailsSection extends StatelessWidget {
                   children: [
                     Icon(icon, size: 18, color: colors.primary),
                     const SizedBox(width: 8),
-                    Text(title, style: Theme.of(context).textTheme.titleSmall),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    ?trailing,
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -1011,9 +1032,9 @@ class _InfoItem extends StatelessWidget {
             Flexible(
               child: SelectableText(
                 value,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontFamily: valueFontFamily,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontFamily: valueFontFamily),
               ),
             ),
             if (onTap != null && value != '未记录') ...[
