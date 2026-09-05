@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -664,10 +666,17 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
         ),
       );
       if (!mounted || openTaobao != true) return;
-      final opened = await launchUrl(
-        Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM'),
-        mode: LaunchMode.externalApplication,
+      final webUri = Uri.parse('https://m.tb.cn/h.8XSxU6t54xTo7tM');
+      final appUri = Uri.parse(
+        'taobao://shop.m.taobao.com/shop/shop_index.htm?shop_id=587947567',
       );
+      var opened = false;
+      if (Platform.isAndroid || Platform.isIOS) {
+        opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+      }
+      if (!opened) {
+        opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
       if (!opened && mounted) {
         ScaffoldMessenger.of(
           context,
