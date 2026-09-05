@@ -38,7 +38,7 @@ public static partial class AchievementEngine
             ["thousandKilometers"] = Milestones,
             ["hundredThousandKilometers"] = Milestones,
             ["archaeologyTeam"] = Milestones,
-            ["tenNumericTrains"] = Milestones,
+            ["tenNumericTrains"] = RailwayCatalog,
             ["traverseOneRegion"] = Milestones,
             ["halfTheRealm"] = Milestones,
             ["centuryDreamFulfilled"] = Milestones,
@@ -88,8 +88,8 @@ public static partial class AchievementEngine
             ["fourFamousNorths"] = Touring,
             ["cardinalStations"] = Touring,
             ["borderPorts"] = Touring,
-            ["singleBikeBorder"] = FunJourneys,
-            ["travelerAbroad"] = FunJourneys,
+            ["singleBikeBorder"] = Touring,
+            ["travelerAbroad"] = Touring,
             ["skyAndSea"] = Touring,
             ["greatWallExpress"] = RailwayCatalog,
             ["qinlingPassage"] = Touring,
@@ -105,11 +105,11 @@ public static partial class AchievementEngine
             ["platformSubsidence"] = Touring,
             ["strategist"] = Touring,
             ["eastRedSunRises"] = Touring,
-            ["centuryMeterGauge"] = Touring,
+            ["centuryMeterGauge"] = RailwayCatalog,
 
             ["freeMeal"] = FunJourneys,
             ["wallFacingSeat"] = FunJourneys,
-            ["farsighted"] = RailwayCatalog,
+            ["farsighted"] = FunJourneys,
             ["verticalSleeper"] = RailwayCatalog,
             ["overnightSleeper"] = FunJourneys,
             ["commuterSpecial"] = FunJourneys,
@@ -128,6 +128,7 @@ public static partial class AchievementEngine
             ["vowAtQinling"] = FunJourneys,
             ["differentRoutesSameDestination"] = FunJourneys,
             ["spendsLikeWater"] = FunJourneys,
+            ["wealthyTraveler"] = ExtremeChallenges,
         };
 
     private static readonly HashSet<string> Regular25Models =
@@ -409,6 +410,8 @@ public static partial class AchievementEngine
                 FirstUniqueRouteMileageCompletion(trips, 160000)),
             A("spendsLikeWater", "currency_yen", "挥金如土", "单程票价超过 2,000 元",
                 First(trips, trip => trip.Price > 2000)),
+            A("wealthyTraveler", "account_balance_outlined", "腰缠万贯", "任意 30 天内的车票总支出超过 10,000 元",
+                FirstThirtyDaySpendingCompletion(trips, 10000)),
             A("meritAndHonor", "military_tech_outlined", "功成名就", "乘坐至少一种荣誉机车牵引的列车",
                 FirstRollingStockMatch(trips, HonorLocomotives)),
             A("nonOrdinary", "workspace_premium_outlined", "非同凡人", "完成除本成就外其他所有成就（该成就可能随其他成就增补而失去）",
@@ -463,7 +466,7 @@ public static partial class AchievementEngine
         "hundredThousandKilometers" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
         "archaeologyTeam" => P(OldestTripAgeYears(trips, today, fifteenYearsAgo), 15),
         "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
-        "tripleTransfer" => P(MaxTransferCount(trips), 3),
+        "tripleTransfer" => P(MaxTransferCount(trips), 2),
         "grandSlam" => P(RailwayBureauCount(trips), RailwayBureaus.Count),
         "unnecessaryExtra" => P(MaxSameTrainTicketChain(trips), 3),
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
@@ -475,6 +478,9 @@ public static partial class AchievementEngine
         "traverseOneRegion" => P(UniqueRouteMileage(trips), 5000),
         "halfTheRealm" => P(UniqueRouteMileage(trips), 80000),
         "centuryDreamFulfilled" => P(UniqueRouteMileage(trips), 160000),
+        "spendsLikeWater" => P(
+            trips.Select(trip => trip.Price).DefaultIfEmpty(0).Max(), 2000),
+        "wealthyTraveler" => P(MaxThirtyDaySpending(trips), 10000),
         _ => null
     };
 
@@ -923,6 +929,41 @@ public static partial class AchievementEngine
             if (mileage >= target) return trip;
         }
         return null;
+    }
+
+    private static PublicTrip? FirstThirtyDaySpendingCompletion(List<PublicTrip> trips, double target)
+    {
+        var ordered = trips.OrderBy(Departure).ThenBy(trip => trip.TicketId).ToList();
+        for (var end = 0; end < ordered.Count; end++)
+        {
+            var endTime = Departure(ordered[end]);
+            var total = 0d;
+            for (var start = end; start >= 0; start--)
+            {
+                if (endTime - Departure(ordered[start]) > TimeSpan.FromDays(30)) break;
+                total += ordered[start].Price;
+            }
+            if (total > target) return ordered[end];
+        }
+        return null;
+    }
+
+    private static double MaxThirtyDaySpending(List<PublicTrip> trips)
+    {
+        var ordered = trips.OrderBy(Departure).ToList();
+        var maximum = 0d;
+        for (var end = 0; end < ordered.Count; end++)
+        {
+            var endTime = Departure(ordered[end]);
+            var total = 0d;
+            for (var start = end; start >= 0; start--)
+            {
+                if (endTime - Departure(ordered[start]) > TimeSpan.FromDays(30)) break;
+                total += ordered[start].Price;
+            }
+            maximum = Math.Max(maximum, total);
+        }
+        return maximum;
     }
 
     private static PublicTrip? FirstCardinalStationCompletion(List<PublicTrip> trips)
