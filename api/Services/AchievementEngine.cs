@@ -1255,7 +1255,16 @@ public static partial class AchievementEngine
     {
         if (trip.ArrivalTime is null || trip.ArrivalTime < Departure(trip)) return false;
         var departure = Departure(trip);
-        return trip.ArrivalTime.Value.Year > departure.Year;
+        var arrival = trip.ArrivalTime.Value;
+        if (arrival.Year > departure.Year) return true;
+        try
+        {
+            return ChineseCalendar.GetYear(arrival) > ChineseCalendar.GetYear(departure);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
     }
 
     private static bool UnlocksMonotonousTrainNumber(PublicTrip trip)
