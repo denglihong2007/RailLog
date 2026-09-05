@@ -93,7 +93,7 @@ class TripDashboardStats {
       final to = trip.toStation.trim();
       if (from.isNotEmpty && to.isNotEmpty && from != to) {
         final pair = [from, to]..sort();
-        _recordUnlock(routePairUnlocks, '${pair[0]} ↔ ${pair[1]}', trip);
+        _recordUnlock(routePairUnlocks, '${pair[0]} <-> ${pair[1]}', trip);
       }
       final cityMap = TrainService.stationCities;
       final fromCity = _cityForStation(cityMap, from);

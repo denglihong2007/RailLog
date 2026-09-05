@@ -336,10 +336,18 @@ class _AllTripsPageState extends State<AllTripsPage> {
     );
     var opened = false;
     if (Platform.isAndroid || Platform.isIOS) {
-      opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+      try {
+        opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
     }
     if (!opened) {
-      opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      try {
+        opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
     }
     if (!opened && mounted) {
       ScaffoldMessenger.of(
