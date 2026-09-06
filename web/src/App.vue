@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ArrowRight, BookOpen, CheckCircle2, Code2, Download, Monitor, Route, Search, Smartphone, TrainFront, TriangleAlert, UserRound } from '@lucide/vue'
+import { Apple, ArrowRight, BookOpen, CheckCircle2, Code2, Download, Laptop, Monitor, Route, Search, Smartphone, Terminal, TrainFront, TriangleAlert, UserRound } from '@lucide/vue'
 import ApiDocs from './components/ApiDocs.vue'
 import TripLookup from './components/TripLookup.vue'
 import TicketPdfDownloader from './components/TicketPdfDownloader.vue'
@@ -35,8 +35,16 @@ const userLanding = window.location.pathname.startsWith('/user') || pageParams.h
 const apiLanding = window.location.pathname.startsWith('/api-docs') || pageParams.has('api-docs')
 const utilityLanding = tripLanding || ticketPdfLanding || userLanding || apiLanding
 const downloadLanding = !utilityLanding && (window.location.pathname.startsWith('/download') || pageParams.has('download'))
-const windowsUrl = computed(() => release.value?.windowsDownloadUrl ?? release.value?.releaseUrl ?? fallbackReleaseUrl)
-const androidUrl = computed(() => release.value?.androidDownloadUrl ?? release.value?.releaseUrl ?? fallbackReleaseUrl)
+const releaseAsset = (name: string) => release.value
+  ? `https://github.com/denglihong2007/RailLog/releases/download/v${release.value.version.replace(/^v/, '')}/${name}`
+  : fallbackReleaseUrl
+const releaseVersion = computed(() => release.value?.version.replace(/^v/, '') ?? '')
+const windowsUrl = computed(() => release.value ? releaseAsset(`raillog-v${releaseVersion.value}-windows-x64.zip`) : fallbackReleaseUrl)
+const androidUrl = computed(() => release.value ? releaseAsset(`raillog-v${releaseVersion.value}-android-arm64-v8a.apk`) : fallbackReleaseUrl)
+const macosUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-macos-arm64.zip`))
+const macosIntelUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-macos-x64.zip`))
+const linuxUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-linux-x64.tar.gz`))
+const iosUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-ios.ipa`))
 const versionLabel = computed(() => release.value ? `最新版本 ${release.value.version}` : 'GitHub Releases')
 
 onMounted(async () => {
@@ -83,7 +91,6 @@ onMounted(async () => {
         <h1 id="page-title"><span>RailLog</span><span>轨记</span></h1>
         <p class="intro-copy">留存车票，整理足迹，把每一段铁路旅程汇成自己的出行档案。</p>
         <a class="primary-action" href="#download"><Download :size="20" />下载 RailLog<ArrowRight :size="18" /></a>
-        <span class="platform-note">Windows · Android</span>
       </div>
     </section>
 
@@ -114,6 +121,18 @@ onMounted(async () => {
             <a v-if="downloadLinks?.androidDomesticDownloadUrl" class="secondary-download" :href="downloadLinks.androidDomesticDownloadUrl" target="_blank" rel="noreferrer"><Download :size="19" />{{ downloadLinks.domesticDownloadName }}</a>
             <span v-else class="disabled-download"><Download :size="19" />国内网盘待更新</span>
           </div>
+        </article>
+        <article class="download-card">
+          <Apple :size="34" /><div><h3>macOS</h3><p>适用于 Apple Silicon 与 Intel Mac</p></div>
+          <div class="download-actions"><a :href="macosUrl" target="_blank" rel="noreferrer"><Download :size="19" />M 架构下载</a><a class="secondary-download" :href="macosIntelUrl" target="_blank" rel="noreferrer"><Download :size="19" />Intel 下载</a></div>
+        </article>
+        <article class="download-card">
+          <Terminal :size="34" /><div><h3>Linux</h3><p>x64 桌面版，下载后解压运行</p></div>
+          <div class="download-actions"><a :href="linuxUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a></div>
+        </article>
+        <article class="download-card">
+          <Laptop :size="34" /><div><h3>iOS</h3><p>未签名 IPA，适合开发者部署</p></div>
+          <div class="download-actions"><a :href="iosUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a></div>
         </article>
       </div>
       <p v-if="releaseState === 'unavailable'" class="release-fallback">暂时无法读取版本信息，官方下载将前往开源发布页。</p>
