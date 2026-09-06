@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Caching.Memory;
 using RailLog.API.Models;
 
 namespace RailLog.API.Services;
@@ -11,9 +12,18 @@ public sealed class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
     private readonly string _connectionString;
+    private readonly IMemoryCache _cache;
+    private readonly SemaphoreSlim _statisticsLock = new(1, 1);
+    private readonly TimeSpan _statisticsCacheLifetime;
 
-    public RailLogDatabase(IConfiguration configuration, IWebHostEnvironment environment)
+    public RailLogDatabase(
+        IConfiguration configuration,
+        IWebHostEnvironment environment,
+        IMemoryCache cache)
     {
+        _cache = cache;
+        var cacheMinutes = Math.Max(1, configuration.GetValue<int?>("Statistics:CacheMinutes") ?? 5);
+        _statisticsCacheLifetime = TimeSpan.FromMinutes(cacheMinutes);
         var configured = configuration.GetConnectionString("RailLog") ?? "Data Source=raillog.db";
         var builder = new SqliteConnectionStringBuilder(configured);
         if (!Path.IsPathRooted(builder.DataSource))
@@ -727,6 +737,27 @@ public sealed class RailLogDatabase
 
     public async Task<StatisticsResponse> GetStatisticsAsync(string currentUserId)
     {
+        var cacheKey = StatisticsCacheKey(currentUserId);
+        if (_cache.TryGetValue(cacheKey, out StatisticsResponse? cached) && cached is not null)
+            return cached;
+
+        await _statisticsLock.WaitAsync();
+        try
+        {
+            if (_cache.TryGetValue(cacheKey, out cached) && cached is not null)
+                return cached;
+            var result = await CalculateStatisticsAsync(currentUserId);
+            _cache.Set(cacheKey, result, _statisticsCacheLifetime);
+            return result;
+        }
+        finally
+        {
+            _statisticsLock.Release();
+        }
+    }
+
+    private async Task<StatisticsResponse> CalculateStatisticsAsync(string currentUserId)
+    {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
@@ -849,6 +880,8 @@ public sealed class RailLogDatabase
             RankElements(rollingStockCounts), RankElements(companyCounts));
         return new StatisticsResponse(site, userBoards, tripBoards, elementBoards);
     }
+
+    private static string StatisticsCacheKey(string userId) => $"statistics:{userId}";
 
     private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(SqliteConnection connection, string userId)
     {
