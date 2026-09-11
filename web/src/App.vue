@@ -42,7 +42,6 @@ const releaseVersion = computed(() => release.value?.version.replace(/^v/, '') ?
 const windowsUrl = computed(() => release.value ? releaseAsset(`raillog-v${releaseVersion.value}-windows-x64.zip`) : fallbackReleaseUrl)
 const androidUrl = computed(() => release.value ? releaseAsset(`raillog-v${releaseVersion.value}-android-arm64-v8a.apk`) : fallbackReleaseUrl)
 const macosUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-macos-arm64.zip`))
-const macosIntelUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-macos-x64.zip`))
 const linuxUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-linux-x64.tar.gz`))
 const iosUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-ios.ipa`))
 const versionLabel = computed(() => release.value ? `最新版本 ${release.value.version}` : 'GitHub Releases')
@@ -123,8 +122,8 @@ onMounted(async () => {
           </div>
         </article>
         <article class="download-card">
-          <Apple :size="34" /><div><h3>macOS</h3><p>适用于 Apple Silicon 与 Intel Mac</p></div>
-          <div class="download-actions"><a :href="macosUrl" target="_blank" rel="noreferrer"><Download :size="19" />M 架构下载</a><a class="secondary-download" :href="macosIntelUrl" target="_blank" rel="noreferrer"><Download :size="19" />Intel 下载</a></div>
+          <Apple :size="34" /><div><h3>macOS</h3><p>适用于 Apple Silicon</p></div>
+          <div class="download-actions"><a :href="macosUrl" target="_blank" rel="noreferrer"><Download :size="19" />Apple Silicon 下载</a></div>
         </article>
         <article class="download-card">
           <Terminal :size="34" /><div><h3>Linux</h3><p>x64 桌面版，下载后解压运行</p></div>
