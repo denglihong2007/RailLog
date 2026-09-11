@@ -194,7 +194,11 @@ public sealed record AchievementResponse(
     long? TriggerTripId,
     int UnlockedUserCount,
     double? ProgressCurrent,
-    double? ProgressTarget);
+    double? ProgressTarget,
+    int Experience,
+    bool Hidden,
+    string? Note,
+    bool NarrativeNote);
 
 public sealed record AchievementsResponse(
     int TotalUserCount,
@@ -241,7 +245,7 @@ public sealed record UserLeaderboards(
     IReadOnlyList<UserRankingEntry> TripCount,
     IReadOnlyList<UserRankingEntry> DurationSeconds,
     IReadOnlyList<UserRankingEntry> MileageKm,
-    IReadOnlyList<UserRankingEntry> AchievementCount);
+    IReadOnlyList<UserRankingEntry> AchievementExperience);
 
 public sealed record TripRankingEntry(
     int Rank,

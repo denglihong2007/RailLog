@@ -121,7 +121,7 @@ class UserLeaderboards {
     required this.tripCount,
     required this.durationSeconds,
     required this.mileageKm,
-    required this.achievementCount,
+    required this.achievementExperience,
   });
 
   factory UserLeaderboards.fromJson(Map<String, dynamic> json) =>
@@ -130,14 +130,14 @@ class UserLeaderboards {
         tripCount: _users(json['tripCount']),
         durationSeconds: _users(json['durationSeconds']),
         mileageKm: _users(json['mileageKm']),
-        achievementCount: _users(json['achievementCount']),
+        achievementExperience: _users(json['achievementExperience']),
       );
 
   final List<UserRankingEntry> totalSpending;
   final List<UserRankingEntry> tripCount;
   final List<UserRankingEntry> durationSeconds;
   final List<UserRankingEntry> mileageKm;
-  final List<UserRankingEntry> achievementCount;
+  final List<UserRankingEntry> achievementExperience;
 }
 
 class TripRankingEntry {

@@ -13,6 +13,9 @@ class AchievementsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unlocked = achievements.where((item) => item.isUnlocked).length;
+    final totalExperience = achievements
+        .where((item) => item.isUnlocked)
+        .fold(0, (total, item) => total + item.experience);
     return DefaultTabController(
       length: AchievementCategory.values.length,
       child: Scaffold(
@@ -47,6 +50,7 @@ class AchievementsPage extends StatelessWidget {
                         .toList(growable: false),
                     totalUnlocked: unlocked,
                     totalAchievements: achievements.length,
+                    totalExperience: totalExperience,
                     openAchievement: _openAchievement,
                   ),
               ],
@@ -79,6 +83,7 @@ class _AchievementCategoryView extends StatelessWidget {
     required this.achievements,
     required this.totalUnlocked,
     required this.totalAchievements,
+    required this.totalExperience,
     required this.openAchievement,
   });
 
@@ -86,6 +91,7 @@ class _AchievementCategoryView extends StatelessWidget {
   final List<DashboardAchievement> achievements;
   final int totalUnlocked;
   final int totalAchievements;
+  final int totalExperience;
   final Future<void> Function(BuildContext, DashboardAchievement)
   openAchievement;
 
@@ -118,6 +124,7 @@ class _AchievementCategoryView extends StatelessWidget {
                         categoryTotal: total,
                         totalUnlocked: totalUnlocked,
                         totalAchievements: totalAchievements,
+                        totalExperience: totalExperience,
                       ),
                     ),
                   ),
@@ -176,6 +183,7 @@ class _AchievementProgressSummary extends StatelessWidget {
     required this.categoryTotal,
     required this.totalUnlocked,
     required this.totalAchievements,
+    required this.totalExperience,
   });
 
   final AchievementCategory category;
@@ -183,6 +191,7 @@ class _AchievementProgressSummary extends StatelessWidget {
   final int categoryTotal;
   final int totalUnlocked;
   final int totalAchievements;
+  final int totalExperience;
 
   @override
   Widget build(BuildContext context) {
@@ -193,32 +202,58 @@ class _AchievementProgressSummary extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: IntrinsicHeight(
-          child: Row(
-            children: [
-              Expanded(
-                child: _AchievementProgressMetric(
-                  icon: Icons.donut_large_outlined,
-                  label: '总进度',
-                  unlocked: totalUnlocked,
-                  total: totalAchievements,
-                  indicatorColor: colors.primary,
-                  semanticsLabel: '全部成就解锁进度',
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            IntrinsicHeight(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _AchievementProgressMetric(
+                      icon: Icons.donut_large_outlined,
+                      label: '总进度',
+                      unlocked: totalUnlocked,
+                      total: totalAchievements,
+                      indicatorColor: colors.primary,
+                      semanticsLabel: '全部成就解锁进度',
+                    ),
+                  ),
+                  const VerticalDivider(width: 32),
+                  Expanded(
+                    child: _AchievementProgressMetric(
+                      icon: _categoryIcon(category),
+                      label: category.label,
+                      unlocked: categoryUnlocked,
+                      total: categoryTotal,
+                      indicatorColor: colors.tertiary,
+                      semanticsLabel: '${category.label}解锁进度',
+                    ),
+                  ),
+                ],
               ),
-              const VerticalDivider(width: 32),
-              Expanded(
-                child: _AchievementProgressMetric(
-                  icon: _categoryIcon(category),
-                  label: category.label,
-                  unlocked: categoryUnlocked,
-                  total: categoryTotal,
-                  indicatorColor: colors.tertiary,
-                  semanticsLabel: '${category.label}解锁进度',
+            ),
+            const SizedBox(height: 12),
+            Divider(height: 1, color: colors.outlineVariant),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  Icons.workspace_premium_outlined,
+                  size: 18,
+                  color: colors.secondary,
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 6),
+                const Expanded(child: Text('累计成就经验')),
+                Text(
+                  '$totalExperience XP',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colors.secondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
