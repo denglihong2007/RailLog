@@ -44,6 +44,13 @@ public sealed record EntityReviewResponse(long Id, string EntityType, string Ent
 public sealed record CreateEntityReviewRequest(string EntityType, string EntityKey, string ReviewType, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? Dish, decimal? Price);
 public sealed record UpdateEntityReviewRequest(int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? Dish, decimal? Price);
 public sealed record EntityCountResponse(string EntityType, string EntityKey, long TotalCount);
+public sealed record EntitySearchResult(string EntityType, string EntityKey, long TripCount);
+public sealed record UserSearchResult(
+    string Id,
+    string DisplayName,
+    string? AvatarUrl,
+    string? Bio,
+    long TripCount);
 
 public sealed record PartnerApplicationResponse(
     string Id,

@@ -563,7 +563,114 @@ public sealed class RailLogDatabase
         return count;
     }
 
+    public async Task<IReadOnlyList<EntitySearchResult>> SearchEntitiesAsync(
+        string type,
+        string query,
+        int limit)
+    {
+        var normalizedQuery = NormalizeEntity(query);
+        if (normalizedQuery.Length == 0) return [];
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT TrainNumber, RollingStock, CompanyName, FromStation, ToStation,
+                   ViaRoutes
+            FROM TripRecords
+            WHERE DeletedAt IS NULL;
+            """;
+
+        var counts = new Dictionary<string, (string Name, long Count)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            IEnumerable<string> matches = type switch
+            {
+                "train" => [reader.GetString(0)],
+                "rollingstock" => RollingStockModelCodes(NullableString(reader, 1)),
+                "company" => reader.IsDBNull(2) ? [] : [reader.GetString(2)],
+                "station" => [reader.GetString(3), reader.GetString(4)],
+                "route" => reader.IsDBNull(5) ? [] : ParseRouteNames(reader.GetString(5)),
+                _ => [],
+            };
+
+            foreach (var match in matches.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var normalized = NormalizeEntity(match);
+                if (!normalized.Contains(normalizedQuery, StringComparison.Ordinal))
+                    continue;
+                if (counts.TryGetValue(normalized, out var current))
+                    counts[normalized] = (current.Name, current.Count + 1);
+                else
+                    counts[normalized] = (match, 1);
+            }
+        }
+
+        return counts.Values
+            .OrderByDescending(item => NormalizeEntity(item.Name) == normalizedQuery)
+            .ThenByDescending(item =>
+                NormalizeEntity(item.Name).StartsWith(normalizedQuery, StringComparison.Ordinal))
+            .ThenByDescending(item => item.Count)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .Select(item => new EntitySearchResult(type, item.Name, item.Count))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<UserSearchResult>> SearchUsersAsync(
+        string query,
+        int limit)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
+                   COUNT(trip.Id)
+            FROM AspNetUsers user
+            LEFT JOIN TripRecords trip
+              ON trip.UserId = user.Id AND trip.DeletedAt IS NULL
+            WHERE user.DisplayName COLLATE NOCASE LIKE $pattern ESCAPE '\'
+               OR user.Id LIKE $pattern
+            GROUP BY user.Id, user.DisplayName, user.AvatarUrl, user.Bio
+            ORDER BY CASE
+                         WHEN user.Id = $exactQuery THEN 0
+                         WHEN user.DisplayName = $exactQuery COLLATE NOCASE THEN 1
+                         WHEN user.DisplayName COLLATE NOCASE LIKE $prefix ESCAPE '\' THEN 2
+                         ELSE 3
+                     END,
+                     COUNT(trip.Id) DESC,
+                     user.DisplayName COLLATE NOCASE
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$pattern", LikePattern(query));
+        command.Parameters.AddWithValue("$prefix", LikePrefix(query));
+        command.Parameters.AddWithValue("$exactQuery", query);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var results = new List<UserSearchResult>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            results.Add(new UserSearchResult(
+                reader.GetString(0),
+                reader.GetString(1),
+                NullableString(reader, 2),
+                NullableString(reader, 3),
+                reader.GetInt64(4)));
+        return results;
+    }
+
     private static string NormalizeEntity(string value) => Regex.Replace(value.Trim().ToLowerInvariant(), "\\s+", "");
+
+    private static string LikePattern(string value) => $"%{EscapeLike(value)}%";
+
+    private static string LikePrefix(string value) => $"{EscapeLike(value)}%";
+
+    private static string EscapeLike(string value) => value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("%", "\\%", StringComparison.Ordinal)
+        .Replace("_", "\\_", StringComparison.Ordinal);
 
     public async Task<EntityReviewResponse> AddEntityReviewAsync(string userId, CreateEntityReviewRequest request)
     {
