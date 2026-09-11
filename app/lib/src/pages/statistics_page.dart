@@ -4,6 +4,7 @@ import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
+import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/statistics_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
@@ -501,7 +502,7 @@ class _ElementLeaderboardViewState extends State<_ElementLeaderboardView> {
         onChanged: (value) => setState(() => _metric = value),
       ),
       children: _entries
-          .map((entry) => _ElementRankingRow(entry: entry))
+          .map((entry) => _ElementRankingRow(entry: entry, metric: _metric))
           .toList(growable: false),
     );
   }
@@ -630,9 +631,10 @@ class _TripRankingRow extends StatelessWidget {
 }
 
 class _ElementRankingRow extends StatelessWidget {
-  const _ElementRankingRow({required this.entry});
+  const _ElementRankingRow({required this.entry, required this.metric});
 
   final ElementRankingEntry entry;
+  final _ElementMetric metric;
 
   @override
   Widget build(BuildContext context) {
@@ -640,6 +642,13 @@ class _ElementRankingRow extends StatelessWidget {
       rank: entry.rank,
       title: entry.name,
       value: '${entry.value} 次',
+      onTap: () => openEntityPage(context, switch (metric) {
+        _ElementMetric.stations => EntityType.station,
+        _ElementMetric.routes => EntityType.route,
+        _ElementMetric.trains => EntityType.train,
+        _ElementMetric.rollingStocks => EntityType.rollingStock,
+        _ElementMetric.companies => EntityType.company,
+      }, entry.name),
     );
   }
 }

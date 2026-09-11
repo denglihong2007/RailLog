@@ -9,15 +9,13 @@ import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
-import 'package:raillog/src/pages/ct_photo_search_page.dart';
+import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
-import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
-import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
@@ -217,113 +215,6 @@ class _TripDetailsContent extends StatelessWidget {
   final String? ownerBio;
   final VoidCallback? onOwnerTap;
 
-  VoidCallback? _photoSearch(
-    BuildContext context,
-    String label,
-    String? value,
-    CtPhotoSearchFilter filter,
-  ) {
-    final keyword = value?.trim() ?? '';
-    if (keyword.isEmpty) return null;
-    return () => Navigator.of(context).push(
-      m3PageRoute(
-        builder: (_) => CtPhotoSearchPage(
-          keyword: keyword,
-          fieldLabel: label,
-          filter: filter,
-        ),
-      ),
-    );
-  }
-
-  VoidCallback? _railGoInfo(
-    BuildContext context,
-    TripRecord trip, {
-    required String kind,
-    String? value,
-  }) {
-    final keyword = value?.trim() ?? '';
-    if (keyword.isEmpty) return null;
-    return () async {
-      Uri? appUri;
-      Uri? webUri;
-      if (kind == 'station') {
-        final codes = await TrainService.initializeStationCodes();
-        final telecode = codes[keyword];
-        if (telecode == null || telecode.isEmpty) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('未找到$keyword的车站代码')));
-          }
-          return;
-        }
-        appUri = Uri.parse('railgo://pages/station/result?keyword=$telecode');
-        webUri = Uri.parse(
-          'https://railgo.dev/station/result?telecode=$telecode',
-        );
-      } else if (kind == 'train') {
-        final now = DateTime.now();
-        final cutoff = DateTime(now.year, now.month - 1, now.day);
-        final date = trip.departureTime.isBefore(cutoff)
-            ? now
-            : trip.departureTime;
-        final dateText =
-            '${date.year.toString().padLeft(4, '0')}'
-            '${date.month.toString().padLeft(2, '0')}'
-            '${date.day.toString().padLeft(2, '0')}';
-        final encoded = Uri.encodeQueryComponent(keyword);
-        appUri = Uri.parse(
-          'railgo://pages/train/trainResult?keyword=$encoded&date=$dateText',
-        );
-        webUri = Uri.parse(
-          'https://railgo.dev/train/result?keyword=$encoded&date=$dateText',
-        );
-      } else {
-        final model = rollingStockModelCode(keyword);
-        if (model.isEmpty || !_usesHvcbFont(keyword)) return;
-        // RailGo only needs the leading vehicle number for coupled EMUs.
-        final leadingEmu = keyword
-            .split('+')
-            .first
-            .trim()
-            .split('&')
-            .first
-            .trim();
-        final encodedEmu = Uri.encodeQueryComponent(leadingEmu);
-        appUri = Uri.parse('railgo://pages/emu/info?emu=$encodedEmu');
-        webUri = Uri.parse('https://railgo.dev/emu/info?emu=$encodedEmu');
-      }
-
-      var opened = false;
-      if (Platform.isAndroid || Platform.isIOS) {
-        try {
-          opened = await launchUrl(
-            appUri,
-            mode: LaunchMode.externalApplication,
-          );
-        } catch (_) {
-          opened = false;
-        }
-      }
-      if (!opened) {
-        try {
-          opened = await launchUrl(
-            webUri,
-            mode: LaunchMode.externalApplication,
-          );
-        } catch (_) {
-          opened = false;
-        }
-      }
-      if (!opened && context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('无法打开 RailGo 链接')));
-      }
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -374,53 +265,32 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车次',
                       value: _optionalText(trip.trainNumber),
-                      onTap: _photoSearch(
+                      infoTap: () => openEntityPage(
                         context,
-                        '车次',
+                        EntityType.train,
                         trip.trainNumber,
-                        CtPhotoSearchFilter.train,
                       ),
-                      photoTooltip: '查看车次图片',
-                      infoTap: _railGoInfo(
-                        context,
-                        trip,
-                        kind: 'train',
-                        value: trip.trainNumber,
-                      ),
+                      infoTooltip: '查看车次详情',
                     ),
                     _InfoItem(
                       label: '始发站',
                       value: _optionalText(trip.fromStation),
-                      onTap: _photoSearch(
+                      infoTap: () => openEntityPage(
                         context,
-                        '始发站',
+                        EntityType.station,
                         trip.fromStation,
-                        CtPhotoSearchFilter.station,
                       ),
-                      photoTooltip: '查看车站图片',
-                      infoTap: _railGoInfo(
-                        context,
-                        trip,
-                        kind: 'station',
-                        value: trip.fromStation,
-                      ),
+                      infoTooltip: '查看车站详情',
                     ),
                     _InfoItem(
                       label: '终到站',
                       value: _optionalText(trip.toStation),
-                      onTap: _photoSearch(
+                      infoTap: () => openEntityPage(
                         context,
-                        '终到站',
+                        EntityType.station,
                         trip.toStation,
-                        CtPhotoSearchFilter.station,
                       ),
-                      photoTooltip: '查看车站图片',
-                      infoTap: _railGoInfo(
-                        context,
-                        trip,
-                        kind: 'station',
-                        value: trip.toStation,
-                      ),
+                      infoTooltip: '查看车站详情',
                     ),
                     _InfoItem(
                       label: '录入时间',
@@ -450,25 +320,23 @@ class _TripDetailsContent extends StatelessWidget {
                       valueFontFamily: _usesHvcbFont(trip.rollingStock)
                           ? 'HVCB'
                           : null,
-                      onTap: _photoSearch(
+                      infoTap: () => openEntityPage(
                         context,
-                        '车型',
+                        EntityType.rollingStock,
                         rollingStockModelCode(trip.rollingStock),
-                        CtPhotoSearchFilter.model,
                       ),
-                      photoTooltip: '查看车型图片',
-                      infoTap: _usesHvcbFont(trip.rollingStock)
-                          ? _railGoInfo(
-                              context,
-                              trip,
-                              kind: 'emu',
-                              value: trip.rollingStock,
-                            )
-                          : null,
+                      infoTooltip: '查询车型',
+                      railGoTap: _railGoEmuTap(context, trip.rollingStock),
                     ),
                     _InfoItem(
                       label: '承运单位',
                       value: _optionalText(trip.companyName),
+                      infoTap: () => openEntityPage(
+                        context,
+                        EntityType.company,
+                        trip.companyName ?? '',
+                      ),
+                      infoTooltip: '查看承运单位详情',
                     ),
                     _InfoItem(
                       label: '里程',
@@ -1140,17 +1008,17 @@ class _InfoItem extends StatelessWidget {
   const _InfoItem({
     required this.label,
     required this.value,
-    this.onTap,
     this.infoTap,
-    this.photoTooltip = '查看相关图片',
+    this.infoTooltip = '查看详情',
+    this.railGoTap,
     this.valueFontFamily,
   });
 
   final String label;
   final String value;
-  final VoidCallback? onTap;
   final VoidCallback? infoTap;
-  final String photoTooltip;
+  final String infoTooltip;
+  final VoidCallback? railGoTap;
   final String? valueFontFamily;
 
   @override
@@ -1180,7 +1048,7 @@ class _InfoItem extends StatelessWidget {
             if (infoTap != null && value != '未记录') ...[
               const SizedBox(width: 4),
               IconButton(
-                tooltip: '在 RailGo 中查看',
+                tooltip: infoTooltip,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
@@ -1188,19 +1056,15 @@ class _InfoItem extends StatelessWidget {
                 icon: Icon(Icons.info_outline, size: 16, color: colors.primary),
               ),
             ],
-            if (onTap != null && value != '未记录') ...[
+            if (railGoTap != null && value != '未记录') ...[
               const SizedBox(width: 2),
               IconButton(
-                tooltip: photoTooltip,
+                tooltip: '在 RailGo 中查询该车组',
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-                onPressed: onTap,
-                icon: Icon(
-                  Icons.photo_library_outlined,
-                  size: 16,
-                  color: colors.primary,
-                ),
+                onPressed: railGoTap,
+                icon: Icon(Icons.open_in_new, size: 16, color: colors.primary),
               ),
             ],
           ],
@@ -1521,6 +1385,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         width,
         columns,
       );
+      final routeName = routeNames[firstSegment];
       final labelWidth = math.min(112.0, width);
       labels.add(
         Positioned(
@@ -1534,7 +1399,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           child: Center(
             child: _ViaRouteLabel(
               key: ValueKey(sectionId),
-              route: routeNames[firstSegment],
+              route: routeName,
               color: segmentColors[firstSegment],
               expanded: canExpand && _expandedRouteSections.contains(sectionId),
               onTap: canExpand
@@ -1546,6 +1411,8 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       });
                     }
                   : null,
+              onInfo: () =>
+                  openEntityPage(context, EntityType.route, routeName),
             ),
           ),
         ),
@@ -1665,24 +1532,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
               station: station,
               mileage: mileage,
               alignEnd: false,
-              onTap: () => _openStationPhotos(context, station),
+              onTap: () => openEntityPage(context, EntityType.station, station),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _openStationPhotos(BuildContext context, String station) {
-    final keyword = station.trim();
-    if (keyword.isEmpty) return;
-    Navigator.of(context).push(
-      m3PageRoute(
-        builder: (_) => CtPhotoSearchPage(
-          keyword: keyword,
-          fieldLabel: '车站',
-          filter: CtPhotoSearchFilter.station,
-        ),
       ),
     );
   }
@@ -1695,12 +1548,14 @@ class _ViaRouteLabel extends StatelessWidget {
     required this.color,
     required this.expanded,
     this.onTap,
+    this.onInfo,
   });
 
   final String route;
   final Color color;
   final bool expanded;
   final VoidCallback? onTap;
+  final VoidCallback? onInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -1728,6 +1583,15 @@ class _ViaRouteLabel extends StatelessWidget {
               color: colors.onSurfaceVariant,
             ),
           ],
+          if (onInfo != null)
+            IconButton(
+              tooltip: '查看线路详情',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+              icon: const Icon(Icons.info_outline, size: 14),
+              onPressed: onInfo,
+            ),
         ],
       ),
     );
@@ -2064,6 +1928,51 @@ String _optionalText(String? value) {
 
 bool _usesHvcbFont(String? value) =>
     value?.toUpperCase().contains('CR') ?? false;
+
+/// 完整动车组写法（车型 + 四位车号）的车组号，重联车组取靠前的一组。
+/// 例如 CR400BF-5033&5034 → CR400BF-5033，CRH380B-3606+CRH380B-3607 → CRH380B-3606。
+String? _completeEmuCode(String? rawValue) {
+  final text = rawValue?.trim() ?? '';
+  if (text.isEmpty) return null;
+  final leading = text.split('+').first.trim();
+  final emuPattern = RegExp(r'^(.+?)-\d{4}(?:&\d{4})*$', caseSensitive: false);
+  if (!emuPattern.hasMatch(leading)) return null;
+  final unit = leading.split('&').first.trim();
+  final model = rollingStockModelCode(unit).toUpperCase();
+  if (!model.contains('CR') && !model.startsWith('CJ')) return null;
+  return unit;
+}
+
+VoidCallback? _railGoEmuTap(BuildContext context, String? rollingStock) {
+  final code = _completeEmuCode(rollingStock);
+  return code == null ? null : () => _openRailGoEmu(context, code);
+}
+
+Future<void> _openRailGoEmu(BuildContext context, String code) async {
+  final encoded = Uri.encodeQueryComponent(code);
+  final appUri = Uri.parse('railgo://pages/emu/info?emu=$encoded');
+  final webUri = Uri.parse('https://railgo.dev/emu/info?emu=$encoded');
+  var opened = false;
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened) {
+    try {
+      opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('无法打开 RailGo 链接')));
+  }
+}
 
 Duration? _duration(TripRecord trip) {
   final arrivalTime = trip.arrivalTime;

@@ -6,12 +6,12 @@ import 'package:raillog/src/services/session_service.dart';
 class IntersectionService {
   IntersectionService._();
 
-  static Future<List<OnlineIntersection>> fetch() async {
+  static Future<List<OnlineIntersection>> fetch(String type, String key) async {
     final token = SessionService.instance.token;
     if (token == null) return const [];
     try {
       final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
-        '/api/intersections',
+        '/api/intersections/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}',
         options: ApiClient.instance.authorized(token),
       );
       final rows =

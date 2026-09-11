@@ -4,6 +4,7 @@ import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
+import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 enum _UnlockSortField { unlockTime, tripCount }
@@ -18,6 +19,7 @@ class DashboardUnlocksPage extends StatefulWidget {
     this.progressCatalog,
     this.showTrainNumber = true,
     this.openTrip,
+    this.entityType,
   });
 
   final String title;
@@ -27,6 +29,7 @@ class DashboardUnlocksPage extends StatefulWidget {
   final Future<List<String>>? progressCatalog;
   final bool showTrainNumber;
   final TripEntryOpener? openTrip;
+  final EntityType? entityType;
 
   @override
   State<DashboardUnlocksPage> createState() => _DashboardUnlocksPageState();
@@ -289,6 +292,10 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
   }
 
   Future<void> _openMatchingTrips(DashboardUnlockEntry entry) async {
+    if (widget.entityType != null) {
+      await openEntityPage(context, widget.entityType!, entry.name);
+      return;
+    }
     final tripIds = entry.tripIds.toSet();
     final trips = widget.allTrips
         .where((trip) => tripIds.contains(trip.id))

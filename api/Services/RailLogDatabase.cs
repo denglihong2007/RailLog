@@ -104,6 +104,23 @@ public sealed class RailLogDatabase
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
                 FOREIGN KEY (TriggerTripId) REFERENCES TripRecords (Id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS EntityReviews (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                EntityType TEXT NOT NULL,
+                EntityKey TEXT NOT NULL,
+                ReviewType TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                Rating INTEGER NOT NULL,
+                Comment TEXT NOT NULL,
+                TripId INTEGER NULL,
+                SecondTripId INTEGER NULL,
+                TransferMinutes INTEGER NULL,
+                Dish TEXT NULL,
+                Price REAL NULL,
+                CreatedAt TEXT NOT NULL,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS IX_EntityReviews_Entity ON EntityReviews(EntityType, EntityKey);
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -117,6 +134,7 @@ public sealed class RailLogDatabase
         await EnsureColumnAsync(connection, "TripRecords", "CompanyName", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "UpdatedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
+        await EnsureColumnAsync(connection, "EntityReviews", "SecondTripId", "INTEGER NULL");
         await ExecuteAsync(connection, $"""
             UPDATE AspNetUsers
             SET CreatedAt = '{ToDb(DateTime.Now)}'
@@ -505,6 +523,74 @@ public sealed class RailLogDatabase
         return await GetTripsAsync(connection, userId);
     }
 
+    public async Task<IReadOnlyList<EntityReviewResponse>> GetEntityReviewsAsync(string type, string key)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,r.SecondTripId,r.TransferMinutes,r.Dish,r.Price,r.CreatedAt FROM EntityReviews r JOIN AspNetUsers u ON u.Id=r.UserId WHERE r.EntityType=$type AND r.EntityKey=$key ORDER BY r.CreatedAt DESC";
+        command.Parameters.AddWithValue("$type", type);
+        command.Parameters.AddWithValue("$key", key);
+        var result = new List<EntityReviewResponse>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) result.Add(new EntityReviewResponse(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.IsDBNull(6)?null:reader.GetString(6), reader.GetInt32(7), reader.GetString(8), reader.IsDBNull(9)?null:reader.GetInt64(9), reader.IsDBNull(10)?null:reader.GetInt64(10), reader.IsDBNull(11)?null:reader.GetInt32(11), reader.IsDBNull(12)?null:reader.GetString(12), reader.IsDBNull(13)?null:Convert.ToDecimal(reader.GetValue(13)), DateTime.Parse(reader.GetString(14))));
+        return result;
+    }
+
+    public async Task<long> GetEntityCountAsync(string type, string key)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT TrainNumber,RollingStock,CompanyName,FromStation,ToStation,ViaRoutes FROM TripRecords WHERE DeletedAt IS NULL";
+        await using var reader = await command.ExecuteReaderAsync();
+        var normalized = NormalizeEntity(key);
+        long count = 0;
+        while (await reader.ReadAsync())
+        {
+            var matches = type.ToLowerInvariant() switch
+            {
+                "train" => NormalizeEntity(reader.GetString(0)) == normalized,
+                "rollingstock" => RollingStockModelCodes(reader.IsDBNull(1) ? "" : reader.GetString(1))
+                    .Any(model => NormalizeEntity(model) == normalized),
+                "company" => NormalizeEntity(reader.IsDBNull(2) ? "" : reader.GetString(2)) == normalized,
+                "station" => NormalizeEntity(reader.GetString(3)) == normalized || NormalizeEntity(reader.GetString(4)) == normalized,
+                "route" => reader.IsDBNull(5) ? false : reader.GetString(5).Contains(key, StringComparison.OrdinalIgnoreCase),
+                _ => false,
+            };
+            if (matches) count++;
+        }
+        return count;
+    }
+
+    private static string NormalizeEntity(string value) => Regex.Replace(value.Trim().ToLowerInvariant(), "\\s+", "");
+
+    public async Task<EntityReviewResponse> AddEntityReviewAsync(string userId, CreateEntityReviewRequest request)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO EntityReviews(EntityType,EntityKey,ReviewType,UserId,Rating,Comment,TripId,SecondTripId,TransferMinutes,Dish,Price,CreatedAt) VALUES($type,$key,$review,$user,$rating,$comment,$trip,$second,$minutes,$dish,$price,$created); SELECT last_insert_rowid();";
+        command.Parameters.AddWithValue("$type", request.EntityType); command.Parameters.AddWithValue("$key", request.EntityKey); command.Parameters.AddWithValue("$review", request.ReviewType); command.Parameters.AddWithValue("$user", userId); command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$created", DateTime.UtcNow.ToString("O"));
+        var id = Convert.ToInt64(await command.ExecuteScalarAsync());
+        return (await GetEntityReviewsAsync(request.EntityType, request.EntityKey)).First(r => r.Id == id);
+    }
+
+    public async Task<bool> DeleteEntityReviewAsync(long id, string userId)
+    {
+        await using var connection = OpenConnection(); await connection.OpenAsync();
+        await using var command = connection.CreateCommand(); command.CommandText = "DELETE FROM EntityReviews WHERE Id=$id AND UserId=$user"; command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$user", userId); return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<bool> UpdateEntityReviewAsync(long id, string userId, UpdateEntityReviewRequest request)
+    {
+        await using var connection = OpenConnection(); await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE EntityReviews SET Rating=$rating,Comment=$comment,TripId=$trip,SecondTripId=$second,TransferMinutes=$minutes,Dish=$dish,Price=$price WHERE Id=$id AND UserId=$user";
+        command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$user", userId);
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
     public async Task<AchievementsResponse> GetAchievementsAsync(string userId)
     {
         await using var connection = OpenConnection();
@@ -545,7 +631,7 @@ public sealed class RailLogDatabase
         return new AchievementUnlockTripsResponse(achievementId, trips);
     }
 
-    public async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
+    private async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
@@ -733,6 +819,16 @@ public sealed class RailLogDatabase
         await tripsReader.CloseAsync();
         var achievements = await GetAchievementsAsync(connection, userId);
         return new PublicUserDashboardResponse(user, trips, achievements);
+    }
+
+    public async Task<IReadOnlyList<IntersectionGroup>> GetEntityIntersectionsAsync(string userId, string type, string key)
+    {
+        var all = await GetIntersectionsAsync(userId);
+        var normalized = NormalizeEntity(key);
+        return all.Where(group =>
+            (type.Equals("station", StringComparison.OrdinalIgnoreCase) && NormalizeEntity(group.Location) == normalized) ||
+            (type.Equals("train", StringComparison.OrdinalIgnoreCase) && NormalizeEntity(group.Location) == normalized)
+        ).ToList();
     }
 
     public async Task<StatisticsResponse> GetStatisticsAsync(string currentUserId)

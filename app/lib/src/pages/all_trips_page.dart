@@ -872,7 +872,7 @@ class _ResponsiveTripsList extends StatelessWidget {
     return M3Reveal(
       duration: Duration(milliseconds: 220 + animationStep * 30),
       distance: 6,
-      child: _TripTicketCard(
+      child: TripTicketCard(
         trip: trips[index],
         openTrip: openTrip,
         selectionMode: selectionMode,
@@ -883,8 +883,8 @@ class _ResponsiveTripsList extends StatelessWidget {
   }
 }
 
-class _TripTicketCard extends StatelessWidget {
-  const _TripTicketCard({
+class TripTicketCard extends StatelessWidget {
+  const TripTicketCard({super.key,
     required this.trip,
     required this.selectionMode,
     required this.selected,
