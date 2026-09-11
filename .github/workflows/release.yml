@@ -56,6 +56,26 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/android/upload-keystore.jks
+          {
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'storeFile=%s\n' "$GITHUB_WORKSPACE/app/android/upload-keystore.jks"
+          } > app/android/key.properties
       - name: Build APK
         working-directory: app
         run: flutter build apk --release --split-per-abi
@@ -119,17 +139,10 @@ jobs:
           path: '*.zip'
 
   build-macos:
-    name: macOS (${{ matrix.arch }})
+    name: macOS (arm64)
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-latest
-          - arch: x64
-            runner: macos-13
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -143,10 +156,10 @@ jobs:
         run: |
           macos_app=$(find app/build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
           test -n "$macos_app"
-          ditto -c -k --sequesterRsrc --keepParent "$macos_app" "raillog-${{ needs.prepare.outputs.tag }}-macos-${{ matrix.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$macos_app" "raillog-${{ needs.prepare.outputs.tag }}-macos-arm64.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
+          name: macos-arm64
           path: '*.zip'
 
   build-ios:
