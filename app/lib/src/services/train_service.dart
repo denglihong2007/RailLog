@@ -795,7 +795,8 @@ class TrainService {
   }) async {
     try {
       final response = await _dio.get<dynamic>(
-        'https://api.rail.re/train/${Uri.encodeComponent(trainNumber)}',
+        'https://emu.railgo.zenglingkun.cn/api/query',
+        queryParameters: {'keyword': trainNumber.trim()},
       );
       final records = _rollingStockRecords(response.data);
       if (response.statusCode != 200 || records.isEmpty) return null;
@@ -890,9 +891,17 @@ class TrainService {
         : const <dynamic>[];
     return source
         .whereType<Map<String, dynamic>>()
-        .map((item) {
-          return RollingStockRecord.tryFromJson(item);
+        .expand((item) {
+          final codes = item['trainCode'];
+          if (codes is! List || codes.isEmpty) return [item];
+          return codes.map(
+            (code) => {
+              ...item,
+              'trainCode': [code],
+            },
+          );
         })
+        .map(RollingStockRecord.tryFromJson)
         .whereType<RollingStockRecord>()
         .toList();
   }
@@ -928,7 +937,8 @@ class TrainService {
 
   static String _rollingStockModels(List<RollingStockRecord> records) {
     return records
-        .map((record) => _rollingStockModel(record.emuNumber))
+        .expand((record) => record.emuNumber.split('&'))
+        .map(_rollingStockModel)
         .toSet()
         .join('&');
   }

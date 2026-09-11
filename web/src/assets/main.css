@@ -26,18 +26,22 @@ h1 { margin:0; display:flex; flex-wrap:wrap; column-gap:.22em; font-size:clamp(4
 h2 { margin:0; font-size:clamp(28px,4vw,42px); letter-spacing:0; }
 .release-status { margin:0; display:flex; align-items:center; gap:7px; color:var(--muted); }
 .release-status.ready { color:#26713a; }
-.download-grid { min-width:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.download-grid { min-width:0; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:16px; }
+.download-grid .download-card:nth-child(1),.download-grid .download-card:nth-child(2) { grid-column:span 3; min-height:224px; }
+.download-grid .download-card:nth-child(n+3) { grid-column:span 2; min-height:190px; }
 .download-card { min-width:0; min-height:210px; padding:24px; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:18px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
 .download-card>svg { color:var(--brand); }
 .android-card>svg { color:var(--blue); }
 .download-card h3 { margin:0 0 6px; font-size:23px; }
 .download-card p { margin:0; color:var(--muted); }
 .download-actions { grid-column:1/-1; align-self:end; display:flex; flex-wrap:wrap; gap:8px; }
-.download-card a,.disabled-download { min-height:44px; padding:0 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:7px; font-weight:700; }
-.download-card .secondary-download { background:transparent; color:var(--ink); border:1px solid var(--line); }
-.download-card .secondary-download:hover { background:var(--surface-low); }
+.download-card a,.disabled-download { min-height:44px; padding:0 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:7px; font-weight:700; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, transform .18s ease; }
+.download-card a:hover { transform:translateY(-1px); }
+.download-card .secondary-download { background:var(--surface-low); color:var(--ink); border-color:var(--line); }
+.download-card .secondary-download:hover { background:var(--surface); border-color:var(--brand); }
+.download-card a:not(.secondary-download) { background:var(--brand); color:#202124; border-color:var(--brand); }
+.download-card a:not(.secondary-download):hover { background:var(--brand-dark); }
 .disabled-download { color:var(--muted); border:1px dashed var(--line); cursor:not-allowed; }
-.android-card a:not(.secondary-download) { background:var(--blue); }
 .release-fallback { max-width:100%; margin:16px 0 0; color:var(--muted); overflow-wrap:anywhere; word-break:break-all; }
 .product-band { max-width:1180px; margin:0 auto; padding:64px 24px; display:grid; grid-template-columns:repeat(3,1fr); gap:32px; }
 .product-band div { display:grid; grid-template-columns:auto 1fr; column-gap:12px; row-gap:4px; align-items:center; }
@@ -54,7 +58,7 @@ footer a { display:inline-flex; align-items:center; gap:5px; color:var(--ink); }
   .primary-action { width:100%; } .platform-note { display:block; margin:12px 0 0; text-align:center; }
   .download-section { width:100%; max-width:100vw; overflow:hidden; padding:52px 16px; } .section-heading { align-items:start; flex-direction:column; }
   .upgrade-alert { margin-bottom:28px; padding:16px; }
-  .download-grid,.product-band { grid-template-columns:1fr; } .download-card { min-height:195px; }
+  .download-grid,.product-band { grid-template-columns:1fr; } .download-grid .download-card,.download-grid .download-card:nth-child(1),.download-grid .download-card:nth-child(2),.download-grid .download-card:nth-child(n+3) { grid-column:auto; min-height:195px; } .download-card { min-height:195px; }
   .download-actions { display:grid; grid-template-columns:1fr; } .product-band { padding:48px 20px; }
   footer { align-items:flex-start; flex-direction:column; gap:8px; } footer p { margin:6px 0; }
 }
@@ -68,5 +72,5 @@ footer a { display:inline-flex; align-items:center; gap:5px; color:var(--ink); }
   nav .source-nav { padding-inline:10px; }
 }
 @media (prefers-color-scheme: dark) {
-  .primary-action,.windows-card a:not(.secondary-download) { color:#5c0a05; } .android-card a:not(.secondary-download) { color:#082d53; } .release-status.ready { color:#8bd49c; } .upgrade-alert strong { color:var(--brand); }
+  .primary-action { color:#5c0a05; } .release-status.ready { color:#8bd49c; } .upgrade-alert strong { color:var(--brand); }
 }

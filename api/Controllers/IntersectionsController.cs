@@ -11,10 +11,11 @@ namespace RailLog.API.Controllers;
 [Route("api/intersections")]
 public sealed class IntersectionsController(RailLogDatabase database) : ControllerBase
 {
-    [HttpGet]
-    public async Task<ActionResult<IntersectionsResponse>> Get()
+    [HttpGet("{type}/{key}")]
+    [Authorize]
+    public async Task<ActionResult<IntersectionsResponse>> Get(string type, string key)
     {
-        var intersections = await database.GetIntersectionsAsync(UserId);
+        var intersections = await database.GetEntityIntersectionsAsync(UserId, type, key);
         return Ok(new IntersectionsResponse(intersections));
     }
 

@@ -55,7 +55,11 @@ class _AchievementUnlockTripsPageState
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final trips = snapshot.data!.trips;
+        final sourceTrips = snapshot.data!.trips;
+        final trips = [
+          ...sourceTrips.where((trip) => trip.isCurrentUser),
+          ...sourceTrips.where((trip) => !trip.isCurrentUser),
+        ];
         if (trips.isEmpty) {
           return const Center(child: Text('暂无解锁行程'));
         }
@@ -67,7 +71,7 @@ class _AchievementUnlockTripsPageState
               itemCount: trips.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) =>
-                  _UnlockTripCard(trip: trips[index]),
+                  AchievementTripRow(trip: trips[index]),
             ),
           ),
         );
@@ -76,37 +80,27 @@ class _AchievementUnlockTripsPageState
   );
 }
 
-class _UnlockTripCard extends StatelessWidget {
-  const _UnlockTripCard({required this.trip});
+class AchievementTripRow extends StatelessWidget {
+  const AchievementTripRow({super.key, required this.trip, this.highlight = false});
 
   final AchievementUnlockTrip trip;
+  final bool highlight;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      color: trip.isCurrentUser
+    return Material(
+      color: (trip.isCurrentUser || highlight)
           ? colors.primaryContainer
           : colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        leading: CachedAvatar(
-          name: trip.displayName,
-          imageUrl: trip.avatarUrl,
-          size: 44,
-        ),
-        title: Row(
-          children: [
-            Expanded(child: Text(trip.displayName)),
-            if (trip.isCurrentUser)
-              Icon(Icons.person, size: 18, color: colors.primary),
-          ],
-        ),
+        leading: _AchievementTripAvatar(trip: trip, highlight: highlight),
+        title: Text(trip.displayName),
         subtitle: Text(
-          '${_date(trip.occurredAt)} · ${trip.trainNumber.trim().isEmpty ? '未填写车次' : trip.trainNumber}',
+          '${_date(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}',
         ),
-        isThreeLine: true,
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push(
           m3PageRoute(
@@ -125,7 +119,43 @@ class _UnlockTripCard extends StatelessWidget {
   }
 }
 
+class _AchievementTripAvatar extends StatelessWidget {
+  const _AchievementTripAvatar({required this.trip, this.highlight = false});
+
+  final AchievementUnlockTrip trip;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final avatarPadding = trip.isCurrentUser ? 2.0 : 4.0;
+    return Container(
+      width: 48,
+      height: 48,
+      padding: EdgeInsets.all(avatarPadding),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: (trip.isCurrentUser || highlight) ? colors.primary : colors.outlineVariant,
+          width: (trip.isCurrentUser || highlight) ? 3 : 1,
+        ),
+      ),
+      child: CachedAvatar(
+        name: trip.displayName,
+        imageUrl: trip.avatarUrl,
+        size: 48 - avatarPadding * 2,
+        backgroundColor: colors.secondaryContainer,
+      ),
+    );
+  }
+}
+
 String _date(DateTime value) =>
     '${value.year.toString().padLeft(4, '0')}-'
     '${value.month.toString().padLeft(2, '0')}-'
     '${value.day.toString().padLeft(2, '0')}';
+
+String _trainLabel(String value) {
+  final trainNumber = value.trim();
+  return trainNumber.isEmpty ? '未填写车次' : trainNumber;
+}

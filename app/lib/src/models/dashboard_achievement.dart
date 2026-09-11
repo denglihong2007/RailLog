@@ -29,8 +29,12 @@ class DashboardAchievement {
     required this.triggerTripId,
     required this.unlockedUserCount,
     required this.totalUserCount,
+    required this.experience,
+    required this.hidden,
+    required this.narrativeNote,
     this.progressCurrent,
     this.progressTarget,
+    this.note,
     this.unlockedBy,
   });
 
@@ -53,6 +57,10 @@ class DashboardAchievement {
       totalUserCount: totalUserCount,
       progressCurrent: (json['progressCurrent'] as num?)?.toDouble(),
       progressTarget: (json['progressTarget'] as num?)?.toDouble(),
+      experience: (json['experience'] as num?)?.toInt() ?? 0,
+      hidden: json['hidden'] as bool? ?? false,
+      note: json['note'] as String?,
+      narrativeNote: json['narrativeNote'] as bool? ?? false,
     );
   }
 
@@ -65,8 +73,12 @@ class DashboardAchievement {
   final int? triggerTripId;
   final int unlockedUserCount;
   final int totalUserCount;
+  final int experience;
+  final bool hidden;
+  final bool narrativeNote;
   final double? progressCurrent;
   final double? progressTarget;
+  final String? note;
   final DashboardTripEntry? unlockedBy;
 
   bool get isUnlocked => unlocked;

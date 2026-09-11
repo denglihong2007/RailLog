@@ -34,8 +34,51 @@ class DashboardAchievementCard extends StatelessWidget {
                   style: Theme.of(
                     context,
                   ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (achievement.experience > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: unlocked
+                        ? colors.primaryContainer
+                        : colors.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${achievement.experience} XP',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: unlocked
+                          ? colors.onPrimaryContainer
+                          : colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+              if ((achievement.note?.trim().isNotEmpty ?? false) &&
+                  !achievement.narrativeNote) ...[
+                const SizedBox(width: 6),
+                Semantics(
+                  label: '注释：${achievement.note!.trim()}',
+                  child: Tooltip(
+                    message: achievement.note!.trim(),
+                    triggerMode: TooltipTriggerMode.tap,
+                    child: Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 8),
               Icon(
                 unlocked ? Icons.verified_outlined : Icons.lock_outline,
                 size: 20,
@@ -46,10 +89,27 @@ class DashboardAchievementCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             achievement.requirement,
-            maxLines: 2,
+            maxLines: achievement.narrativeNote ? 1 : 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if ((achievement.note?.trim().isNotEmpty ?? false) &&
+              achievement.narrativeNote) ...[
+            const SizedBox(height: 4),
+            Tooltip(
+              message: achievement.note!.trim(),
+              triggerMode: TooltipTriggerMode.tap,
+              child: Text(
+                achievement.note!.trim(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
           const Spacer(),
           Row(
             children: [
@@ -70,15 +130,25 @@ class DashboardAchievementCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '${achievement.unlockedUserCount} 位用户 · '
-                '${_formatPercentage(achievement.unlockedPercentage)}',
-                maxLines: 1,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+              if (achievement.hidden)
+                Text(
+                  '隐藏成就',
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              else
+                Text(
+                  '${achievement.unlockedUserCount} 位用户 · '
+                  '${_formatPercentage(achievement.unlockedPercentage)}',
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -119,6 +189,14 @@ class DashboardAchievementCard extends StatelessWidget {
 }
 
 IconData dashboardAchievementIconKey(String key) => switch (key) {
+  'help_outline' => Icons.help_outline,
+  'account_balance_wallet_outlined' => Icons.account_balance_wallet_outlined,
+  'rate_review_outlined' => Icons.rate_review_outlined,
+  'calendar_view_day_outlined' => Icons.calendar_view_day_outlined,
+  'pin_drop_outlined' => Icons.pin_drop_outlined,
+  'severe_cold_outlined' => Icons.severe_cold_outlined,
+  'water_outlined' => Icons.water_outlined,
+  'architecture_outlined' => Icons.architecture_outlined,
   'restaurant_outlined' => Icons.restaurant_outlined,
   'airline_seat_recline_extra_outlined' =>
     Icons.airline_seat_recline_extra_outlined,

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
@@ -9,6 +12,26 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+
+  // 测试环境没有注册 path_provider 插件，用临时目录顶替应用支持目录，
+  // 否则 RouteService 在展开经由站时会抛 MissingPluginException。
+  final supportDirectory = Directory.systemTemp.createTempSync(
+    'raillog-route-test-',
+  );
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => switch (call.method) {
+          'getApplicationSupportDirectory' ||
+          'getTemporaryDirectory' => supportDirectory.path,
+          _ => null,
+        },
+      );
+  tearDownAll(() {
+    if (supportDirectory.existsSync()) {
+      supportDirectory.deleteSync(recursive: true);
+    }
+  });
 
   const csv = '''station_name,latitude,longitude
 北京站,39.9022,116.4211

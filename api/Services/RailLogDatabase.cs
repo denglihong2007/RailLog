@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Caching.Memory;
 using RailLog.API.Models;
 
 namespace RailLog.API.Services;
@@ -11,9 +12,18 @@ public sealed class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
     private readonly string _connectionString;
+    private readonly IMemoryCache _cache;
+    private readonly SemaphoreSlim _statisticsLock = new(1, 1);
+    private readonly TimeSpan _statisticsCacheLifetime;
 
-    public RailLogDatabase(IConfiguration configuration, IWebHostEnvironment environment)
+    public RailLogDatabase(
+        IConfiguration configuration,
+        IWebHostEnvironment environment,
+        IMemoryCache cache)
     {
+        _cache = cache;
+        var cacheMinutes = Math.Max(1, configuration.GetValue<int?>("Statistics:CacheMinutes") ?? 5);
+        _statisticsCacheLifetime = TimeSpan.FromMinutes(cacheMinutes);
         var configured = configuration.GetConnectionString("RailLog") ?? "Data Source=raillog.db";
         var builder = new SqliteConnectionStringBuilder(configured);
         if (!Path.IsPathRooted(builder.DataSource))
@@ -89,11 +99,29 @@ public sealed class RailLogDatabase
                 UserId TEXT NOT NULL,
                 AchievementId TEXT NOT NULL,
                 TriggerTripId INTEGER NOT NULL,
+                Experience INTEGER NOT NULL DEFAULT 0,
                 EvaluatedAt TEXT NOT NULL,
                 PRIMARY KEY (UserId, AchievementId),
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
                 FOREIGN KEY (TriggerTripId) REFERENCES TripRecords (Id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS EntityReviews (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                EntityType TEXT NOT NULL,
+                EntityKey TEXT NOT NULL,
+                ReviewType TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                Rating INTEGER NOT NULL,
+                Comment TEXT NOT NULL,
+                TripId INTEGER NULL,
+                SecondTripId INTEGER NULL,
+                TransferMinutes INTEGER NULL,
+                Dish TEXT NULL,
+                Price REAL NULL,
+                CreatedAt TEXT NOT NULL,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS IX_EntityReviews_Entity ON EntityReviews(EntityType, EntityKey);
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -107,6 +135,8 @@ public sealed class RailLogDatabase
         await EnsureColumnAsync(connection, "TripRecords", "CompanyName", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "UpdatedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
+        await EnsureColumnAsync(connection, "EntityReviews", "SecondTripId", "INTEGER NULL");
+        await EnsureColumnAsync(connection, "UserAchievements", "Experience", "INTEGER NOT NULL DEFAULT 0");
         await ExecuteAsync(connection, $"""
             UPDATE AspNetUsers
             SET CreatedAt = '{ToDb(DateTime.Now)}'
@@ -495,6 +525,181 @@ public sealed class RailLogDatabase
         return await GetTripsAsync(connection, userId);
     }
 
+    public async Task<IReadOnlyList<EntityReviewResponse>> GetEntityReviewsAsync(string type, string key)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,r.SecondTripId,r.TransferMinutes,r.Dish,r.Price,r.CreatedAt FROM EntityReviews r JOIN AspNetUsers u ON u.Id=r.UserId WHERE r.EntityType=$type AND r.EntityKey=$key ORDER BY r.CreatedAt DESC";
+        command.Parameters.AddWithValue("$type", type);
+        command.Parameters.AddWithValue("$key", key);
+        var result = new List<EntityReviewResponse>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) result.Add(new EntityReviewResponse(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.IsDBNull(6)?null:reader.GetString(6), reader.GetInt32(7), reader.GetString(8), reader.IsDBNull(9)?null:reader.GetInt64(9), reader.IsDBNull(10)?null:reader.GetInt64(10), reader.IsDBNull(11)?null:reader.GetInt32(11), reader.IsDBNull(12)?null:reader.GetString(12), reader.IsDBNull(13)?null:Convert.ToDecimal(reader.GetValue(13)), DateTime.Parse(reader.GetString(14))));
+        return result;
+    }
+
+    public async Task<long> GetEntityCountAsync(string type, string key)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT TrainNumber,RollingStock,CompanyName,FromStation,ToStation,ViaRoutes FROM TripRecords WHERE DeletedAt IS NULL";
+        await using var reader = await command.ExecuteReaderAsync();
+        var normalized = NormalizeEntity(key);
+        long count = 0;
+        while (await reader.ReadAsync())
+        {
+            var matches = type.ToLowerInvariant() switch
+            {
+                "train" => NormalizeEntity(reader.GetString(0)) == normalized,
+                "rollingstock" => RollingStockModelCodes(reader.IsDBNull(1) ? "" : reader.GetString(1))
+                    .Any(model => NormalizeEntity(model) == normalized),
+                "company" => NormalizeEntity(reader.IsDBNull(2) ? "" : reader.GetString(2)) == normalized,
+                "station" => NormalizeEntity(reader.GetString(3)) == normalized || NormalizeEntity(reader.GetString(4)) == normalized,
+                "route" => reader.IsDBNull(5) ? false : reader.GetString(5).Contains(key, StringComparison.OrdinalIgnoreCase),
+                _ => false,
+            };
+            if (matches) count++;
+        }
+        return count;
+    }
+
+    public async Task<IReadOnlyList<EntitySearchResult>> SearchEntitiesAsync(
+        string type,
+        string query,
+        int limit)
+    {
+        var normalizedQuery = NormalizeEntity(query);
+        if (normalizedQuery.Length == 0) return [];
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT TrainNumber, RollingStock, CompanyName, FromStation, ToStation,
+                   ViaRoutes
+            FROM TripRecords
+            WHERE DeletedAt IS NULL;
+            """;
+
+        var counts = new Dictionary<string, (string Name, long Count)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            IEnumerable<string> matches = type switch
+            {
+                "train" => [reader.GetString(0)],
+                "rollingstock" => RollingStockModelCodes(NullableString(reader, 1)),
+                "company" => reader.IsDBNull(2) ? [] : [reader.GetString(2)],
+                "station" => [reader.GetString(3), reader.GetString(4)],
+                "route" => reader.IsDBNull(5) ? [] : ParseRouteNames(reader.GetString(5)),
+                _ => [],
+            };
+
+            foreach (var match in matches.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var normalized = NormalizeEntity(match);
+                if (!normalized.Contains(normalizedQuery, StringComparison.Ordinal))
+                    continue;
+                if (counts.TryGetValue(normalized, out var current))
+                    counts[normalized] = (current.Name, current.Count + 1);
+                else
+                    counts[normalized] = (match, 1);
+            }
+        }
+
+        return counts.Values
+            .OrderByDescending(item => NormalizeEntity(item.Name) == normalizedQuery)
+            .ThenByDescending(item =>
+                NormalizeEntity(item.Name).StartsWith(normalizedQuery, StringComparison.Ordinal))
+            .ThenByDescending(item => item.Count)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .Select(item => new EntitySearchResult(type, item.Name, item.Count))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<UserSearchResult>> SearchUsersAsync(
+        string query,
+        int limit)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
+                   COUNT(trip.Id)
+            FROM AspNetUsers user
+            LEFT JOIN TripRecords trip
+              ON trip.UserId = user.Id AND trip.DeletedAt IS NULL
+            WHERE user.DisplayName COLLATE NOCASE LIKE $pattern ESCAPE '\'
+               OR user.Id LIKE $pattern
+            GROUP BY user.Id, user.DisplayName, user.AvatarUrl, user.Bio
+            ORDER BY CASE
+                         WHEN user.Id = $exactQuery THEN 0
+                         WHEN user.DisplayName = $exactQuery COLLATE NOCASE THEN 1
+                         WHEN user.DisplayName COLLATE NOCASE LIKE $prefix ESCAPE '\' THEN 2
+                         ELSE 3
+                     END,
+                     COUNT(trip.Id) DESC,
+                     user.DisplayName COLLATE NOCASE
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$pattern", LikePattern(query));
+        command.Parameters.AddWithValue("$prefix", LikePrefix(query));
+        command.Parameters.AddWithValue("$exactQuery", query);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var results = new List<UserSearchResult>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            results.Add(new UserSearchResult(
+                reader.GetString(0),
+                reader.GetString(1),
+                NullableString(reader, 2),
+                NullableString(reader, 3),
+                reader.GetInt64(4)));
+        return results;
+    }
+
+    private static string NormalizeEntity(string value) => Regex.Replace(value.Trim().ToLowerInvariant(), "\\s+", "");
+
+    private static string LikePattern(string value) => $"%{EscapeLike(value)}%";
+
+    private static string LikePrefix(string value) => $"{EscapeLike(value)}%";
+
+    private static string EscapeLike(string value) => value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("%", "\\%", StringComparison.Ordinal)
+        .Replace("_", "\\_", StringComparison.Ordinal);
+
+    public async Task<EntityReviewResponse> AddEntityReviewAsync(string userId, CreateEntityReviewRequest request)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO EntityReviews(EntityType,EntityKey,ReviewType,UserId,Rating,Comment,TripId,SecondTripId,TransferMinutes,Dish,Price,CreatedAt) VALUES($type,$key,$review,$user,$rating,$comment,$trip,$second,$minutes,$dish,$price,$created); SELECT last_insert_rowid();";
+        command.Parameters.AddWithValue("$type", request.EntityType); command.Parameters.AddWithValue("$key", request.EntityKey); command.Parameters.AddWithValue("$review", request.ReviewType); command.Parameters.AddWithValue("$user", userId); command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$created", DateTime.UtcNow.ToString("O"));
+        var id = Convert.ToInt64(await command.ExecuteScalarAsync());
+        return (await GetEntityReviewsAsync(request.EntityType, request.EntityKey)).First(r => r.Id == id);
+    }
+
+    public async Task<bool> DeleteEntityReviewAsync(long id, string userId)
+    {
+        await using var connection = OpenConnection(); await connection.OpenAsync();
+        await using var command = connection.CreateCommand(); command.CommandText = "DELETE FROM EntityReviews WHERE Id=$id AND UserId=$user"; command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$user", userId); return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<bool> UpdateEntityReviewAsync(long id, string userId, UpdateEntityReviewRequest request)
+    {
+        await using var connection = OpenConnection(); await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE EntityReviews SET Rating=$rating,Comment=$comment,TripId=$trip,SecondTripId=$second,TransferMinutes=$minutes,Dish=$dish,Price=$price WHERE Id=$id AND UserId=$user";
+        command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$user", userId);
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
     public async Task<AchievementsResponse> GetAchievementsAsync(string userId)
     {
         await using var connection = OpenConnection();
@@ -508,6 +713,20 @@ public sealed class RailLogDatabase
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
+        if (AchievementEngine.IsHiddenAchievement(achievementId))
+        {
+            await using var unlockCommand = connection.CreateCommand();
+            unlockCommand.CommandText = """
+                SELECT 1
+                FROM UserAchievements
+                WHERE UserId = $userId AND AchievementId = $achievementId
+                LIMIT 1;
+                """;
+            unlockCommand.Parameters.AddWithValue("$userId", currentUserId);
+            unlockCommand.Parameters.AddWithValue("$achievementId", achievementId);
+            if (await unlockCommand.ExecuteScalarAsync() is null)
+                return new AchievementUnlockTripsResponse(achievementId, []);
+        }
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT trip.Id, user.Id, user.DisplayName, user.AvatarUrl,
@@ -535,7 +754,7 @@ public sealed class RailLogDatabase
         return new AchievementUnlockTripsResponse(achievementId, trips);
     }
 
-    public async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
+    private async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
@@ -725,7 +944,38 @@ public sealed class RailLogDatabase
         return new PublicUserDashboardResponse(user, trips, achievements);
     }
 
+    public async Task<IReadOnlyList<IntersectionGroup>> GetEntityIntersectionsAsync(string userId, string type, string key)
+    {
+        var all = await GetIntersectionsAsync(userId);
+        var normalized = NormalizeEntity(key);
+        return all.Where(group =>
+            (type.Equals("station", StringComparison.OrdinalIgnoreCase) && NormalizeEntity(group.Location) == normalized) ||
+            (type.Equals("train", StringComparison.OrdinalIgnoreCase) && NormalizeEntity(group.Location) == normalized)
+        ).ToList();
+    }
+
     public async Task<StatisticsResponse> GetStatisticsAsync(string currentUserId)
+    {
+        var cacheKey = StatisticsCacheKey(currentUserId);
+        if (_cache.TryGetValue(cacheKey, out StatisticsResponse? cached) && cached is not null)
+            return cached;
+
+        await _statisticsLock.WaitAsync();
+        try
+        {
+            if (_cache.TryGetValue(cacheKey, out cached) && cached is not null)
+                return cached;
+            var result = await CalculateStatisticsAsync(currentUserId);
+            _cache.Set(cacheKey, result, _statisticsCacheLifetime);
+            return result;
+        }
+        finally
+        {
+            _statisticsLock.Release();
+        }
+    }
+
+    private async Task<StatisticsResponse> CalculateStatisticsAsync(string currentUserId)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
@@ -804,7 +1054,7 @@ public sealed class RailLogDatabase
             RankUsers(users.Select(item => (item.User, item.Count)), currentUserId),
             RankUsers(users.Select(item => (item.User, item.Duration)), currentUserId),
             RankUsers(users.Select(item => (item.User, item.Mileage)), currentUserId),
-            await GetAchievementCountRankingAsync(connection, currentUserId));
+            await GetAchievementExperienceRankingAsync(connection, currentUserId));
 
         var durationTrips = trips
             .Select(trip => (Trip: trip, Duration: ValidDurationSeconds(trip.Trip)))
@@ -849,6 +1099,8 @@ public sealed class RailLogDatabase
             RankElements(rollingStockCounts), RankElements(companyCounts));
         return new StatisticsResponse(site, userBoards, tripBoards, elementBoards);
     }
+
+    private static string StatisticsCacheKey(string userId) => $"statistics:{userId}";
 
     private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(SqliteConnection connection, string userId)
     {
@@ -971,19 +1223,25 @@ public sealed class RailLogDatabase
         return leaderboard;
     }
 
-    private static async Task<IReadOnlyList<UserRankingEntry>> GetAchievementCountRankingAsync(
+    private static async Task<IReadOnlyList<UserRankingEntry>> GetAchievementExperienceRankingAsync(
         SqliteConnection connection,
         string currentUserId)
     {
+        var regularIds = AchievementEngine.RegularAchievementIds.ToList();
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        var placeholders = string.Join(", ", regularIds.Select((_, index) => $"$achievement{index}"));
+        command.CommandText = $"""
             SELECT user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
                    CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
-                   COUNT(achievement.AchievementId)
+                   COALESCE(SUM(achievement.Experience), 0)
             FROM AspNetUsers user
-            LEFT JOIN UserAchievements achievement ON achievement.UserId = user.Id
+            LEFT JOIN UserAchievements achievement
+              ON achievement.UserId = user.Id
+             AND achievement.AchievementId IN ({placeholders})
             GROUP BY user.Id;
             """;
+        for (var index = 0; index < regularIds.Count; index++)
+            command.Parameters.AddWithValue($"$achievement{index}", regularIds[index]);
         await using var reader = await command.ExecuteReaderAsync();
         var values = new List<(PublicUser User, double Value)>();
         while (await reader.ReadAsync())
@@ -991,7 +1249,7 @@ public sealed class RailLogDatabase
             var user = new PublicUser(
                 reader.GetString(0), reader.GetString(1), NullableString(reader, 2),
                 NullableString(reader, 3), NullableString(reader, 4));
-            values.Add((user, reader.GetInt32(5)));
+            values.Add((user, reader.GetInt64(5)));
         }
         return RankUsers(values, currentUserId);
     }
@@ -1083,7 +1341,8 @@ public sealed class RailLogDatabase
         SqliteTransaction transaction)
     {
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
-        var unlocked = AchievementEngine.Evaluate(trips)
+        var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
+        var unlocked = AchievementEngine.Evaluate(trips, reviews)
             .Where(item => item.TriggerTripId.HasValue)
             .ToList();
 
@@ -1101,12 +1360,13 @@ public sealed class RailLogDatabase
             insert.Transaction = transaction;
             insert.CommandText = """
                 INSERT INTO UserAchievements
-                    (UserId, AchievementId, TriggerTripId, EvaluatedAt)
-                VALUES ($userId, $achievementId, $triggerTripId, $evaluatedAt);
+                    (UserId, AchievementId, TriggerTripId, Experience, EvaluatedAt)
+                VALUES ($userId, $achievementId, $triggerTripId, $experience, $evaluatedAt);
                 """;
             insert.Parameters.AddWithValue("$userId", userId);
             insert.Parameters.AddWithValue("$achievementId", achievement.Id);
             insert.Parameters.AddWithValue("$triggerTripId", achievement.TriggerTripId!.Value);
+            insert.Parameters.AddWithValue("$experience", achievement.Experience);
             insert.Parameters.AddWithValue("$evaluatedAt", ToDb(DateTime.Now));
             await insert.ExecuteNonQueryAsync();
         }
@@ -1158,7 +1418,8 @@ public sealed class RailLogDatabase
         }
 
         var definitions = AchievementEngine.Evaluate(
-            await GetAchievementTripsAsync(connection, userId));
+            await GetAchievementTripsAsync(connection, userId),
+            await GetAchievementReviewsAsync(connection, userId));
         var items = definitions
             .Select((definition, index) => new
             {
@@ -1168,19 +1429,48 @@ public sealed class RailLogDatabase
             })
             .OrderByDescending(item => item.Trigger != 0)
             .ThenBy(item => item.Index)
-            .Select(item => new AchievementResponse(
-                item.Definition.Id,
-                item.Definition.Category,
-                item.Definition.Icon,
-                item.Definition.Title,
-                item.Definition.Description,
-                item.Trigger == 0 ? "locked" : "unlocked",
-                item.Trigger == 0 ? null : item.Trigger,
-                counts.GetValueOrDefault(item.Definition.Id),
-                item.Definition.Progress?.Current,
-                item.Definition.Progress?.Target))
+            .Select(item =>
+            {
+                var unlocked = item.Trigger != 0;
+                var hiddenLocked = item.Definition.Hidden && !unlocked;
+                return new AchievementResponse(
+                    item.Definition.Id,
+                    item.Definition.Category,
+                    hiddenLocked ? "help_outline" : item.Definition.Icon,
+                    hiddenLocked ? "？？？" : item.Definition.Title,
+                    hiddenLocked ? "隐藏成就，取得后显示" : item.Definition.Description,
+                    unlocked ? "unlocked" : "locked",
+                    unlocked ? item.Trigger : null,
+                    item.Definition.Hidden ? 0 : counts.GetValueOrDefault(item.Definition.Id),
+                    hiddenLocked ? null : item.Definition.Progress?.Current,
+                    hiddenLocked ? null : item.Definition.Progress?.Target,
+                    hiddenLocked ? 0 : item.Definition.Experience,
+                    item.Definition.Hidden,
+                    hiddenLocked ? null : item.Definition.Note,
+                    hiddenLocked ? false : item.Definition.NarrativeNote);
+            })
             .ToList();
         return new AchievementsResponse(totalUsers, items);
+    }
+
+    private static async Task<IReadOnlyList<AchievementReview>> GetAchievementReviewsAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction? transaction = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT EntityType, EntityKey
+            FROM EntityReviews
+            WHERE UserId = $userId;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+        var reviews = new List<AchievementReview>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            reviews.Add(new AchievementReview(reader.GetString(0), reader.GetString(1)));
+        return reviews;
     }
 
     private static IReadOnlyList<ElementRankingEntry> RankElements(

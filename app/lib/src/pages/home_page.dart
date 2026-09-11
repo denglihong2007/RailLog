@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
-import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/partner_advertisement.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/railway_bureau.dart';
@@ -19,7 +18,7 @@ import 'package:raillog/src/pages/trip_chart_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/achievement_service.dart';
-import 'package:raillog/src/services/intersection_service.dart';
+import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/partner_application_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
 import 'package:raillog/src/services/route_service.dart';
@@ -44,7 +43,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late Future<TripDashboardStats> _statsFuture;
-  late Future<List<OnlineIntersection>> _intersectionsFuture;
   late Future<PartnerAdvertisement?> _advertisementFuture;
   Future<List<DashboardAchievement>>? _achievementsFuture;
   TripDashboardStats? _lastStats;
@@ -53,7 +51,6 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _statsFuture = DbHelper.instance.getDashboardStats();
-    _intersectionsFuture = IntersectionService.fetch();
     _advertisementFuture = _loadAdvertisement();
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
@@ -80,23 +77,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _refresh() async {
     final statsFuture = DbHelper.instance.getDashboardStats();
-    final intersectionsFuture = IntersectionService.fetch();
     final advertisementFuture = _loadAdvertisement();
     final achievementsFuture = SessionService.instance.isSignedIn
         ? AchievementService.fetchCurrent()
         : null;
     setState(() {
       _statsFuture = statsFuture;
-      _intersectionsFuture = intersectionsFuture;
       _advertisementFuture = advertisementFuture;
       _achievementsFuture = achievementsFuture;
     });
     await statsFuture;
-    try {
-      await intersectionsFuture;
-    } on IntersectionException {
-      // The online section renders its own retry state.
-    }
     await advertisementFuture;
     if (achievementsFuture != null) {
       try {
@@ -160,13 +150,6 @@ class _HomePageState extends State<HomePage> {
                   if (stats.tripCount == 0) ...[
                     const SizedBox(height: 24),
                     const M3Reveal(child: _EmptyStateCard()),
-                  ],
-                  if (SessionService.instance.isSignedIn) ...[
-                    const SizedBox(height: 24),
-                    _OnlineIntersectionsSection(
-                      future: _intersectionsFuture,
-                      onRetry: _refresh,
-                    ),
                   ],
                 ],
               );
@@ -552,401 +535,6 @@ class _PublicProfileAvatar extends StatelessWidget {
     size: size,
     textStyle: Theme.of(context).textTheme.headlineSmall,
   );
-}
-
-class _OnlineIntersectionsSection extends StatelessWidget {
-  const _OnlineIntersectionsSection({
-    required this.future,
-    required this.onRetry,
-  });
-
-  final Future<List<OnlineIntersection>> future;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SectionHeading(title: '同行交集'),
-        const SizedBox(height: 12),
-        FutureBuilder<List<OnlineIntersection>>(
-          future: future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const LinearProgressIndicator();
-            }
-            if (snapshot.hasError) {
-              return Card.outlined(
-                margin: EdgeInsets.zero,
-                child: ListTile(
-                  leading: const Icon(Icons.cloud_off_outlined),
-                  title: const Text('同行交集暂不可用'),
-                  subtitle: Text('${snapshot.error}'),
-                  trailing: IconButton(
-                    tooltip: '重新加载',
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                ),
-              );
-            }
-            final intersections = snapshot.data ?? const [];
-            if (intersections.isEmpty) {
-              return const Card.outlined(
-                margin: EdgeInsets.zero,
-                child: ListTile(
-                  leading: Icon(Icons.people_outline),
-                  title: Text('暂未发现同行交集'),
-                ),
-              );
-            }
-            final stationIntersections = intersections
-                .where((item) => item.kind == OnlineIntersectionKind.station)
-                .toList(growable: false);
-            final trainIntersections = intersections
-                .where((item) => item.kind == OnlineIntersectionKind.train)
-                .toList(growable: false);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (stationIntersections.isNotEmpty) ...[
-                  _IntersectionGroup(
-                    title: '车站交集',
-                    intersections: stationIntersections,
-                  ),
-                ],
-                if (stationIntersections.isNotEmpty &&
-                    trainIntersections.isNotEmpty)
-                  const SizedBox(height: 20),
-                if (trainIntersections.isNotEmpty) ...[
-                  _IntersectionGroup(
-                    title: '车次交集',
-                    intersections: trainIntersections,
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _IntersectionGroup extends StatelessWidget {
-  const _IntersectionGroup({required this.title, required this.intersections});
-
-  final String title;
-  final List<OnlineIntersection> intersections;
-
-  @override
-  Widget build(BuildContext context) {
-    final preview = intersections
-        .take(_dashboardPreviewLimit)
-        .toList(growable: false);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(title, style: Theme.of(context).textTheme.titleSmall),
-            ),
-            if (intersections.length > _dashboardPreviewLimit)
-              TextButton.icon(
-                onPressed: () => Navigator.of(context).push<void>(
-                  m3PageRoute(
-                    builder: (_) => _AllIntersectionsPage(
-                      title: title,
-                      intersections: intersections,
-                    ),
-                  ),
-                ),
-                icon: const Icon(Icons.arrow_forward, size: 18),
-                iconAlignment: IconAlignment.end,
-                label: const Text('查看更多'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _IntersectionCardWrap(intersections: preview),
-      ],
-    );
-  }
-}
-
-class _AllIntersectionsPage extends StatelessWidget {
-  const _AllIntersectionsPage({
-    required this.title,
-    required this.intersections,
-  });
-
-  final String title;
-  final List<OnlineIntersection> intersections;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: _dashboardMaxWidth),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          '全部 ${intersections.length} 项',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      _IntersectionCardWrap(intersections: intersections),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IntersectionCardWrap extends StatelessWidget {
-  const _IntersectionCardWrap({required this.intersections});
-
-  final List<OnlineIntersection> intersections;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = _dashboardGridColumns(constraints.maxWidth);
-        return GridView.builder(
-          shrinkWrap: true,
-          padding: EdgeInsets.zero,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            mainAxisExtent: 120,
-          ),
-          itemCount: intersections.length,
-          itemBuilder: (context, index) =>
-              _IntersectionCard(intersection: intersections[index]),
-        );
-      },
-    );
-  }
-}
-
-class _IntersectionCard extends StatelessWidget {
-  const _IntersectionCard({required this.intersection});
-
-  final OnlineIntersection intersection;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final isStation = intersection.kind == OnlineIntersectionKind.station;
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          m3PageRoute(
-            builder: (_) =>
-                _IntersectionDetailsPage(intersection: intersection),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      intersection.location,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '${intersection.intersectionCount} 条',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                children: [
-                  Icon(
-                    isStation
-                        ? Icons.location_on_outlined
-                        : Icons.train_outlined,
-                    color: colors.primary,
-                  ),
-                  const Spacer(),
-                  Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _IntersectionDetailsPage extends StatefulWidget {
-  const _IntersectionDetailsPage({required this.intersection});
-
-  final OnlineIntersection intersection;
-
-  @override
-  State<_IntersectionDetailsPage> createState() =>
-      _IntersectionDetailsPageState();
-}
-
-class _IntersectionDetailsPageState extends State<_IntersectionDetailsPage> {
-  bool _strictOnly = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final intersection = widget.intersection;
-    final kindLabel = intersection.kind == OnlineIntersectionKind.station
-        ? '车站交集'
-        : '车次交集';
-    final trips = _strictOnly
-        ? intersection.trips.where((trip) => trip.isStrict).toList()
-        : intersection.trips;
-    return Scaffold(
-      appBar: AppBar(title: Text('$kindLabel · ${intersection.location}')),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('严格匹配'),
-                  value: _strictOnly,
-                  onChanged: (value) => setState(() => _strictOnly = value),
-                ),
-                Expanded(
-                  child: trips.isEmpty
-                      ? const Center(child: Text('暂无严格匹配'))
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-                          itemCount: trips.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) =>
-                              _IntersectionTripRow(trip: trips[index]),
-                        ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _IntersectionTripRow extends StatelessWidget {
-  const _IntersectionTripRow({required this.trip});
-
-  final IntersectionTrip trip;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: trip.isStrict
-          ? colors.primaryContainer
-          : colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(_cardRadius),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: _IntersectionTripAvatar(trip: trip),
-        title: Text(trip.displayName),
-        subtitle: Text(
-          '${_formatDate(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}',
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(context).push(
-          m3PageRoute(
-            builder: (_) => TripRecordDetailsPage.public(
-              ticketId: trip.ticketId,
-              onOwnerTap: () => Navigator.of(context).push(
-                m3PageRoute(
-                  builder: (_) => PublicUserPage(userId: trip.userId),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _IntersectionTripAvatar extends StatelessWidget {
-  const _IntersectionTripAvatar({required this.trip});
-
-  final IntersectionTrip trip;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final avatarPadding = trip.isStrict ? 2.0 : 4.0;
-    return Container(
-      width: 48,
-      height: 48,
-      padding: EdgeInsets.all(avatarPadding),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: trip.isStrict ? colors.primary : colors.outlineVariant,
-          width: trip.isStrict ? 3 : 1,
-        ),
-      ),
-      child: CachedAvatar(
-        name: trip.displayName,
-        imageUrl: trip.avatarUrl,
-        size: 48 - avatarPadding * 2,
-        backgroundColor: colors.secondaryContainer,
-      ),
-    );
-  }
 }
 
 class _AchievementsLoader extends StatelessWidget {
@@ -1521,6 +1109,7 @@ class _StatsGrid extends StatelessWidget {
           entries: stats.routeUnlocks,
           allTrips: stats.allTrips,
           progressCatalog: RouteService.getRouteNames(),
+          entityType: EntityType.route,
         ),
       ),
       _Metric(
@@ -1535,6 +1124,7 @@ class _StatsGrid extends StatelessWidget {
           entries: stats.trainUnlocks,
           allTrips: stats.allTrips,
           showTrainNumber: false,
+          entityType: EntityType.train,
         ),
       ),
       _Metric(
@@ -1548,6 +1138,7 @@ class _StatsGrid extends StatelessWidget {
           icon: Icons.train_outlined,
           entries: stats.rollingStockUnlocks,
           allTrips: stats.allTrips,
+          entityType: EntityType.rollingStock,
         ),
       ),
       _Metric(
@@ -1566,6 +1157,7 @@ class _StatsGrid extends StatelessWidget {
                 .expand((companies) => companies)
                 .toList(growable: false),
           ),
+          entityType: EntityType.company,
         ),
       ),
       _Metric(
@@ -1580,29 +1172,30 @@ class _StatsGrid extends StatelessWidget {
           entries: stats.stationUnlocks,
           allTrips: stats.allTrips,
           progressCatalog: RouteService.getStationNames(),
+          entityType: EntityType.station,
         ),
       ),
       _Metric(
-        '路线统计',
+        '坐过路线',
         '${stats.routePairCount}',
         '按始发、终到站组合去重',
         Icons.alt_route_outlined,
         onTap: () => _showUnlocks(
           context,
-          title: '路线统计',
+          title: '坐过路线',
           icon: Icons.alt_route_outlined,
           entries: stats.routePairUnlocks,
           allTrips: stats.allTrips,
         ),
       ),
       _Metric(
-        '城市统计',
+        '到访城市',
         '${stats.cityCount}',
         '按车站对应城市去重',
         Icons.location_city_outlined,
         onTap: () => _showUnlocks(
           context,
-          title: '城市统计',
+          title: '到访城市',
           icon: Icons.location_city_outlined,
           entries: stats.cityUnlocks,
           allTrips: stats.allTrips,
@@ -1628,6 +1221,7 @@ class _StatsGrid extends StatelessWidget {
     required List<DashboardTripEntry> allTrips,
     Future<List<String>>? progressCatalog,
     bool showTrainNumber = true,
+    EntityType? entityType,
   }) async {
     final changed = await _openUnlocks(
       context,
@@ -1638,6 +1232,7 @@ class _StatsGrid extends StatelessWidget {
       progressCatalog: progressCatalog,
       showTrainNumber: showTrainNumber,
       openTrip: openTrip,
+      entityType: entityType,
     );
     if (changed == true) await onChanged();
   }
@@ -1871,6 +1466,7 @@ Future<bool?> _openUnlocks(
   Future<List<String>>? progressCatalog,
   bool showTrainNumber = true,
   TripEntryOpener? openTrip,
+  EntityType? entityType,
 }) {
   return Navigator.of(context).push<bool>(
     m3PageRoute(
@@ -1882,6 +1478,7 @@ Future<bool?> _openUnlocks(
         progressCatalog: progressCatalog,
         showTrainNumber: showTrainNumber,
         openTrip: openTrip,
+        entityType: entityType,
       ),
     ),
   );
@@ -1889,10 +1486,6 @@ Future<bool?> _openUnlocks(
 
 String _formatDate(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-String _trainLabel(String value) {
-  final trainNumber = value.trim();
-  return trainNumber.isEmpty ? '未填写车次' : trainNumber;
-}
 
 String _km(double value) => '${value.round()} km';
 String _money(double value) => '¥${_number(value)}';

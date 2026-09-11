@@ -8,11 +8,10 @@ class PublicUserService {
 
   static Future<PublicUserDashboard> fetch(String userId) async {
     final token = SessionService.instance.token;
-    if (token == null) throw const PublicUserException('请先登录');
     try {
       final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
         '/api/users/${Uri.encodeComponent(userId)}',
-        options: ApiClient.instance.authorized(token),
+        options: token == null ? null : ApiClient.instance.authorized(token),
       );
       return PublicUserDashboard.fromJson(response.data!);
     } on DioException catch (error) {

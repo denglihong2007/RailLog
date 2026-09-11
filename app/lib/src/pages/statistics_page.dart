@@ -4,6 +4,7 @@ import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
+import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/statistics_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
@@ -389,7 +390,7 @@ class _UserLeaderboardViewState extends State<_UserLeaderboardView> {
     _UserMetric.trips => widget.leaderboards.tripCount,
     _UserMetric.duration => widget.leaderboards.durationSeconds,
     _UserMetric.mileage => widget.leaderboards.mileageKm,
-    _UserMetric.achievements => widget.leaderboards.achievementCount,
+    _UserMetric.achievements => widget.leaderboards.achievementExperience,
   };
 
   @override
@@ -501,7 +502,7 @@ class _ElementLeaderboardViewState extends State<_ElementLeaderboardView> {
         onChanged: (value) => setState(() => _metric = value),
       ),
       children: _entries
-          .map((entry) => _ElementRankingRow(entry: entry))
+          .map((entry) => _ElementRankingRow(entry: entry, metric: _metric))
           .toList(growable: false),
     );
   }
@@ -630,9 +631,10 @@ class _TripRankingRow extends StatelessWidget {
 }
 
 class _ElementRankingRow extends StatelessWidget {
-  const _ElementRankingRow({required this.entry});
+  const _ElementRankingRow({required this.entry, required this.metric});
 
   final ElementRankingEntry entry;
+  final _ElementMetric metric;
 
   @override
   Widget build(BuildContext context) {
@@ -640,6 +642,13 @@ class _ElementRankingRow extends StatelessWidget {
       rank: entry.rank,
       title: entry.name,
       value: '${entry.value} 次',
+      onTap: () => openEntityPage(context, switch (metric) {
+        _ElementMetric.stations => EntityType.station,
+        _ElementMetric.routes => EntityType.route,
+        _ElementMetric.trains => EntityType.train,
+        _ElementMetric.rollingStocks => EntityType.rollingStock,
+        _ElementMetric.companies => EntityType.company,
+      }, entry.name),
     );
   }
 }
@@ -910,7 +919,7 @@ String _userMetricLabel(_UserMetric metric) => switch (metric) {
   _UserMetric.trips => '行程次数',
   _UserMetric.duration => '累计时长',
   _UserMetric.mileage => '累计里程',
-  _UserMetric.achievements => '解锁成就',
+  _UserMetric.achievements => '成就经验',
 };
 
 String _tripMetricLabel(_TripMetric metric) => switch (metric) {
@@ -936,7 +945,7 @@ String _formatUserValue(_UserMetric metric, double value) => switch (metric) {
   _UserMetric.trips => '${value.round()} 次',
   _UserMetric.duration => _formatSeconds(value),
   _UserMetric.mileage => '${value.round()} km',
-  _UserMetric.achievements => '${value.round()} 项',
+  _UserMetric.achievements => '${value.round()} XP',
 };
 
 String _formatTripValue(_TripMetric metric, double value) => switch (metric) {
