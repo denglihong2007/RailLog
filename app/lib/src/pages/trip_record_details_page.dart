@@ -266,31 +266,37 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车次',
                       value: _optionalText(trip.trainNumber),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.train,
-                        trip.trainNumber,
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.train,
+                              trip.trainNumber,
+                            )
+                          : null,
                       infoTooltip: '查看车次详情',
                     ),
                     _InfoItem(
                       label: '始发站',
                       value: _optionalText(trip.fromStation),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.station,
-                        trip.fromStation,
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.station,
+                              trip.fromStation,
+                            )
+                          : null,
                       infoTooltip: '查看车站详情',
                     ),
                     _InfoItem(
                       label: '终到站',
                       value: _optionalText(trip.toStation),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.station,
-                        trip.toStation,
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.station,
+                              trip.toStation,
+                            )
+                          : null,
                       infoTooltip: '查看车站详情',
                     ),
                     _InfoItem(
@@ -315,15 +321,23 @@ class _TripDetailsContent extends StatelessWidget {
                 title: '运行信息',
                 child: _InfoGrid(
                   children: [
-                    _RollingStockInfoItem(items: parsedRollingStock),
+                    if (trip.isRailTrip)
+                      _RollingStockInfoItem(items: parsedRollingStock)
+                    else
+                      _InfoItem(
+                        label: '车型',
+                        value: _optionalText(trip.rollingStock),
+                      ),
                     _InfoItem(
                       label: '承运单位',
                       value: _optionalText(trip.companyName),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.company,
-                        trip.companyName ?? '',
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.company,
+                              trip.companyName ?? '',
+                            )
+                          : null,
                       infoTooltip: '查看承运单位详情',
                     ),
                     _InfoItem(
@@ -365,25 +379,26 @@ class _TripDetailsContent extends StatelessWidget {
                   ],
                 ),
               ),
-              _DetailsSection(
-                icon: Icons.alt_route,
-                title: '经由线路 · ${trip.viaRouteSegments.length} 段',
-                trailing: trip.viaRouteSegments.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: '查看单次行程轨迹',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => Navigator.of(context).push(
-                          m3PageRoute(
-                            builder: (_) => TripMapPage(trips: [trip]),
+              if (trip.isRailTrip)
+                _DetailsSection(
+                  icon: Icons.alt_route,
+                  title: '经由线路 · ${trip.viaRouteSegments.length} 段',
+                  trailing: trip.viaRouteSegments.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '查看单次行程轨迹',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => Navigator.of(context).push(
+                            m3PageRoute(
+                              builder: (_) => TripMapPage(trips: [trip]),
+                            ),
                           ),
+                          icon: const Icon(Icons.map_outlined),
                         ),
-                        icon: const Icon(Icons.map_outlined),
-                      ),
-                child: trip.viaRouteSegments.isEmpty
-                    ? const Text('未记录')
-                    : _ViaRouteDiagram(trip: trip),
-              ),
+                  child: trip.viaRouteSegments.isEmpty
+                      ? const Text('未记录')
+                      : _ViaRouteDiagram(trip: trip),
+                ),
               _DetailsSection(
                 icon: Icons.notes_outlined,
                 title: '备注',
