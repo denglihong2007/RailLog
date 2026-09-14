@@ -10,13 +10,20 @@ namespace RailLog.API.Controllers;
 [Route("api/entities")]
 public sealed class EntityReviewsController(RailLogDatabase database) : ControllerBase
 {
+    private static readonly HashSet<string> AllowedReviewReactions =
+        ["👍", "❤️", "😂", "😮", "😢", "🎉", "🥵", "🤔", "❔"];
+
     [HttpGet("{type}/{key}/count")]
     [AllowAnonymous]
     public async Task<ActionResult<EntityCountResponse>> Count(string type, string key) => Ok(new EntityCountResponse(type, key, await database.GetEntityCountAsync(type, key)));
 
     [HttpGet("{type}/{key}/reviews")]
     [AllowAnonymous]
-    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> Get(string type, string key) => Ok(await database.GetEntityReviewsAsync(type, key));
+    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> Get(string type, string key) =>
+        Ok(await database.GetEntityReviewsAsync(
+            type,
+            key,
+            User.FindFirstValue(ClaimTypes.NameIdentifier)));
 
     [HttpPost("{type}/{key}/reviews")]
     [Authorize]
@@ -48,6 +55,33 @@ public sealed class EntityReviewsController(RailLogDatabase database) : Controll
         if (!await database.AreReviewTripsValidAsync(userId, request.TripId, request.SecondTripId))
             return BadRequest(new { message = "关联行程不存在或不属于当前用户" });
         var ok = await database.UpdateEntityReviewAsync(id, userId, request);
+        return ok ? NoContent() : NotFound();
+    }
+
+    [HttpPut("reviews/{id:long}/reaction")]
+    [Authorize]
+    public async Task<IActionResult> SetReaction(
+        long id,
+        SetEntityReviewReactionRequest request)
+    {
+        if (!AllowedReviewReactions.Contains(request.Emoji))
+            return BadRequest(new { message = "请选择有效的表情" });
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var ok = await database.SetEntityReviewReactionAsync(
+            id,
+            userId,
+            request.Emoji);
+        return ok
+            ? NoContent()
+            : BadRequest(new { message = "不能回复自己的评价或评价不存在" });
+    }
+
+    [HttpDelete("reviews/{id:long}/reaction")]
+    [Authorize]
+    public async Task<IActionResult> RemoveReaction(long id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var ok = await database.RemoveEntityReviewReactionAsync(id, userId);
         return ok ? NoContent() : NotFound();
     }
 }

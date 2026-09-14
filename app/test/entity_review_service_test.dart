@@ -27,6 +27,37 @@ void main() {
     expect(review.secondTrip?.toStation, '上海虹桥');
     expect(review.transferMinutes, 35);
   });
+
+  test('EntityReview parses the selected route segment', () {
+    final review = EntityReview.fromJson({
+      'id': 2,
+      'reviewType': 'route',
+      'userId': 'user-1',
+      'displayName': '测试用户',
+      'avatarUrl': null,
+      'rating': 5,
+      'comment': '沿途风景不错',
+      'tripId': 101,
+      'secondTripId': null,
+      'transferMinutes': null,
+      'routeFromStation': '北京南',
+      'routeToStation': '济南西',
+      'dish': null,
+      'price': null,
+      'createdAt': '2026-09-14T10:00:00Z',
+      'trip': _tripJson(101, 'G1', '北京南', '上海虹桥'),
+      'secondTrip': null,
+      'reactions': [
+        {'emoji': '👍', 'count': 3, 'reactedByCurrentUser': true},
+      ],
+    });
+
+    expect(review.routeFromStation, '北京南');
+    expect(review.routeToStation, '济南西');
+    expect(review.reactions.single.emoji, '👍');
+    expect(review.reactions.single.count, 3);
+    expect(review.reactions.single.reactedByCurrentUser, isTrue);
+  });
 }
 
 Map<String, dynamic> _tripJson(

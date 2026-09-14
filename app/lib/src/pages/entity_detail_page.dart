@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/intersection_service.dart';
+import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
@@ -28,6 +29,17 @@ enum EntityType { station, route, company, rollingStock, train }
 const _entityMaxWidth = 820.0;
 const _entityCardRadius = 8.0;
 const _transferWindow = Duration(hours: 24);
+const _reviewReactionEmojis = [
+  '👍',
+  '❤️',
+  '😂',
+  '😮',
+  '😢',
+  '🎉',
+  '🥵',
+  '🤔',
+  '❔',
+];
 final ButtonStyle _ratingIconStyle = IconButton.styleFrom(
   minimumSize: const Size(40, 40),
   maximumSize: const Size(40, 40),
@@ -803,6 +815,8 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
         tripId: draft.tripId,
         secondTripId: draft.secondTripId,
         transferMinutes: draft.transferMinutes,
+        routeFromStation: draft.routeFromStation,
+        routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
       );
@@ -836,6 +850,8 @@ class _ReviewDraft {
     this.tripId,
     this.secondTripId,
     this.transferMinutes,
+    this.routeFromStation,
+    this.routeToStation,
     this.dish,
     this.price,
   });
@@ -845,6 +861,8 @@ class _ReviewDraft {
   final int? tripId;
   final int? secondTripId;
   final int? transferMinutes;
+  final String? routeFromStation;
+  final String? routeToStation;
   final String? dish;
   final double? price;
 }
@@ -876,9 +894,16 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
   late int _rating;
   int? _tripId;
   int? _secondTripId;
+  List<String> _routeStationOptions = const [];
+  String? _routeFromStation;
+  String? _routeToStation;
+  String? _routeStationsError;
+  bool _loadingRouteStations = false;
+  int _routeStationLoadId = 0;
 
   bool get _isTransfer => widget.reviewType == 'transfer';
   bool get _isMeal => widget.reviewType == 'meal';
+  bool get _isRoute => widget.reviewType == 'route';
   bool get _isEditing => widget.initial != null;
 
   @override
@@ -907,6 +932,14 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
         _secondTripOptions.any((trip) => trip.ticketId == secondTripId)
         ? secondTripId
         : null;
+    _routeFromStation = initial?.routeFromStation;
+    _routeToStation = initial?.routeToStation;
+    if (_isRoute) {
+      _loadingRouteStations = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadRouteStations(resetSelection: false);
+      });
+    }
   }
 
   @override
@@ -944,6 +977,67 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     return _followingTripsFor(primary);
   }
 
+  List<String> get _routeEndOptions {
+    final fromStation = _routeFromStation;
+    if (fromStation == null) return const [];
+    final index = _routeStationOptions.indexOf(fromStation);
+    if (index < 0 || index + 1 >= _routeStationOptions.length) {
+      return const [];
+    }
+    return _routeStationOptions.sublist(index + 1);
+  }
+
+  bool get _hasRouteRange =>
+      _routeFromStation != null && _routeToStation != null;
+
+  Future<void> _loadRouteStations({required bool resetSelection}) async {
+    final loadId = ++_routeStationLoadId;
+    final trip = _primaryTrip;
+    setState(() {
+      _loadingRouteStations = true;
+      _routeStationsError = null;
+      if (resetSelection) {
+        _routeFromStation = null;
+        _routeToStation = null;
+      }
+    });
+    if (trip == null) {
+      if (!mounted || loadId != _routeStationLoadId) return;
+      setState(() {
+        _routeStationOptions = const [];
+        _loadingRouteStations = false;
+      });
+      return;
+    }
+    try {
+      final stations = await _routeStationsForReview(trip, widget.stationName);
+      if (!mounted || loadId != _routeStationLoadId) return;
+      setState(() {
+        _routeStationOptions = stations;
+        _loadingRouteStations = false;
+        if (!stations.contains(_routeFromStation)) {
+          _routeFromStation = null;
+        }
+        if (_routeFromStation == null ||
+            !_routeEndOptions.contains(_routeToStation)) {
+          _routeToStation = null;
+        }
+        if (stations.length < 2) {
+          _routeStationsError = '该行程没有足够的线路站点可供选择';
+        }
+      });
+    } catch (_) {
+      if (!mounted || loadId != _routeStationLoadId) return;
+      setState(() {
+        _routeStationOptions = const [];
+        _routeFromStation = null;
+        _routeToStation = null;
+        _loadingRouteStations = false;
+        _routeStationsError = '读取线路站点失败';
+      });
+    }
+  }
+
   void _selectPrimaryTrip(int value) {
     setState(() {
       _tripId = value;
@@ -956,6 +1050,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
         _secondTripId = null;
       }
     });
+    if (_isRoute) _loadRouteStations(resetSelection: true);
   }
 
   int? get _transferMinutes {
@@ -976,6 +1071,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     final comment = _comment.text.trim();
     if (comment.isEmpty) return;
     if (_isTransfer && (_tripId == null || _secondTripId == null)) return;
+    if (_isRoute && !_hasRouteRange) return;
     Navigator.of(context).pop(
       _ReviewDraft(
         rating: _rating,
@@ -983,6 +1079,8 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
         tripId: _tripId,
         secondTripId: _isTransfer ? _secondTripId : null,
         transferMinutes: _isTransfer ? _transferMinutes : null,
+        routeFromStation: _isRoute ? _routeFromStation : null,
+        routeToStation: _isRoute ? _routeToStation : null,
         dish: _isMeal && _dish.text.trim().isNotEmpty
             ? _dish.text.trim()
             : null,
@@ -997,7 +1095,12 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     final textTheme = Theme.of(context).textTheme;
     final canSubmit =
         _comment.text.trim().isNotEmpty &&
-        (!_isTransfer || (_tripId != null && _secondTripId != null));
+        (!_isTransfer || (_tripId != null && _secondTripId != null)) &&
+        (!_isRoute ||
+            (_tripId != null &&
+                !_loadingRouteStations &&
+                _routeStationsError == null &&
+                _hasRouteRange));
     final dishField = TextField(
       controller: _dish,
       decoration: _reviewInputDecoration(
@@ -1153,6 +1256,74 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                     if (value != null) _selectPrimaryTrip(value);
                   },
                 ),
+                if (_isRoute) ...[
+                  const SizedBox(height: 16),
+                  if (_loadingRouteStations)
+                    const LinearProgressIndicator(minHeight: 3),
+                  if (_routeStationsError != null)
+                    Text(
+                      _routeStationsError!,
+                      style: textTheme.bodySmall?.copyWith(color: colors.error),
+                    ),
+                  if (!_loadingRouteStations &&
+                      _routeStationsError == null) ...[
+                    DropdownMenu<String>(
+                      key: ValueKey(
+                        'reviewRouteFrom-${_tripId ?? 'none'}-${_routeFromStation ?? 'none'}',
+                      ),
+                      initialSelection: _routeFromStation,
+                      selectOnly: true,
+                      expandedInsets: EdgeInsets.zero,
+                      menuHeight: 320,
+                      label: const Text('评价起点'),
+                      hintText: '选择起点站',
+                      leadingIcon: const Icon(Icons.trip_origin, size: 20),
+                      textStyle: textTheme.bodyMedium,
+                      inputDecorationTheme: _reviewFieldTheme(context),
+                      dropdownMenuEntries: _routeStationOptions
+                          .map(
+                            (station) => DropdownMenuEntry<String>(
+                              value: station,
+                              label: station,
+                            ),
+                          )
+                          .toList(),
+                      onSelected: (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _routeFromStation = value;
+                          _routeToStation = null;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownMenu<String>(
+                      key: ValueKey(
+                        'reviewRouteTo-${_tripId ?? 'none'}-${_routeFromStation ?? 'none'}-${_routeToStation ?? 'none'}',
+                      ),
+                      initialSelection: _routeToStation,
+                      selectOnly: true,
+                      enabled: _routeFromStation != null,
+                      expandedInsets: EdgeInsets.zero,
+                      menuHeight: 320,
+                      label: const Text('评价终点'),
+                      hintText: _routeFromStation == null ? '请先选择起点站' : '选择终点站',
+                      leadingIcon: const Icon(Icons.place_outlined, size: 20),
+                      textStyle: textTheme.bodyMedium,
+                      inputDecorationTheme: _reviewFieldTheme(context),
+                      dropdownMenuEntries: _routeEndOptions
+                          .map(
+                            (station) => DropdownMenuEntry<String>(
+                              value: station,
+                              label: station,
+                            ),
+                          )
+                          .toList(),
+                      onSelected: (value) =>
+                          setState(() => _routeToStation = value),
+                    ),
+                  ],
+                ],
                 if (_isTransfer) ...[
                   const SizedBox(height: 16),
                   DropdownMenu<int>(
@@ -1519,8 +1690,8 @@ class _ReviewTile extends StatelessWidget {
               .toSet()
               .join(' / ')
         : '';
-    final routeRange = review.reviewType == 'route' && primary != null
-        ? _routeRange(primary, entityName)
+    final routeRange = review.reviewType == 'route'
+        ? _reviewRouteRange(review, primary, entityName)
         : '';
     return Padding(
       padding: EdgeInsets.only(bottom: showDivider ? 8 : 0),
@@ -1612,7 +1783,7 @@ class _ReviewTile extends StatelessWidget {
                               [
                                 extra,
                                 if (seat.isNotEmpty) '席别：$seat',
-                                if (routeRange.isNotEmpty) '乘坐区间：$routeRange',
+                                if (routeRange.isNotEmpty) '评价区间：$routeRange',
                               ].where((value) => value.isNotEmpty).join(' · '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1661,6 +1832,16 @@ class _ReviewTile extends StatelessWidget {
                         onwerName: review.displayName,
                         showSeat: false,
                       ),
+                    if (review.reactions.isNotEmpty ||
+                        review.userId != SessionService.instance.user?.id) ...[
+                      const SizedBox(height: 6),
+                      _ReviewReactionBar(
+                        reactions: review.reactions,
+                        enabled:
+                            review.userId != SessionService.instance.user?.id,
+                        onToggle: (emoji) => _toggleReaction(context, emoji),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1691,6 +1872,8 @@ class _ReviewTile extends StatelessWidget {
         tripId: draft.tripId,
         secondTripId: draft.secondTripId,
         transferMinutes: draft.transferMinutes,
+        routeFromStation: draft.routeFromStation,
+        routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
       );
@@ -1719,9 +1902,216 @@ class _ReviewTile extends StatelessWidget {
     onChanged();
   }
 
+  Future<void> _toggleReaction(BuildContext context, String emoji) async {
+    var currentEmoji = '';
+    for (final reaction in review.reactions) {
+      if (reaction.reactedByCurrentUser) {
+        currentEmoji = reaction.emoji;
+        break;
+      }
+    }
+    try {
+      if (currentEmoji == emoji) {
+        await EntityReviewService.removeReaction(review);
+      } else {
+        await EntityReviewService.setReaction(review, emoji);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
+      }
+      return;
+    }
+    onChanged();
+  }
+
   void _openUser(BuildContext context) => Navigator.of(
     context,
   ).push(m3PageRoute(builder: (_) => PublicUserPage(userId: review.userId)));
+}
+
+class _ReviewReactionBar extends StatefulWidget {
+  const _ReviewReactionBar({
+    required this.reactions,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final List<EntityReviewReaction> reactions;
+  final bool enabled;
+  final Future<void> Function(String emoji) onToggle;
+
+  @override
+  State<_ReviewReactionBar> createState() => _ReviewReactionBarState();
+}
+
+class _ReviewReactionBarState extends State<_ReviewReactionBar> {
+  final MenuController _menuController = MenuController();
+  bool _saving = false;
+
+  String? get _currentEmoji {
+    for (final reaction in widget.reactions) {
+      if (reaction.reactedByCurrentUser) return reaction.emoji;
+    }
+    return null;
+  }
+
+  Future<void> _toggle(String emoji) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onToggle(emoji);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final enabled = widget.enabled && !_saving;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final reaction in widget.reactions)
+          FilterChip(
+            avatar: Text(reaction.emoji, style: const TextStyle(fontSize: 16)),
+            label: Text(
+              '${reaction.count}',
+              style: textTheme.labelLarge?.copyWith(
+                fontWeight: reaction.reactedByCurrentUser
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+              ),
+            ),
+            selected: reaction.reactedByCurrentUser,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            labelPadding: const EdgeInsets.only(left: 2, right: 4),
+            backgroundColor: colors.surfaceContainerHigh,
+            selectedColor: colors.secondaryContainer,
+            disabledColor: colors.surfaceContainerHigh,
+            side: BorderSide(
+              color: reaction.reactedByCurrentUser
+                  ? colors.primary
+                  : colors.outlineVariant,
+            ),
+            shape: const StadiumBorder(),
+            onSelected: enabled ? (_) => _toggle(reaction.emoji) : null,
+          ),
+        if (widget.enabled)
+          MenuAnchor(
+            controller: _menuController,
+            alignmentOffset: const Offset(0, 6),
+            style: MenuStyle(
+              backgroundColor: WidgetStatePropertyAll(colors.surfaceContainer),
+              surfaceTintColor: WidgetStatePropertyAll(colors.surfaceTint),
+              elevation: const WidgetStatePropertyAll(3),
+              padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: colors.outlineVariant),
+                ),
+              ),
+            ),
+            menuChildren: [
+              SizedBox(
+                width: 148,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final emoji in _reviewReactionEmojis)
+                      _ReviewEmojiButton(
+                        emoji: emoji,
+                        selected: _currentEmoji == emoji,
+                        onPressed: enabled
+                            ? () {
+                                _menuController.close();
+                                _toggle(emoji);
+                              }
+                            : null,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+            builder: (context, controller, child) => IconButton.filledTonal(
+              tooltip: '选择表情回复',
+              visualDensity: VisualDensity.compact,
+              onPressed: enabled
+                  ? () => controller.isOpen
+                        ? controller.close()
+                        : controller.open()
+                  : null,
+              icon: _saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_reaction_outlined, size: 20),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ReviewEmojiButton extends StatelessWidget {
+  const _ReviewEmojiButton({
+    required this.emoji,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String emoji;
+  final bool selected;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox.square(
+      dimension: 44,
+      child: IconButton(
+        tooltip: emoji,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          backgroundColor: selected
+              ? colors.secondaryContainer
+              : colors.surfaceContainerHighest,
+          foregroundColor: colors.onSurface,
+          shape: const CircleBorder(),
+        ),
+        icon: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 21)),
+            if (selected)
+              Positioned(
+                right: -4,
+                bottom: -4,
+                child: Icon(
+                  Icons.check_circle,
+                  size: 13,
+                  color: colors.primary,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ReviewTripLink extends StatelessWidget {
@@ -1788,6 +2178,54 @@ class _ReviewTripLink extends StatelessWidget {
 String _formatTime(DateTime? value) => value == null
     ? '未记录'
     : '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+String _reviewRouteRange(
+  EntityReview review,
+  TripRecord? primary,
+  String routeName,
+) {
+  final fromStation = review.routeFromStation?.trim() ?? '';
+  final toStation = review.routeToStation?.trim() ?? '';
+  if (fromStation.isNotEmpty && toStation.isNotEmpty) {
+    return '$fromStation→$toStation';
+  }
+  return primary == null ? '' : _routeRange(primary, routeName);
+}
+
+Future<List<String>> _routeStationsForReview(
+  TripRecord trip,
+  String routeName,
+) async {
+  final segments = trip.viaRouteSegments
+      .where(
+        (segment) => _normalize(segment.routeName) == _normalize(routeName),
+      )
+      .toList();
+  if (segments.isEmpty) {
+    return RouteService.getStationsForRoute(routeName);
+  }
+  final stations = await RouteService.getStationsBetweenRoute(
+    routeName,
+    segments.first.fromStation,
+    segments.last.toStation,
+  );
+  if (stations.isNotEmpty) {
+    return stations.map((station) => station.name).toList();
+  }
+  final fallback = <String>[];
+  void append(String value) {
+    final station = value.trim();
+    if (station.isNotEmpty && (fallback.isEmpty || fallback.last != station)) {
+      fallback.add(station);
+    }
+  }
+
+  append(segments.first.fromStation);
+  for (final segment in segments) {
+    append(segment.toStation);
+  }
+  return fallback;
+}
+
 String _routeRange(TripRecord trip, String route) {
   final segment = trip.viaRouteSegments.where(
     (s) => _normalize(s.routeName) == _normalize(route),

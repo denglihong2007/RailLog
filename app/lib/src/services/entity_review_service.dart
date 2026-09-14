@@ -15,11 +15,20 @@ class EntityReview {
       tripId = (json['tripId'] as num?)?.toInt(),
       secondTripId = (json['secondTripId'] as num?)?.toInt(),
       transferMinutes = (json['transferMinutes'] as num?)?.toInt(),
+      routeFromStation = json['routeFromStation'] as String?,
+      routeToStation = json['routeToStation'] as String?,
       dish = json['dish'] as String?,
       price = (json['price'] as num?)?.toDouble(),
       createdAt = json['createdAt'] as String,
       trip = _reviewTrip(json['trip'], json['userId'] as String),
-      secondTrip = _reviewTrip(json['secondTrip'], json['userId'] as String);
+      secondTrip = _reviewTrip(json['secondTrip'], json['userId'] as String),
+      reactions = (json['reactions'] as List? ?? const [])
+          .map(
+            (value) => EntityReviewReaction.fromJson(
+              Map<String, dynamic>.from(value as Map),
+            ),
+          )
+          .toList();
   final int id;
   final String reviewType;
   final String userId;
@@ -30,11 +39,33 @@ class EntityReview {
   final int? tripId;
   final int? secondTripId;
   final int? transferMinutes;
+  final String? routeFromStation;
+  final String? routeToStation;
   final String? dish;
   final double? price;
   final String createdAt;
   final TripRecord? trip;
   final TripRecord? secondTrip;
+  final List<EntityReviewReaction> reactions;
+}
+
+class EntityReviewReaction {
+  const EntityReviewReaction({
+    required this.emoji,
+    required this.count,
+    required this.reactedByCurrentUser,
+  });
+
+  factory EntityReviewReaction.fromJson(Map<String, dynamic> json) =>
+      EntityReviewReaction(
+        emoji: json['emoji'] as String,
+        count: (json['count'] as num).toInt(),
+        reactedByCurrentUser: json['reactedByCurrentUser'] as bool,
+      );
+
+  final String emoji;
+  final int count;
+  final bool reactedByCurrentUser;
 }
 
 TripRecord? _reviewTrip(Object? value, String userId) {
@@ -51,8 +82,10 @@ class EntityReviewService {
   }
 
   static Future<List<EntityReview>> fetch(String type, String key) async {
+    final token = SessionService.instance.token;
     final response = await ApiClient.instance.dio.get(
       '/api/entities/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}/reviews',
+      options: token == null ? null : ApiClient.instance.authorized(token),
     );
     return (response.data as List)
         .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -68,6 +101,8 @@ class EntityReviewService {
     int? tripId,
     int? secondTripId,
     int? transferMinutes,
+    String? routeFromStation,
+    String? routeToStation,
     String? dish,
     double? price,
   }) async {
@@ -84,6 +119,8 @@ class EntityReviewService {
         'tripId': tripId,
         'secondTripId': secondTripId,
         'transferMinutes': transferMinutes,
+        'routeFromStation': routeFromStation,
+        'routeToStation': routeToStation,
         'dish': dish,
         'price': price,
       },
@@ -103,6 +140,8 @@ class EntityReviewService {
     int? tripId,
     int? secondTripId,
     int? transferMinutes,
+    String? routeFromStation,
+    String? routeToStation,
     String? dish,
     double? price,
   }) async {
@@ -116,6 +155,8 @@ class EntityReviewService {
         'tripId': tripId,
         'secondTripId': secondTripId,
         'transferMinutes': transferMinutes,
+        'routeFromStation': routeFromStation,
+        'routeToStation': routeToStation,
         'dish': dish,
         'price': price,
       },
@@ -128,6 +169,25 @@ class EntityReviewService {
     if (token == null) throw StateError('请先登录');
     await ApiClient.instance.dio.delete(
       '/api/entities/reviews/${review.id}',
+      options: ApiClient.instance.authorized(token),
+    );
+  }
+
+  static Future<void> setReaction(EntityReview review, String emoji) async {
+    final token = SessionService.instance.token;
+    if (token == null) throw StateError('请先登录');
+    await ApiClient.instance.dio.put(
+      '/api/entities/reviews/${review.id}/reaction',
+      data: {'emoji': emoji},
+      options: ApiClient.instance.authorized(token),
+    );
+  }
+
+  static Future<void> removeReaction(EntityReview review) async {
+    final token = SessionService.instance.token;
+    if (token == null) throw StateError('请先登录');
+    await ApiClient.instance.dio.delete(
+      '/api/entities/reviews/${review.id}/reaction',
       options: ApiClient.instance.authorized(token),
     );
   }
