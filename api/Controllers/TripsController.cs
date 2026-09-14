@@ -21,6 +21,25 @@ public sealed class TripsController(RailLogDatabase database) : ControllerBase
         return details is null ? NotFound() : Ok(details);
     }
 
+    [HttpGet("{ticketId:long}/reviews")]
+    [AllowAnonymous]
+    [EnableCors("public-api")]
+    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetReviews(long ticketId) =>
+        Ok(await database.GetTripReviewsAsync(
+            ticketId,
+            User.FindFirstValue(ClaimTypes.NameIdentifier)));
+
+    [HttpGet("{ticketId:long}/travel-guide")]
+    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetTravelGuide(long ticketId)
+    {
+        var reviews = await database.GetTravelGuideReviewsAsync(ticketId, UserId);
+        return reviews is null ? NotFound() : Ok(reviews);
+    }
+
+    [HttpGet("travel-guide")]
+    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetHomeTravelGuide() =>
+        Ok(await database.GetHomeTravelGuideReviewsAsync(UserId));
+
     [HttpPost("sync")]
     public async Task<ActionResult<SyncResponse>> Sync(SyncRequest request)
     {

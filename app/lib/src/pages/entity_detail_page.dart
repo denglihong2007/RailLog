@@ -10,7 +10,6 @@ import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
-import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,6 +17,7 @@ import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/intersection_service.dart';
 import 'package:raillog/src/services/route_service.dart';
+import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
@@ -29,17 +29,6 @@ enum EntityType { station, route, company, rollingStock, train }
 const _entityMaxWidth = 820.0;
 const _entityCardRadius = 8.0;
 const _transferWindow = Duration(hours: 24);
-const _reviewReactionEmojis = [
-  '👍',
-  '❤️',
-  '😂',
-  '😮',
-  '😢',
-  '🎉',
-  '🥵',
-  '🤔',
-  '❔',
-];
 final ButtonStyle _ratingIconStyle = IconButton.styleFrom(
   minimumSize: const Size(40, 40),
   maximumSize: const Size(40, 40),
@@ -1469,14 +1458,6 @@ IconData _reviewTypeIcon(String type) => switch (type) {
 String _tripOptionLabel(TripRecord trip) =>
     '${_formatTripDate(trip.departureTime)} · ${trip.trainNumber} · ${trip.fromStation} → ${trip.toStation}';
 
-TripRecord? _localTripForTicket(Iterable<TripRecord> trips, int? ticketId) {
-  if (ticketId == null) return null;
-  for (final trip in trips) {
-    if (trip.ticketId == ticketId) return trip;
-  }
-  return null;
-}
-
 bool _canUseAsReviewTrip(TripRecord trip) =>
     trip.ticketId != null && !trip.isLocalOnly;
 
@@ -1657,12 +1638,6 @@ String _reviewTypeLabel(String type) => switch (type) {
   _ => type,
 };
 
-String _formatReviewDate(String value) {
-  final d = DateTime.tryParse(value)?.toLocal();
-  if (d == null) return value;
-  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-}
-
 class _ReviewTile extends StatelessWidget {
   const _ReviewTile({
     required this.review,
@@ -1678,179 +1653,18 @@ class _ReviewTile extends StatelessWidget {
   final bool showDivider;
 
   @override
-  Widget build(BuildContext context) {
-    final primary = review.trip ?? _localTripForTicket(trips, review.tripId);
-    final secondary =
-        review.secondTrip ?? _localTripForTicket(trips, review.secondTripId);
-    final extra = _reviewExtra(review);
-    final seat = review.reviewType == 'rollingStock'
-        ? [primary?.seatType, secondary?.seatType]
-              .where((value) => value?.trim().isNotEmpty == true)
-              .map((value) => value!.trim())
-              .toSet()
-              .join(' / ')
-        : '';
-    final routeRange = review.reviewType == 'route'
-        ? _reviewRouteRange(review, primary, entityName)
-        : '';
-    return Padding(
-      padding: EdgeInsets.only(bottom: showDivider ? 8 : 0),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: showDivider
-                ? BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  )
-                : BorderSide.none,
-          ),
-        ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(12, 12, 8, showDivider ? 14 : 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(24),
-                onTap: () => _openUser(context),
-                child: CachedAvatar(
-                  name: review.displayName,
-                  imageUrl: review.avatarUrl,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                review.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (review.userId == SessionService.instance.user?.id)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                tooltip: '编辑评价',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _editReview(context),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                              ),
-                              IconButton(
-                                tooltip: '删除评价',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _deleteReview(context),
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  size: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(
-                          '★' * review.rating,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        if (extra.isNotEmpty ||
-                            seat.isNotEmpty ||
-                            routeRange.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              [
-                                extra,
-                                if (seat.isNotEmpty) '席别：$seat',
-                                if (routeRange.isNotEmpty) '评价区间：$routeRange',
-                              ].where((value) => value.isNotEmpty).join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                        ] else
-                          const Spacer(),
-                        Text(
-                          _formatReviewDate(review.createdAt),
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      review.comment,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    if (primary != null)
-                      _ReviewTripLink(
-                        roleLabel: review.reviewType == 'transfer'
-                            ? '前序行程 · 到站 ${_formatTime(primary.arrivalTime)}'
-                            : null,
-                        trip: primary,
-                        userId: review.userId,
-                        onwerName: review.displayName,
-                        showSeat: false,
-                      ),
-                    if (secondary != null)
-                      _ReviewTripLink(
-                        roleLabel:
-                            '后续行程 · 发车 ${_formatTime(secondary.departureTime)}',
-                        trip: secondary,
-                        userId: review.userId,
-                        onwerName: review.displayName,
-                        showSeat: false,
-                      ),
-                    if (review.reactions.isNotEmpty ||
-                        review.userId != SessionService.instance.user?.id) ...[
-                      const SizedBox(height: 6),
-                      _ReviewReactionBar(
-                        reactions: review.reactions,
-                        enabled:
-                            review.userId != SessionService.instance.user?.id,
-                        onToggle: (emoji) => _toggleReaction(context, emoji),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => EntityReviewCard(
+    review: review,
+    trips: trips,
+    entityName: entityName,
+    showDivider: showDivider,
+    contentPadding: EdgeInsets.fromLTRB(12, 12, 8, showDivider ? 14 : 4),
+    onChanged: onChanged,
+    onEdit: () => _editReview(context),
+    onDelete: () => _deleteReview(context),
+    onUserTap: () => _openUser(context),
+    onTripTap: (trip) => _openTrip(context, trip),
+  );
 
   Future<void> _editReview(BuildContext context) async {
     final draft = await showDialog<_ReviewDraft>(
@@ -1902,293 +1716,23 @@ class _ReviewTile extends StatelessWidget {
     onChanged();
   }
 
-  Future<void> _toggleReaction(BuildContext context, String emoji) async {
-    var currentEmoji = '';
-    for (final reaction in review.reactions) {
-      if (reaction.reactedByCurrentUser) {
-        currentEmoji = reaction.emoji;
-        break;
-      }
-    }
-    try {
-      if (currentEmoji == emoji) {
-        await EntityReviewService.removeReaction(review);
-      } else {
-        await EntityReviewService.setReaction(review, emoji);
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(apiErrorMessage(e))));
-      }
-      return;
-    }
-    onChanged();
-  }
-
   void _openUser(BuildContext context) => Navigator.of(
     context,
   ).push(m3PageRoute(builder: (_) => PublicUserPage(userId: review.userId)));
-}
 
-class _ReviewReactionBar extends StatefulWidget {
-  const _ReviewReactionBar({
-    required this.reactions,
-    required this.enabled,
-    required this.onToggle,
-  });
-
-  final List<EntityReviewReaction> reactions;
-  final bool enabled;
-  final Future<void> Function(String emoji) onToggle;
-
-  @override
-  State<_ReviewReactionBar> createState() => _ReviewReactionBarState();
-}
-
-class _ReviewReactionBarState extends State<_ReviewReactionBar> {
-  final MenuController _menuController = MenuController();
-  bool _saving = false;
-
-  String? get _currentEmoji {
-    for (final reaction in widget.reactions) {
-      if (reaction.reactedByCurrentUser) return reaction.emoji;
-    }
-    return null;
-  }
-
-  Future<void> _toggle(String emoji) async {
-    if (_saving) return;
-    setState(() => _saving = true);
-    try {
-      await widget.onToggle(emoji);
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final enabled = widget.enabled && !_saving;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (final reaction in widget.reactions)
-          FilterChip(
-            avatar: Text(reaction.emoji, style: const TextStyle(fontSize: 16)),
-            label: Text(
-              '${reaction.count}',
-              style: textTheme.labelLarge?.copyWith(
-                fontWeight: reaction.reactedByCurrentUser
-                    ? FontWeight.w700
-                    : FontWeight.w500,
-              ),
-            ),
-            selected: reaction.reactedByCurrentUser,
-            showCheckmark: false,
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            labelPadding: const EdgeInsets.only(left: 2, right: 4),
-            backgroundColor: colors.surfaceContainerHigh,
-            selectedColor: colors.secondaryContainer,
-            disabledColor: colors.surfaceContainerHigh,
-            side: BorderSide(
-              color: reaction.reactedByCurrentUser
-                  ? colors.primary
-                  : colors.outlineVariant,
-            ),
-            shape: const StadiumBorder(),
-            onSelected: enabled ? (_) => _toggle(reaction.emoji) : null,
-          ),
-        if (widget.enabled)
-          MenuAnchor(
-            controller: _menuController,
-            alignmentOffset: const Offset(0, 6),
-            style: MenuStyle(
-              backgroundColor: WidgetStatePropertyAll(colors.surfaceContainer),
-              surfaceTintColor: WidgetStatePropertyAll(colors.surfaceTint),
-              elevation: const WidgetStatePropertyAll(3),
-              padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: colors.outlineVariant),
-                ),
-              ),
-            ),
-            menuChildren: [
-              SizedBox(
-                width: 148,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    for (final emoji in _reviewReactionEmojis)
-                      _ReviewEmojiButton(
-                        emoji: emoji,
-                        selected: _currentEmoji == emoji,
-                        onPressed: enabled
-                            ? () {
-                                _menuController.close();
-                                _toggle(emoji);
-                              }
-                            : null,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-            builder: (context, controller, child) => IconButton.filledTonal(
-              tooltip: '选择表情回复',
-              visualDensity: VisualDensity.compact,
-              onPressed: enabled
-                  ? () => controller.isOpen
-                        ? controller.close()
-                        : controller.open()
-                  : null,
-              icon: _saving
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add_reaction_outlined, size: 20),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ReviewEmojiButton extends StatelessWidget {
-  const _ReviewEmojiButton({
-    required this.emoji,
-    required this.selected,
-    required this.onPressed,
-  });
-
-  final String emoji;
-  final bool selected;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return SizedBox.square(
-      dimension: 44,
-      child: IconButton(
-        tooltip: emoji,
-        onPressed: onPressed,
-        padding: EdgeInsets.zero,
-        style: IconButton.styleFrom(
-          backgroundColor: selected
-              ? colors.secondaryContainer
-              : colors.surfaceContainerHighest,
-          foregroundColor: colors.onSurface,
-          shape: const CircleBorder(),
-        ),
-        icon: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 21)),
-            if (selected)
-              Positioned(
-                right: -4,
-                bottom: -4,
-                child: Icon(
-                  Icons.check_circle,
-                  size: 13,
-                  color: colors.primary,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewTripLink extends StatelessWidget {
-  const _ReviewTripLink({
-    required this.trip,
-    required this.userId,
-    required this.onwerName,
-    this.roleLabel,
-    this.showSeat = false,
-  });
-  final TripRecord trip;
-  final String userId;
-  final String onwerName;
-  final String? roleLabel;
-  final bool showSeat;
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final seat = trip.seatType?.trim() ?? '';
-    final summary = [
-      _formatTripDate(trip.departureTime),
-      trip.trainNumber,
-      '${trip.fromStation} → ${trip.toStation}',
-      if (showSeat && seat.isNotEmpty) seat,
-    ].where((part) => part.isNotEmpty).join(' · ');
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      leading: const Icon(Icons.confirmation_number_outlined, size: 18),
-      title: Text(
-        roleLabel ?? summary,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: colors.onSurface,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: roleLabel == null
-          ? null
-          : Text(
-              summary,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-            ),
-      onTap: () => Navigator.of(context).push(
+  void _openTrip(BuildContext context, TripRecord trip) =>
+      Navigator.of(context).push(
         m3PageRoute(
           builder: (_) => TripRecordDetailsPage.public(
             ticketId: trip.ticketId ?? trip.id,
-            onOwnerTap: () => Navigator.of(
-              context,
-            ).push(m3PageRoute(builder: (_) => PublicUserPage(userId: userId))),
+            onOwnerTap: () => Navigator.of(context).push(
+              m3PageRoute(
+                builder: (_) => PublicUserPage(userId: review.userId),
+              ),
+            ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-String _formatTime(DateTime? value) => value == null
-    ? '未记录'
-    : '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-String _reviewRouteRange(
-  EntityReview review,
-  TripRecord? primary,
-  String routeName,
-) {
-  final fromStation = review.routeFromStation?.trim() ?? '';
-  final toStation = review.routeToStation?.trim() ?? '';
-  if (fromStation.isNotEmpty && toStation.isNotEmpty) {
-    return '$fromStation→$toStation';
-  }
-  return primary == null ? '' : _routeRange(primary, routeName);
+      );
 }
 
 Future<List<String>> _routeStationsForReview(
@@ -2226,25 +1770,8 @@ Future<List<String>> _routeStationsForReview(
   return fallback;
 }
 
-String _routeRange(TripRecord trip, String route) {
-  final segment = trip.viaRouteSegments.where(
-    (s) => _normalize(s.routeName) == _normalize(route),
-  );
-  if (segment.isEmpty) return '${trip.fromStation}→${trip.toStation}';
-  final first = segment.first;
-  final last = segment.last;
-  return '${first.fromStation}→${last.toStation}';
-}
-
 String _formatTripDate(DateTime value) =>
     '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-String _reviewExtra(EntityReview r) {
-  final parts = <String>[];
-  if (r.transferMinutes != null) parts.add('换乘 ${r.transferMinutes} 分钟');
-  if (r.dish?.isNotEmpty == true) parts.add('菜品：${r.dish}');
-  if (r.price != null) parts.add('¥${r.price!.toStringAsFixed(2)}');
-  return parts.join(' · ');
-}
 
 String _typeKey(EntityType type) => switch (type) {
   EntityType.station => 'station',

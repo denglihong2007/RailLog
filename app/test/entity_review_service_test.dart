@@ -5,6 +5,8 @@ void main() {
   test('EntityReview parses associated public trips', () {
     final review = EntityReview.fromJson({
       'id': 1,
+      'entityType': 'station',
+      'entityKey': '济南西',
       'reviewType': 'transfer',
       'userId': 'user-1',
       'displayName': '测试用户',
@@ -21,6 +23,8 @@ void main() {
       'secondTrip': _tripJson(102, 'G2', '济南西', '上海虹桥'),
     });
 
+    expect(review.entityType, 'station');
+    expect(review.entityKey, '济南西');
     expect(review.trip?.ticketId, 101);
     expect(review.trip?.fromStation, '北京南');
     expect(review.secondTrip?.ticketId, 102);
@@ -31,6 +35,8 @@ void main() {
   test('EntityReview parses the selected route segment', () {
     final review = EntityReview.fromJson({
       'id': 2,
+      'entityType': 'route',
+      'entityKey': '京沪高铁',
       'reviewType': 'route',
       'userId': 'user-1',
       'displayName': '测试用户',

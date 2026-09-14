@@ -6,6 +6,8 @@ import 'package:raillog/src/services/session_service.dart';
 class EntityReview {
   EntityReview.fromJson(Map<String, dynamic> json)
     : id = json['id'] as int,
+      entityType = json['entityType'] as String? ?? '',
+      entityKey = json['entityKey'] as String? ?? '',
       reviewType = json['reviewType'] as String,
       userId = json['userId'] as String,
       displayName = json['displayName'] as String,
@@ -30,6 +32,8 @@ class EntityReview {
           )
           .toList();
   final int id;
+  final String entityType;
+  final String entityKey;
   final String reviewType;
   final String userId;
   final String displayName;
@@ -86,6 +90,41 @@ class EntityReviewService {
     final response = await ApiClient.instance.dio.get(
       '/api/entities/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}/reviews',
       options: token == null ? null : ApiClient.instance.authorized(token),
+    );
+    return (response.data as List)
+        .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<List<EntityReview>> fetchForTrip(int ticketId) async {
+    final token = SessionService.instance.token;
+    final response = await ApiClient.instance.dio.get(
+      '/api/trips/$ticketId/reviews',
+      options: token == null ? null : ApiClient.instance.authorized(token),
+    );
+    return (response.data as List)
+        .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<List<EntityReview>> fetchTravelGuide(int ticketId) async {
+    final token = SessionService.instance.token;
+    if (token == null) throw StateError('请先登录');
+    final response = await ApiClient.instance.dio.get(
+      '/api/trips/$ticketId/travel-guide',
+      options: ApiClient.instance.authorized(token),
+    );
+    return (response.data as List)
+        .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  static Future<List<EntityReview>> fetchHomeTravelGuide() async {
+    final token = SessionService.instance.token;
+    if (token == null) throw StateError('请先登录');
+    final response = await ApiClient.instance.dio.get(
+      '/api/trips/travel-guide',
+      options: ApiClient.instance.authorized(token),
     );
     return (response.data as List)
         .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))

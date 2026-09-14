@@ -13,6 +13,8 @@ import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
+import 'package:raillog/src/services/entity_review_service.dart';
+import 'package:raillog/src/services/entity_review_navigation.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
@@ -21,8 +23,12 @@ import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
+import 'package:raillog/src/widgets/entity_review_card.dart';
+import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+const _tripLoginRequiredMessage = '登录后查看';
 
 class TripRecordDetailsPage extends StatefulWidget {
   const TripRecordDetailsPage({super.key, required this.tripId})
@@ -172,12 +178,16 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
         message: '未找到这条行程记录',
       );
     }
-    return _TripDetailsContent(
-      trip: loaded.trip,
-      ownerName: loaded.ownerName,
-      ownerAvatarUrl: loaded.ownerAvatarUrl,
-      ownerBio: loaded.ownerBio,
-      onOwnerTap: widget.onOwnerTap,
+    return AnimatedBuilder(
+      animation: SessionService.instance,
+      builder: (context, _) => _TripDetailsContent(
+        trip: loaded.trip,
+        ownerName: loaded.ownerName,
+        ownerAvatarUrl: loaded.ownerAvatarUrl,
+        ownerBio: loaded.ownerBio,
+        onOwnerTap: widget.onOwnerTap,
+        isOwnerView: !widget.isReadOnly,
+      ),
     );
   }
 }
@@ -207,6 +217,7 @@ class _TripDetailsContent extends StatelessWidget {
     this.ownerAvatarUrl,
     this.ownerBio,
     this.onOwnerTap,
+    required this.isOwnerView,
   });
 
   final TripRecord trip;
@@ -214,6 +225,7 @@ class _TripDetailsContent extends StatelessWidget {
   final String? ownerAvatarUrl;
   final String? ownerBio;
   final VoidCallback? onOwnerTap;
+  final bool isOwnerView;
 
   @override
   Widget build(BuildContext context) {
@@ -244,6 +256,9 @@ class _TripDetailsContent extends StatelessWidget {
                   );
                   if (displayStyle == TicketDisplayStyle.md3) {
                     return M3Reveal(child: _DetailsTicket(trip: trip));
+                  }
+                  if (!SessionService.instance.isSignedIn) {
+                    return const M3Reveal(child: _TripLoginRequired());
                   }
                   return M3Reveal(
                     child: _GeneratedTicketPanel(
@@ -404,12 +419,178 @@ class _TripDetailsContent extends StatelessWidget {
                 title: '备注',
                 child: Text(_optionalText(trip.notes)),
               ),
+              if (trip.isRailTrip &&
+                  trip.ticketId != null &&
+                  !trip.isLocalOnly) ...[
+                _TripReviewsSection(
+                  ticketId: trip.ticketId!,
+                  title: '关联评价',
+                  icon: Icons.rate_review_outlined,
+                  loader: EntityReviewService.fetchForTrip,
+                  emptyText: '暂无关联评价',
+                  showTripLinks: false,
+                  signedIn: SessionService.instance.isSignedIn,
+                ),
+                if (isOwnerView)
+                  _TripReviewsSection(
+                    ticketId: trip.ticketId!,
+                    title: '出行指南',
+                    icon: Icons.explore_outlined,
+                    loader: EntityReviewService.fetchTravelGuide,
+                    emptyText: '暂无出行指南',
+                    showTripLinks: true,
+                    signedIn: SessionService.instance.isSignedIn,
+                  ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+}
+
+typedef _ReviewListLoader = Future<List<EntityReview>> Function(int ticketId);
+
+class _TripReviewsSection extends StatefulWidget {
+  const _TripReviewsSection({
+    required this.ticketId,
+    required this.title,
+    required this.icon,
+    required this.loader,
+    required this.emptyText,
+    required this.showTripLinks,
+    required this.signedIn,
+  });
+
+  final int ticketId;
+  final String title;
+  final IconData icon;
+  final _ReviewListLoader loader;
+  final String emptyText;
+  final bool showTripLinks;
+  final bool signedIn;
+
+  @override
+  State<_TripReviewsSection> createState() => _TripReviewsSectionState();
+}
+
+class _TripReviewsSectionState extends State<_TripReviewsSection> {
+  late Future<List<EntityReview>> _reviewsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TripReviewsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ticketId != widget.ticketId ||
+        oldWidget.loader != widget.loader ||
+        oldWidget.signedIn != widget.signedIn) {
+      _load();
+    }
+  }
+
+  void _load() {
+    _reviewsFuture = widget.signedIn
+        ? widget.loader(widget.ticketId)
+        : Future.value(const <EntityReview>[]);
+  }
+
+  void _retry() => setState(_load);
+
+  void _refresh() {
+    if (mounted) setState(_load);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _DetailsSection(
+      icon: widget.icon,
+      title: widget.title,
+      child: !widget.signedIn
+          ? const _TripLoginRequired()
+          : FutureBuilder<List<EntityReview>>(
+              future: _reviewsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const SizedBox(
+                    height: 72,
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${widget.title}读取失败：${snapshot.error}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                      TextButton(onPressed: _retry, child: const Text('重试')),
+                    ],
+                  );
+                }
+                final reviews = snapshot.data ?? const <EntityReview>[];
+                if (reviews.isEmpty) return Text(widget.emptyText);
+                return Column(
+                  children: [
+                    for (var index = 0; index < reviews.length; index++) ...[
+                      EntityReviewCard(
+                        review: reviews[index],
+                        showTarget: true,
+                        showTripLinks: widget.showTripLinks,
+                        showDivider: index < reviews.length - 1,
+                        contentPadding: EdgeInsets.fromLTRB(
+                          0,
+                          index == 0 ? 0 : 12,
+                          0,
+                          index < reviews.length - 1 ? 14 : 4,
+                        ),
+                        onChanged: _refresh,
+                        onTargetTap: () =>
+                            openEntityReviewTarget(context, reviews[index]),
+                        onTripTap: widget.showTripLinks
+                            ? (trip) => _openTrip(context, trip)
+                            : null,
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+    );
+  }
+
+  void _openTrip(BuildContext context, TripRecord trip) {
+    Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) =>
+            TripRecordDetailsPage.public(ticketId: trip.ticketId ?? trip.id),
+      ),
+    );
+  }
+}
+
+class _TripLoginRequired extends StatelessWidget {
+  const _TripLoginRequired();
+
+  @override
+  Widget build(BuildContext context) => const LoginRequiredView(
+    icon: Icons.lock_outline,
+    message: _tripLoginRequiredMessage,
+  );
 }
 
 class _PublicOwnerBanner extends StatelessWidget {
