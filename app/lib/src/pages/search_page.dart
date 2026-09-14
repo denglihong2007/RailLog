@@ -6,7 +6,9 @@ import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/search_service.dart';
+import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 const _searchMaxWidth = 720.0;
@@ -30,11 +32,41 @@ class _SearchPageState extends State<SearchPage> {
   String? _error;
   List<EntitySearchResult> _entities = const [];
   List<UserSearchResult> _users = const [];
+  late bool _wasSignedIn;
+
+  @override
+  void initState() {
+    super.initState();
+    _wasSignedIn = SessionService.instance.isSignedIn;
+    SessionService.instance.addListener(_handleSessionChanged);
+  }
 
   @override
   void dispose() {
+    SessionService.instance.removeListener(_handleSessionChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleSessionChanged() {
+    if (!mounted) return;
+    final isSignedIn = SessionService.instance.isSignedIn;
+    if (isSignedIn == _wasSignedIn) return;
+    _wasSignedIn = isSignedIn;
+    _requestId++;
+    _controller.clear();
+    setState(() {
+      _loading = false;
+      _hasSearched = false;
+      _error = null;
+      _entities = const [];
+      _users = const [];
+    });
+  }
+
+  void _loadAfterSignIn() {
+    if (!mounted || !SessionService.instance.isSignedIn) return;
+    setState(() {});
   }
 
   void _selectScope(_SearchScope? scope) {
@@ -155,6 +187,13 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!SessionService.instance.isSignedIn) {
+      return LoginRequiredView(
+        message: '登录后使用搜索',
+        icon: Icons.search,
+        onSignedIn: _loadAfterSignIn,
+      );
+    }
     final colors = Theme.of(context).colorScheme;
     return ColoredBox(
       color: colors.surfaceContainerLowest,

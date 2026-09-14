@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/global_statistics.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
-import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/statistics_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 enum _UserMetric { trips, mileage, duration, spending, achievements }
@@ -69,7 +69,11 @@ class _StatisticsPageState extends State<StatisticsPage> {
   @override
   Widget build(BuildContext context) {
     if (!SessionService.instance.isSignedIn) {
-      return _SignedOutStatistics(onSignedIn: _loadAfterSignIn);
+      return LoginRequiredView(
+        message: '登录后查看全站统计',
+        icon: Icons.leaderboard_outlined,
+        onSignedIn: _loadAfterSignIn,
+      );
     }
     final statisticsFuture = _statisticsFuture ??= StatisticsService.fetch();
     return FutureBuilder<GlobalStatistics>(
@@ -815,40 +819,6 @@ class _EmptyLeaderboard extends StatelessWidget {
     return const Padding(
       padding: EdgeInsets.all(24),
       child: Center(child: Text('暂无排行数据')),
-    );
-  }
-}
-
-class _SignedOutStatistics extends StatelessWidget {
-  const _SignedOutStatistics({required this.onSignedIn});
-
-  final VoidCallback onSignedIn;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.leaderboard_outlined, size: 40),
-            const SizedBox(height: 16),
-            const Text('登录后查看全站统计'),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: () async {
-                await Navigator.of(
-                  context,
-                ).push(m3PageRoute(builder: (_) => const AuthPage()));
-                if (SessionService.instance.isSignedIn) onSignedIn();
-              },
-              icon: const Icon(Icons.login),
-              label: const Text('登录'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

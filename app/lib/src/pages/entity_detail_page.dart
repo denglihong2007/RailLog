@@ -9,6 +9,7 @@ import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
@@ -44,17 +45,50 @@ class EntityDetailPage extends StatefulWidget {
 }
 
 class _EntityDetailPageState extends State<EntityDetailPage> {
-  late Future<List<TripRecord>> _future;
-  late Future<int> _globalFuture;
+  Future<List<TripRecord>>? _future;
+  Future<int>? _globalFuture;
+  late bool _wasSignedIn;
 
   @override
   void initState() {
     super.initState();
+    _wasSignedIn = SessionService.instance.isSignedIn;
+    if (_wasSignedIn) _loadData();
+    SessionService.instance.addListener(_handleSessionChanged);
+  }
+
+  @override
+  void dispose() {
+    SessionService.instance.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
+
+  void _loadData() {
     _future = DbHelper.instance.getAllTrips();
     _globalFuture = EntityReviewService.fetchCount(
       _typeKey(widget.type),
       widget.name,
     );
+  }
+
+  void _handleSessionChanged() {
+    if (!mounted) return;
+    final isSignedIn = SessionService.instance.isSignedIn;
+    if (isSignedIn == _wasSignedIn) return;
+    _wasSignedIn = isSignedIn;
+    if (isSignedIn) {
+      _loadData();
+    } else {
+      _future = null;
+      _globalFuture = null;
+    }
+    setState(() {});
+  }
+
+  void _loadAfterSignIn() {
+    if (!mounted || !SessionService.instance.isSignedIn) return;
+    if (_future == null) _loadData();
+    setState(() {});
   }
 
   List<TripRecord> _matching(List<TripRecord> trips) {
@@ -82,228 +116,257 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+  Widget build(BuildContext context) {
+    final appBar = AppBar(
       title: Text(widget.name),
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
-    ),
-    body: FutureBuilder<List<TripRecord>>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final trips = _matching(snapshot.data!);
-        final colors = Theme.of(context).colorScheme;
-        return Container(
-          color: colors.surface,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _entityMaxWidth),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _EntityHeader(type: widget.type, name: widget.name),
-                      const SizedBox(height: 12),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final wide = constraints.maxWidth >= 560;
-                          final metrics = [
-                            FutureBuilder<int>(
-                              future: _globalFuture,
-                              builder: (context, snap) => _MetricCard(
-                                icon: Icons.public,
-                                label: '全站记录',
-                                value: snap.data == null
-                                    ? '—'
-                                    : '${snap.data} 次',
-                                highlighted: true,
-                              ),
-                            ),
-                            _MetricCard(
-                              icon: Icons.person_outline,
-                              label: '你的记录',
-                              value: '${trips.length} 次',
-                            ),
-                          ];
-                          return wide
-                              ? Row(
-                                  children: [
-                                    Expanded(child: metrics[0]),
-                                    const SizedBox(width: 12),
-                                    Expanded(child: metrics[1]),
-                                  ],
-                                )
-                              : Column(
-                                  children: [
-                                    metrics[0],
-                                    const SizedBox(height: 12),
-                                    metrics[1],
-                                  ],
-                                );
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: '车票列表',
-                        icon: Icons.confirmation_number_outlined,
-                        action: trips.length > 4
-                            ? TextButton.icon(
-                                onPressed: () => Navigator.of(context).push(
-                                  m3PageRoute(
-                                    builder: (_) => AllTripsPage(
-                                      title: widget.name,
-                                      trips: trips
-                                          .map(DashboardTripEntry.fromTrip)
-                                          .toList(),
-                                      showTripKindFilter: false,
-                                    ),
-                                  ),
+    );
+    if (!SessionService.instance.isSignedIn) {
+      return Scaffold(
+        appBar: appBar,
+        body: LoginRequiredView(
+          message: '登录后查看${_typeLabel(widget.type)}详情',
+          icon: _typeIcon(widget.type),
+          onSignedIn: _loadAfterSignIn,
+        ),
+      );
+    }
+    final future = _future;
+    final globalFuture = _globalFuture;
+    if (future == null || globalFuture == null) {
+      return Scaffold(
+        appBar: appBar,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    return Scaffold(
+      appBar: appBar,
+      body: FutureBuilder<List<TripRecord>>(
+        future: future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final trips = _matching(snapshot.data!);
+          final colors = Theme.of(context).colorScheme;
+          return Container(
+            color: colors.surface,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: _entityMaxWidth,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _EntityHeader(type: widget.type, name: widget.name),
+                        const SizedBox(height: 12),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final wide = constraints.maxWidth >= 560;
+                            final metrics = [
+                              FutureBuilder<int>(
+                                future: globalFuture,
+                                builder: (context, snap) => _MetricCard(
+                                  icon: Icons.public,
+                                  label: '全站记录',
+                                  value: snap.data == null
+                                      ? '—'
+                                      : '${snap.data} 次',
+                                  highlighted: true,
                                 ),
-                                icon: const Icon(Icons.arrow_forward, size: 18),
-                                label: const Text('更多'),
-                              )
-                            : null,
-                        child: trips.isEmpty
-                            ? const _EmptyState(
-                                message: '暂无关联车票',
-                                icon: Icons.train_outlined,
-                              )
-                            : Column(
-                                children: [
-                                  _ResponsiveTicketList(
-                                    trips: trips.take(4).toList(),
-                                  ),
-                                ],
                               ),
-                      ),
-                      if (widget.type == EntityType.station ||
-                          widget.type == EntityType.train) ...[
+                              _MetricCard(
+                                icon: Icons.person_outline,
+                                label: '你的记录',
+                                value: '${trips.length} 次',
+                              ),
+                            ];
+                            return wide
+                                ? Row(
+                                    children: [
+                                      Expanded(child: metrics[0]),
+                                      const SizedBox(width: 12),
+                                      Expanded(child: metrics[1]),
+                                    ],
+                                  )
+                                : Column(
+                                    children: [
+                                      metrics[0],
+                                      const SizedBox(height: 12),
+                                      metrics[1],
+                                    ],
+                                  );
+                          },
+                        ),
                         const SizedBox(height: 12),
                         _SectionCard(
-                          title: '行程交集',
-                          icon: Icons.people_alt_outlined,
-                          action: trips.isEmpty
-                              ? null
-                              : TextButton.icon(
-                                  onPressed: () async {
-                                    final groups =
-                                        await IntersectionService.fetch(
-                                          _typeKey(widget.type),
-                                          widget.name,
-                                        );
-                                    if (!context.mounted) return;
-                                    final ordered = groups
-                                        .where(
-                                          (i) =>
-                                              _normalize(i.location) ==
-                                              _normalize(widget.name),
-                                        )
-                                        .toList();
-                                    Navigator.of(context).push(
-                                      m3PageRoute(
-                                        builder: (_) => EntityIntersectionsPage(
-                                          title: widget.name,
-                                          intersections: ordered,
-                                        ),
+                          title: '车票列表',
+                          icon: Icons.confirmation_number_outlined,
+                          action: trips.length > 4
+                              ? TextButton.icon(
+                                  onPressed: () => Navigator.of(context).push(
+                                    m3PageRoute(
+                                      builder: (_) => AllTripsPage(
+                                        title: widget.name,
+                                        trips: trips
+                                            .map(DashboardTripEntry.fromTrip)
+                                            .toList(),
+                                        showTripKindFilter: false,
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                   icon: const Icon(
                                     Icons.arrow_forward,
                                     size: 18,
                                   ),
                                   label: const Text('更多'),
-                                ),
+                                )
+                              : null,
                           child: trips.isEmpty
                               ? const _EmptyState(
-                                  message: '暂无行程交集',
-                                  icon: Icons.group_off_outlined,
+                                  message: '暂无关联车票',
+                                  icon: Icons.train_outlined,
                                 )
-                              : FutureBuilder<List<OnlineIntersection>>(
-                                  future: IntersectionService.fetch(
-                                    _typeKey(widget.type),
-                                    widget.name,
-                                  ),
-                                  builder: (context, snap) {
-                                    if (!snap.hasData) {
-                                      return const _EmptyState(
-                                        message: '正在加载交集…',
-                                        icon: Icons.sync,
-                                      );
-                                    }
-                                    final matches = snap.data!
-                                        .where(
-                                          (i) =>
-                                              _normalize(i.location) ==
-                                              _normalize(widget.name),
-                                        )
-                                        .toList();
-                                    final ordered = [...matches]
-                                      ..sort(
-                                        (a, b) =>
-                                            (b.trips.any((t) => t.isStrict)
-                                                    ? 1
-                                                    : 0)
-                                                .compareTo(
-                                                  a.trips.any((t) => t.isStrict)
-                                                      ? 1
-                                                      : 0,
-                                                ),
-                                      );
-                                    final items = _orderedIntersectionTrips(
-                                      ordered,
-                                    );
-                                    return items.isEmpty
-                                        ? const _EmptyState(
-                                            message: '暂无行程交集',
-                                            icon: Icons.group_off_outlined,
-                                          )
-                                        : Column(
-                                            children: [
-                                              ...items
-                                                  .take(5)
-                                                  .map(
-                                                    (t) => Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            bottom: 10,
-                                                          ),
-                                                      child: AchievementTripRow(
-                                                        trip:
-                                                            _toAchievementTrip(
-                                                              t,
-                                                            ),
-                                                        highlight: t.isStrict,
-                                                      ),
-                                                    ),
-                                                  ),
-                                            ],
-                                          );
-                                  },
+                              : Column(
+                                  children: [
+                                    _ResponsiveTicketList(
+                                      trips: trips.take(4).toList(),
+                                    ),
+                                  ],
                                 ),
                         ),
+                        if (widget.type == EntityType.station ||
+                            widget.type == EntityType.train) ...[
+                          const SizedBox(height: 12),
+                          _SectionCard(
+                            title: '行程交集',
+                            icon: Icons.people_alt_outlined,
+                            action: trips.isEmpty
+                                ? null
+                                : TextButton.icon(
+                                    onPressed: () async {
+                                      final groups =
+                                          await IntersectionService.fetch(
+                                            _typeKey(widget.type),
+                                            widget.name,
+                                          );
+                                      if (!context.mounted) return;
+                                      final ordered = groups
+                                          .where(
+                                            (i) =>
+                                                _normalize(i.location) ==
+                                                _normalize(widget.name),
+                                          )
+                                          .toList();
+                                      Navigator.of(context).push(
+                                        m3PageRoute(
+                                          builder: (_) =>
+                                              EntityIntersectionsPage(
+                                                title: widget.name,
+                                                intersections: ordered,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.arrow_forward,
+                                      size: 18,
+                                    ),
+                                    label: const Text('更多'),
+                                  ),
+                            child: trips.isEmpty
+                                ? const _EmptyState(
+                                    message: '暂无行程交集',
+                                    icon: Icons.group_off_outlined,
+                                  )
+                                : FutureBuilder<List<OnlineIntersection>>(
+                                    future: IntersectionService.fetch(
+                                      _typeKey(widget.type),
+                                      widget.name,
+                                    ),
+                                    builder: (context, snap) {
+                                      if (!snap.hasData) {
+                                        return const _EmptyState(
+                                          message: '正在加载交集…',
+                                          icon: Icons.sync,
+                                        );
+                                      }
+                                      final matches = snap.data!
+                                          .where(
+                                            (i) =>
+                                                _normalize(i.location) ==
+                                                _normalize(widget.name),
+                                          )
+                                          .toList();
+                                      final ordered = [...matches]
+                                        ..sort(
+                                          (a, b) =>
+                                              (b.trips.any((t) => t.isStrict)
+                                                      ? 1
+                                                      : 0)
+                                                  .compareTo(
+                                                    a.trips.any(
+                                                          (t) => t.isStrict,
+                                                        )
+                                                        ? 1
+                                                        : 0,
+                                                  ),
+                                        );
+                                      final items = _orderedIntersectionTrips(
+                                        ordered,
+                                      );
+                                      return items.isEmpty
+                                          ? const _EmptyState(
+                                              message: '暂无行程交集',
+                                              icon: Icons.group_off_outlined,
+                                            )
+                                          : Column(
+                                              children: [
+                                                ...items
+                                                    .take(5)
+                                                    .map(
+                                                      (t) => Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              bottom: 10,
+                                                            ),
+                                                        child: AchievementTripRow(
+                                                          trip:
+                                                              _toAchievementTrip(
+                                                                t,
+                                                              ),
+                                                          highlight: t.isStrict,
+                                                        ),
+                                                      ),
+                                                    ),
+                                              ],
+                                            );
+                                    },
+                                  ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        _ReviewsSection(
+                          type: widget.type,
+                          name: widget.name,
+                          trips: trips,
+                        ),
                       ],
-                      const SizedBox(height: 12),
-                      _ReviewsSection(
-                        type: widget.type,
-                        name: widget.name,
-                        trips: trips,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -598,20 +661,8 @@ class _EntityHeader extends StatelessWidget {
       );
     }
     final colors = Theme.of(context).colorScheme;
-    final label = switch (type) {
-      EntityType.station => '车站',
-      EntityType.route => '线路',
-      EntityType.company => '承运单位',
-      EntityType.rollingStock => '车型',
-      EntityType.train => '车次',
-    };
-    final entityIcon = switch (type) {
-      EntityType.station => Icons.location_on_outlined,
-      EntityType.route => Icons.alt_route,
-      EntityType.company => Icons.business_outlined,
-      EntityType.rollingStock => Icons.directions_railway_outlined,
-      EntityType.train => Icons.train_outlined,
-    };
+    final label = _typeLabel(type);
+    final entityIcon = _typeIcon(type);
     return Card.filled(
       color: colors.primaryContainer,
       margin: EdgeInsets.zero,
@@ -1756,6 +1807,22 @@ String _typeKey(EntityType type) => switch (type) {
   EntityType.company => 'company',
   EntityType.rollingStock => 'rollingStock',
   EntityType.train => 'train',
+};
+
+String _typeLabel(EntityType type) => switch (type) {
+  EntityType.station => '车站',
+  EntityType.route => '线路',
+  EntityType.company => '承运单位',
+  EntityType.rollingStock => '车型',
+  EntityType.train => '车次',
+};
+
+IconData _typeIcon(EntityType type) => switch (type) {
+  EntityType.station => Icons.location_on_outlined,
+  EntityType.route => Icons.alt_route,
+  EntityType.company => Icons.business_outlined,
+  EntityType.rollingStock => Icons.directions_railway_outlined,
+  EntityType.train => Icons.train_outlined,
 };
 
 String _normalize(String value) =>
