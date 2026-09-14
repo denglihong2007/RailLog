@@ -162,7 +162,6 @@ public sealed class RailLogDatabase
             CREATE INDEX IF NOT EXISTS IX_UserAchievements_AchievementId
                 ON UserAchievements (AchievementId);
             """);
-        await RecalculateAllAchievementsAsync(connection);
     }
 
     public async Task CreateTicketPdfDownloadAsync(
@@ -1372,15 +1371,23 @@ public sealed class RailLogDatabase
         }
     }
 
-    private static async Task RecalculateAllAchievementsAsync(SqliteConnection connection)
+    public async Task RecalculateAllAchievementsAsync(
+        CancellationToken cancellationToken = default)
     {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken);
+        await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT Id FROM AspNetUsers ORDER BY Id;";
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var userIds = new List<string>();
-        while (await reader.ReadAsync()) userIds.Add(reader.GetString(0));
+        while (await reader.ReadAsync(cancellationToken)) userIds.Add(reader.GetString(0));
         await reader.CloseAsync();
-        foreach (var userId in userIds) await RecalculateAchievementsAsync(connection, userId);
+        foreach (var userId in userIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await RecalculateAchievementsAsync(connection, userId);
+        }
     }
 
     private static async Task<AchievementsResponse> GetAchievementsAsync(
