@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/route_station.dart';
-import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
@@ -217,6 +217,10 @@ class _TripDetailsContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final parsedRollingStock = TrainModelParser.parse(trip.rollingStock);
+    final primaryRollingStockModel = parsedRollingStock.isEmpty
+        ? ''
+        : parsedRollingStock.first.statisticsCode;
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -317,13 +321,14 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车型',
                       value: _optionalText(trip.rollingStock),
-                      valueFontFamily: _usesHvcbFont(trip.rollingStock)
+                      valueFontFamily:
+                          TrainModelParser.containsEmu(trip.rollingStock)
                           ? 'HVCB'
                           : null,
                       infoTap: () => openEntityPage(
                         context,
                         EntityType.rollingStock,
-                        rollingStockModelCode(trip.rollingStock),
+                        primaryRollingStockModel,
                       ),
                       infoTooltip: '查询车型',
                       railGoTap: _railGoEmuTap(context, trip.rollingStock),
@@ -1926,21 +1931,17 @@ String _optionalText(String? value) {
   return text.isEmpty ? '未记录' : text;
 }
 
-bool _usesHvcbFont(String? value) =>
-    value?.toUpperCase().contains('CR') ?? false;
-
-/// 完整动车组写法（车型 + 四位车号）的车组号，重联车组取靠前的一组。
+/// 完整动车组写法（车型 + 车号）的车组号，重联车组取靠前的一组。
 /// 例如 CR400BF-5033&5034 → CR400BF-5033，CRH380B-3606+CRH380B-3607 → CRH380B-3606。
 String? _completeEmuCode(String? rawValue) {
-  final text = rawValue?.trim() ?? '';
-  if (text.isEmpty) return null;
-  final leading = text.split('+').first.trim();
-  final emuPattern = RegExp(r'^(.+?)-\d{4}(?:&\d{4})*$', caseSensitive: false);
-  if (!emuPattern.hasMatch(leading)) return null;
-  final unit = leading.split('&').first.trim();
-  final model = rollingStockModelCode(unit).toUpperCase();
-  if (!model.contains('CR') && !model.startsWith('CJ')) return null;
-  return unit;
+  final parsed = TrainModelParser.parse(rawValue);
+  if (parsed.isEmpty) return null;
+
+  final leading = parsed.first;
+  if (leading.category != TrainCategory.emu || leading.numbers.isEmpty) {
+    return null;
+  }
+  return '${leading.modelCode}-${leading.numbers.first}';
 }
 
 VoidCallback? _railGoEmuTap(BuildContext context, String? rollingStock) {

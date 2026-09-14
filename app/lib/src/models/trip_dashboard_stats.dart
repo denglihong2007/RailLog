@@ -1,5 +1,6 @@
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/train_service.dart';
 
@@ -79,8 +80,8 @@ class TripDashboardStats {
       if (trip.price > maxCost) maxCost = trip.price;
 
       _recordUnlock(trainUnlocks, trip.trainNumber, trip);
-      for (final model in rollingStockModelCodes(trip.rollingStock)) {
-        _recordUnlock(rollingStockUnlocks, model, trip);
+      for (final parsed in TrainModelParser.parse(trip.rollingStock)) {
+        _recordUnlock(rollingStockUnlocks, parsed.statisticsCode, trip);
       }
       _recordUnlock(companyUnlocks, trip.companyName, trip);
       _recordUnlock(
@@ -191,40 +192,6 @@ List<DashboardUnlockEntry> _newestFirst(
       return byUnlockTime != 0 ? byUnlockTime : a.name.compareTo(b.name);
     });
   return List.unmodifiable(result);
-}
-
-String rollingStockModelCode(String? rawValue) {
-  final models = rollingStockModelCodes(rawValue);
-  return models.isEmpty ? '' : models.first;
-}
-
-List<String> rollingStockModelCodes(String? rawValue) {
-  final value = rawValue?.trim() ?? '';
-  if (value.isEmpty) return const [];
-
-  return value
-      .split('+')
-      .map(_rollingStockModelCode)
-      .where((model) => model.isNotEmpty)
-      .toSet()
-      .toList(growable: false);
-}
-
-String _rollingStockModelCode(String component) {
-  final value = component.trim();
-  if (value.isEmpty) return '';
-
-  // EMU notation: CR400BF-5033&5034. The four-digit numbers belong to the
-  // model's vehicle numbers and are excluded from the statistics key.
-  final emuMatch = RegExp(
-    r'^(.+?)-\d{4}(?:&\d{4})*$',
-    caseSensitive: false,
-  ).firstMatch(value);
-  if (emuMatch != null) return emuMatch.group(1)!.trim();
-
-  // Conventional notation: HXD1D 0001&0002. A missing vehicle number is
-  // valid, so a component without whitespace is already a model name.
-  return value.split(RegExp(r'\s+')).first.trim();
 }
 
 void _recordUnlock(

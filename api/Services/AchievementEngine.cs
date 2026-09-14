@@ -231,7 +231,7 @@ public static partial class AchievementEngine
                 40,
                 Note: "CRH1, CRH2, CRH3, CRH5, CRH6, CRH380A, CRH380B, "
                     + "CRH380CL, CRH380D, CR400AF, CR400BF, CR300AF, "
-                    + "CR300BF, CR200J, CR200JC"),
+                    + "CR300BF, CR200J, CR200J-C"),
             ["whatAgeIsThis"] = new(
                 20,
                 Note: "21, 22, 22B, 22C, 23, 24, 25A, 25C, 25Z, 19, 30, "
@@ -443,16 +443,48 @@ public static partial class AchievementEngine
 
     private static readonly HashSet<string> Regular25Models =
         ["25B", "25Z", "25G", "25K", "25T", "25DT"];
-    private static readonly HashSet<string> EarlyEmuModels =
-        ["X2000", "KDZ1A", "DJF1", "DJF2", "DJF3", "DJJ1", "DJJ2", "NZJ1", "NZJ2", "NDJ3", "NYJ1"];
-    private static readonly HashSet<string> EarlyPassengerCoachModels =
-        ["21", "22", "22A", "22B", "22C", "23", "24", "25A", "25Z", "25C",
-         "31", "19", "30", "10", "14", "82", "96"];
-    private static readonly HashSet<string> EmuModels =
+    private static readonly IReadOnlyList<RollingStockTarget> EarlyEmuModels =
     [
-        "CRH1", "CRH2", "CRH3", "CRH5", "CRH6", "CRH380A", "CRH380B",
-        "CRH380CL", "CRH380D", "CR400AF", "CR400BF", "CR300AF", "CR300BF",
-        "CR200J", "CR200JC"
+        new("X2000"), new("KDZ1A"), new("DJF1"), new("DJF2"), new("DJF3"),
+        new("DJJ1"), new("DJJ2"), new("NZJ1"), new("NZJ2"), new("NDJ3"), new("NYJ1")
+    ];
+    private static readonly IReadOnlyList<RollingStockTarget> EarlyPassengerCoachModels =
+    [
+        new("21"), new("22"), new("22A"), new("22B"), new("22C"), new("23"),
+        new("24"), new("25A"), new("25Z"), new("25C"), new("31"), new("19"),
+        new("30"), new("10"), new("14"), new("82"), new("96")
+    ];
+    private static readonly IReadOnlyList<EmuModelFamily> EmuModelFamilies =
+    [
+        new("CRH1", ["CRH1A", "CRH1A-A", "CRH1B", "CRH1E"]),
+        new("CRH2", ["CRH2A", "CRH2B", "CRH2C", "CRH2E", "CRH2G"]),
+        new("CRH3", ["CRH3A", "CRH3A-A", "CRH3C"]),
+        new("CRH5", ["CRH5A", "CRH5E", "CRH5G"]),
+        new("CRH6", ["CRH6A", "CRH6A-A", "CRH6F", "CRH6F-A"]),
+        new("CRH380A", ["CRH380A", "CRH380AL", "CRH380AN"]),
+        new("CRH380B", ["CRH380B", "CRH380BG", "CRH380BL"]),
+        new("CRH380CL", ["CRH380CL"]),
+        new("CRH380D", ["CRH380D"]),
+        new("CR400AF",
+        [
+            "CR400AF", "CR400AF-A", "CR400AF-AE", "CR400AF-AS", "CR400AF-AZ",
+            "CR400AF-B", "CR400AF-BS", "CR400AF-BZ", "CR400AF-C", "CR400AF-G",
+            "CR400AF-S", "CR400AF-Z"
+        ]),
+        new("CR400BF",
+        [
+            "CR400BF", "CR400BF-A", "CR400BF-AS", "CR400BF-AZ", "CR400BF-B",
+            "CR400BF-BS", "CR400BF-BZ", "CR400BF-C", "CR400BF-G", "CR400BF-GS",
+            "CR400BF-GZ", "CR400BF-S", "CR400BF-Z"
+        ]),
+        new("CR300AF", ["CR300AF"]),
+        new("CR300BF", ["CR300BF"]),
+        new("CR200J",
+        [
+            "CR200J1-A", "CR200J1-B", "CR200J2-A", "CR200J2-B",
+            "CR200J3-A", "CR200J3-B", "CR200JS-G"
+        ]),
+        new("CR200J-C", ["CR200J1-C", "CR200J1-D", "CR200J2-C", "CR200J3-C"])
     ];
     private static readonly HashSet<string> RegularSeatTypes =
     [
@@ -460,39 +492,50 @@ public static partial class AchievementEngine
         "硬卧", "软卧", "二等卧", "一等卧", "高级软卧", "动卧", "高级动卧"
     ];
     private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥"];
-    private static readonly HashSet<string> VariableGaugeModels =
-        ["CR400BF-0031", "CR400BF-G-0051", "CR400AF-G-0021"];
-    private static readonly HashSet<string> PrototypeModels =
+    private static readonly IReadOnlyList<RollingStockTarget> VariableGaugeModels =
     [
-        "CR400BF-0305", "CR400BF-0503", "CR400BF-0507", "CR400AF-0207",
-        "CR400AF-0208", "CR300AF-0001", "CR300AF-0003", "CR300AF-0004",
-        "CR300BF-0002", "CR300BF-0005", "CR300BF-0006"
+        new("CR400BF", "0031"),
+        new("CR400BF-G", "0051"),
+        new("CR400AF-G", "0021")
     ];
-    private static readonly HashSet<string> GreatWallExpressModels =
+    private static readonly IReadOnlyList<RollingStockTarget> PrototypeModels =
     [
-        "CR400AF-B", "CR400AF-BZ", "CR400AF-BS", "CR400AF-BX",
-        "CR400BF-B", "CR400BF-BZ", "CR400BF-BS", "CR400BF-BX"
+        new("CR400BF", "0305"), new("CR400BF", "0503"), new("CR400BF", "0507"),
+        new("CR400AF", "0207"), new("CR400AF", "0208"), new("CR300AF", "0001"),
+        new("CR300AF", "0003"), new("CR300AF", "0004"), new("CR300BF", "0002"),
+        new("CR300BF", "0005"), new("CR300BF", "0006")
     ];
-    private static readonly HashSet<string> VibrantExpressModels = Enumerable.Range(251, 9)
-        .SelectMany(number => new[] { $"CRH380A-0{number}", $"MTR380A-0{number}", "MTR380A" })
-        .ToHashSet(StringComparer.Ordinal);
+    private static readonly IReadOnlyList<RollingStockTarget> GreatWallExpressModels =
+    [
+        new("CR400AF-B"), new("CR400AF-BZ"), new("CR400AF-BS"), new("CR400AF-BX"),
+        new("CR400BF-B"), new("CR400BF-BZ"), new("CR400BF-BS"), new("CR400BF-BX")
+    ];
+    private static readonly IReadOnlyList<RollingStockTarget> VibrantExpressModels =
+        Enumerable.Range(251, 9)
+            .SelectMany(number => new[]
+            {
+                new RollingStockTarget("CRH380A", $"0{number}"),
+                new RollingStockTarget("MTR380A", $"0{number}")
+            })
+            .Append(new RollingStockTarget("MTR380A"))
+            .ToArray();
     private static readonly HashSet<string> CommonTrainCategories =
         ["G", "D", "C", "Z", "T", "K", "Y", "S", "numeric"];
-    private static readonly HashSet<string> HonorLocomotives =
+    private static readonly IReadOnlyList<RollingStockTarget> HonorLocomotives =
     [
-        "HXD3CA 8161", "HXD3D 0035", "HXD3D 0039", "HXD3D 0631", "HXD3D 1886",
-        "HXD3D 1893", "HXD3D 1921", "HXD1 1937", "HXD1C 1927", "HXD1D 1898",
-        "HXD2B 0001", "SS3B 5151"
+        new("HXD3CA", "8161"), new("HXD3D", "0035"), new("HXD3D", "0039"),
+        new("HXD3D", "0631"), new("HXD3D", "1886"), new("HXD3D", "1893"),
+        new("HXD3D", "1921"), new("HXD1", "1937"), new("HXD1C", "1927"),
+        new("HXD1D", "1898"), new("HXD2B", "0001"), new("SS3B", "5151")
     ];
-    private static readonly HashSet<string> EarlyImportedLocomotives =
-        ["6Y2", "6G", "6K", "8G", "8K", "DJ1", "ND2", "ND4", "ND5", "NY5", "NY6", "NY7", "NJ2"];
-    private static readonly HashSet<string> SteamLocomotives =
-        ["JF", "SL", "KD", "FD", "KF", "JS", "RM", "QJ"];
-    private static readonly string[] LocomotiveModelPrefixes =
+    private static readonly IReadOnlyList<RollingStockTarget> EarlyImportedLocomotives =
     [
-        "HXD", "HXN", "FXD", "FXN", "FXSY", "SS", "DF", "DJ", "ND",
-        "NY", "NJ", "6Y", "6G", "6K", "8G", "8K", "JF", "SL", "KD",
-        "FD", "KF", "JS", "RM", "QJ"
+        new("6Y2"), new("6G"), new("6K"), new("8G"), new("8K"), new("DJ1"),
+        new("ND2"), new("ND4"), new("ND5"), new("NY5"), new("NY6"), new("NY7"), new("NJ2")
+    ];
+    private static readonly IReadOnlyList<RollingStockTarget> SteamLocomotives =
+    [
+        new("JF"), new("SL"), new("KD"), new("FD"), new("KF"), new("JS"), new("RM"), new("QJ")
     ];
     private static readonly HashSet<string> ModernLocomotives =
     [
@@ -507,22 +550,6 @@ public static partial class AchievementEngine
         "SS3B", "SS4", "SS6", "SS6B", "SS7", "SS7C", "SS7D", "SS7E",
         "SS8", "SS9"
     ];
-    private static readonly HashSet<string> SmallEmuModels =
-    [
-        "CRH1A", "CRH1A-A", "CRH1B", "CRH1E", "CRH2A", "CRH2B", "CRH2C",
-        "CRH2E", "CRH2G", "CRH3A", "CRH3A-A", "CRH3C", "CRH5A", "CRH5E",
-        "CRH5G", "CRH6A", "CRH6A-A", "CRH6F", "CRH6F-A", "CRH380A",
-        "CRH380AL", "CRH380AN", "CRH380B", "CRH380BG", "CRH380BL",
-        "CRH380CL", "CRH380D", "CR200J1-A", "CR200J1-B", "CR200J2-A",
-        "CR200J2-B", "CR200J3-A", "CR200J3-B", "CR200JS-G", "CR200J1-C",
-        "CR200J1-D", "CR200J2-C", "CR200J3-C", "CR300AF", "CR300BF",
-        "CR400AF", "CR400AF-A", "CR400AF-B", "CR400AF-G", "CR400AF-C",
-        "CR400AF-Z", "CR400AF-AZ", "CR400AF-BZ", "CR400AF-AE", "CR400AF-S",
-        "CR400AF-AS", "CR400AF-BS", "CR400BF", "CR400BF-A", "CR400BF-B",
-        "CR400BF-G", "CR400BF-C", "CR400BF-Z", "CR400BF-AZ", "CR400BF-BZ",
-        "CR400BF-GZ", "CR400BF-S", "CR400BF-AS", "CR400BF-BS", "CR400BF-GS"
-    ];
-
     private static readonly IReadOnlyDictionary<string, HashSet<string>> RailwayBureaus =
         new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
         {
@@ -601,6 +628,12 @@ public static partial class AchievementEngine
         var fifteenYearsAgo = new DateTime(today.Year - 15, 1, 1)
             .AddMonths(today.Month - 1)
             .AddDays(today.Day - 1);
+        var emuModels = EmuModelFamilies
+            .Select(family => family.Series)
+            .ToHashSet(StringComparer.Ordinal);
+        var smallEmuModels = EmuModelFamilies
+            .SelectMany(family => family.Models)
+            .ToHashSet(StringComparer.Ordinal);
 
         var values = new List<AchievementEvaluation>
         {
@@ -625,8 +658,8 @@ public static partial class AchievementEngine
             A("all25Series", "palette_outlined", "五彩斑斓", "分别乘坐全部常规 25 系列客车型号",
                 FirstCollectionCompletion(trips, Regular25Models,
                     trip => RollingStockMatches(trip.RollingStock, Regular25Models))),
-            A("allEmuSeries", "train_outlined", "琳琅满目", "分别乘坐全部常规和谐号、复兴号子型号",
-                FirstCollectionCompletion(trips, EmuModels, trip => EmuMatches(trip.RollingStock))),
+            A("allEmuSeries", "train_outlined", "琳琅满目", "分别乘坐全部常规和谐号、复兴号系列",
+                FirstCollectionCompletion(trips, emuModels, trip => EmuMatches(trip.RollingStock))),
             A("allSeatTypes", "checklist_outlined", "我全都要", "分别乘坐全部常规席别",
                 FirstCollectionCompletion(trips, RegularSeatTypes, trip => SeatTypeMatches(trip.SeatType))),
             A("noSeat12Hours", "accessibility_new", "体力非凡", "持无座车票乘坐至少 12 小时",
@@ -683,9 +716,9 @@ public static partial class AchievementEngine
             A("fTrain", "u_turn_left_outlined", "中途遣返", "乘坐一次 F 字头列车",
                 First(trips, trip => trip.TrainNumber.Trim().StartsWith("F", StringComparison.OrdinalIgnoreCase))),
             A("axleOverheat", "device_thermostat_outlined", "轴温过高", "乘坐一次 CR400BF-5033 型列车",
-                FirstRollingStockMatch(trips, ["CR400BF-5033"])),
+                FirstRollingStockMatch(trips, [new("CR400BF", "5033")])),
             A("permanentMagnetPower", "bolt_outlined", "永磁动力", "乘坐一次 CRH380AN 型列车",
-                FirstRollingStockMatch(trips, ["CRH380AN"])),
+                FirstRollingStockMatch(trips, [new("CRH380AN")])),
             A("advantageIsMine", "flag_outlined", "优势在我", "到访徐州站或徐州东站",
                 FirstStationVisit(trips, ["徐州", "徐州东"])),
             A("platformSubsidence", "vertical_align_bottom_outlined", "站台沉降", "到访杭州东站",
@@ -715,7 +748,7 @@ public static partial class AchievementEngine
             A("zeroDisplacement", "loop", "位移为零", "乘坐始发站与终到站相同的环线列车全程",
                 First(trips, trip => NormalizedStation(trip.FromStation) == NormalizedStation(trip.ToStation))),
             A("dreamPath", "auto_awesome_outlined", "逐梦之路", "乘坐一次 25DT 型列车",
-                FirstRollingStockMatch(trips, ["25DT"])),
+                FirstRollingStockMatch(trips, [new("25DT")])),
             A("commuterSpecial", "work_outline", "牛马专列", "乘坐北京与上海间经由京沪高铁的一等座、优选一等座、商务座或特等座",
                 First(trips, UnlocksCommuterSpecial)),
             A("grandSlam", "palette_outlined", "十人十色", "分别乘坐全部铁路局担当的列车",
@@ -739,9 +772,9 @@ public static partial class AchievementEngine
             A("monotonousTrainNumber", "format_list_numbered_outlined", "千篇一律", "乘坐数字部分为三或四个相同数字的车次",
                 First(trips, UnlocksMonotonousTrainNumber)),
             A("snowWelcomesSpring", "ac_unit_outlined", "瑞雪迎春", "乘坐一次北京冬奥会限定车型 CR400BF-C-5162",
-                FirstRollingStockMatch(trips, ["CR400BF-C-5162"])),
+                FirstRollingStockMatch(trips, [new("CR400BF-C", "5162")])),
             A("moistensJiangnan", "water_drop_outlined", "润泽江南", "乘坐一次杭州亚运会限定车型 CR400BF-Z-0524",
-                FirstRollingStockMatch(trips, ["CR400BF-Z-0524"])),
+                FirstRollingStockMatch(trips, [new("CR400BF-Z", "0524")])),
             A("facingTheWorld", "public_outlined", "面向世界", "乘坐一次 CR400 系列可变轨距列车",
                 FirstRollingStockMatch(trips, VariableGaugeModels)),
             A("revivalPrototype", "precision_manufacturing_outlined", "复兴之路", "乘坐一次 CR400 或 CR300 原样车",
@@ -752,7 +785,7 @@ public static partial class AchievementEngine
                 FirstDistinctTrainCountForRoute(trips, 10)),
             A("publicDisplayOfAffection", "people_outline", "成双成对", "在 5 月 20 日、2 月 14 日或七夕乘坐重联动车组列车",
                 First(trips, trip => IsRomanticDate(Departure(trip)) &&
-                    (trip.RollingStock?.Contains('&') ?? false))),
+                    HasCoupledEmu(trip.RollingStock))),
             A("farsighted", "visibility_outlined", "高瞻远瞩", "乘坐双层车厢的上层席位",
                 First(trips, trip => trip.SeatNumber is not null && Regex.IsMatch(trip.SeatNumber, @"上(?!铺)"))),
             A("oneYuanJourney", "currency_yen", "一元旅程", "单次行程票价为 1 元",
@@ -854,7 +887,7 @@ public static partial class AchievementEngine
             A("richerThanNation", "account_balance_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元",
                 FirstThirtyDaySpendingCompletion(trips, 50000)),
             A("flowersAmong", "auto_awesome_outlined", "百花丛中", "分别乘坐全部常规和谐号、复兴号小类型号",
-                FirstCollectionCompletion(trips, SmallEmuModels, trip => SmallEmuMatches(trip.RollingStock))),
+                FirstCollectionCompletion(trips, smallEmuModels, trip => SmallEmuMatches(trip.RollingStock))),
             A("refinedMechanic", "precision_manufacturing_outlined", "精益求精", "分别乘坐全部和谐型与复兴型量产机车牵引的列车",
                 FirstCollectionCompletion(trips, ModernLocomotives, trip => RollingStockMatches(trip.RollingStock, ModernLocomotives))),
             A("dawnBreaks", "history_edu_outlined", "曙光乍现", "分别乘坐全部东风型与韶山型量产机车牵引的列车",
@@ -1051,7 +1084,9 @@ public static partial class AchievementEngine
         "duration48Hours" => P(MaxDurationHours(trips), 48),
         "duration72Hours" => P(MaxDurationHours(trips), 72),
         "all25Series" => P(CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, Regular25Models)), Regular25Models.Count),
-        "allEmuSeries" => P(CollectedCount(trips, trip => EmuMatches(trip.RollingStock)), EmuModels.Count),
+        "allEmuSeries" => P(
+            CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
+            EmuModelFamilies.Count),
         "allSeatTypes" => P(CollectedCount(trips, trip => SeatTypeMatches(trip.SeatType)), RegularSeatTypes.Count),
         "noSeat12Hours" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 12),
         "immovableMountain" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 24),
@@ -1107,7 +1142,7 @@ public static partial class AchievementEngine
             1),
         "flowersAmong" => P(
             CollectedCount(trips, trip => SmallEmuMatches(trip.RollingStock)),
-            SmallEmuModels.Count),
+            EmuModelFamilies.Sum(family => family.Models.Count)),
         "refinedMechanic" => P(
             CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, ModernLocomotives)),
             ModernLocomotives.Count),
@@ -1147,10 +1182,10 @@ public static partial class AchievementEngine
         return targetDays <= 0 ? 0 : (today - oldest).TotalDays * 15 / targetDays;
     }
 
-    private static int CollectedCount(
+    private static int CollectedCount<T>(
         IEnumerable<PublicTrip> trips,
-        Func<PublicTrip, IEnumerable<string>> valuesForTrip) =>
-        trips.SelectMany(valuesForTrip).Distinct(StringComparer.Ordinal).Count();
+        Func<PublicTrip, IEnumerable<T>> valuesForTrip) =>
+        trips.SelectMany(valuesForTrip).Distinct().Count();
 
     private static int VisitedStationCount(
         IEnumerable<PublicTrip> trips,
@@ -1348,20 +1383,53 @@ public static partial class AchievementEngine
 
     private static HashSet<string> RollingStockMatches(string? value, IEnumerable<string> models)
     {
-        var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
-        return models.Where(model => Regex.IsMatch(
-                normalized, $"(^|[^0-9]){Regex.Escape(model)}(?![A-Z0-9])"))
+        var expected = models.ToHashSet(StringComparer.Ordinal);
+        return RollingStockModelCodes(value)
+            .Where(expected.Contains)
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static PublicTrip? FirstRollingStockMatch(List<PublicTrip> trips, IEnumerable<string> models)
+    private static bool RollingStockMatches(string? value, RollingStockTarget target) =>
+        TrainModelParser.ParseTrainString(value).Any(parsed =>
+            RollingStockModelMatches(parsed, target.Model) &&
+            (target.Number is null ||
+             parsed.Numbers.Contains(target.Number, StringComparer.OrdinalIgnoreCase)));
+
+    private static HashSet<RollingStockTarget> RollingStockMatches(
+        string? value,
+        IEnumerable<RollingStockTarget> targets) =>
+        targets.Where(target => RollingStockMatches(value, target)).ToHashSet();
+
+    private static bool RollingStockModelMatches(TrainModelParseResult parsed, string model) =>
+        parsed.ModelCode.Equals(model, StringComparison.OrdinalIgnoreCase) ||
+        parsed.Model.Equals(model, StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> RollingStockModelCodes(string? value)
     {
-        var values = models.ToHashSet(StringComparer.Ordinal);
+        foreach (var parsed in TrainModelParser.ParseTrainString(value))
+        {
+            if (parsed.ModelCode.Length > 0)
+                yield return parsed.ModelCode.ToUpperInvariant();
+            if (parsed.Model.Length > 0 && !parsed.Model.Equals(parsed.ModelCode, StringComparison.Ordinal))
+                yield return parsed.Model.ToUpperInvariant();
+        }
+    }
+
+    private static PublicTrip? FirstRollingStockMatch(
+        List<PublicTrip> trips,
+        IEnumerable<RollingStockTarget> targets)
+    {
+        var values = targets.ToHashSet();
         return First(trips, trip => RollingStockMatches(trip.RollingStock, values).Count > 0);
     }
 
     private static bool ContainsRollingStock(PublicTrip trip, string value) =>
-        trip.RollingStock?.Contains(value, StringComparison.OrdinalIgnoreCase) ?? false;
+        RollingStockModelCodes(trip.RollingStock)
+            .Any(code => code.Contains(value.ToUpperInvariant(), StringComparison.Ordinal));
+
+    private static bool HasCoupledEmu(string? value) =>
+        TrainModelParser.ParseTrainString(value)
+            .Any(model => model.Category == TrainCategory.EMU && model.Numbers.Count > 1);
 
     private static PublicTrip? FirstRepeatedTripCompletion(List<PublicTrip> trips, int target)
     {
@@ -1435,11 +1503,11 @@ public static partial class AchievementEngine
 
     private static string RollingStockModel(string? value)
     {
-        var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
-        var emu = Regex.Match(normalized, @"^([A-Z][A-Z0-9-]*)-\d{4}(?:&\d{4})*$");
-        if (emu.Success) return emu.Groups[1].Value;
-        var conventional = Regex.Match(normalized, @"^([A-Z][A-Z0-9-]*)\s+\d{6}$");
-        return conventional.Success ? conventional.Groups[1].Value : normalized;
+        var models = TrainModelParser.ParseTrainString(value)
+            .Select(model => model.ModelCode.ToUpperInvariant())
+            .Where(model => model.Length > 0)
+            .ToArray();
+        return models.Length == 0 ? string.Empty : string.Join('+', models);
     }
 
     private static PublicTrip? FirstDistinctTrainCountForRoute(List<PublicTrip> trips, int target)
@@ -1465,46 +1533,25 @@ public static partial class AchievementEngine
 
     private static HashSet<string> EmuMatches(string? value)
     {
-        var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var model in EmuModels)
-        {
-            var pattern = $"(^|[^0-9]){model}(?![A-Z0-9])";
-            if (Regex.IsMatch(normalized, pattern)) result.Add(model);
-        }
-        return result;
+        var models = RollingStockModelCodes(value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return EmuModelFamilies
+            .Where(family => family.Models.Any(models.Contains))
+            .Select(family => family.Series)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static HashSet<string> SmallEmuMatches(string? value)
     {
-        var normalized = value?.Trim().ToUpperInvariant() ?? string.Empty;
-        return SmallEmuModels
-            .Where(model => Regex.IsMatch(
-                normalized,
-                $"(^|[^A-Z0-9]){Regex.Escape(model)}(?![A-Z0-9-])"))
+        var models = RollingStockModelCodes(value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return EmuModelFamilies
+            .SelectMany(family => family.Models)
+            .Where(models.Contains)
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static int LocomotiveCount(string? value) => string.IsNullOrWhiteSpace(value)
-        ? 0
-        : value.Split('+', StringSplitOptions.RemoveEmptyEntries)
-            .Select(item => item.Trim())
-            .Count(IsLocomotive);
-
-    private static bool IsLocomotive(string value)
-    {
-        var model = RollingStockModel(value);
-        if (model.StartsWith("CR", StringComparison.Ordinal) ||
-            model.StartsWith("CJ", StringComparison.Ordinal) ||
-            EarlyEmuModels.Contains(model))
-            return false;
-        if (Regex.IsMatch(
-                model,
-                @"^(?:[A-Z]{0,5})?(?:18|19|22|23|24|25|30|31|10|14|82|96)[A-Z0-9]*$"))
-            return false;
-        return LocomotiveModelPrefixes.Any(prefix =>
-            model.StartsWith(prefix, StringComparison.Ordinal));
-    }
+    private static int LocomotiveCount(string? value) =>
+        TrainModelParser.ParseTrainString(value)
+            .Count(model => model.Category == TrainCategory.Locomotive);
 
     private static int MaxLocomotiveCount(IEnumerable<PublicTrip> trips) => trips
         .Select(trip => LocomotiveCount(trip.RollingStock))
@@ -1812,9 +1859,8 @@ public static partial class AchievementEngine
 
     private static bool UnlocksVerticalSleeper(PublicTrip trip)
     {
-        var stock = trip.RollingStock?.Trim().ToUpperInvariant() ?? string.Empty;
-        if (!stock.Contains("CRH2E", StringComparison.Ordinal)) return false;
-        var serialInStock = Regex.IsMatch(stock, @"CRH2E\s*[- ]?\s*(2463|2464|2465)(?!\d)");
+        var serialInStock = new[] { "2463", "2464", "2465" }
+            .Any(number => RollingStockMatches(trip.RollingStock, new RollingStockTarget("CRH2E", number)));
         var train = WhitespaceRegex().Replace(trip.TrainNumber.Trim(), string.Empty);
         return serialInStock || train is "2463" or "2464" or "2465";
     }
@@ -2376,6 +2422,14 @@ public static partial class AchievementEngine
         string SeatType,
         string SeatNumber,
         double Price);
+
+    private sealed record RollingStockTarget(
+        string Model,
+        string? Number = null);
+
+    private sealed record EmuModelFamily(
+        string Series,
+        IReadOnlyList<string> Models);
 
     private sealed record RouteSegment(
         string RouteName,

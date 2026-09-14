@@ -7,6 +7,7 @@ import 'package:raillog/src/models/rolling_stock_record.dart';
 import 'package:raillog/src/models/station_pair_distance.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
+import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/timetable_source.dart';
@@ -913,10 +914,10 @@ class TrainService {
 
   static String _formatRollingStock(String value) {
     final normalized = value.trim().toUpperCase();
-    final match = RegExp(r'^(.*?)(\d{4})$').firstMatch(normalized);
-    if (match == null) return normalized;
-    final model = match.group(1)!.replaceFirst(RegExp(r'[-\s]+$'), '');
-    return '$model-${match.group(2)}';
+    final parsed = TrainModelParser.parse(normalized);
+    if (parsed.length != 1 || parsed.single.numbers.isEmpty) return normalized;
+
+    return '${parsed.single.modelCode}-${parsed.single.numbers.join('&')}';
   }
 
   static String _formatRollingStocks(List<RollingStockRecord> records) {
@@ -925,10 +926,13 @@ class TrainService {
         .toSet()
         .toList();
     emuNumbers.sort();
-    final parsed = emuNumbers.map(_rollingStockParts).toList();
-    final models = parsed.map((parts) => parts.$1).toSet();
-    if (models.length == 1 && parsed.every((parts) => parts.$2 != null)) {
-      final trainSetNumbers = parsed.map((parts) => parts.$2!).toList()..sort();
+    final parsed = emuNumbers.expand(TrainModelParser.parse).toList();
+    final models = parsed.map((result) => result.modelCode).toSet();
+    if (parsed.isNotEmpty &&
+        models.length == 1 &&
+        parsed.every((result) => result.numbers.isNotEmpty)) {
+      final trainSetNumbers = parsed.expand((result) => result.numbers).toList()
+        ..sort();
       final numbers = trainSetNumbers.join('&');
       return '${models.first}-$numbers';
     }
@@ -936,23 +940,12 @@ class TrainService {
   }
 
   static String _rollingStockModels(List<RollingStockRecord> records) {
-    return records
-        .expand((record) => record.emuNumber.split('&'))
-        .map(_rollingStockModel)
-        .toSet()
-        .join('&');
-  }
-
-  static (String, String?) _rollingStockParts(String value) {
-    final normalized = value.trim().toUpperCase();
-    final match = RegExp(r'^(.*?)(\d{4})$').firstMatch(normalized);
-    if (match == null) return (normalized, null);
-    final model = match.group(1)!.replaceFirst(RegExp(r'[-\s]+$'), '');
-    return (model, match.group(2));
-  }
-
-  static String _rollingStockModel(String value) {
-    final normalized = value.trim().toUpperCase();
-    return normalized.replaceFirst(RegExp(r'[-\s]?\d{4}$'), '');
+    final models = <String>{};
+    for (final record in records) {
+      for (final parsed in TrainModelParser.parse(record.emuNumber)) {
+        if (parsed.modelCode.isNotEmpty) models.add(parsed.modelCode);
+      }
+    }
+    return models.join('&');
   }
 }

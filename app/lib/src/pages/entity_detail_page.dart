@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/trip_record.dart';
-import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/ct_photo_search_page.dart';
@@ -71,10 +71,10 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
         case EntityType.company:
           return _normalize(trip.companyName ?? '') == key;
         case EntityType.rollingStock:
-          // 车型实体只按车型代码匹配，忽略车号（如 CR400BF-5033 记为 CR400BF）。
-          return rollingStockModelCodes(
+          // 客车匹配忽略前缀，所有车型匹配均忽略车号。
+          return TrainModelParser.parse(
             trip.rollingStock,
-          ).any((model) => _normalize(model) == key);
+          ).any((parsed) => _normalize(parsed.statisticsCode) == key);
         case EntityType.train:
           return _normalize(trip.trainNumber) == key;
       }
@@ -667,7 +667,8 @@ class _EntityHeader extends StatelessWidget {
                 color: colors.onPrimaryContainer,
                 fontWeight: FontWeight.w700,
                 fontFamily:
-                    type == EntityType.rollingStock && _usesHvcbFont(name)
+                    type == EntityType.rollingStock &&
+                        TrainModelParser.containsEmu(name)
                     ? 'HVCB'
                     : null,
               ),
@@ -678,11 +679,6 @@ class _EntityHeader extends StatelessWidget {
     );
   }
 }
-
-bool _usesHvcbFont(String value) => RegExp(
-  r'^(CR|CJ|D|G|Z|T|C|K|Y|复兴|和谐)',
-  caseSensitive: false,
-).hasMatch(value.trim());
 
 class _ReviewsSection extends StatefulWidget {
   const _ReviewsSection({

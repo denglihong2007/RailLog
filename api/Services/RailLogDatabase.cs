@@ -552,8 +552,9 @@ public sealed class RailLogDatabase
             var matches = type.ToLowerInvariant() switch
             {
                 "train" => NormalizeEntity(reader.GetString(0)) == normalized,
-                "rollingstock" => RollingStockModelCodes(reader.IsDBNull(1) ? "" : reader.GetString(1))
-                    .Any(model => NormalizeEntity(model) == normalized),
+                "rollingstock" => TrainModelParser
+                    .ParseTrainString(reader.IsDBNull(1) ? "" : reader.GetString(1))
+                    .Any(model => NormalizeEntity(model.StatisticsCode) == normalized),
                 "company" => NormalizeEntity(reader.IsDBNull(2) ? "" : reader.GetString(2)) == normalized,
                 "station" => NormalizeEntity(reader.GetString(3)) == normalized || NormalizeEntity(reader.GetString(4)) == normalized,
                 "route" => reader.IsDBNull(5) ? false : reader.GetString(5).Contains(key, StringComparison.OrdinalIgnoreCase),
@@ -589,7 +590,8 @@ public sealed class RailLogDatabase
             IEnumerable<string> matches = type switch
             {
                 "train" => [reader.GetString(0)],
-                "rollingstock" => RollingStockModelCodes(NullableString(reader, 1)),
+                "rollingstock" => TrainModelParser.ParseTrainString(NullableString(reader, 1))
+                    .Select(model => model.StatisticsCode),
                 "company" => reader.IsDBNull(2) ? [] : [reader.GetString(2)],
                 "station" => [reader.GetString(3), reader.GetString(4)],
                 "route" => reader.IsDBNull(5) ? [] : ParseRouteNames(reader.GetString(5)),
@@ -1089,7 +1091,10 @@ public sealed class RailLogDatabase
             foreach (var route in trip.RouteNames.Distinct(StringComparer.OrdinalIgnoreCase))
                 Increment(routeCounts, route);
             Increment(trainCounts, trip.Trip.TrainNumber.Trim().ToUpperInvariant());
-            foreach (var model in RollingStockModelCodes(trip.Trip.RollingStock))
+            foreach (var model in TrainModelParser.ParseTrainString(trip.Trip.RollingStock)
+                         .Select(model => model.StatisticsCode)
+                         .Where(model => model.Length > 0)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
                 Increment(rollingStockCounts, model);
             Increment(companyCounts, trip.Trip.CompanyName?.Trim() ?? string.Empty);
         }
@@ -1492,24 +1497,6 @@ public sealed class RailLogDatabase
     {
         if (name.Length == 0) return;
         counts[name] = counts.TryGetValue(name, out var count) ? count + 1 : 1;
-    }
-
-    private static IReadOnlyList<string> RollingStockModelCodes(string? rawValue)
-    {
-        if (string.IsNullOrWhiteSpace(rawValue)) return [];
-        return rawValue.Split('+', StringSplitOptions.RemoveEmptyEntries)
-            .Select(component =>
-            {
-                var value = component.Trim();
-                if (value.Length == 0) return string.Empty;
-                var emu = Regex.Match(value, @"^(.+?)-\d{4}(?:&\d{4})*$",
-                    RegexOptions.IgnoreCase);
-                return (emu.Success ? emu.Groups[1].Value :
-                    Regex.Split(value, @"\s+")[0]).Trim();
-            })
-            .Where(model => model.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
     }
 
     private static IReadOnlyList<string> ParseRouteNames(string json)
