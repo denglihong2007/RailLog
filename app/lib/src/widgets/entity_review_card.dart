@@ -5,6 +5,7 @@ import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/entity_review_reaction_bar.dart';
+import 'package:raillog/src/widgets/user_level_badge.dart';
 
 class EntityReviewCard extends StatelessWidget {
   const EntityReviewCard({
@@ -87,7 +88,7 @@ class EntityReviewCard extends StatelessWidget {
                 children: [
                   InkWell(
                     borderRadius: BorderRadius.circular(24),
-                    onTap: onUserTap,
+                    onTap: onUserTap ?? () => _openUser(context),
                     child: CachedAvatar(
                       name: review.displayName,
                       imageUrl: review.avatarUrl,
@@ -100,47 +101,32 @@ class EntityReviewCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(
-                                review.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            if (isOwner && (onEdit != null || onDelete != null))
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
+                              child: Row(
                                 children: [
-                                  if (onEdit != null)
-                                    IconButton(
-                                      tooltip: '编辑评价',
-                                      visualDensity: VisualDensity.compact,
-                                      onPressed: onEdit,
-                                      icon: const Icon(
-                                        Icons.edit_outlined,
-                                        size: 18,
+                                  Flexible(
+                                    child: Text(
+                                      review.displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.1,
                                       ),
                                     ),
-                                  if (onDelete != null)
-                                    IconButton(
-                                      tooltip: '删除评价',
-                                      visualDensity: VisualDensity.compact,
-                                      onPressed: onDelete,
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        size: 18,
-                                      ),
-                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  UserLevelBadge(
+                                    experience: review.achievementExperience,
+                                  ),
                                 ],
                               ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 2),
                         Row(
                           children: [
                             Text(
@@ -172,7 +158,7 @@ class EntityReviewCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(review.comment, style: textTheme.bodyMedium),
                         if (showTripLinks && primary != null)
                           _EntityReviewTripLink(
@@ -189,8 +175,65 @@ class EntityReviewCard extends StatelessWidget {
                             trip: secondary,
                             onTap: onTripTap,
                           ),
-                        if (review.reactions.isNotEmpty || !isOwner) ...[
-                          const SizedBox(height: 6),
+                        if (isOwner &&
+                            (onEdit != null || onDelete != null)) ...[
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              if (review.reactions.isNotEmpty)
+                                Expanded(
+                                  child: EntityReviewReactionBar(
+                                    reactions: review.reactions,
+                                    enabled: false,
+                                    onToggle: (emoji) =>
+                                        _toggleReaction(context, emoji),
+                                  ),
+                                )
+                              else
+                                const Spacer(),
+                              if (review.reactions.isNotEmpty)
+                                const SizedBox(width: 8),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (onEdit != null)
+                                    IconButton(
+                                      tooltip: '编辑评价',
+                                      visualDensity: VisualDensity.compact,
+                                      style: IconButton.styleFrom(
+                                        minimumSize: const Size.square(32),
+                                        padding: EdgeInsets.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      onPressed: onEdit,
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  if (onDelete != null)
+                                    IconButton(
+                                      tooltip: '删除评价',
+                                      visualDensity: VisualDensity.compact,
+                                      style: IconButton.styleFrom(
+                                        minimumSize: const Size.square(32),
+                                        padding: EdgeInsets.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      onPressed: onDelete,
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 18,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ] else if (review.reactions.isNotEmpty || !isOwner) ...[
+                          const SizedBox(height: 2),
                           EntityReviewReactionBar(
                             reactions: review.reactions,
                             enabled: !isOwner,
@@ -208,6 +251,12 @@ class EntityReviewCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _openUser(BuildContext context) {
+    final userId = review.userId.trim();
+    if (userId.isEmpty) return;
+    Navigator.of(context).pushNamed('/users/${Uri.encodeComponent(userId)}');
   }
 
   Future<void> _toggleReaction(BuildContext context, String emoji) async {
@@ -307,6 +356,9 @@ class _EntityReviewTripLink extends StatelessWidget {
       dense: true,
       contentPadding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
+      minTileHeight: roleLabel == null ? 30 : 42,
+      horizontalTitleGap: 6,
+      minLeadingWidth: 18,
       leading: const Icon(Icons.confirmation_number_outlined, size: 18),
       title: Text(
         roleLabel ?? summary,

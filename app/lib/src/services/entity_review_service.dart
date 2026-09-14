@@ -22,6 +22,8 @@ class EntityReview {
       dish = json['dish'] as String?,
       price = (json['price'] as num?)?.toDouble(),
       createdAt = json['createdAt'] as String,
+      achievementExperience =
+          (json['achievementExperience'] as num?)?.toInt() ?? 0,
       trip = _reviewTrip(json['trip'], json['userId'] as String),
       secondTrip = _reviewTrip(json['secondTrip'], json['userId'] as String),
       reactions = (json['reactions'] as List? ?? const [])
@@ -48,6 +50,7 @@ class EntityReview {
   final String? dish;
   final double? price;
   final String createdAt;
+  final int achievementExperience;
   final TripRecord? trip;
   final TripRecord? secondTrip;
   final List<EntityReviewReaction> reactions;

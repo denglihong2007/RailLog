@@ -26,6 +26,7 @@ import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/user_level_badge.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const _tripLoginRequiredMessage = '登录后查看';
@@ -185,6 +186,7 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
         ownerName: loaded.ownerName,
         ownerAvatarUrl: loaded.ownerAvatarUrl,
         ownerBio: loaded.ownerBio,
+        ownerAchievementExperience: loaded.ownerAchievementExperience,
         onOwnerTap: widget.onOwnerTap,
         isOwnerView: !widget.isReadOnly,
       ),
@@ -196,18 +198,21 @@ class _LoadedTrip {
   const _LoadedTrip.local(this.trip)
     : ownerName = null,
       ownerAvatarUrl = null,
-      ownerBio = null;
+      ownerBio = null,
+      ownerAchievementExperience = 0;
 
   _LoadedTrip.public(PublicTripDetails details)
     : trip = details.trip,
       ownerName = details.user.displayName,
       ownerAvatarUrl = details.user.avatarUrl,
-      ownerBio = details.user.bio;
+      ownerBio = details.user.bio,
+      ownerAchievementExperience = details.user.achievementExperience;
 
   final TripRecord trip;
   final String? ownerName;
   final String? ownerAvatarUrl;
   final String? ownerBio;
+  final int ownerAchievementExperience;
 }
 
 class _TripDetailsContent extends StatelessWidget {
@@ -216,6 +221,7 @@ class _TripDetailsContent extends StatelessWidget {
     this.ownerName,
     this.ownerAvatarUrl,
     this.ownerBio,
+    this.ownerAchievementExperience = 0,
     this.onOwnerTap,
     required this.isOwnerView,
   });
@@ -224,6 +230,7 @@ class _TripDetailsContent extends StatelessWidget {
   final String? ownerName;
   final String? ownerAvatarUrl;
   final String? ownerBio;
+  final int ownerAchievementExperience;
   final VoidCallback? onOwnerTap;
   final bool isOwnerView;
 
@@ -242,6 +249,7 @@ class _TripDetailsContent extends StatelessWidget {
                   name: ownerName!,
                   avatarUrl: ownerAvatarUrl,
                   bio: ownerBio,
+                  achievementExperience: ownerAchievementExperience,
                   onTap: onOwnerTap,
                 ),
                 const SizedBox(height: 12),
@@ -598,12 +606,14 @@ class _PublicOwnerBanner extends StatelessWidget {
     required this.name,
     this.avatarUrl,
     this.bio,
+    required this.achievementExperience,
     this.onTap,
   });
 
   final String name;
   final String? avatarUrl;
   final String? bio;
+  final int achievementExperience;
   final VoidCallback? onTap;
 
   @override
@@ -621,13 +631,20 @@ class _PublicOwnerBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    UserLevelBadge(experience: achievementExperience),
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(

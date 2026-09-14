@@ -19,6 +19,7 @@ interface PublicUser {
   displayName: string
   avatarUrl: string | null
   bio: string | null
+  achievementExperience: number
 }
 
 interface PublicTrip {
@@ -176,6 +177,16 @@ function formatDuration(milliseconds: number | null): string {
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? value.toString() : value.toFixed(1)
 }
+
+function userLevel(experience: number): number {
+  if (experience >= 800) return 6
+  if (experience >= 450) return 5
+  if (experience >= 250) return 4
+  if (experience >= 125) return 3
+  if (experience >= 50) return 2
+  if (experience >= 1) return 1
+  return 0
+}
 </script>
 
 <template>
@@ -227,7 +238,10 @@ function formatNumber(value: number): string {
         <span v-else class="owner-initial" aria-hidden="true">{{ ownerInitial }}</span>
         <div>
           <span>行程归属</span>
-          <strong>{{ details.user.displayName }}</strong>
+          <div class="owner-name">
+            <strong>{{ details.user.displayName }}</strong>
+            <img :src="`/level/LV${userLevel(details.user.achievementExperience)}.svg`" :alt="`LV${userLevel(details.user.achievementExperience)}`" />
+          </div>
           <p>{{ optionalText(details.user.bio) }}</p>
         </div>
         <CircleUserRound :size="24" aria-hidden="true" />
@@ -328,6 +342,9 @@ function formatNumber(value: number): string {
 .owner-initial { display:grid; place-items:center; background:var(--surface-low); color:var(--brand); font-size:20px; font-weight:750; }
 .owner-panel div>span { color:var(--muted); font-size:12px; }
 .owner-panel strong { display:block; margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.owner-name { min-width:0; display:flex; align-items:center; gap:7px; }
+.owner-name strong { min-width:0; }
+.owner-name img { width:28px; height:16px; flex:0 0 auto; border-radius:0; object-fit:contain; }
 .owner-panel p { margin:3px 0 0; color:var(--muted); font-size:14px; overflow-wrap:anywhere; }
 .owner-panel>svg { color:var(--muted); }
 .ticket-panel { overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--surface); }

@@ -82,8 +82,12 @@ class M3Reveal extends StatelessWidget {
   }
 }
 
-Route<T> m3PageRoute<T>({required WidgetBuilder builder}) {
+Route<T> m3PageRoute<T>({
+  required WidgetBuilder builder,
+  RouteSettings? settings,
+}) {
   return PageRouteBuilder<T>(
+    settings: settings,
     transitionDuration: m3MotionDuration,
     reverseTransitionDuration: const Duration(milliseconds: 250),
     pageBuilder: (context, animation, secondaryAnimation) => builder(context),

@@ -41,7 +41,7 @@ public sealed record DownloadLinksResponse(
     string? AndroidDomesticDownloadUrl);
 
 public sealed record EntityReviewReactionSummary(string Emoji, int Count, bool ReactedByCurrentUser);
-public sealed record EntityReviewResponse(long Id, string EntityType, string EntityKey, string ReviewType, string UserId, string DisplayName, string? AvatarUrl, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price, DateTime CreatedAt, PublicTrip? Trip, PublicTrip? SecondTrip, IReadOnlyList<EntityReviewReactionSummary> Reactions);
+public sealed record EntityReviewResponse(long Id, string EntityType, string EntityKey, string ReviewType, string UserId, string DisplayName, string? AvatarUrl, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price, DateTime CreatedAt, PublicTrip? Trip, PublicTrip? SecondTrip, IReadOnlyList<EntityReviewReactionSummary> Reactions, int AchievementExperience = 0);
 public sealed record CreateEntityReviewRequest(string EntityType, string EntityKey, string ReviewType, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price);
 public sealed record UpdateEntityReviewRequest(int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price);
 public sealed record SetEntityReviewReactionRequest(string Emoji);
@@ -145,7 +145,8 @@ public sealed record PublicUser(
     string DisplayName,
     string? AvatarUrl,
     string? Bio,
-    string? Email);
+    string? Email,
+    int AchievementExperience = 0);
 
 public sealed record PublicTrip(
     long TicketId,

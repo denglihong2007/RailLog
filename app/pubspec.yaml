@@ -32,6 +32,7 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  flutter_svg: ^2.2.1
   flutter_markdown_plus: ^1.0.5
   dynamic_color: ^1.8.1
   shared_preferences: ^2.5.4
@@ -82,6 +83,7 @@ flutter:
     - assets/db/routes.db
     - assets/db/coordinates.csv
     - assets/icon/icon.png
+    - assets/level/
   fonts:
     - family: HVCB
       fonts:

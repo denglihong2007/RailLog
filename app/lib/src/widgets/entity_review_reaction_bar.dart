@@ -118,9 +118,12 @@ class _EntityReviewReactionBarState extends State<EntityReviewReactionBar> {
                 ),
               ),
             ],
-            builder: (context, controller, child) => IconButton.filledTonal(
+            builder: (context, controller, child) => IconButton(
               tooltip: '选择表情回复',
               visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(
+                foregroundColor: colors.onSurfaceVariant,
+              ),
               onPressed: enabled
                   ? () => controller.isOpen
                         ? controller.close()

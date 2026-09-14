@@ -11,6 +11,7 @@ void main() {
       'userId': 'user-1',
       'displayName': '测试用户',
       'avatarUrl': null,
+      'achievementExperience': 125,
       'rating': 5,
       'comment': '换乘方便',
       'tripId': 101,
@@ -30,6 +31,7 @@ void main() {
     expect(review.secondTrip?.ticketId, 102);
     expect(review.secondTrip?.toStation, '上海虹桥');
     expect(review.transferMinutes, 35);
+    expect(review.achievementExperience, 125);
   });
 
   test('EntityReview parses the selected route segment', () {

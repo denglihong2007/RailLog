@@ -566,7 +566,12 @@ public sealed class RailLogDatabase
                    secondTrip.DepartureTime,secondTrip.ArrivalTime,
                    secondTrip.MileageKm,secondTrip.ViaRoutes,
                    secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
-                   secondTrip.Notes,secondTrip.IsRailTrip
+                   secondTrip.Notes,secondTrip.IsRailTrip,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=r.UserId
+                   ), 0)
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -602,7 +607,8 @@ public sealed class RailLogDatabase
                     DateTime.Parse(reader.GetString(16)),
                     ReadPublicTrip(reader, 17),
                     ReadPublicTrip(reader, 33),
-                    []));
+                    [],
+                    Convert.ToInt32(reader.GetInt64(49))));
         }
         var reactions = await GetEntityReviewReactionSummariesAsync(
             connection,
@@ -640,7 +646,12 @@ public sealed class RailLogDatabase
                    secondTrip.DepartureTime,secondTrip.ArrivalTime,
                    secondTrip.MileageKm,secondTrip.ViaRoutes,
                    secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
-                   secondTrip.Notes,secondTrip.IsRailTrip
+                   secondTrip.Notes,secondTrip.IsRailTrip,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=r.UserId
+                   ), 0)
             FROM TripRecords reviewedTrip
             JOIN EntityReviews r
                 ON r.UserId=reviewedTrip.UserId
@@ -680,7 +691,8 @@ public sealed class RailLogDatabase
                     DateTime.Parse(reader.GetString(16)),
                     ReadPublicTrip(reader, 17),
                     ReadPublicTrip(reader, 33),
-                    []));
+                    [],
+                    Convert.ToInt32(reader.GetInt64(49))));
         }
         var reactions = await GetTripReviewReactionSummariesAsync(
             connection,
@@ -781,7 +793,12 @@ public sealed class RailLogDatabase
                    secondTrip.DepartureTime,secondTrip.ArrivalTime,
                    secondTrip.MileageKm,secondTrip.ViaRoutes,
                    secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
-                   secondTrip.Notes,secondTrip.IsRailTrip
+                   secondTrip.Notes,secondTrip.IsRailTrip,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=r.UserId
+                   ), 0)
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -885,7 +902,12 @@ public sealed class RailLogDatabase
                    secondTrip.DepartureTime,secondTrip.ArrivalTime,
                    secondTrip.MileageKm,secondTrip.ViaRoutes,
                    secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
-                   secondTrip.Notes,secondTrip.IsRailTrip
+                   secondTrip.Notes,secondTrip.IsRailTrip,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=r.UserId
+                   ), 0)
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -940,7 +962,8 @@ public sealed class RailLogDatabase
         DateTime.Parse(reader.GetString(16)),
         ReadPublicTrip(reader, 17),
         ReadPublicTrip(reader, 33),
-        []);
+        [],
+        Convert.ToInt32(reader.GetInt64(49)));
 
     private static void AddReviewCriteria(
         ICollection<(string Type, IReadOnlyList<string> Keys)> criteria,
@@ -1623,6 +1646,11 @@ public sealed class RailLogDatabase
         command.CommandText = """
             SELECT user.Id, user.DisplayName, user.AvatarUrl, user.Bio,
                    CASE WHEN user.ShowEmailOnProfile = 1 THEN user.Email END,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=user.Id
+                   ), 0),
                    trip.Id, trip.CreatedAt, trip.TrainNumber, trip.RollingStock,
                    trip.CompanyName, trip.FromStation, trip.ToStation,
                    trip.DepartureTime, trip.ArrivalTime, trip.MileageKm,
@@ -1639,14 +1667,15 @@ public sealed class RailLogDatabase
 
         var user = new PublicUser(
             reader.GetString(0), reader.GetString(1), NullableString(reader, 2),
-            NullableString(reader, 3), NullableString(reader, 4));
+            NullableString(reader, 3), NullableString(reader, 4),
+            Convert.ToInt32(reader.GetInt64(5)));
         var trip = new PublicTrip(
-            reader.GetInt64(5), FromDb(reader.GetString(6)), reader.GetString(7),
-            NullableString(reader, 8), NullableString(reader, 9), reader.GetString(10),
-            reader.GetString(11), NullableDate(reader, 12), NullableDate(reader, 13),
-            reader.GetDouble(14), reader.GetString(15), NullableString(reader, 16),
-            NullableString(reader, 17), reader.GetDouble(18), NullableString(reader, 19),
-            reader.GetInt32(20) == 1);
+            reader.GetInt64(6), FromDb(reader.GetString(7)), reader.GetString(8),
+            NullableString(reader, 9), NullableString(reader, 10), reader.GetString(11),
+            reader.GetString(12), NullableDate(reader, 13), NullableDate(reader, 14),
+            reader.GetDouble(15), reader.GetString(16), NullableString(reader, 17),
+            NullableString(reader, 18), reader.GetDouble(19), NullableString(reader, 20),
+            reader.GetInt32(21) == 1);
         return new PublicTripDetailsResponse(user, trip);
     }
 
@@ -1696,6 +1725,12 @@ public sealed class RailLogDatabase
         }
         await tripsReader.CloseAsync();
         var achievements = await GetAchievementsAsync(connection, userId);
+        user = user with
+        {
+            AchievementExperience = achievements.Achievements
+                .Where(item => item.Status == "unlocked")
+                .Sum(item => item.Experience),
+        };
         return new PublicUserDashboardResponse(user, trips, achievements);
     }
 

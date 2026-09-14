@@ -20,6 +20,7 @@ interface PublicUser {
   avatarUrl: string | null
   bio: string | null
   email: string | null
+  achievementExperience: number
 }
 
 interface PublicTrip {
@@ -181,6 +182,16 @@ function achievementIcon(key: string): string {
   return String.fromCodePoint(achievementIconCodepoints[key] ?? 0xf01a)
 }
 
+function userLevel(experience: number): number {
+  if (experience >= 800) return 6
+  if (experience >= 450) return 5
+  if (experience >= 250) return 4
+  if (experience >= 125) return 3
+  if (experience >= 50) return 2
+  if (experience >= 1) return 1
+  return 0
+}
+
 function parseDate(value: string | null): Date | null {
   if (!value) return null
   const parsed = new Date(value)
@@ -238,7 +249,10 @@ function formatNumber(value: number): string {
         <img v-if="dashboard.user.avatarUrl && !avatarFailed" :src="dashboard.user.avatarUrl" alt="" @error="avatarFailed = true" />
         <span v-else class="profile-initial" aria-hidden="true">{{ userInitial }}</span>
         <div class="profile-copy">
-          <h2>{{ dashboard.user.displayName }}</h2>
+          <div class="profile-name">
+            <h2>{{ dashboard.user.displayName }}</h2>
+            <img :src="`/level/LV${userLevel(dashboard.user.achievementExperience)}.svg`" :alt="`LV${userLevel(dashboard.user.achievementExperience)}`" />
+          </div>
           <p>{{ dashboard.user.bio?.trim() || '这位用户暂未填写个人简介。' }}</p>
           <a v-if="dashboard.user.email" :href="`mailto:${dashboard.user.email}`">{{ dashboard.user.email }}</a>
           <span class="profile-id">ID {{ dashboard.user.id }}</span>
@@ -303,6 +317,9 @@ function formatNumber(value: number): string {
 .profile-panel img,.profile-initial { width:82px; height:82px; border-radius:50%; object-fit:cover; }
 .profile-initial { display:grid; place-items:center; background:var(--surface-low); color:var(--brand); font-size:30px; font-weight:750; }
 .profile-copy { min-width:0; }
+.profile-name { min-width:0; display:flex; align-items:center; gap:8px; }
+.profile-panel .profile-name img { width:30px; height:17px; flex:0 0 auto; border-radius:0; object-fit:contain; }
+.profile-name h2 { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .profile-copy h2 { margin:0; font-size:25px; }
 .profile-copy p { margin:6px 0 10px; color:var(--muted); line-height:1.6; overflow-wrap:anywhere; }
 .profile-copy a { display:inline-flex; align-items:center; gap:5px; color:var(--blue); overflow-wrap:anywhere; }

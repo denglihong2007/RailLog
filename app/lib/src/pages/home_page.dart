@@ -30,6 +30,7 @@ import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/user_level_badge.dart';
 
 const _dashboardMaxWidth = 1200.0;
 const _cardRadius = 8.0;
@@ -502,11 +503,23 @@ class _PublicProfileCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    user.displayName,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      UserLevelBadge(
+                        experience: user.achievementExperience,
+                        width: 30,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(

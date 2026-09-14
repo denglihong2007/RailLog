@@ -37,6 +37,7 @@ const publicUserFields: FieldDefinition[] = [
   { path: 'avatarUrl', type: 'string | null', description: '头像的绝对或可访问 URL；未设置头像时为 null。' },
   { path: 'bio', type: 'string | null', description: '用户公开个人简介；未填写时为 null。' },
   { path: 'email', type: 'string | null', description: '电子邮箱地址。仅当用户主动开启公开邮箱时返回，否则为 null。' },
+  { path: 'achievementExperience', type: 'integer', description: '用户已解锁成就的累计经验值，用于计算公开等级。' },
 ]
 
 const publicTripFields: FieldDefinition[] = [
@@ -71,6 +72,7 @@ const achievementFields: FieldDefinition[] = [
   { path: 'achievements[].unlockedUserCount', type: 'integer', description: '全站已解锁该成就的用户数量。' },
   { path: 'achievements[].progressCurrent', type: 'number | null', description: '可量化成就的当前进度；不支持进度或已无进度信息时为 null。单位由成就条件决定。' },
   { path: 'achievements[].progressTarget', type: 'number | null', description: '可量化成就的目标值；不支持进度时为 null，与 progressCurrent 使用相同单位。' },
+  { path: 'achievements[].experience', type: 'integer', description: '该成就提供的基础经验值；隐藏成就未解锁时返回 0。' },
 ]
 
 const props = defineProps<{ apiBase: string }>()
