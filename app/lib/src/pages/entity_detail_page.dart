@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/train_model_parser.dart';
@@ -47,6 +49,7 @@ class EntityDetailPage extends StatefulWidget {
 class _EntityDetailPageState extends State<EntityDetailPage> {
   Future<List<TripRecord>>? _future;
   Future<int>? _globalFuture;
+  Future<List<OnlineIntersection>>? _intersectionFuture;
   late bool _wasSignedIn;
 
   @override
@@ -65,6 +68,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
 
   void _loadData() {
     _future = DbHelper.instance.getAllTrips();
+    _intersectionFuture = null;
     _globalFuture = EntityReviewService.fetchCount(
       _typeKey(widget.type),
       widget.name,
@@ -81,6 +85,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
     } else {
       _future = null;
       _globalFuture = null;
+      _intersectionFuture = null;
     }
     setState(() {});
   }
@@ -93,7 +98,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
 
   List<TripRecord> _matching(List<TripRecord> trips) {
     final key = _normalize(widget.name);
-    return trips.where((trip) {
+    final matching = trips.where((trip) {
       switch (widget.type) {
         case EntityType.station:
           return _normalize(trip.fromStation) == key ||
@@ -113,6 +118,49 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
           return _normalize(trip.trainNumber) == key;
       }
     }).toList();
+    matching.sort((a, b) => b.departureTime.compareTo(a.departureTime));
+    return matching;
+  }
+
+  Future<List<OnlineIntersection>> _loadIntersections() =>
+      _intersectionFuture ??= IntersectionService.fetch(
+        _typeKey(widget.type),
+        widget.name,
+      );
+
+  List<OnlineIntersection> _matchingIntersections(
+    List<OnlineIntersection> groups,
+  ) {
+    final matches = groups
+        .where((item) => _normalize(item.location) == _normalize(widget.name))
+        .toList();
+    matches.sort(
+      (a, b) => (b.trips.any((trip) => trip.isStrict) ? 1 : 0).compareTo(
+        a.trips.any((trip) => trip.isStrict) ? 1 : 0,
+      ),
+    );
+    return matches;
+  }
+
+  Future<void> _openAllIntersections() async {
+    try {
+      final groups = await _loadIntersections();
+      if (!mounted) return;
+      final ordered = _matchingIntersections(groups);
+      await Navigator.of(context).push(
+        m3PageRoute(
+          builder: (_) => EntityIntersectionsPage(
+            title: widget.name,
+            intersections: ordered,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('读取行程交集失败：$error')));
+    }
   }
 
   @override
@@ -249,30 +297,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                             action: trips.isEmpty
                                 ? null
                                 : TextButton.icon(
-                                    onPressed: () async {
-                                      final groups =
-                                          await IntersectionService.fetch(
-                                            _typeKey(widget.type),
-                                            widget.name,
-                                          );
-                                      if (!context.mounted) return;
-                                      final ordered = groups
-                                          .where(
-                                            (i) =>
-                                                _normalize(i.location) ==
-                                                _normalize(widget.name),
-                                          )
-                                          .toList();
-                                      Navigator.of(context).push(
-                                        m3PageRoute(
-                                          builder: (_) =>
-                                              EntityIntersectionsPage(
-                                                title: widget.name,
-                                                intersections: ordered,
-                                              ),
-                                        ),
-                                      );
-                                    },
+                                    onPressed: _openAllIntersections,
                                     icon: const Icon(
                                       Icons.arrow_forward,
                                       size: 18,
@@ -285,10 +310,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                                     icon: Icons.group_off_outlined,
                                   )
                                 : FutureBuilder<List<OnlineIntersection>>(
-                                    future: IntersectionService.fetch(
-                                      _typeKey(widget.type),
-                                      widget.name,
-                                    ),
+                                    future: _loadIntersections(),
                                     builder: (context, snap) {
                                       if (!snap.hasData) {
                                         return const _EmptyState(
@@ -296,27 +318,9 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                                           icon: Icons.sync,
                                         );
                                       }
-                                      final matches = snap.data!
-                                          .where(
-                                            (i) =>
-                                                _normalize(i.location) ==
-                                                _normalize(widget.name),
-                                          )
-                                          .toList();
-                                      final ordered = [...matches]
-                                        ..sort(
-                                          (a, b) =>
-                                              (b.trips.any((t) => t.isStrict)
-                                                      ? 1
-                                                      : 0)
-                                                  .compareTo(
-                                                    a.trips.any(
-                                                          (t) => t.isStrict,
-                                                        )
-                                                        ? 1
-                                                        : 0,
-                                                  ),
-                                        );
+                                      final ordered = _matchingIntersections(
+                                        snap.data!,
+                                      );
                                       final items = _orderedIntersectionTrips(
                                         ordered,
                                       );
@@ -588,16 +592,7 @@ class _EntityHeader extends StatelessWidget {
         IconButton(
           tooltip: 'RailGo 信息',
           icon: const Icon(Icons.open_in_new),
-          onPressed: () async {
-            final codes = await TrainService.initializeStationCodes();
-            final code = codes[name.trim()];
-            if (code != null) {
-              await launchUrl(
-                Uri.parse('https://railgo.dev/station/result?telecode=$code'),
-                mode: LaunchMode.externalApplication,
-              );
-            }
-          },
+          onPressed: () => _openRailGoStation(context, name),
         ),
       );
       actions.add(
@@ -620,12 +615,7 @@ class _EntityHeader extends StatelessWidget {
         IconButton(
           tooltip: 'RailGo 信息',
           icon: const Icon(Icons.open_in_new),
-          onPressed: () => launchUrl(
-            Uri.parse(
-              'https://railgo.dev/train/result?keyword=${Uri.encodeQueryComponent(name)}',
-            ),
-            mode: LaunchMode.externalApplication,
-          ),
+          onPressed: () => _openRailGoTrain(context, name),
         ),
       );
       actions.add(
@@ -1840,4 +1830,58 @@ Future<void> openEntityPage(
       builder: (_) => EntityDetailPage(type: type, name: value),
     ),
   );
+}
+
+Future<void> _openRailGoStation(BuildContext context, String name) async {
+  final codes = await TrainService.initializeStationCodes();
+  if (!context.mounted) return;
+  final code = codes[name.trim()];
+  if (code == null || code.isEmpty) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('未找到$name的车站代码')));
+    return;
+  }
+  final encoded = Uri.encodeQueryComponent(code);
+  await _openRailGoLinks(
+    context,
+    appUri: Uri.parse('railgo://pages/station/result?keyword=$encoded'),
+    webUri: Uri.parse('https://railgo.dev/station/result?telecode=$encoded'),
+  );
+}
+
+Future<void> _openRailGoTrain(BuildContext context, String name) async {
+  final encoded = Uri.encodeQueryComponent(name.trim());
+  await _openRailGoLinks(
+    context,
+    appUri: Uri.parse('railgo://pages/train/trainResult?keyword=$encoded'),
+    webUri: Uri.parse('https://railgo.dev/train/result?keyword=$encoded'),
+  );
+}
+
+Future<void> _openRailGoLinks(
+  BuildContext context, {
+  required Uri appUri,
+  required Uri webUri,
+}) async {
+  var opened = false;
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened) {
+    try {
+      opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('无法打开 RailGo 链接')));
+  }
 }
