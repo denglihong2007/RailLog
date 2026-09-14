@@ -18,11 +18,12 @@ public sealed record AchievementEvaluation(
     public int Experience { get; init; }
     public bool Hidden { get; init; }
     public string? Note { get; init; }
-    public bool NarrativeNote { get; init; }
+    public string? NarrativeNote { get; init; }
 }
 
 public sealed record AchievementProgress(double Current, double Target);
 public sealed record AchievementReview(string EntityType, string EntityKey);
+public sealed record AchievementContext(int TotalExperience, int TotalReviewReactions);
 
 public static partial class AchievementEngine
 {
@@ -51,6 +52,12 @@ public static partial class AchievementEngine
             ["centuryDreamFulfilled"] = Milestones,
             ["fiftyThousandSpending"] = Milestones,
             ["reviewedTrainNumbers"] = Milestones,
+            ["reviewReplies5000"] = Milestones,
+            ["reachLevel3"] = Milestones,
+            ["reachLevel5"] = Milestones,
+            ["reachLevel6"] = Milestones,
+            ["reviewReplies100000"] = Milestones,
+            ["reach2500Experience"] = Milestones,
             ["unknownTerritory"] = Milestones,
             ["careerRecord"] = Milestones,
             ["nonOrdinary"] = Milestones,
@@ -162,273 +169,149 @@ public static partial class AchievementEngine
             ["multipleLocomotives"] = FunJourneys,
             ["snowBlockingBlueGate"] = FunJourneys,
             ["oneStoneThreeBirds"] = FunJourneys,
+            ["luxuryStreak20"] = FunJourneys,
         };
 
     private sealed record AchievementMetadata(
         int Experience,
         int? MaxExperience = null,
         string? Note = null,
-        bool Hidden = false,
-        bool NarrativeNote = false);
+        string? NarrativeNote = null,
+        bool Hidden = false);
 
     private static readonly IReadOnlyDictionary<string, AchievementMetadata>
         AchievementMetadataById = new Dictionary<string, AchievementMetadata>(
             StringComparer.Ordinal)
         {
-            ["firstTrip"] = new(10),
-            ["hundredTickets"] = new(10),
-            ["thousandTickets"] = new(40),
-            ["archaeologyTeam"] = new(
-                25,
-                Note: "即使忘记了许多细节也没关系",
-                NarrativeNote: true),
-            ["hundredStations"] = new(15),
-            ["sevenDayStreak"] = new(15),
-            ["thirtyDayStreak"] = new(30),
-            ["thousandKilometers"] = new(10),
-            ["hundredThousandKilometers"] = new(25),
-            ["lonelyPlanet"] = new(30),
-            ["traverseOneRegion"] = new(10),
-            ["halfTheRealm"] = new(30),
-            ["centuryDreamFulfilled"] = new(
-                50,
-                Note: "一百年前，孙中山曾梦想全国修建起16万千米的铁路网……",
-                NarrativeNote: true),
-            ["fiftyThousandSpending"] = new(30),
-            ["reviewedTrainNumbers"] = new(20),
-            ["unknownTerritory"] = new(40),
-            ["careerRecord"] = new(50),
-
-            ["overnightSeat"] = new(10),
-            ["midnightBoarding"] = new(10),
-            ["duration24Hours"] = new(10),
-            ["duration48Hours"] = new(25),
-            ["duration72Hours"] = new(
-                50,
-                Note: "也许只有临客了",
-                NarrativeNote: true),
-            ["slowCrawl"] = new(10),
-            ["slowerThanCycling"] = new(30),
-            ["highSpeedExperiment"] = new(15),
-            ["wellPreparedTransfer"] = new(10),
-            ["tightTransfer"] = new(10),
-            ["tripleTransfer"] = new(10),
-            ["miniTurnaround"] = new(10),
-            ["fourThousandKmInDay"] = new(
-                30,
-                Note: "早上坐最快的高铁出发，晚上再坐动卧回来……",
-                NarrativeNote: true),
-            ["noSeat12Hours"] = new(25),
-            ["youthPriceless"] = new(
-                40,
-                Note: "The sky is the limit.",
-                NarrativeNote: true),
-            ["zeroDisplacement"] = new(20),
-            ["wealthyTraveler"] = new(40),
-
-            ["all25Series"] = new(30, Note: "25B, 25G, 25Z, 25K, 25T, 25DT"),
-            ["allEmuSeries"] = new(
-                40,
-                Note: "CRH1, CRH2, CRH3, CRH5, CRH6, CRH380A, CRH380B, "
-                    + "CRH380CL, CRH380D, CR400AF, CR400BF, CR300AF, "
-                    + "CR300BF, CR200J, CR200J-C"),
-            ["whatAgeIsThis"] = new(
-                20,
-                Note: "21, 22, 22B, 22C, 23, 24, 25A, 25C, 25Z, 19, 30, "
-                    + "31, 10, 14, 82, 96"),
-            ["allSeatTypes"] = new(
-                40,
-                Note: "无座、硬座、软座、二等座、一等座、特等座、优选一等座、商务座、"
-                    + "硬卧、软卧、二等卧、一等卧、高级软卧、动卧、高级动卧"),
-            ["greatWallExpress"] = new(10),
-            ["railwayWorkerPassenger"] = new(25),
-            ["fTrain"] = new(40),
-            ["spontaneousTrip"] = new(10),
-            ["ancientLetters"] = new(20),
-            ["tenNumericTrains"] = new(25),
-            ["completeTrainLetters"] = new(
-                30,
-                Note: "G, D, C, S, Z, T, K, Y, 纯数字；未来车次调整后该成就将大幅重构"),
-            ["permanentMagnetPower"] = new(25),
-            ["axleOverheat"] = new(25),
-            ["snowWelcomesSpring"] = new(25),
-            ["moistensJiangnan"] = new(25),
-            ["facingTheWorld"] = new(20),
-            ["vibrantJourney"] = new(20),
-            ["verticalSleeper"] = new(20),
-            ["blueHorizon"] = new(20),
-            ["railwayTrailblazer"] = new(
-                25,
-                MaxExperience: 50,
-                Note: "X2000, KDZ1A, DJF1, DJF2, DJF3, DJJ1, DJJ2, NZJ1, "
-                    + "NZJ2, NDJ3, NYJ1；每多一种额外获得10点经验，上限为50点"),
-            ["meritAndHonor"] = new(
-                20,
-                MaxExperience: 50,
-                Note: "SS3B 5151, HXD1 1937, HXD1C 1927, HXD1D 1898, HXD2B 0001, "
-                    + "HXD3CA 8161, HXD3D 0035, 0039, 0631, 1886, 1893, 1921；"
-                    + "每多一种额外获得5点经验，上限为50点"),
-            ["friendshipForever"] = new(
-                25,
-                MaxExperience: 50,
-                Note: "6Y2, 6G, 6K, 8G, 8K, DJ1, ND2, ND4, ND5, NY5, NY6, "
-                    + "NY7, NJ2；每多一种额外获得5点经验，上限为50点"),
-            ["steamPower"] = new(
-                40,
-                Note: "JF, SL, KD, FD, KF, JS, RM, QJ；多于一种额外获得10点经验"),
-            ["grandSlam"] = new(30),
-            ["centuryMeterGauge"] = new(15),
-
-            ["verticalChina"] = new(
-                30,
-                MaxExperience: 50,
-                Note: "每少二日额外获得5点经验，上限为50点"),
-            ["horizontalChina"] = new(
-                30,
-                MaxExperience: 50,
-                Note: "每少二日额外获得5点经验，上限为50点"),
-            ["skyAndSea"] = new(
-                30,
-                MaxExperience: 50,
-                Note: "每少二日额外获得5点经验，上限为50点"),
-            ["fourExtremes"] = new(50),
-            ["eastRedSunRises"] = new(30),
-            ["platformSubsidence"] = new(10),
-            ["endsOfTheEarth"] = new(10),
-            ["greatWallWatch"] = new(10),
-            ["advantageIsMine"] = new(10),
-            ["waterIsCalm"] = new(20),
-            ["roadBlazing"] = new(40),
-            ["fourFamousNorths"] = new(
-                15,
-                MaxExperience: 35,
-                Note: "每多一站额外获得5点经验，上限为35点"),
-            ["borderPorts"] = new(
-                20,
-                MaxExperience: 50,
-                Note: "每多一站额外获得5点经验，上限为50点"),
-            ["airRail"] = new(
-                15,
-                MaxExperience: 50,
-                Note: "每多一站额外获得5点经验，上限为50点"),
-            ["railFerry"] = new(
-                15,
-                Note: "线路名称包含“轮渡”即可；大连与烟台间接续可替代轮渡线路"),
-            ["singleBikeBorder"] = new(30),
-            ["travelerAbroad"] = new(50),
-            ["qinlingPassage"] = new(10),
-            ["heavenlyThoroughfare"] = new(10),
-            ["goddessYangtzeBridges"] = new(40),
-            ["strategist"] = new(
-                25,
-                Note: "目前查无此车",
-                NarrativeNote: true),
-            ["icyWorld"] = new(30),
-            ["cardinalStations"] = new(25),
-
-            ["wallFacingSeat"] = new(10, Note: "并不是所有的第1排或第18排都面壁", NarrativeNote: true),
-            ["overnightSleeper"] = new(10),
-            ["hundredDeparturesFromStation"] = new(25),
-            ["modestAppetite"] = new(10),
-            ["freeMeal"] = new(10, Note: "11:00-13:00, 17:00-19:00"),
-            ["multipleLocomotives"] = new(
-                20,
-                MaxExperience: 50,
-                Note: "每多一台额外获得10点经验，上限为50点"),
-            ["farsighted"] = new(25),
-            ["fleetingMoment"] = new(20),
-            ["commuterSpecial"] = new(20),
-            ["eveOfTheStorm"] = new(25),
-            ["snowBlockingBlueGate"] = new(30),
-            ["storedUpReward"] = new(30),
-            ["unnecessaryExtra"] = new(
-                30,
-                MaxExperience: 50,
-                Note: "每多一张额外获得10点经验，上限为50点"),
-            ["newYearsEve"] = new(10),
-            ["blessChina"] = new(10),
-            ["monotonousTrainNumber"] = new(25, Note: "中途切换车次也可以"),
-            ["multipleChoices"] = new(20),
-            ["differentRoutesSameDestination"] = new(
-                20,
-                MaxExperience: 50,
-                Note: "每多一种额外获得10点经验，上限为50点"),
-            ["publicDisplayOfAffection"] = new(15),
-            ["vowAtQinling"] = new(20),
-            ["dejaVu"] = new(
-                30,
-                Note: "不知道有多少人忘了填座号",
-                NarrativeNote: true),
-            ["oneYuanJourney"] = new(20),
-            ["spendsLikeWater"] = new(40),
-            ["oneStoneThreeBirds"] = new(30, Note: "之前取得过的成就也可以"),
-
-            ["ancientMemory"] = new(
-                50,
-                Note: "那时甚至还没有软纸车票",
-                Hidden: true,
-                NarrativeNote: true),
-            ["thousandCities"] = new(
-                80,
-                Note: "进站，安检，检票，上车……这个流程想必早就习以为常了",
-                Hidden: true,
-                NarrativeNote: true),
-            ["rottenAxe"] = new(
-                80,
-                Note: "师傅你是做什么工作的",
-                Hidden: true,
-                NarrativeNote: true),
-            ["roamFreely"] = new(
-                80,
-                Note: "你一定把全国铁路网都背熟了吧",
-                Hidden: true,
-                NarrativeNote: true),
-            ["travelAllMountains"] = new(
-                80,
-                Note: "小汽车也很少开得到这个里程……大货车也许可以与之一试？",
-                Hidden: true,
-                NarrativeNote: true),
-            ["immovableMountain"] = new(
-                50,
-                Note: "你站你也麻",
-                Hidden: true,
-                NarrativeNote: true),
-            ["richerThanNation"] = new(
-                80,
-                Note: "坐一次丝路梦享号的最豪华包间就够了",
-                Hidden: true,
-                NarrativeNote: true),
-            ["flowersAmong"] = new(
-                80,
-                Note: "截至2026年9月共65种，详见附表2",
-                Hidden: true),
-            ["refinedMechanic"] = new(
-                80,
-                Note: "HXD1, HXD1B, HXD1C, HXD1D, HXD2, HXD2B, HXD2C, "
-                    + "HXD3, HXD3B, HXD3C, HXD3D, HXN3, HXN5, FXD1, FXD1BA, "
-                    + "FXD2BA, FXD3, FXN3C, FXN5C, FXSY",
-                Hidden: true),
-            ["dawnBreaks"] = new(
-                80,
-                Note: "DF1, DF3, DF4, DF4B, DF4C, DF4D, DF7D, DF8, DF8B, "
-                    + "DF9, DF10F, DF11, DF11Z, DF11G, SS1, SS3, SS3B, SS4, "
-                    + "SS6, SS6B, SS7, SS7C, SS7D, SS7E, SS8, SS9",
-                Hidden: true),
-            ["hundredPeople"] = new(
-                50,
-                Note: "所以你觉得哪个客运段的服务最好，哪个又最差？",
-                Hidden: true,
-                NarrativeNote: true),
-            ["thousandDeparturesFromStation"] = new(
-                80,
-                Note: "车站的结构图已经早就被你刻在DNA里了吧！",
-                Hidden: true,
-                NarrativeNote: true),
-            ["nonOrdinary"] = new(
-                150,
-                Note: "阁下是……人类？",
-                Hidden: true,
-                NarrativeNote: true),
+            ["firstTrip"] = new(10, NarrativeNote: "就此开始你的第一次出行吧"),
+            ["hundredTickets"] = new(10, NarrativeNote: "总有一天会习惯乘火车出行的"),
+            ["thousandTickets"] = new(40, NarrativeNote: "来日纵使千千阙歌♪飘于远方我路上♪"),
+            ["archaeologyTeam"] = new(25, NarrativeNote: "即使忘记了许多细节也没关系"),
+            ["hundredStations"] = new(15, NarrativeNote: "虽然不少车站千篇一律，但也有些独具特色"),
+            ["sevenDayStreak"] = new(15, NarrativeNote: "买了计次票的话就会很方便"),
+            ["thirtyDayStreak"] = new(30, NarrativeNote: "不要停下来啊……"),
+            ["thousandKilometers"] = new(10, NarrativeNote: "适千里者，如今无需三月聚粮"),
+            ["hundredThousandKilometers"] = new(25, NarrativeNote: "你对哪里的印象最深刻呢"),
+            ["lonelyPlanet"] = new(30, NarrativeNote: "21世纪工程奇迹之环塔克拉玛干沙漠铁路"),
+            ["traverseOneRegion"] = new(10, NarrativeNote: "继续下去，还有广大的区域等着你来探索"),
+            ["halfTheRealm"] = new(30, NarrativeNote: "探索度50%是什么水平？只有自己才知道"),
+            ["centuryDreamFulfilled"] = new(50, NarrativeNote: "一百年前，孙中山曾梦想全国修建起16万千米的铁路网"),
+            ["fiftyThousandSpending"] = new(30, NarrativeNote: "……还复来，但转化成积分了"),
+            ["reviewedTrainNumbers"] = new(20, NarrativeNote: "你的点评就是为后人规划出行的参考"),
+            ["reviewReplies5000"] = new(20, NarrativeNote: "先生所言极是"),
+            ["reachLevel3"] = new(10, NarrativeNote: "期待有朝一日也能升到6级"),
+            ["reachLevel5"] = new(25, NarrativeNote: "到这里你已经超过大部分人了"),
+            ["reachLevel6"] = new(40, NarrativeNote: "不畏浮云遮望眼，自缘身在最高层"),
+            ["reviewReplies100000"] = new(50, NarrativeNote: "新时代的国铁嘴替就是你了", Hidden: true),
+            ["reach2500Experience"] = new(80, Note: "包括从隐藏成就获得的经验", NarrativeNote: "这波你在大气层", Hidden: true),
+            ["unknownTerritory"] = new(40, NarrativeNote: "并非做不到，只要有这个决心，没什么不可能"),
+            ["careerRecord"] = new(50, NarrativeNote: "阁下真的是人类？"),
+            ["overnightSeat"] = new(10, NarrativeNote: "相与枕藉乎座中，而知东方之既白"),
+            ["midnightBoarding"] = new(10, NarrativeNote: "您旅途辛苦了"),
+            ["duration24Hours"] = new(10, NarrativeNote: "下车后多活动活动吧"),
+            ["duration48Hours"] = new(25, NarrativeNote: "跪求硬座过夜技巧"),
+            ["duration72Hours"] = new(50, NarrativeNote: "也许只有临客了"),
+            ["slowCrawl"] = new(10, NarrativeNote: "这几十年前修的路压根就开不快"),
+            ["slowerThanCycling"] = new(30, NarrativeNote: "火车不比单车快，不只是云南有这种怪事"),
+            ["highSpeedExperiment"] = new(15, NarrativeNote: "虽乘奔御风，不以疾也"),
+            ["wellPreparedTransfer"] = new(10, NarrativeNote: "在候车厅打发时间的方式其实很多"),
+            ["tightTransfer"] = new(10, NarrativeNote: "哦，那是接近的"),
+            ["tripleTransfer"] = new(10, NarrativeNote: "专业提示：有时中转反而比直达更实惠"),
+            ["miniTurnaround"] = new(10, NarrativeNote: "座位还没坐热就到了？！"),
+            ["fourThousandKmInDay"] = new(30, NarrativeNote: "早上坐最快的高铁出发，晚上再坐动卧回来……"),
+            ["noSeat12Hours"] = new(25, NarrativeNote: "还好国铁没有放开自由席"),
+            ["youthPriceless"] = new(40, NarrativeNote: "The sky is the limit."),
+            ["zeroDisplacement"] = new(20, NarrativeNote: "再来一圈？"),
+            ["wealthyTraveler"] = new(40, NarrativeNote: "要是能报销倒还好说"),
+            ["all25Series"] = new(30, Note: "25B, 25G, 25Z, 25K, 25T, 25DT", NarrativeNote: "反对直特换桶.mp4"),
+            ["allEmuSeries"] = new(40, Note: "CRH1, CRH2, CRH3, CRH5, CRH6, CRH380A, CRH380B, CRH380CL, CRH380D, CR400AF, CR400BF, CR300AF, CR300BF, CR200J, CR200J-C", NarrativeNote: "从博采众长到自主创新的历程缩影"),
+            ["whatAgeIsThis"] = new(20, MaxExperience: 50, Note: "21, 22, 22B, 22C, 23, 24, 25A, 25C, 25Z, 19, 30, 31, M1, 10, 14, 82, 96；每多一种额外获得5点经验，上限为50点", NarrativeNote: "以后或许只能在博物馆里见到了"),
+            ["allSeatTypes"] = new(40, Note: "无座、硬座、软座、二等座、一等座、特等座、优选一等座、商务座、硬卧、软卧、二等卧、一等卧、高级软卧、动卧、高级动卧", NarrativeNote: "能看出你很热衷于尝试未体验过的事物"),
+            ["greatWallExpress"] = new(10, NarrativeNote: "惊人的长度，极致的运量"),
+            ["railwayWorkerPassenger"] = new(25, NarrativeNote: "目前为数不多能收到纸票的方式"),
+            ["fTrain"] = new(40, NarrativeNote: "列车行驶未半而中道折返"),
+            ["spontaneousTrip"] = new(10, NarrativeNote: "内饰是不是和传统的列车很不一样呢"),
+            ["ancientLetters"] = new(20, NarrativeNote: "坐过的人年纪都不小了"),
+            ["tenNumericTrains"] = new(25, NarrativeNote: "时间充足的话，何必还要过分追求速度"),
+            ["completeTrainLetters"] = new(30, Note: "G, D, C, S, Z, T, K, Y, 纯数字；未来车次调整后该成就将大幅重构", NarrativeNote: "实际上只有四个字母完全没有在车次里用过"),
+            ["permanentMagnetPower"] = new(25, NarrativeNote: "未来的应用前景一片光明"),
+            ["axleOverheat"] = new(25, NarrativeNote: "西成机破京沪焚，掌声送给○○人"),
+            ["snowWelcomesSpring"] = new(25, NarrativeNote: "仅此一处的多功能座"),
+            ["moistensJiangnan"] = new(25, NarrativeNote: "天王老子来了这也是紫茄子"),
+            ["facingTheWorld"] = new(20, NarrativeNote: "跨国高铁项目何时再次重启"),
+            ["revivalPrototype"] = new(20, MaxExperience: 50, Note: "CR400AF-0207, CR400BF-0305, 0503, 0507, CR300AF-0001, 0003, 0004, CR300BF-0002, 0005, 0006；每多一种额外获得5点经验，上限为50点", NarrativeNote: "动车组自主创新之路，就此迈出第一步"),
+            ["vibrantJourney"] = new(20, NarrativeNote: "Caring for life's money"),
+            ["verticalSleeper"] = new(20, NarrativeNote: "要是床帘遮光就更好了"),
+            ["blueHorizon"] = new(20, NarrativeNote: "到底都是谁在喜欢高饱和度配色啊"),
+            ["railwayTrailblazer"] = new(25, MaxExperience: 50, Note: "X2000, KDZ1A, DJF1, DJF2, DJF3, DJJ1, DJJ2, NZJ1, NZJ2, NDJ3, NYJ1；每多一种额外获得10点经验，上限为50点", NarrativeNote: "对前辈们艰辛的探索致以崇高的敬意"),
+            ["meritAndHonor"] = new(20, MaxExperience: 50, Note: "SS3B 5151, HXD1 1937, HXD1C 1927, HXD1D 1898, HXD2B 0001, HXD3CA 8161, HXD3D 0035, 0039, 0631, 1886, 1893, 1921；每多一种额外获得5点经验，上限为50点", NarrativeNote: "真正坐一次挂牌车的体验是单纯拍车感受不到的"),
+            ["friendshipForever"] = new(25, MaxExperience: 50, Note: "6Y2, 6G, 6K, 8G, 8K, DJ1, ND2, ND4, ND5, NY5, NY6, NY7, NJ2；每多一种额外获得5点经验，上限为50点", NarrativeNote: "For the sake of auld lang syne"),
+            ["steamPower"] = new(50, MaxExperience: 80, Note: "JF, SL, KD, FD, KF, JS, RM, QJ；每多一种额外获得10点经验，上限为80点", NarrativeNote: "这就是为什么火车叫做火车", Hidden: true),
+            ["grandSlam"] = new(30, NarrativeNote: "哪个路局又是你的心头好"),
+            ["centuryMeterGauge"] = new(15, NarrativeNote: "全国最早的动车组也在这里"),
+            ["verticalChina"] = new(30, MaxExperience: 50, Note: "每少二日额外获得5点经验，上限为50点", NarrativeNote: "一周之内，感受四季"),
+            ["horizontalChina"] = new(30, MaxExperience: 50, Note: "每少二日额外获得5点经验，上限为50点", NarrativeNote: "乌苏里江畔旭日初升，帕米尔高原繁星满天"),
+            ["skyAndSea"] = new(30, MaxExperience: 50, Note: "每少二日额外获得5点经验，上限为50点", NarrativeNote: "可上九天揽月，可下五洋捉鳖，谈笑凯歌还"),
+            ["fourExtremes"] = new(30, MaxExperience: 50, Note: "每少五日额外获得5点经验，上限为50点", NarrativeNote: "四境之内，皆为汉土"),
+            ["eastRedSunRises"] = new(30, NarrativeNote: "我们的生活天天向上♪我们的前程万丈光芒♪"),
+            ["platformSubsidence"] = new(10, NarrativeNote: "事实上只有头尾几节车厢能明显感受到沉降"),
+            ["endsOfTheEarth"] = new(10, NarrativeNote: "这其实还不是国铁的最南端"),
+            ["greatWallWatch"] = new(10, NarrativeNote: "中国人的铁路就应该中国人自己建"),
+            ["advantageIsMine"] = new(10, NarrativeNote: "站场规模，是15线对13线"),
+            ["waterIsCalm"] = new(20, NarrativeNote: "萧瑟秋风今又是，换了人间"),
+            ["roadBlazing"] = new(40, NarrativeNote: "草原深处，石破天惊"),
+            ["fourFamousNorths"] = new(15, MaxExperience: 30, Note: "每多一站额外获得5点经验，上限为30点", NarrativeNote: "一个比一个名不符实"),
+            ["borderPorts"] = new(20, MaxExperience: 50, Note: "每多一站额外获得5点经验，上限为50点", NarrativeNote: "前面的区域，办了护照再来探索吧"),
+            ["airRail"] = new(15, MaxExperience: 50, Note: "每多一站额外获得5点经验，上限为50点", NarrativeNote: "一对恋人在虹桥机场分手的故事是虚构的，听听就行了"),
+            ["railFerry"] = new(15, Note: "粤海铁路轮渡、南京长江铁路轮渡、芜湖长江铁路轮渡、新长铁路轮渡；大连与烟台间接续可替代轮渡线路", NarrativeNote: "谁不喜欢看火车上船呢"),
+            ["singleBikeBorder"] = new(30, NarrativeNote: "……我护照领到了"),
+            ["travelerAbroad"] = new(50, NarrativeNote: "你挥了挥衣袖，没有带走一片云彩"),
+            ["qinlingPassage"] = new(10, NarrativeNote: "西当太白有铁道，可以横插群山间"),
+            ["heavenlyThoroughfare"] = new(10, Note: "京广线汉西-武昌区间", NarrativeNote: "万里长江横渡，极目楚天舒"),
+            ["goddessYangtzeBridges"] = new(40, NarrativeNote: "1950年的人也许也不会想到如今有这么多长江大桥"),
+            ["strategist"] = new(25, Note: "方向不限", NarrativeNote: "目前查无此车"),
+            ["redFootprints"] = new(20, Note: "必须以延安为终点站", NarrativeNote: "重走一次先辈们的来时路吧"),
+            ["icyWorld"] = new(30, NarrativeNote: "不做好保暖就只会被冻成英吉利牛肉了"),
+            ["cardinalStations"] = new(25, NarrativeNote: "这样的城市一只手也能数得过来"),
+            ["wallFacingSeat"] = new(10, NarrativeNote: "并不是所有的第1排或第18排都面壁"),
+            ["overnightSleeper"] = new(10, NarrativeNote: "省了一夜酒店房钱"),
+            ["hundredDeparturesFromStation"] = new(25, NarrativeNote: "又要开始下一次远行吗……"),
+            ["modestAppetite"] = new(10, NarrativeNote: "适莽苍者，古时且能三餐而反，遑论今朝？"),
+            ["freeMeal"] = new(10, Note: "11:00-13:00, 17:00-19:00", NarrativeNote: "下班车上正好把晚饭解决了"),
+            ["multipleLocomotives"] = new(20, MaxExperience: 50, Note: "每多一台额外获得10点经验，上限为50点", NarrativeNote: "沿线车迷注意接车，今天×××次双机"),
+            ["farsighted"] = new(25, NarrativeNote: "再也不怕隔壁列车挡视线了"),
+            ["fleetingMoment"] = new(20, NarrativeNote: "指你的钱"),
+            ["commuterSpecial"] = new(20, NarrativeNote: "也许这些牛马当中也有轨记用户"),
+            ["eveOfTheStorm"] = new(25, NarrativeNote: "起初，谁也不知这场风暴最后能席卷全球"),
+            ["snowBlockingBlueGate"] = new(30, NarrativeNote: "你知道吗？那年甚至调机也上了正线"),
+            ["storedUpReward"] = new(30, NarrativeNote: "这要花不少积分，先生"),
+            ["unnecessaryExtra"] = new(30, MaxExperience: 50, Note: "每多一张额外获得10点经验，上限为50点", NarrativeNote: "才不是因为没买到全程票呢"),
+            ["newYearsEve"] = new(10, NarrativeNote: "这车去年就发车了，现在才到"),
+            ["blessChina"] = new(10, NarrativeNote: "以前报销凭证上会写些特别的贺词"),
+            ["monotonousTrainNumber"] = new(25, Note: "中途切换车次也可以", NarrativeNote: "但是朗朗上口"),
+            ["multipleChoices"] = new(20, NarrativeNote: "车次多就是可以为所欲为的"),
+            ["differentRoutesSameDestination"] = new(20, MaxExperience: 50, Note: "每多一种额外获得10点经验，上限为50点", NarrativeNote: "铁路枢纽是方便走邪道的好地方"),
+            ["publicDisplayOfAffection"] = new(15, NarrativeNote: "你是不是也和你的那个TA一起出行呢"),
+            ["vowAtQinling"] = new(20, NarrativeNote: "山无陵，江水为竭，冬雷震震，夏雨雪，天地合，乃敢与君绝"),
+            ["dejaVu"] = new(30, NarrativeNote: "不知道有多少人忘了填座号"),
+            ["oneYuanJourney"] = new(20, NarrativeNote: "1995年以后就几乎无法通过全价票取得这一成就了"),
+            ["spendsLikeWater"] = new(40, NarrativeNote: "商务座，爽！高级软卧，爽！"),
+            ["oneStoneThreeBirds"] = new(30, Note: "之前取得过的成就也可以", NarrativeNote: "要 素 过 多"),
+            ["ancientMemory"] = new(50, NarrativeNote: "那时甚至还没有软纸车票", Hidden: true),
+            ["thousandCities"] = new(80, NarrativeNote: "进站，安检，检票，上车……这个流程想必已经形成肌肉记忆了吧", Hidden: true),
+            ["rottenAxe"] = new(80, NarrativeNote: "师傅你是做什么工作的", Hidden: true),
+            ["roamFreely"] = new(80, NarrativeNote: "你一定把全国铁路网都背熟了吧", Hidden: true),
+            ["travelAllMountains"] = new(80, NarrativeNote: "小汽车也很少开得到这个里程……大货车也许可以与之一试？", Hidden: true),
+            ["immovableMountain"] = new(50, NarrativeNote: "你站你也麻", Hidden: true),
+            ["richerThanNation"] = new(80, NarrativeNote: "坐一次丝路梦享号的最豪华包间就够了", Hidden: true),
+            ["flowersAmong"] = new(80, Note: "截至2026年9月共60种", NarrativeNote: "各种技术参数你或许比车辆厂的职工还熟悉", Hidden: true),
+            ["refinedMechanic"] = new(80, Note: "HXD1, HXD1B, HXD1C, HXD1D, HXD2, HXD2B, HXD2C, HXD3, HXD3B, HXD3C, HXD3D, HXN3, HXN5, FXD1, FXD1BA, FXD2BA, FXD3, FXN3C, FXN5C, FXSY", NarrativeNote: "更大功率，更高运力", Hidden: true),
+            ["dawnBreaks"] = new(80, Note: "DF1, DF3, DF4, DF4B, DF4C, DF4D, DF7D, DF8, DF8B, DF9, DF10F, DF11, DF11Z, DF11G, SS1, SS3, SS3B, SS4, SS6, SS6B, SS7, SS7C, SS7D, SS7E, SS8, SS9", NarrativeNote: "听说这是HCM的最爱", Hidden: true),
+            ["hundredPeople"] = new(50, NarrativeNote: "所以你觉得哪个客运段的服务最好，哪个又最差？", Hidden: true),
+            ["thousandDeparturesFromStation"] = new(80, NarrativeNote: "车站的结构图已经早就被你刻在DNA里了吧！", Hidden: true),
+            ["luxuryStreak20"] = new(80, NarrativeNote: "我太想进步了", Hidden: true),
+            ["nonOrdinary"] = new(0, NarrativeNote: "这个成就你居然达成了？已经没有人类了。必须给你专门颁个奖，毕竟再多的经验如今对你而言也没有什么意义orz", Hidden: true),
+            ["dreamPath"] = new(20, NarrativeNote: "即便是退下来的也很珍贵"),
         };
 
     private static readonly IReadOnlySet<string> RegularAchievementIdSet =
@@ -452,7 +335,7 @@ public static partial class AchievementEngine
     [
         new("21"), new("22"), new("22A"), new("22B"), new("22C"), new("23"),
         new("24"), new("25A"), new("25Z"), new("25C"), new("31"), new("19"),
-        new("30"), new("10"), new("14"), new("82"), new("96")
+        new("30"), new("M1"), new("10"), new("14"), new("82"), new("96")
     ];
     private static readonly IReadOnlyList<EmuModelFamily> EmuModelFamilies =
     [
@@ -481,15 +364,18 @@ public static partial class AchievementEngine
         new("CR300BF", ["CR300BF"]),
         new("CR200J",
         [
-            "CR200J1-A", "CR200J1-B", "CR200J2-A", "CR200J2-B",
-            "CR200J3-A", "CR200J3-B", "CR200JS-G"
+            "CR200J-A", "CR200J-B", "CR200JS-G", "LCR200J"
         ]),
-        new("CR200J-C", ["CR200J1-C", "CR200J1-D", "CR200J2-C", "CR200J3-C"])
+        new("CR200J-C", ["CR200J-C", "CR200J-D"])
     ];
     private static readonly HashSet<string> RegularSeatTypes =
     [
         "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
         "硬卧", "软卧", "二等卧", "一等卧", "高级软卧", "动卧", "高级动卧"
+    ];
+    private static readonly HashSet<string> LuxurySeatTypes =
+    [
+        "商务座", "特等座", "高级软卧", "高级动卧"
     ];
     private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥"];
     private static readonly IReadOnlyList<RollingStockTarget> VariableGaugeModels =
@@ -501,7 +387,7 @@ public static partial class AchievementEngine
     private static readonly IReadOnlyList<RollingStockTarget> PrototypeModels =
     [
         new("CR400BF", "0305"), new("CR400BF", "0503"), new("CR400BF", "0507"),
-        new("CR400AF", "0207"), new("CR400AF", "0208"), new("CR300AF", "0001"),
+        new("CR400AF", "0207"), new("CR300AF", "0001"),
         new("CR300AF", "0003"), new("CR300AF", "0004"), new("CR300BF", "0002"),
         new("CR300BF", "0005"), new("CR300BF", "0006")
     ];
@@ -581,33 +467,33 @@ public static partial class AchievementEngine
 
     private static readonly IReadOnlyList<YangtzeBridge> YangtzeBridges =
     [
-        new("虎跳峡金沙江大桥", "滇藏线", "拉市海", "小中甸"),
-        new("三堆子金沙江大桥", "成昆线", "三堆子", "攀枝花"),
-        new("成昆复线金沙江大桥", "峨广线", "盐边", "普达"),
+        new("虎跳峡金沙江大桥", "滇藏铁路", "拉市海", "小中甸"),
+        new("三堆子金沙江大桥", "成昆线成攀段", "三堆子", "攀枝花"),
+        new("成昆复线金沙江大桥", "峨广铁路", "盐边", "普达"),
         new("水富金沙江大桥", "内六线", "一步滩", "翠屏"),
         new("白沙沱长江大桥", "渝贵线", "重庆西", "珞璜南"),
-        new("明月峡长江大桥", "重庆东环线", "皂角树所", "迎龙"),
+        new("明月峡长江大桥", "重庆东环铁路", "皂角树所", "迎龙"),
         new("长寿长江大桥", "渝怀线", "长寿", "王家坝"),
-        new("韩家沱长江大桥", "宁蓉线", "丰都", "涪陵北"),
+        new("韩家沱长江大桥", "宁蓉线宁渝段", "丰都", "涪陵北"),
         new("万州长江大桥", "万凉线", "万州", "五桥"),
-        new("宜昌长江大桥", "宁蓉线", "宜昌东", "宜昌南"),
-        new("枝城长江大桥", "焦柳线", "枝江", "枝城"),
+        new("宜昌长江大桥", "宁蓉线宁渝段", "宜昌东", "长阳"),
+        new("枝城长江大桥", "焦柳线焦怀段", "鸦雀岭", "枝城"),
         new("武汉长江大桥", "京广线", "汉西", "武昌"),
-        new("天兴洲长江大桥", "京广高速线", "横店东", "武汉"),
+        new("天兴洲长江大桥", "京广高铁", "横店东", "武汉"),
         new("天兴洲长江大桥", "滠武线", "滠口", "武汉"),
-        new("黄冈长江大桥", "武黄城际", "华容东", "黄冈西"),
-        new("鳊鱼洲长江大桥", "安九高速线", "黄梅南", "庐山"),
+        new("黄冈长江大桥", "武冈城际线", "华容东", "黄冈西"),
+        new("鳊鱼洲长江大桥", "京港高铁安九段", "黄梅南", "庐山"),
         new("九江长江大桥", "京九线", "小池口", "九江"),
-        new("安庆长江大桥", "宁安客专", "池州", "安庆"),
-        new("铜陵长江大桥", "京港高速线", "无为", "铜陵北"),
+        new("安庆长江大桥", "宁安城际线", "池州", "安庆"),
+        new("铜陵长江大桥", "合福高速线", "无为", "铜陵北"),
         new("铜陵长江大桥", "庐铜线", "龙桥", "钟鸣所"),
-        new("芜湖长江三桥", "合杭高速线", "芜湖北", "芜湖"),
+        new("芜湖长江三桥", "合杭高铁", "芜湖北", "芜湖"),
         new("芜湖长江大桥", "淮南线", "裕溪口", "芜湖"),
         new("大胜关长江大桥", "京沪高速线", "滁州", "南京南"),
-        new("大胜关长江大桥", "宁蓉线", "南京南", "江浦"),
+        new("大胜关长江大桥", "宁蓉线宁渝段", "南京南", "浦口"),
         new("南京长江大桥", "京沪线", "林场", "南京"),
-        new("五峰山长江大桥", "连镇客专", "扬州东", "大港南"),
-        new("沪苏通长江大桥", "沪通线", "南通西", "张家港")
+        new("五峰山长江大桥", "连镇铁路", "扬州东", "大港南"),
+        new("沪苏通长江大桥", "沪苏通线", "南通西", "张家港")
     ];
 
     private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> RouteStations = new(LoadRouteStations);
@@ -616,6 +502,7 @@ public static partial class AchievementEngine
     public static IReadOnlyList<AchievementEvaluation> Evaluate(
         IEnumerable<PublicTrip> sourceTrips,
         IEnumerable<AchievementReview>? sourceReviews = null,
+        AchievementContext? context = null,
         DateTime? now = null)
     {
         var trips = sourceTrips
@@ -624,6 +511,8 @@ public static partial class AchievementEngine
             .ThenBy(trip => trip.TicketId)
             .ToList();
         var reviews = sourceReviews?.ToList() ?? [];
+        var latestTrip = trips.Count > 0 ? trips[^1] : null;
+        PublicTrip? ContextTrigger(bool condition) => condition ? latestTrip : null;
         var today = (now ?? DateTime.Now).Date;
         var fifteenYearsAgo = new DateTime(today.Year - 15, 1, 1)
             .AddMonths(today.Month - 1)
@@ -707,7 +596,7 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, GreatWallExpressModels)),
             A("qinlingPassage", "landscape_outlined", "蜀道不难", "行经任一横穿秦岭的铁路客运区间",
                 First(trips, UnlocksQinlingPassage)),
-            A("heavenlyThoroughfare", "route_outlined", "天堑通途", "行经京广线的汉西到武昌区间",
+            A("heavenlyThoroughfare", "route_outlined", "天堑通途", "行经武汉长江大桥",
                 First(trips, UnlocksHanxiWuchang)),
             A("lonelyPlanet", "map_outlined", "孤独星球", "分别乘坐经由和若线与格库线的列车",
                 FirstRouteCollectionCompletion(trips, ["若和铁路", "格库线"])),
@@ -726,8 +615,11 @@ public static partial class AchievementEngine
             A("archaeologyTeam", "history_edu_outlined", "朝花夕拾", "录入至少 15 年前的行程",
                 First(trips, trip => Departure(trip) <= fifteenYearsAgo)),
             A("strategist", "psychology_outlined", "文韬武略", "乘坐定西北站至镇江南站的列车",
-                First(trips, trip => NormalizedStation(trip.FromStation) == "定西北" &&
-                    NormalizedStation(trip.ToStation) == "镇江南")),
+                First(trips, trip =>
+                    (NormalizedStation(trip.FromStation) == "定西北" &&
+                        NormalizedStation(trip.ToStation) == "镇江南") ||
+                    (NormalizedStation(trip.FromStation) == "镇江南" &&
+                        NormalizedStation(trip.ToStation) == "定西北"))),
             A("eveOfTheStorm", "thunderstorm_outlined", "风雨前夜", "在 2019-12-01 至 2020-01-23 到访武汉站、汉口站或武昌站",
                 FirstStationVisitDuring(trips, ["武汉", "汉口", "武昌"],
                     new DateTime(2019, 12, 1), new DateTime(2020, 1, 24))),
@@ -744,7 +636,7 @@ public static partial class AchievementEngine
             A("youthPriceless", "airline_seat_recline_normal", "欲试天高", "从北京、上海或广州出发，乘坐全程硬座列车到达拉萨站",
                 First(trips, trip => NormalizedStation(trip.ToStation) == "拉萨" &&
                     NormalizedSeatType(trip.SeatType) == "硬座" &&
-                    NormalizedStation(trip.FromStation) is "北京" or "上海" or "广州")),
+                    (NormalizedStation(trip.FromStation) .Contains("北京") || NormalizedStation(trip.FromStation) .Contains("上海") || NormalizedStation(trip.FromStation) .Contains("广州")))),
             A("zeroDisplacement", "loop", "位移为零", "乘坐始发站与终到站相同的环线列车全程",
                 First(trips, trip => NormalizedStation(trip.FromStation) == NormalizedStation(trip.ToStation))),
             A("dreamPath", "auto_awesome_outlined", "逐梦之路", "乘坐一次 25DT 型列车",
@@ -757,8 +649,10 @@ public static partial class AchievementEngine
                 First(trips, UnlocksStoredUpReward)),
             A("spontaneousTrip", "luggage_outlined", "说走就走", "乘坐一次 Y 字头旅游列车",
                 First(trips, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^Y\s*\d", RegexOptions.IgnoreCase))),
-            A("redFootprints", "directions_walk_outlined", "红色足迹", "乘坐韶山南站至延安站的列车",
-                First(trips, trip => NormalizedStation(trip.FromStation) == "韶山南" && NormalizedStation(trip.ToStation) == "延安")),
+            A("redFootprints", "directions_walk_outlined", "红色足迹", "乘坐韶山南站至延安站或瑞金站至延安站的全程列车",
+                First(trips, trip =>
+                    NormalizedStation(trip.ToStation) == "延安" &&
+                    NormalizedStation(trip.FromStation) is "韶山南" or "瑞金")),
             A("greatWallWatch", "account_balance_outlined", "长城守望", "到访八达岭站或八达岭长城站",
                 FirstStationVisit(trips, ["八达岭", "八达岭长城"])),
             A("icyWorld", "ac_unit_outlined", "冰天雪地", "在 12 月、1 月或 2 月到访根河站",
@@ -847,6 +741,14 @@ public static partial class AchievementEngine
                     .Where(key => key.Length > 0)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count() >= 200 ? trips.LastOrDefault() : null),
+            A("reviewReplies5000", "forum_outlined", "交叉称赞", "全部评论累计获得 5,000 次回复",
+                ContextTrigger((context?.TotalReviewReactions ?? 0) >= 5000)),
+            A("reachLevel3", "looks_3_outlined", "初出茅庐", "达到 3 级",
+                ContextTrigger(ReachedLevel(context?.TotalExperience ?? 0, 125))),
+            A("reachLevel5", "looks_5_outlined", "卓尔不群", "达到 5 级",
+                ContextTrigger(ReachedLevel(context?.TotalExperience ?? 0, 450))),
+            A("reachLevel6", "looks_6_outlined", "百里挑一", "达到 6 级",
+                ContextTrigger(ReachedLevel(context?.TotalExperience ?? 0, 800))),
             A("fourThousandKmInDay", "calendar_view_day_outlined", "日行万里", "24 小时内的总移动里程超过 4,000 公里",
                 FirstRolling24HourMileageCompletion(trips, 4000)),
             A("hundredDeparturesFromStation", "pin_drop_outlined", "脚步不止", "从单一车站出发 100 次",
@@ -881,6 +783,10 @@ public static partial class AchievementEngine
                 FirstRouteCatalogCompletion(trips)),
             A("travelAllMountains", "public_outlined", "踏遍山河", "累计乘车里程至少 500,000 公里",
                 FirstCumulativeMileageCompletion(trips, 500000)),
+            A("reviewReplies100000", "forum_outlined", "有口皆碑", "全部评论累计获得 100,000 次回复",
+                ContextTrigger((context?.TotalReviewReactions ?? 0) >= 100000)),
+            A("reach2500Experience", "rocket_launch_outlined", "九重天外", "总经验值达到 2,500 点",
+                ContextTrigger((context?.TotalExperience ?? 0) >= 2500)),
             A("immovableMountain", "accessibility_new", "不动如山", "持硬座或二等座无座车票乘坐至少 24 小时",
                 First(trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
                     ValidDuration(trip) >= TimeSpan.FromHours(24))),
@@ -899,6 +805,8 @@ public static partial class AchievementEngine
                         .ToHashSet(StringComparer.Ordinal))),
             A("thousandDeparturesFromStation", "pin_drop_outlined", "百转千回", "从单一车站出发 1,000 次",
                 FirstStationDepartureCompletion(trips, 1000)),
+            A("luxuryStreak20", "airline_seat_flat_outlined", "君临天下", "连续 20 次乘坐商务座、特等座、高级软卧或高级动卧出行",
+                FirstLuxuryStreakCompletion(trips, 20)),
             A("nonOrdinary", "workspace_premium_outlined", "非同凡人", "完成除本成就外其他所有成就（该成就可能随其他成就增补而失去）",
                 null),
             A("friendshipForever", "handshake_outlined", "友谊长存", "乘坐至少一种早期进口机车牵引的列车",
@@ -906,7 +814,11 @@ public static partial class AchievementEngine
         };
 
         var aggregateIds = new HashSet<string>(
-            ["oneStoneThreeBirds", "unknownTerritory", "careerRecord", "nonOrdinary"],
+            [
+                "oneStoneThreeBirds", "unknownTerritory", "careerRecord", "nonOrdinary",
+                "reviewReplies5000", "reachLevel3", "reachLevel5", "reachLevel6",
+                "reviewReplies100000", "reach2500Experience"
+            ],
             StringComparer.Ordinal);
         var oneStoneIndex = values.FindIndex(item => item.Id == "oneStoneThreeBirds");
         var oneStoneTrigger = values
@@ -966,7 +878,13 @@ public static partial class AchievementEngine
             .Select(item =>
             {
                 var metadata = MetadataFor(item.Id);
-                var progress = ProgressFor(item.Id, trips, reviews, today, fifteenYearsAgo);
+                var progress = ProgressFor(
+                    item.Id,
+                    trips,
+                    reviews,
+                    today,
+                    fifteenYearsAgo,
+                    context);
                 return item with
                 {
                     Progress = progress,
@@ -1033,6 +951,14 @@ public static partial class AchievementEngine
                 0,
                 CollectedCount(trips, trip =>
                     RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)) - 1) * 5,
+            "whatAgeIsThis" => Math.Max(
+                0,
+                CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)) - 1) * 5,
+            "revivalPrototype" => Math.Max(
+                0,
+                CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, PrototypeModels)) - 1) * 5,
             "steamPower" => Math.Max(
                 0,
                 CollectedCount(trips, trip =>
@@ -1040,6 +966,7 @@ public static partial class AchievementEngine
             "verticalChina" => StationPairWindowBonus(trips, "漠河", "三亚"),
             "horizontalChina" => StationPairWindowBonus(trips, "阿克陶", "抚远"),
             "skyAndSea" => StationPairWindowBonus(trips, "雁石坪", "香港西九龙"),
+            "fourExtremes" => FourExtremesWindowBonus(trips),
             "fourFamousNorths" => Math.Max(
                 0,
                 VisitedStationCount(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"]) - 1) * 5,
@@ -1069,14 +996,23 @@ public static partial class AchievementEngine
         return Math.Max(0, (int)Math.Floor((14 - days) / 2)) * 5;
     }
 
+    private static bool ReachedLevel(int totalExperience, int requiredExperience) =>
+        totalExperience >= requiredExperience;
+
+    private static int FourExtremesWindowBonus(List<PublicTrip> trips)
+    {
+        var days = ShortestFourExtremesWindowDays(trips);
+        return Math.Max(0, (int)Math.Floor((60 - days) / 5)) * 5;
+    }
+
     private static AchievementProgress? ProgressFor(
         string id,
         List<PublicTrip> trips,
         List<AchievementReview> reviews,
         DateTime today,
-        DateTime fifteenYearsAgo) => id switch
+        DateTime fifteenYearsAgo,
+        AchievementContext? context) => id switch
     {
-        "firstTrip" => P(trips.Count > 0 ? 1 : 0, 1),
         "sevenDayStreak" => P(LongestStreak(trips), 7),
         "thirtyDayStreak" => P(LongestStreak(trips), 30),
         "rottenAxe" => P(LongestStreak(trips), 365),
@@ -1107,6 +1043,12 @@ public static partial class AchievementEngine
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count(),
             200),
+        "reviewReplies5000" => P(context?.TotalReviewReactions ?? 0, 5000),
+        "reviewReplies100000" => P(context?.TotalReviewReactions ?? 0, 100000),
+        "reachLevel3" => P(context?.TotalExperience ?? 0, 125),
+        "reachLevel5" => P(context?.TotalExperience ?? 0, 450),
+        "reachLevel6" => P(context?.TotalExperience ?? 0, 800),
+        "reach2500Experience" => P(context?.TotalExperience ?? 0, 2500),
         "archaeologyTeam" => P(OldestTripAgeYears(trips, today, fifteenYearsAgo), 15),
         "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
         "tripleTransfer" => P(MaxTransferCount(trips), 2),
@@ -1116,30 +1058,12 @@ public static partial class AchievementEngine
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
-        "fourExtremes" => P(VisitedStationCount(trips, ["漠河", "三亚", "阿克陶", "抚远"]), 4),
-        "fourFamousNorths" => P(VisitedStationCount(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"]), 1),
-        "borderPorts" => P(VisitedStationCount(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]), 1),
-        "verticalChina" => P(ShortestStationPairWindowDays(trips, "漠河", "三亚"), 14),
-        "horizontalChina" => P(ShortestStationPairWindowDays(trips, "阿克陶", "抚远"), 14),
-        "skyAndSea" => P(ShortestStationPairWindowDays(trips, "雁石坪", "香港西九龙"), 14),
         "goddessYangtzeBridges" => P(
             YangtzeBridgeCount(trips),
             AvailableYangtzeBridges.Select(bridge => bridge.Name).Distinct(StringComparer.Ordinal).Count()),
         "differentRoutesSameDestination" => P(MaxDifferentRoutesSameDestination(trips), 3),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
-        "railwayTrailblazer" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, EarlyEmuModels)),
-            1),
-        "meritAndHonor" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, HonorLocomotives)),
-            1),
-        "friendshipForever" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)),
-            1),
-        "steamPower" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, SteamLocomotives)),
-            1),
         "flowersAmong" => P(
             CollectedCount(trips, trip => SmallEmuMatches(trip.RollingStock)),
             EmuModelFamilies.Sum(family => family.Models.Count)),
@@ -1159,6 +1083,7 @@ public static partial class AchievementEngine
         "fourThousandKmInDay" => P(MaxRolling24HourMileage(trips), 4000),
         "hundredDeparturesFromStation" => P(MaxStationDepartureCount(trips), 100),
         "thousandDeparturesFromStation" => P(MaxStationDepartureCount(trips), 1000),
+        "luxuryStreak20" => P(LuxuryStreakCount(trips), 20),
         "multipleLocomotives" => P(MaxLocomotiveCount(trips), 2),
         "roamFreely" => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
         _ => null
@@ -1651,6 +1576,34 @@ public static partial class AchievementEngine
         return shortest == double.MaxValue ? 0 : shortest;
     }
 
+    private static double ShortestFourExtremesWindowDays(List<PublicTrip> trips)
+    {
+        var targets = new HashSet<string>(
+            ["漠河", "三亚", "阿克陶", "抚远"],
+            StringComparer.Ordinal);
+        var shortest = double.MaxValue;
+        for (var end = 0; end < trips.Count; end++)
+        {
+            var endTime = Departure(trips[end]);
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            for (var start = end; start >= 0; start--)
+            {
+                if (endTime - Departure(trips[start]) > TimeSpan.FromDays(60)) break;
+                foreach (var station in new[]
+                         {
+                             NormalizedStation(trips[start].FromStation),
+                             NormalizedStation(trips[start].ToStation)
+                         })
+                    if (targets.Contains(station)) visited.Add(station);
+                if (!targets.IsSubsetOf(visited)) continue;
+                shortest = Math.Min(
+                    shortest,
+                    (endTime - Departure(trips[start])).TotalDays);
+            }
+        }
+        return shortest == double.MaxValue ? 0 : shortest;
+    }
+
     private static PublicTrip? FirstFourExtremesCompletion(
         List<PublicTrip> trips,
         TimeSpan maxWindow)
@@ -1769,6 +1722,35 @@ public static partial class AchievementEngine
                 mileage += Math.Max(0, ordered[end].MileageKm);
                 maximum = Math.Max(maximum, mileage);
             }
+        }
+        return maximum;
+    }
+
+    private static PublicTrip? FirstLuxuryStreakCompletion(
+        List<PublicTrip> trips,
+        int target)
+    {
+        var streak = 0;
+        foreach (var trip in trips)
+        {
+            streak = LuxurySeatTypes.Contains(NormalizedSeatType(trip.SeatType))
+                ? streak + 1
+                : 0;
+            if (streak >= target) return trip;
+        }
+        return null;
+    }
+
+    private static int LuxuryStreakCount(List<PublicTrip> trips)
+    {
+        var streak = 0;
+        var maximum = 0;
+        foreach (var trip in trips)
+        {
+            streak = LuxurySeatTypes.Contains(NormalizedSeatType(trip.SeatType))
+                ? streak + 1
+                : 0;
+            maximum = Math.Max(maximum, streak);
         }
         return maximum;
     }
@@ -2174,12 +2156,9 @@ public static partial class AchievementEngine
     {
         get
         {
-            var routes = RouteStations.Value.Keys;
+            var routes = RouteStations.Value;
             return YangtzeBridges
-                .Where(bridge => routes.Any(route =>
-                    route == bridge.RouteName ||
-                    route.Contains(bridge.RouteName, StringComparison.Ordinal) ||
-                    bridge.RouteName.Contains(route, StringComparison.Ordinal)))
+                .Where(bridge => routes.ContainsKey(bridge.RouteName))
                 .ToList();
         }
     }

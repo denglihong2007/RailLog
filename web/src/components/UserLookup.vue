@@ -42,6 +42,8 @@ interface Achievement {
   title: string
   description: string
   status: string
+  note: string | null
+  narrativeNote: string | null
 }
 
 interface PublicUserDashboard {

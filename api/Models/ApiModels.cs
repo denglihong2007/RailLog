@@ -201,7 +201,7 @@ public sealed record AchievementResponse(
     int Experience,
     bool Hidden,
     string? Note,
-    bool NarrativeNote);
+    string? NarrativeNote);
 
 public sealed record AchievementsResponse(
     int TotalUserCount,

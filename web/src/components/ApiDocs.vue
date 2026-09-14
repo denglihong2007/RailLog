@@ -73,6 +73,8 @@ const achievementFields: FieldDefinition[] = [
   { path: 'achievements[].progressCurrent', type: 'number | null', description: '可量化成就的当前进度；不支持进度或已无进度信息时为 null。单位由成就条件决定。' },
   { path: 'achievements[].progressTarget', type: 'number | null', description: '可量化成就的目标值；不支持进度时为 null，与 progressCurrent 使用相同单位。' },
   { path: 'achievements[].experience', type: 'integer', description: '该成就提供的基础经验值；隐藏成就未解锁时返回 0。' },
+  { path: 'achievements[].note', type: 'string | null', description: '技术性注释，例如车型清单或判定区间；没有技术注释时为 null。' },
+  { path: 'achievements[].narrativeNote', type: 'string | null', description: '叙事性注释；隐藏成就未解锁时返回 null。' },
 ]
 
 const props = defineProps<{ apiBase: string }>()

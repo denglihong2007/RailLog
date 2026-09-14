@@ -2162,9 +2162,20 @@ public sealed class RailLogDatabase
     {
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
         var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
-        var unlocked = AchievementEngine.Evaluate(trips, reviews)
-            .Where(item => item.TriggerTripId.HasValue)
-            .ToList();
+        var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
+            connection,
+            userId,
+            transaction);
+        var unlocked = new List<AchievementEvaluation>();
+        var totalExperience = 0;
+        for (var pass = 0; pass < 8; pass++)
+        {
+            var context = new AchievementContext(totalExperience, totalReviewReactions);
+            unlocked = AchievementEngine.Evaluate(trips, reviews, context)
+                .Where(item => item.TriggerTripId.HasValue)
+                .ToList();
+            totalExperience = unlocked.Sum(item => item.Experience);
+        }
 
         await using (var delete = connection.CreateCommand())
         {
@@ -2245,9 +2256,16 @@ public sealed class RailLogDatabase
             totalUsers = Convert.ToInt32(await command.ExecuteScalarAsync());
         }
 
+        var trips = await GetAchievementTripsAsync(connection, userId);
+        var reviews = await GetAchievementReviewsAsync(connection, userId);
+        var totalExperience = await GetAchievementExperienceAsync(connection, userId);
+        var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
+            connection,
+            userId);
         var definitions = AchievementEngine.Evaluate(
-            await GetAchievementTripsAsync(connection, userId),
-            await GetAchievementReviewsAsync(connection, userId));
+            trips,
+            reviews,
+            new AchievementContext(totalExperience, totalReviewReactions));
         var items = definitions
             .Select((definition, index) => new
             {
@@ -2275,10 +2293,43 @@ public sealed class RailLogDatabase
                     hiddenLocked ? 0 : item.Definition.Experience,
                     item.Definition.Hidden,
                     hiddenLocked ? null : item.Definition.Note,
-                    hiddenLocked ? false : item.Definition.NarrativeNote);
+                    hiddenLocked ? null : item.Definition.NarrativeNote);
             })
             .ToList();
         return new AchievementsResponse(totalUsers, items);
+    }
+
+    private static async Task<int> GetAchievementExperienceAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction? transaction = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COALESCE(SUM(Experience), 0)
+            FROM UserAchievements
+            WHERE UserId = $userId;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<int> GetAchievementReviewReactionCountAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction? transaction = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM EntityReviewReactions reaction
+            JOIN EntityReviews review ON review.Id = reaction.ReviewId
+            WHERE review.UserId = $userId;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
     private static async Task<IReadOnlyList<AchievementReview>> GetAchievementReviewsAsync(

@@ -60,7 +60,7 @@ class DashboardAchievement {
       experience: (json['experience'] as num?)?.toInt() ?? 0,
       hidden: json['hidden'] as bool? ?? false,
       note: json['note'] as String?,
-      narrativeNote: json['narrativeNote'] as bool? ?? false,
+      narrativeNote: json['narrativeNote'] as String?,
     );
   }
 
@@ -75,7 +75,7 @@ class DashboardAchievement {
   final int totalUserCount;
   final int experience;
   final bool hidden;
-  final bool narrativeNote;
+  final String? narrativeNote;
   final double? progressCurrent;
   final double? progressTarget;
   final String? note;
