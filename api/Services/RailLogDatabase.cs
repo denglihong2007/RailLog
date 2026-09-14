@@ -1731,7 +1731,12 @@ public sealed class RailLogDatabase
                 .Where(item => item.Status == "unlocked")
                 .Sum(item => item.Experience),
         };
-        return new PublicUserDashboardResponse(user, trips, achievements);
+        var publicAchievements = new AchievementsResponse(
+            achievements.TotalUserCount,
+            achievements.Achievements
+                .Where(item => !item.Hidden || item.Status != "unlocked")
+                .ToList());
+        return new PublicUserDashboardResponse(user, trips, publicAchievements);
     }
 
     public async Task<IReadOnlyList<IntersectionGroup>> GetEntityIntersectionsAsync(string userId, string type, string key)
