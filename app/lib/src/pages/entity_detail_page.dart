@@ -737,7 +737,7 @@ class _ReviewsSection extends StatefulWidget {
 class _ReviewsSectionState extends State<_ReviewsSection> {
   late Future<List<EntityReview>> _future;
   List<TripRecord> get _reviewTrips =>
-      widget.trips.toList()
+      widget.trips.where(_canUseAsReviewTrip).toList()
         ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
   @override
   void initState() {
@@ -749,6 +749,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
   Widget build(BuildContext context) => FutureBuilder<List<EntityReview>>(
     future: _future,
     builder: (context, snapshot) {
+      final reviewTrips = _reviewTrips;
       final groups = snapshot.hasData
           ? _groupReviews(snapshot.data!).entries.toList()
           : <MapEntry<String, List<EntityReview>>>[];
@@ -766,10 +767,10 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
                       orElse: () => MapEntry(key, const <EntityReview>[]),
                     )
                     .value,
-                trips: widget.trips,
+                trips: reviewTrips,
                 enabled: key == 'transfer'
-                    ? _hasTransferPair(widget.name, widget.trips)
-                    : widget.trips.isNotEmpty,
+                    ? _hasTransferPair(widget.name, reviewTrips)
+                    : reviewTrips.isNotEmpty,
                 onReview: () => _addReview(key),
                 onChanged: _refreshReviews,
               ),
@@ -882,7 +883,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
   @override
   void initState() {
     super.initState();
-    _trips = widget.trips.toList()
+    _trips = widget.trips.where(_canUseAsReviewTrip).toList()
       ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
     final initial = widget.initial;
     _rating = (initial?.rating ?? 5).clamp(1, 5);
@@ -895,11 +896,14 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     );
     final primaryOptions = _primaryTripOptions;
     final tripId = initial?.tripId;
-    _tripId = primaryOptions.any((trip) => trip.id == tripId)
-        ? tripId
-        : (primaryOptions.isEmpty ? null : primaryOptions.first.id);
+    _tripId = initial == null
+        ? (primaryOptions.isEmpty ? null : primaryOptions.first.ticketId)
+        : (primaryOptions.any((trip) => trip.ticketId == tripId)
+              ? tripId
+              : null);
     final secondTripId = initial?.secondTripId;
-    _secondTripId = _secondTripOptions.any((trip) => trip.id == secondTripId)
+    _secondTripId =
+        _secondTripOptions.any((trip) => trip.ticketId == secondTripId)
         ? secondTripId
         : null;
   }
@@ -919,7 +923,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
   TripRecord? get _primaryTrip {
     if (_tripId == null) return null;
     for (final trip in _trips) {
-      if (trip.id == _tripId) return trip;
+      if (trip.ticketId == _tripId) return trip;
     }
     return null;
   }
@@ -945,7 +949,9 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
       final primary = _primaryTrip;
       final second = _secondTripId;
       if (primary == null || second == null) return;
-      if (_followingTripsFor(primary).every((trip) => trip.id != second)) {
+      if (_followingTripsFor(
+        primary,
+      ).every((trip) => trip.ticketId != second)) {
         _secondTripId = null;
       }
     });
@@ -958,7 +964,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     final arrivalTime = primary.arrivalTime;
     if (arrivalTime == null) return null;
     for (final trip in _trips) {
-      if (trip.id == secondTripId) {
+      if (trip.ticketId == secondTripId) {
         return trip.departureTime.difference(arrivalTime).inMinutes;
       }
     }
@@ -1132,7 +1138,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                   dropdownMenuEntries: _primaryTripOptions
                       .map(
                         (trip) => DropdownMenuEntry<int>(
-                          value: trip.id,
+                          value: trip.ticketId!,
                           label: _tripOptionLabel(trip),
                           labelWidget: Text(
                             _tripOptionLabel(trip),
@@ -1164,7 +1170,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                     dropdownMenuEntries: _secondTripOptions
                         .map(
                           (trip) => DropdownMenuEntry<int>(
-                            value: trip.id,
+                            value: trip.ticketId!,
                             label: _tripOptionLabel(trip),
                             labelWidget: Text(
                               _tripOptionLabel(trip),
@@ -1290,6 +1296,17 @@ IconData _reviewTypeIcon(String type) => switch (type) {
 
 String _tripOptionLabel(TripRecord trip) =>
     '${_formatTripDate(trip.departureTime)} · ${trip.trainNumber} · ${trip.fromStation} → ${trip.toStation}';
+
+TripRecord? _localTripForTicket(Iterable<TripRecord> trips, int? ticketId) {
+  if (ticketId == null) return null;
+  for (final trip in trips) {
+    if (trip.ticketId == ticketId) return trip;
+  }
+  return null;
+}
+
+bool _canUseAsReviewTrip(TripRecord trip) =>
+    trip.ticketId != null && !trip.isLocalOnly;
 
 String _ratingLabel(int rating) => switch (rating) {
   1 => '很差',
@@ -1490,10 +1507,9 @@ class _ReviewTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryMatches = trips.where((t) => t.id == review.tripId);
-    final secondaryMatches = trips.where((t) => t.id == review.secondTripId);
-    final primary = primaryMatches.isEmpty ? null : primaryMatches.first;
-    final secondary = secondaryMatches.isEmpty ? null : secondaryMatches.first;
+    final primary = review.trip ?? _localTripForTicket(trips, review.tripId);
+    final secondary =
+        review.secondTrip ?? _localTripForTicket(trips, review.secondTripId);
     final extra = _reviewExtra(review);
     final seat = review.reviewType == 'rollingStock'
         ? [primary?.seatType, secondary?.seatType]

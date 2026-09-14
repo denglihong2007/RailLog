@@ -529,13 +529,87 @@ public sealed class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,r.SecondTripId,r.TransferMinutes,r.Dish,r.Price,r.CreatedAt FROM EntityReviews r JOIN AspNetUsers u ON u.Id=r.UserId WHERE r.EntityType=$type AND r.EntityKey=$key ORDER BY r.CreatedAt DESC";
+        command.CommandText = """
+            SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,
+                   u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,
+                   r.SecondTripId,r.TransferMinutes,r.Dish,r.Price,r.CreatedAt,
+                   trip.Id,trip.CreatedAt,trip.TrainNumber,trip.RollingStock,
+                   trip.CompanyName,trip.FromStation,trip.ToStation,
+                   trip.DepartureTime,trip.ArrivalTime,trip.MileageKm,
+                   trip.ViaRoutes,trip.SeatType,trip.SeatNumber,trip.Price,
+                   trip.Notes,trip.IsRailTrip,
+                   secondTrip.Id,secondTrip.CreatedAt,secondTrip.TrainNumber,
+                   secondTrip.RollingStock,secondTrip.CompanyName,
+                   secondTrip.FromStation,secondTrip.ToStation,
+                   secondTrip.DepartureTime,secondTrip.ArrivalTime,
+                   secondTrip.MileageKm,secondTrip.ViaRoutes,
+                   secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
+                   secondTrip.Notes,secondTrip.IsRailTrip
+            FROM EntityReviews r
+            JOIN AspNetUsers u ON u.Id=r.UserId
+            LEFT JOIN TripRecords trip ON trip.Id=r.TripId
+                AND trip.UserId=r.UserId AND trip.DeletedAt IS NULL
+            LEFT JOIN TripRecords secondTrip ON secondTrip.Id=r.SecondTripId
+                AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
+            WHERE r.EntityType=$type AND r.EntityKey=$key
+            ORDER BY r.CreatedAt DESC;
+            """;
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$key", key);
         var result = new List<EntityReviewResponse>();
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) result.Add(new EntityReviewResponse(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.IsDBNull(6)?null:reader.GetString(6), reader.GetInt32(7), reader.GetString(8), reader.IsDBNull(9)?null:reader.GetInt64(9), reader.IsDBNull(10)?null:reader.GetInt64(10), reader.IsDBNull(11)?null:reader.GetInt32(11), reader.IsDBNull(12)?null:reader.GetString(12), reader.IsDBNull(13)?null:Convert.ToDecimal(reader.GetValue(13)), DateTime.Parse(reader.GetString(14))));
+        while (await reader.ReadAsync())
+            result.Add(new EntityReviewResponse(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                NullableString(reader, 6),
+                reader.GetInt32(7),
+                reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetInt64(9),
+                reader.IsDBNull(10) ? null : reader.GetInt64(10),
+                reader.IsDBNull(11) ? null : reader.GetInt32(11),
+                NullableString(reader, 12),
+                reader.IsDBNull(13) ? null : Convert.ToDecimal(reader.GetValue(13)),
+                DateTime.Parse(reader.GetString(14)),
+                ReadPublicTrip(reader, 15),
+                ReadPublicTrip(reader, 31)));
         return result;
+    }
+
+    public async Task<bool> AreReviewTripsValidAsync(
+        string userId,
+        long? tripId,
+        long? secondTripId)
+    {
+        if (tripId is null) return secondTripId is null;
+        if (tripId == secondTripId) return false;
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        if (!await OwnedTripExistsAsync(connection, userId, tripId.Value))
+            return false;
+        return secondTripId is null ||
+            await OwnedTripExistsAsync(connection, userId, secondTripId.Value);
+    }
+
+    private static async Task<bool> OwnedTripExistsAsync(
+        SqliteConnection connection,
+        string userId,
+        long tripId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM TripRecords
+            WHERE Id=$tripId AND UserId=$userId AND DeletedAt IS NULL;
+            """;
+        command.Parameters.AddWithValue("$tripId", tripId);
+        command.Parameters.AddWithValue("$userId", userId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
     }
 
     public async Task<long> GetEntityCountAsync(string type, string key)
@@ -1185,6 +1259,28 @@ public sealed class RailLogDatabase
     private static DateTime? NullableDate(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : FromDb(reader.GetString(ordinal));
 
+    private static PublicTrip? ReadPublicTrip(SqliteDataReader reader, int offset)
+    {
+        if (reader.IsDBNull(offset)) return null;
+        return new PublicTrip(
+            reader.GetInt64(offset),
+            FromDb(reader.GetString(offset + 1)),
+            reader.GetString(offset + 2),
+            NullableString(reader, offset + 3),
+            NullableString(reader, offset + 4),
+            reader.GetString(offset + 5),
+            reader.GetString(offset + 6),
+            NullableDate(reader, offset + 7),
+            NullableDate(reader, offset + 8),
+            reader.GetDouble(offset + 9),
+            reader.GetString(offset + 10),
+            NullableString(reader, offset + 11),
+            NullableString(reader, offset + 12),
+            reader.GetDouble(offset + 13),
+            NullableString(reader, offset + 14),
+            reader.GetInt32(offset + 15) == 1);
+    }
+
     private static DateTime ChinaTravelDay(StatisticsTrip trip) =>
         (trip.Trip.DepartureTime ?? trip.TravelDate).AddHours(8).Date;
 
@@ -1524,6 +1620,7 @@ public sealed class RailLogDatabase
         PublicUser User,
         DateTime TravelDate,
         IReadOnlyList<string> RouteNames);
+
     private static UserProfile ReadProfile(SqliteDataReader reader) => new(
         reader.GetString(0),
         reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
