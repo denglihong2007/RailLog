@@ -617,7 +617,7 @@ public sealed class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT TrainNumber,RollingStock,CompanyName,FromStation,ToStation,ViaRoutes FROM TripRecords WHERE DeletedAt IS NULL";
+        command.CommandText = "SELECT TrainNumber,RollingStock,CompanyName,FromStation,ToStation,ViaRoutes FROM TripRecords WHERE DeletedAt IS NULL AND IsRailTrip = 1";
         await using var reader = await command.ExecuteReaderAsync();
         var normalized = NormalizeEntity(key);
         long count = 0;
@@ -654,7 +654,7 @@ public sealed class RailLogDatabase
             SELECT TrainNumber, RollingStock, CompanyName, FromStation, ToStation,
                    ViaRoutes
             FROM TripRecords
-            WHERE DeletedAt IS NULL;
+            WHERE DeletedAt IS NULL AND IsRailTrip = 1;
             """;
 
         var counts = new Dictionary<string, (string Name, long Count)>();
@@ -709,7 +709,7 @@ public sealed class RailLogDatabase
             LEFT JOIN TripRecords trip
               ON trip.UserId = user.Id AND trip.DeletedAt IS NULL
             WHERE user.DisplayName COLLATE NOCASE LIKE $pattern ESCAPE '\'
-               OR user.Id LIKE $pattern
+               OR user.Id = $exactQuery
             GROUP BY user.Id, user.DisplayName, user.AvatarUrl, user.Bio
             ORDER BY CASE
                          WHEN user.Id = $exactQuery THEN 0

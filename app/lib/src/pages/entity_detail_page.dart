@@ -99,6 +99,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
   List<TripRecord> _matching(List<TripRecord> trips) {
     final key = _normalize(widget.name);
     final matching = trips.where((trip) {
+      if (!trip.isRailTrip) return false;
       switch (widget.type) {
         case EntityType.station:
           return _normalize(trip.fromStation) == key ||

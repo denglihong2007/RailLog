@@ -131,6 +131,15 @@ class _SearchPageState extends State<SearchPage> {
         case _SearchScope.user:
           final users = await SearchService.searchUsers(query);
           if (!mounted || requestId != _requestId) return;
+          for (final user in users) {
+            if (user.id != query) continue;
+            setState(() {
+              _loading = false;
+              _users = const [];
+            });
+            _openUser(user.id);
+            return;
+          }
           setState(() {
             _loading = false;
             _users = users;
@@ -556,14 +565,9 @@ class _UserResultTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('ID · ${user.id}', maxLines: 1, overflow: TextOverflow.ellipsis),
-          if (bio.isNotEmpty)
-            Text(bio, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ],
-      ),
+      subtitle: bio.isEmpty
+          ? null
+          : Text(bio, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Text('${user.tripCount} 趟'),
     );
   }
@@ -642,7 +646,7 @@ extension on _SearchScope {
     _SearchScope.company => '输入承运单位名称',
     _SearchScope.rollingStock => '输入车型代码',
     _SearchScope.train => '输入车次',
-    _SearchScope.user => '输入用户名或用户 ID',
+    _SearchScope.user => '输入用户名，或完整用户 ID 直接跳转',
     _SearchScope.trip => '输入完整行程 ID',
   };
 
@@ -652,7 +656,7 @@ extension on _SearchScope {
     _SearchScope.company => '输入承运单位名称后点击搜索',
     _SearchScope.rollingStock => '输入车型代码后点击搜索',
     _SearchScope.train => '输入车次后点击搜索',
-    _SearchScope.user => '输入用户名或用户 ID 后点击搜索',
+    _SearchScope.user => '输入用户名搜索，或输入完整用户 ID 直接跳转',
     _SearchScope.trip => '输入完整行程 ID 后点击搜索',
   };
 
