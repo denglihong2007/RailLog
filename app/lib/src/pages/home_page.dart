@@ -18,6 +18,8 @@ import 'package:raillog/src/pages/trip_chart_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/achievement_service.dart';
+import 'package:raillog/src/services/entity_review_navigation.dart';
+import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/partner_application_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
@@ -26,11 +28,14 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
+import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/user_level_badge.dart';
 
 const _dashboardMaxWidth = 1200.0;
 const _cardRadius = 8.0;
-const _dashboardPreviewLimit = 12;
+const _dashboardPreviewLimit = 6;
+const _cloudSignInMessage = '登录并同步行程后即可查看。';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.refreshToken = 0});
@@ -45,6 +50,7 @@ class _HomePageState extends State<HomePage> {
   late Future<TripDashboardStats> _statsFuture;
   late Future<PartnerAdvertisement?> _advertisementFuture;
   Future<List<DashboardAchievement>>? _achievementsFuture;
+  Future<List<EntityReview>>? _travelGuideFuture;
   TripDashboardStats? _lastStats;
 
   @override
@@ -54,6 +60,7 @@ class _HomePageState extends State<HomePage> {
     _advertisementFuture = _loadAdvertisement();
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
+      _travelGuideFuture = EntityReviewService.fetchHomeTravelGuide();
     }
   }
 
@@ -81,10 +88,14 @@ class _HomePageState extends State<HomePage> {
     final achievementsFuture = SessionService.instance.isSignedIn
         ? AchievementService.fetchCurrent()
         : null;
+    final travelGuideFuture = SessionService.instance.isSignedIn
+        ? EntityReviewService.fetchHomeTravelGuide()
+        : null;
     setState(() {
       _statsFuture = statsFuture;
       _advertisementFuture = advertisementFuture;
       _achievementsFuture = achievementsFuture;
+      _travelGuideFuture = travelGuideFuture;
     });
     await statsFuture;
     await advertisementFuture;
@@ -93,6 +104,13 @@ class _HomePageState extends State<HomePage> {
         await achievementsFuture;
       } catch (_) {
         // The achievement section renders its own offline state.
+      }
+    }
+    if (travelGuideFuture != null) {
+      try {
+        await travelGuideFuture;
+      } catch (_) {
+        // The travel guide section renders its own retry state.
       }
     }
   }
@@ -146,6 +164,12 @@ class _HomePageState extends State<HomePage> {
                     signedIn: SessionService.instance.isSignedIn,
                     onRetry: _refresh,
                     onChanged: _refresh,
+                  ),
+                  const SizedBox(height: 24),
+                  _HomeTravelGuideLoader(
+                    future: _travelGuideFuture,
+                    signedIn: SessionService.instance.isSignedIn,
+                    onRetry: _refresh,
                   ),
                   if (stats.tripCount == 0) ...[
                     const SizedBox(height: 24),
@@ -479,11 +503,23 @@ class _PublicProfileCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    user.displayName,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      UserLevelBadge(
+                        experience: user.achievementExperience,
+                        width: 30,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -556,7 +592,7 @@ class _AchievementsLoader extends StatelessWidget {
     if (!signedIn || achievementsFuture == null) {
       return const _AchievementServerStatus(
         icon: Icons.cloud_off_outlined,
-        message: '成就由服务器计算，登录并同步行程后即可查看。',
+        message: _cloudSignInMessage,
       );
     }
     return FutureBuilder<List<DashboardAchievement>>(
@@ -706,6 +742,149 @@ class _AchievementsSection extends StatelessWidget {
         builder: (_) => AchievementUnlockTripsPage(
           achievementId: achievement.id,
           title: achievement.title,
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTravelGuideLoader extends StatelessWidget {
+  const _HomeTravelGuideLoader({
+    required this.future,
+    required this.signedIn,
+    required this.onRetry,
+  });
+
+  final Future<List<EntityReview>>? future;
+  final bool signedIn;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final travelGuideFuture = future;
+    if (!signedIn || travelGuideFuture == null) {
+      return const _HomeTravelGuideStatus(
+        icon: Icons.cloud_off_outlined,
+        message: _cloudSignInMessage,
+      );
+    }
+    return FutureBuilder<List<EntityReview>>(
+      future: travelGuideFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return _HomeTravelGuideSection(
+            reviews: snapshot.data!,
+            onChanged: onRetry,
+          );
+        }
+        if (snapshot.hasError) {
+          return _HomeTravelGuideStatus(
+            message: '当前无法获取出行指南',
+            onRetry: onRetry,
+          );
+        }
+        return const Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SectionHeading(title: '出行指南'),
+            SizedBox(height: 12),
+            LinearProgressIndicator(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HomeTravelGuideStatus extends StatelessWidget {
+  const _HomeTravelGuideStatus({
+    required this.message,
+    this.icon = Icons.explore_outlined,
+    this.onRetry,
+  });
+
+  final String message;
+  final IconData icon;
+  final Future<void> Function()? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeading(title: '出行指南'),
+        const SizedBox(height: 12),
+        Card.outlined(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: Icon(icon),
+            title: Text(message),
+            trailing: onRetry == null
+                ? null
+                : IconButton(
+                    tooltip: '重试',
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeTravelGuideSection extends StatelessWidget {
+  const _HomeTravelGuideSection({
+    required this.reviews,
+    required this.onChanged,
+  });
+
+  final List<EntityReview> reviews;
+  final Future<void> Function() onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (reviews.isEmpty) {
+      return const _HomeTravelGuideStatus(message: '暂无出行指南');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeading(title: '出行指南'),
+        const SizedBox(height: 12),
+        Column(
+          children: [
+            for (var index = 0; index < reviews.length; index++)
+              EntityReviewCard(
+                review: reviews[index],
+                showTarget: true,
+                showTripLinks: true,
+                showDivider: index < reviews.length - 1,
+                contentPadding: EdgeInsets.fromLTRB(
+                  0,
+                  index == 0 ? 0 : 12,
+                  0,
+                  index < reviews.length - 1 ? 14 : 4,
+                ),
+                onChanged: onChanged,
+                onTargetTap: () =>
+                    openEntityReviewTarget(context, reviews[index]),
+                onTripTap: (trip) => _openTrip(context, reviews[index], trip),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _openTrip(BuildContext context, EntityReview review, TripRecord trip) {
+    Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => TripRecordDetailsPage.public(
+          ticketId: trip.ticketId ?? trip.id,
+          onOwnerTap: () => Navigator.of(context).push(
+            m3PageRoute(builder: (_) => PublicUserPage(userId: review.userId)),
+          ),
         ),
       ),
     );

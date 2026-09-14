@@ -16,6 +16,8 @@ class DashboardAchievementCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final unlocked = achievement.isUnlocked;
     final entry = achievement.unlockedBy;
+    final hasNarrative =
+        unlocked && (achievement.narrativeNote?.trim().isNotEmpty ?? false);
     final content = Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -62,8 +64,7 @@ class DashboardAchievementCard extends StatelessWidget {
                   ),
                 ),
               ],
-              if ((achievement.note?.trim().isNotEmpty ?? false) &&
-                  !achievement.narrativeNote) ...[
+              if (achievement.note?.trim().isNotEmpty ?? false) ...[
                 const SizedBox(width: 6),
                 Semantics(
                   label: '注释：${achievement.note!.trim()}',
@@ -89,18 +90,17 @@ class DashboardAchievementCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             achievement.requirement,
-            maxLines: achievement.narrativeNote ? 1 : 2,
+            maxLines: hasNarrative ? 1 : 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          if ((achievement.note?.trim().isNotEmpty ?? false) &&
-              achievement.narrativeNote) ...[
+          if (hasNarrative) ...[
             const SizedBox(height: 4),
             Tooltip(
-              message: achievement.note!.trim(),
+              message: achievement.narrativeNote!.trim(),
               triggerMode: TooltipTriggerMode.tap,
               child: Text(
-                achievement.note!.trim(),
+                achievement.narrativeNote!.trim(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(

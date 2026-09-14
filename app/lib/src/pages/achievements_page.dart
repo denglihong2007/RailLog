@@ -4,6 +4,7 @@ import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/user_level_badge.dart';
 
 class AchievementsPage extends StatelessWidget {
   const AchievementsPage({super.key, required this.achievements});
@@ -196,6 +197,7 @@ class _AchievementProgressSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final levelProgress = userLevelProgressForExperience(totalExperience);
     return Card.filled(
       margin: EdgeInsets.zero,
       color: colors.surfaceContainerLow,
@@ -252,6 +254,33 @@ class _AchievementProgressSummary extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                UserLevelBadge(experience: totalExperience),
+                const Spacer(),
+                Text(
+                  levelProgress.isMaxLevel
+                      ? '已达最高等级'
+                      : '升级还需 ${levelProgress.remainingExperience} XP',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              value: levelProgress.value,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(6),
+              color: colors.secondary,
+              backgroundColor: colors.secondary.withValues(alpha: 0.14),
+              semanticsLabel: levelProgress.isMaxLevel
+                  ? '用户等级进度，已满级'
+                  : '用户等级进度，LV${levelProgress.level} 到 '
+                        'LV${levelProgress.level + 1}',
             ),
           ],
         ),

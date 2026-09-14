@@ -37,6 +37,7 @@ const publicUserFields: FieldDefinition[] = [
   { path: 'avatarUrl', type: 'string | null', description: '头像的绝对或可访问 URL；未设置头像时为 null。' },
   { path: 'bio', type: 'string | null', description: '用户公开个人简介；未填写时为 null。' },
   { path: 'email', type: 'string | null', description: '电子邮箱地址。仅当用户主动开启公开邮箱时返回，否则为 null。' },
+  { path: 'achievementExperience', type: 'integer', description: '用户已解锁成就的累计经验值，用于计算公开等级。' },
 ]
 
 const publicTripFields: FieldDefinition[] = [
@@ -60,7 +61,7 @@ const publicTripFields: FieldDefinition[] = [
 
 const achievementFields: FieldDefinition[] = [
   { path: 'totalUserCount', type: 'integer', description: '计算成就解锁人数时采用的全站用户总数。' },
-  { path: 'achievements', type: 'array<object>', description: '完整成就定义及该用户状态数组，包括未解锁成就。' },
+  { path: 'achievements', type: 'array<object>', description: '公开成就定义及该用户状态数组。隐藏成就仅在未解锁时返回，且信息以“？？？”隐藏。' },
   { path: 'achievements[].id', type: 'string', description: '成就稳定标识，例如 "midnightBoarding"。' },
   { path: 'achievements[].category', type: 'string', description: '成就分类：milestones、extremeChallenges、railwayCatalog、touring 或 funJourneys。' },
   { path: 'achievements[].icon', type: 'string', description: 'Material Icons 图标 key，例如 "nightlight_outlined"。' },
@@ -71,6 +72,9 @@ const achievementFields: FieldDefinition[] = [
   { path: 'achievements[].unlockedUserCount', type: 'integer', description: '全站已解锁该成就的用户数量。' },
   { path: 'achievements[].progressCurrent', type: 'number | null', description: '可量化成就的当前进度；不支持进度或已无进度信息时为 null。单位由成就条件决定。' },
   { path: 'achievements[].progressTarget', type: 'number | null', description: '可量化成就的目标值；不支持进度时为 null，与 progressCurrent 使用相同单位。' },
+  { path: 'achievements[].experience', type: 'integer', description: '该成就提供的基础经验值；隐藏成就未解锁时返回 0。' },
+  { path: 'achievements[].note', type: 'string | null', description: '技术性注释，例如车型清单或判定区间；没有技术注释时为 null。' },
+  { path: 'achievements[].narrativeNote', type: 'string | null', description: '叙事性注释；隐藏成就未解锁时返回 null。' },
 ]
 
 const props = defineProps<{ apiBase: string }>()
@@ -198,11 +202,11 @@ function curl(path: string): string {
         <p class="section-label">Users</p><h2>公开用户信息</h2>
         <div class="endpoint">
           <div class="endpoint-title"><span class="method">GET</span><code>/api/users/{userId}</code></div>
-          <p>返回用户公开资料、全部未删除行程及成就信息；用户不存在时返回 <code>404</code>。</p>
+          <p>返回用户公开资料、全部未删除行程及公开成就信息；隐藏且已解锁的成就不返回，用户不存在时返回 <code>404</code>。</p>
           <dl class="parameter-list"><div><dt><code>userId</code><b>string · 必填</b></dt><dd>用户的完整公开 ID，路径中需进行 URL 编码。</dd></div></dl>
           <div class="code-heading"><span>请求示例</span><button type="button" title="复制请求" @click="copy(curl('/api/users/USER_ID'), 'user')"><Check v-if="copied === 'user'" :size="16" /><Clipboard v-else :size="16" /></button></div>
           <pre><code>{{ curl('/api/users/USER_ID') }}</code></pre>
-          <details open><summary>响应字段</summary><h3>根对象</h3><dl class="schema-list"><div><dt><code>user</code><b>object</b></dt><dd>被查询用户的公开资料。</dd></div><div><dt><code>trips</code><b>array&lt;object&gt;</b></dt><dd>该用户全部未删除的公开行程，按出发时间降序、行程 ID 降序排列；没有记录时为空数组。</dd></div><div><dt><code>achievements</code><b>object</b></dt><dd>该用户完整的成就状态和全站解锁统计。</dd></div></dl><h3>user 对象</h3><dl class="schema-list"><div v-for="field in publicUserFields" :key="field.path"><dt><code>user.{{ field.path }}</code><b>{{ field.type }}</b></dt><dd>{{ field.description }}</dd></div></dl><h3>trips[] 元素</h3><dl class="schema-list"><div v-for="field in publicTripFields" :key="field.path"><dt><code>trips[].{{ field.path }}</code><b>{{ field.type }}</b></dt><dd>{{ field.description }}</dd></div></dl><h3>achievements 对象</h3><dl class="schema-list"><div v-for="field in achievementFields" :key="field.path"><dt><code>achievements.{{ field.path }}</code><b>{{ field.type }}</b></dt><dd>{{ field.description }}</dd></div></dl></details>
+          <details open><summary>响应字段</summary><h3>根对象</h3><dl class="schema-list"><div><dt><code>user</code><b>object</b></dt><dd>被查询用户的公开资料。</dd></div><div><dt><code>trips</code><b>array&lt;object&gt;</b></dt><dd>该用户全部未删除的公开行程，按出发时间降序、行程 ID 降序排列；没有记录时为空数组。</dd></div><div><dt><code>achievements</code><b>object</b></dt><dd>该用户的公开成就状态和全站解锁统计，不包含隐藏且已解锁的成就。</dd></div></dl><h3>user 对象</h3><dl class="schema-list"><div v-for="field in publicUserFields" :key="field.path"><dt><code>user.{{ field.path }}</code><b>{{ field.type }}</b></dt><dd>{{ field.description }}</dd></div></dl><h3>trips[] 元素</h3><dl class="schema-list"><div v-for="field in publicTripFields" :key="field.path"><dt><code>trips[].{{ field.path }}</code><b>{{ field.type }}</b></dt><dd>{{ field.description }}</dd></div></dl><h3>achievements 对象</h3><dl class="schema-list"><div v-for="field in achievementFields" :key="field.path"><dt><code>achievements.{{ field.path }}</code><b>{{ field.type }}</b></dt><dd>{{ field.description }}</dd></div></dl></details>
         </div>
       </section>
 

@@ -1,6 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/trip_record.dart';
-import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/ct_photo_search_page.dart';
@@ -8,12 +10,14 @@ import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
-import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/intersection_service.dart';
+import 'package:raillog/src/services/route_service.dart';
+import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/models/online_intersection.dart';
 import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
@@ -44,22 +48,59 @@ class EntityDetailPage extends StatefulWidget {
 }
 
 class _EntityDetailPageState extends State<EntityDetailPage> {
-  late Future<List<TripRecord>> _future;
-  late Future<int> _globalFuture;
+  Future<List<TripRecord>>? _future;
+  Future<int>? _globalFuture;
+  Future<List<OnlineIntersection>>? _intersectionFuture;
+  late bool _wasSignedIn;
 
   @override
   void initState() {
     super.initState();
+    _wasSignedIn = SessionService.instance.isSignedIn;
+    if (_wasSignedIn) _loadData();
+    SessionService.instance.addListener(_handleSessionChanged);
+  }
+
+  @override
+  void dispose() {
+    SessionService.instance.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
+
+  void _loadData() {
     _future = DbHelper.instance.getAllTrips();
+    _intersectionFuture = null;
     _globalFuture = EntityReviewService.fetchCount(
       _typeKey(widget.type),
       widget.name,
     );
   }
 
+  void _handleSessionChanged() {
+    if (!mounted) return;
+    final isSignedIn = SessionService.instance.isSignedIn;
+    if (isSignedIn == _wasSignedIn) return;
+    _wasSignedIn = isSignedIn;
+    if (isSignedIn) {
+      _loadData();
+    } else {
+      _future = null;
+      _globalFuture = null;
+      _intersectionFuture = null;
+    }
+    setState(() {});
+  }
+
+  void _loadAfterSignIn() {
+    if (!mounted || !SessionService.instance.isSignedIn) return;
+    if (_future == null) _loadData();
+    setState(() {});
+  }
+
   List<TripRecord> _matching(List<TripRecord> trips) {
     final key = _normalize(widget.name);
-    return trips.where((trip) {
+    final matching = trips.where((trip) {
+      if (!trip.isRailTrip) return false;
       switch (widget.type) {
         case EntityType.station:
           return _normalize(trip.fromStation) == key ||
@@ -71,239 +112,267 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
         case EntityType.company:
           return _normalize(trip.companyName ?? '') == key;
         case EntityType.rollingStock:
-          // 车型实体只按车型代码匹配，忽略车号（如 CR400BF-5033 记为 CR400BF）。
-          return rollingStockModelCodes(
+          // 客车匹配忽略前缀，所有车型匹配均忽略车号。
+          return TrainModelParser.parse(
             trip.rollingStock,
-          ).any((model) => _normalize(model) == key);
+          ).any((parsed) => _normalize(parsed.statisticsCode) == key);
         case EntityType.train:
           return _normalize(trip.trainNumber) == key;
       }
     }).toList();
+    matching.sort((a, b) => b.departureTime.compareTo(a.departureTime));
+    return matching;
+  }
+
+  Future<List<OnlineIntersection>> _loadIntersections() =>
+      _intersectionFuture ??= IntersectionService.fetch(
+        _typeKey(widget.type),
+        widget.name,
+      );
+
+  List<OnlineIntersection> _matchingIntersections(
+    List<OnlineIntersection> groups,
+  ) {
+    final matches = groups
+        .where((item) => _normalize(item.location) == _normalize(widget.name))
+        .toList();
+    matches.sort(
+      (a, b) => (b.trips.any((trip) => trip.isStrict) ? 1 : 0).compareTo(
+        a.trips.any((trip) => trip.isStrict) ? 1 : 0,
+      ),
+    );
+    return matches;
+  }
+
+  Future<void> _openAllIntersections() async {
+    try {
+      final groups = await _loadIntersections();
+      if (!mounted) return;
+      final ordered = _matchingIntersections(groups);
+      await Navigator.of(context).push(
+        m3PageRoute(
+          builder: (_) => EntityIntersectionsPage(
+            title: widget.name,
+            intersections: ordered,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('读取行程交集失败：$error')));
+    }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+  Widget build(BuildContext context) {
+    final appBar = AppBar(
       title: Text(widget.name),
       scrolledUnderElevation: 0,
       backgroundColor: Theme.of(context).colorScheme.surface,
-    ),
-    body: FutureBuilder<List<TripRecord>>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final trips = _matching(snapshot.data!);
-        final colors = Theme.of(context).colorScheme;
-        return Container(
-          color: colors.surface,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _entityMaxWidth),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _EntityHeader(type: widget.type, name: widget.name),
-                      const SizedBox(height: 12),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final wide = constraints.maxWidth >= 560;
-                          final metrics = [
-                            FutureBuilder<int>(
-                              future: _globalFuture,
-                              builder: (context, snap) => _MetricCard(
-                                icon: Icons.public,
-                                label: '全站记录',
-                                value: snap.data == null
-                                    ? '—'
-                                    : '${snap.data} 次',
-                                highlighted: true,
-                              ),
-                            ),
-                            _MetricCard(
-                              icon: Icons.person_outline,
-                              label: '你的记录',
-                              value: '${trips.length} 次',
-                            ),
-                          ];
-                          return wide
-                              ? Row(
-                                  children: [
-                                    Expanded(child: metrics[0]),
-                                    const SizedBox(width: 12),
-                                    Expanded(child: metrics[1]),
-                                  ],
-                                )
-                              : Column(
-                                  children: [
-                                    metrics[0],
-                                    const SizedBox(height: 12),
-                                    metrics[1],
-                                  ],
-                                );
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _SectionCard(
-                        title: '车票列表',
-                        icon: Icons.confirmation_number_outlined,
-                        action: trips.length > 4
-                            ? TextButton.icon(
-                                onPressed: () => Navigator.of(context).push(
-                                  m3PageRoute(
-                                    builder: (_) => AllTripsPage(
-                                      title: widget.name,
-                                      trips: trips
-                                          .map(DashboardTripEntry.fromTrip)
-                                          .toList(),
-                                      showTripKindFilter: false,
-                                    ),
-                                  ),
+    );
+    if (!SessionService.instance.isSignedIn) {
+      return Scaffold(
+        appBar: appBar,
+        body: LoginRequiredView(
+          message: '登录后查看${_typeLabel(widget.type)}详情',
+          icon: _typeIcon(widget.type),
+          onSignedIn: _loadAfterSignIn,
+        ),
+      );
+    }
+    final future = _future;
+    final globalFuture = _globalFuture;
+    if (future == null || globalFuture == null) {
+      return Scaffold(
+        appBar: appBar,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    return Scaffold(
+      appBar: appBar,
+      body: FutureBuilder<List<TripRecord>>(
+        future: future,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final trips = _matching(snapshot.data!);
+          final colors = Theme.of(context).colorScheme;
+          return Container(
+            color: colors.surface,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: _entityMaxWidth,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _EntityHeader(type: widget.type, name: widget.name),
+                        const SizedBox(height: 12),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final wide = constraints.maxWidth >= 560;
+                            final metrics = [
+                              FutureBuilder<int>(
+                                future: globalFuture,
+                                builder: (context, snap) => _MetricCard(
+                                  icon: Icons.public,
+                                  label: '全站记录',
+                                  value: snap.data == null
+                                      ? '—'
+                                      : '${snap.data} 次',
+                                  highlighted: true,
                                 ),
-                                icon: const Icon(Icons.arrow_forward, size: 18),
-                                label: const Text('更多'),
-                              )
-                            : null,
-                        child: trips.isEmpty
-                            ? const _EmptyState(
-                                message: '暂无关联车票',
-                                icon: Icons.train_outlined,
-                              )
-                            : Column(
-                                children: [
-                                  _ResponsiveTicketList(
-                                    trips: trips.take(4).toList(),
-                                  ),
-                                ],
                               ),
-                      ),
-                      if (widget.type == EntityType.station ||
-                          widget.type == EntityType.train) ...[
+                              _MetricCard(
+                                icon: Icons.person_outline,
+                                label: '你的记录',
+                                value: '${trips.length} 次',
+                              ),
+                            ];
+                            return wide
+                                ? Row(
+                                    children: [
+                                      Expanded(child: metrics[0]),
+                                      const SizedBox(width: 12),
+                                      Expanded(child: metrics[1]),
+                                    ],
+                                  )
+                                : Column(
+                                    children: [
+                                      metrics[0],
+                                      const SizedBox(height: 12),
+                                      metrics[1],
+                                    ],
+                                  );
+                          },
+                        ),
                         const SizedBox(height: 12),
                         _SectionCard(
-                          title: '行程交集',
-                          icon: Icons.people_alt_outlined,
-                          action: trips.isEmpty
-                              ? null
-                              : TextButton.icon(
-                                  onPressed: () async {
-                                    final groups =
-                                        await IntersectionService.fetch(
-                                          _typeKey(widget.type),
-                                          widget.name,
-                                        );
-                                    if (!context.mounted) return;
-                                    final ordered = groups
-                                        .where(
-                                          (i) =>
-                                              _normalize(i.location) ==
-                                              _normalize(widget.name),
-                                        )
-                                        .toList();
-                                    Navigator.of(context).push(
-                                      m3PageRoute(
-                                        builder: (_) => EntityIntersectionsPage(
-                                          title: widget.name,
-                                          intersections: ordered,
-                                        ),
+                          title: '车票列表',
+                          icon: Icons.confirmation_number_outlined,
+                          action: trips.length > 4
+                              ? TextButton.icon(
+                                  onPressed: () => Navigator.of(context).push(
+                                    m3PageRoute(
+                                      builder: (_) => AllTripsPage(
+                                        title: widget.name,
+                                        trips: trips
+                                            .map(DashboardTripEntry.fromTrip)
+                                            .toList(),
+                                        showTripKindFilter: false,
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                   icon: const Icon(
                                     Icons.arrow_forward,
                                     size: 18,
                                   ),
                                   label: const Text('更多'),
-                                ),
+                                )
+                              : null,
                           child: trips.isEmpty
                               ? const _EmptyState(
-                                  message: '暂无行程交集',
-                                  icon: Icons.group_off_outlined,
+                                  message: '暂无关联车票',
+                                  icon: Icons.train_outlined,
                                 )
-                              : FutureBuilder<List<OnlineIntersection>>(
-                                  future: IntersectionService.fetch(
-                                    _typeKey(widget.type),
-                                    widget.name,
-                                  ),
-                                  builder: (context, snap) {
-                                    if (!snap.hasData) {
-                                      return const _EmptyState(
-                                        message: '正在加载交集…',
-                                        icon: Icons.sync,
-                                      );
-                                    }
-                                    final matches = snap.data!
-                                        .where(
-                                          (i) =>
-                                              _normalize(i.location) ==
-                                              _normalize(widget.name),
-                                        )
-                                        .toList();
-                                    final ordered = [...matches]
-                                      ..sort(
-                                        (a, b) =>
-                                            (b.trips.any((t) => t.isStrict)
-                                                    ? 1
-                                                    : 0)
-                                                .compareTo(
-                                                  a.trips.any((t) => t.isStrict)
-                                                      ? 1
-                                                      : 0,
-                                                ),
-                                      );
-                                    final items = _orderedIntersectionTrips(
-                                      ordered,
-                                    );
-                                    return items.isEmpty
-                                        ? const _EmptyState(
-                                            message: '暂无行程交集',
-                                            icon: Icons.group_off_outlined,
-                                          )
-                                        : Column(
-                                            children: [
-                                              ...items
-                                                  .take(5)
-                                                  .map(
-                                                    (t) => Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            bottom: 10,
-                                                          ),
-                                                      child: AchievementTripRow(
-                                                        trip:
-                                                            _toAchievementTrip(
-                                                              t,
-                                                            ),
-                                                        highlight: t.isStrict,
-                                                      ),
-                                                    ),
-                                                  ),
-                                            ],
-                                          );
-                                  },
+                              : Column(
+                                  children: [
+                                    _ResponsiveTicketList(
+                                      trips: trips.take(4).toList(),
+                                    ),
+                                  ],
                                 ),
                         ),
+                        if (widget.type == EntityType.station ||
+                            widget.type == EntityType.train) ...[
+                          const SizedBox(height: 12),
+                          _SectionCard(
+                            title: '行程交集',
+                            icon: Icons.people_alt_outlined,
+                            action: trips.isEmpty
+                                ? null
+                                : TextButton.icon(
+                                    onPressed: _openAllIntersections,
+                                    icon: const Icon(
+                                      Icons.arrow_forward,
+                                      size: 18,
+                                    ),
+                                    label: const Text('更多'),
+                                  ),
+                            child: trips.isEmpty
+                                ? const _EmptyState(
+                                    message: '暂无行程交集',
+                                    icon: Icons.group_off_outlined,
+                                  )
+                                : FutureBuilder<List<OnlineIntersection>>(
+                                    future: _loadIntersections(),
+                                    builder: (context, snap) {
+                                      if (!snap.hasData) {
+                                        return const _EmptyState(
+                                          message: '正在加载交集…',
+                                          icon: Icons.sync,
+                                        );
+                                      }
+                                      final ordered = _matchingIntersections(
+                                        snap.data!,
+                                      );
+                                      final items = _orderedIntersectionTrips(
+                                        ordered,
+                                      );
+                                      return items.isEmpty
+                                          ? const _EmptyState(
+                                              message: '暂无行程交集',
+                                              icon: Icons.group_off_outlined,
+                                            )
+                                          : Column(
+                                              children: [
+                                                ...items
+                                                    .take(5)
+                                                    .map(
+                                                      (t) => Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              bottom: 10,
+                                                            ),
+                                                        child: AchievementTripRow(
+                                                          trip:
+                                                              _toAchievementTrip(
+                                                                t,
+                                                              ),
+                                                          highlight: t.isStrict,
+                                                        ),
+                                                      ),
+                                                    ),
+                                              ],
+                                            );
+                                    },
+                                  ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        _ReviewsSection(
+                          type: widget.type,
+                          name: widget.name,
+                          trips: trips,
+                        ),
                       ],
-                      const SizedBox(height: 12),
-                      _ReviewsSection(
-                        type: widget.type,
-                        name: widget.name,
-                        trips: trips,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _SectionCard extends StatelessWidget {
@@ -525,16 +594,7 @@ class _EntityHeader extends StatelessWidget {
         IconButton(
           tooltip: 'RailGo 信息',
           icon: const Icon(Icons.open_in_new),
-          onPressed: () async {
-            final codes = await TrainService.initializeStationCodes();
-            final code = codes[name.trim()];
-            if (code != null) {
-              await launchUrl(
-                Uri.parse('https://railgo.dev/station/result?telecode=$code'),
-                mode: LaunchMode.externalApplication,
-              );
-            }
-          },
+          onPressed: () => _openRailGoStation(context, name),
         ),
       );
       actions.add(
@@ -557,12 +617,7 @@ class _EntityHeader extends StatelessWidget {
         IconButton(
           tooltip: 'RailGo 信息',
           icon: const Icon(Icons.open_in_new),
-          onPressed: () => launchUrl(
-            Uri.parse(
-              'https://railgo.dev/train/result?keyword=${Uri.encodeQueryComponent(name)}',
-            ),
-            mode: LaunchMode.externalApplication,
-          ),
+          onPressed: () => _openRailGoTrain(context, name),
         ),
       );
       actions.add(
@@ -598,20 +653,8 @@ class _EntityHeader extends StatelessWidget {
       );
     }
     final colors = Theme.of(context).colorScheme;
-    final label = switch (type) {
-      EntityType.station => '车站',
-      EntityType.route => '线路',
-      EntityType.company => '承运单位',
-      EntityType.rollingStock => '车型',
-      EntityType.train => '车次',
-    };
-    final entityIcon = switch (type) {
-      EntityType.station => Icons.location_on_outlined,
-      EntityType.route => Icons.alt_route,
-      EntityType.company => Icons.business_outlined,
-      EntityType.rollingStock => Icons.directions_railway_outlined,
-      EntityType.train => Icons.train_outlined,
-    };
+    final label = _typeLabel(type);
+    final entityIcon = _typeIcon(type);
     return Card.filled(
       color: colors.primaryContainer,
       margin: EdgeInsets.zero,
@@ -667,7 +710,8 @@ class _EntityHeader extends StatelessWidget {
                 color: colors.onPrimaryContainer,
                 fontWeight: FontWeight.w700,
                 fontFamily:
-                    type == EntityType.rollingStock && _usesHvcbFont(name)
+                    type == EntityType.rollingStock &&
+                        TrainModelParser.containsEmu(name)
                     ? 'HVCB'
                     : null,
               ),
@@ -678,11 +722,6 @@ class _EntityHeader extends StatelessWidget {
     );
   }
 }
-
-bool _usesHvcbFont(String value) => RegExp(
-  r'^(CR|CJ|D|G|Z|T|C|K|Y|复兴|和谐)',
-  caseSensitive: false,
-).hasMatch(value.trim());
 
 class _ReviewsSection extends StatefulWidget {
   const _ReviewsSection({
@@ -700,7 +739,7 @@ class _ReviewsSection extends StatefulWidget {
 class _ReviewsSectionState extends State<_ReviewsSection> {
   late Future<List<EntityReview>> _future;
   List<TripRecord> get _reviewTrips =>
-      widget.trips.toList()
+      widget.trips.where(_canUseAsReviewTrip).toList()
         ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
   @override
   void initState() {
@@ -712,6 +751,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
   Widget build(BuildContext context) => FutureBuilder<List<EntityReview>>(
     future: _future,
     builder: (context, snapshot) {
+      final reviewTrips = _reviewTrips;
       final groups = snapshot.hasData
           ? _groupReviews(snapshot.data!).entries.toList()
           : <MapEntry<String, List<EntityReview>>>[];
@@ -729,10 +769,10 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
                       orElse: () => MapEntry(key, const <EntityReview>[]),
                     )
                     .value,
-                trips: widget.trips,
+                trips: reviewTrips,
                 enabled: key == 'transfer'
-                    ? _hasTransferPair(widget.name, widget.trips)
-                    : widget.trips.isNotEmpty,
+                    ? _hasTransferPair(widget.name, reviewTrips)
+                    : reviewTrips.isNotEmpty,
                 onReview: () => _addReview(key),
                 onChanged: _refreshReviews,
               ),
@@ -764,6 +804,8 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
         tripId: draft.tripId,
         secondTripId: draft.secondTripId,
         transferMinutes: draft.transferMinutes,
+        routeFromStation: draft.routeFromStation,
+        routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
       );
@@ -797,6 +839,8 @@ class _ReviewDraft {
     this.tripId,
     this.secondTripId,
     this.transferMinutes,
+    this.routeFromStation,
+    this.routeToStation,
     this.dish,
     this.price,
   });
@@ -806,6 +850,8 @@ class _ReviewDraft {
   final int? tripId;
   final int? secondTripId;
   final int? transferMinutes;
+  final String? routeFromStation;
+  final String? routeToStation;
   final String? dish;
   final double? price;
 }
@@ -837,15 +883,22 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
   late int _rating;
   int? _tripId;
   int? _secondTripId;
+  List<String> _routeStationOptions = const [];
+  String? _routeFromStation;
+  String? _routeToStation;
+  String? _routeStationsError;
+  bool _loadingRouteStations = false;
+  int _routeStationLoadId = 0;
 
   bool get _isTransfer => widget.reviewType == 'transfer';
   bool get _isMeal => widget.reviewType == 'meal';
+  bool get _isRoute => widget.reviewType == 'route';
   bool get _isEditing => widget.initial != null;
 
   @override
   void initState() {
     super.initState();
-    _trips = widget.trips.toList()
+    _trips = widget.trips.where(_canUseAsReviewTrip).toList()
       ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
     final initial = widget.initial;
     _rating = (initial?.rating ?? 5).clamp(1, 5);
@@ -858,13 +911,24 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     );
     final primaryOptions = _primaryTripOptions;
     final tripId = initial?.tripId;
-    _tripId = primaryOptions.any((trip) => trip.id == tripId)
-        ? tripId
-        : (primaryOptions.isEmpty ? null : primaryOptions.first.id);
+    _tripId = initial == null
+        ? (primaryOptions.isEmpty ? null : primaryOptions.first.ticketId)
+        : (primaryOptions.any((trip) => trip.ticketId == tripId)
+              ? tripId
+              : null);
     final secondTripId = initial?.secondTripId;
-    _secondTripId = _secondTripOptions.any((trip) => trip.id == secondTripId)
+    _secondTripId =
+        _secondTripOptions.any((trip) => trip.ticketId == secondTripId)
         ? secondTripId
         : null;
+    _routeFromStation = initial?.routeFromStation;
+    _routeToStation = initial?.routeToStation;
+    if (_isRoute) {
+      _loadingRouteStations = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadRouteStations(resetSelection: false);
+      });
+    }
   }
 
   @override
@@ -882,7 +946,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
   TripRecord? get _primaryTrip {
     if (_tripId == null) return null;
     for (final trip in _trips) {
-      if (trip.id == _tripId) return trip;
+      if (trip.ticketId == _tripId) return trip;
     }
     return null;
   }
@@ -902,16 +966,80 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     return _followingTripsFor(primary);
   }
 
+  List<String> get _routeEndOptions {
+    final fromStation = _routeFromStation;
+    if (fromStation == null) return const [];
+    final index = _routeStationOptions.indexOf(fromStation);
+    if (index < 0 || index + 1 >= _routeStationOptions.length) {
+      return const [];
+    }
+    return _routeStationOptions.sublist(index + 1);
+  }
+
+  bool get _hasRouteRange =>
+      _routeFromStation != null && _routeToStation != null;
+
+  Future<void> _loadRouteStations({required bool resetSelection}) async {
+    final loadId = ++_routeStationLoadId;
+    final trip = _primaryTrip;
+    setState(() {
+      _loadingRouteStations = true;
+      _routeStationsError = null;
+      if (resetSelection) {
+        _routeFromStation = null;
+        _routeToStation = null;
+      }
+    });
+    if (trip == null) {
+      if (!mounted || loadId != _routeStationLoadId) return;
+      setState(() {
+        _routeStationOptions = const [];
+        _loadingRouteStations = false;
+      });
+      return;
+    }
+    try {
+      final stations = await _routeStationsForReview(trip, widget.stationName);
+      if (!mounted || loadId != _routeStationLoadId) return;
+      setState(() {
+        _routeStationOptions = stations;
+        _loadingRouteStations = false;
+        if (!stations.contains(_routeFromStation)) {
+          _routeFromStation = null;
+        }
+        if (_routeFromStation == null ||
+            !_routeEndOptions.contains(_routeToStation)) {
+          _routeToStation = null;
+        }
+        if (stations.length < 2) {
+          _routeStationsError = '该行程没有足够的线路站点可供选择';
+        }
+      });
+    } catch (_) {
+      if (!mounted || loadId != _routeStationLoadId) return;
+      setState(() {
+        _routeStationOptions = const [];
+        _routeFromStation = null;
+        _routeToStation = null;
+        _loadingRouteStations = false;
+        _routeStationsError = '读取线路站点失败';
+      });
+    }
+  }
+
   void _selectPrimaryTrip(int value) {
     setState(() {
       _tripId = value;
       final primary = _primaryTrip;
       final second = _secondTripId;
       if (primary == null || second == null) return;
-      if (_followingTripsFor(primary).every((trip) => trip.id != second)) {
+      if (_followingTripsFor(
+        primary,
+      ).every((trip) => trip.ticketId != second)) {
         _secondTripId = null;
       }
     });
+    if (_isRoute) _loadRouteStations(resetSelection: true);
   }
 
   int? get _transferMinutes {
@@ -921,7 +1049,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     final arrivalTime = primary.arrivalTime;
     if (arrivalTime == null) return null;
     for (final trip in _trips) {
-      if (trip.id == secondTripId) {
+      if (trip.ticketId == secondTripId) {
         return trip.departureTime.difference(arrivalTime).inMinutes;
       }
     }
@@ -932,6 +1060,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     final comment = _comment.text.trim();
     if (comment.isEmpty) return;
     if (_isTransfer && (_tripId == null || _secondTripId == null)) return;
+    if (_isRoute && !_hasRouteRange) return;
     Navigator.of(context).pop(
       _ReviewDraft(
         rating: _rating,
@@ -939,6 +1068,8 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
         tripId: _tripId,
         secondTripId: _isTransfer ? _secondTripId : null,
         transferMinutes: _isTransfer ? _transferMinutes : null,
+        routeFromStation: _isRoute ? _routeFromStation : null,
+        routeToStation: _isRoute ? _routeToStation : null,
         dish: _isMeal && _dish.text.trim().isNotEmpty
             ? _dish.text.trim()
             : null,
@@ -953,7 +1084,12 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
     final textTheme = Theme.of(context).textTheme;
     final canSubmit =
         _comment.text.trim().isNotEmpty &&
-        (!_isTransfer || (_tripId != null && _secondTripId != null));
+        (!_isTransfer || (_tripId != null && _secondTripId != null)) &&
+        (!_isRoute ||
+            (_tripId != null &&
+                !_loadingRouteStations &&
+                _routeStationsError == null &&
+                _hasRouteRange));
     final dishField = TextField(
       controller: _dish,
       decoration: _reviewInputDecoration(
@@ -1095,7 +1231,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                   dropdownMenuEntries: _primaryTripOptions
                       .map(
                         (trip) => DropdownMenuEntry<int>(
-                          value: trip.id,
+                          value: trip.ticketId!,
                           label: _tripOptionLabel(trip),
                           labelWidget: Text(
                             _tripOptionLabel(trip),
@@ -1109,6 +1245,74 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                     if (value != null) _selectPrimaryTrip(value);
                   },
                 ),
+                if (_isRoute) ...[
+                  const SizedBox(height: 16),
+                  if (_loadingRouteStations)
+                    const LinearProgressIndicator(minHeight: 3),
+                  if (_routeStationsError != null)
+                    Text(
+                      _routeStationsError!,
+                      style: textTheme.bodySmall?.copyWith(color: colors.error),
+                    ),
+                  if (!_loadingRouteStations &&
+                      _routeStationsError == null) ...[
+                    DropdownMenu<String>(
+                      key: ValueKey(
+                        'reviewRouteFrom-${_tripId ?? 'none'}-${_routeFromStation ?? 'none'}',
+                      ),
+                      initialSelection: _routeFromStation,
+                      selectOnly: true,
+                      expandedInsets: EdgeInsets.zero,
+                      menuHeight: 320,
+                      label: const Text('评价起点'),
+                      hintText: '选择起点站',
+                      leadingIcon: const Icon(Icons.trip_origin, size: 20),
+                      textStyle: textTheme.bodyMedium,
+                      inputDecorationTheme: _reviewFieldTheme(context),
+                      dropdownMenuEntries: _routeStationOptions
+                          .map(
+                            (station) => DropdownMenuEntry<String>(
+                              value: station,
+                              label: station,
+                            ),
+                          )
+                          .toList(),
+                      onSelected: (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _routeFromStation = value;
+                          _routeToStation = null;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownMenu<String>(
+                      key: ValueKey(
+                        'reviewRouteTo-${_tripId ?? 'none'}-${_routeFromStation ?? 'none'}-${_routeToStation ?? 'none'}',
+                      ),
+                      initialSelection: _routeToStation,
+                      selectOnly: true,
+                      enabled: _routeFromStation != null,
+                      expandedInsets: EdgeInsets.zero,
+                      menuHeight: 320,
+                      label: const Text('评价终点'),
+                      hintText: _routeFromStation == null ? '请先选择起点站' : '选择终点站',
+                      leadingIcon: const Icon(Icons.place_outlined, size: 20),
+                      textStyle: textTheme.bodyMedium,
+                      inputDecorationTheme: _reviewFieldTheme(context),
+                      dropdownMenuEntries: _routeEndOptions
+                          .map(
+                            (station) => DropdownMenuEntry<String>(
+                              value: station,
+                              label: station,
+                            ),
+                          )
+                          .toList(),
+                      onSelected: (value) =>
+                          setState(() => _routeToStation = value),
+                    ),
+                  ],
+                ],
                 if (_isTransfer) ...[
                   const SizedBox(height: 16),
                   DropdownMenu<int>(
@@ -1127,7 +1331,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                     dropdownMenuEntries: _secondTripOptions
                         .map(
                           (trip) => DropdownMenuEntry<int>(
-                            value: trip.id,
+                            value: trip.ticketId!,
                             label: _tripOptionLabel(trip),
                             labelWidget: Text(
                               _tripOptionLabel(trip),
@@ -1253,6 +1457,9 @@ IconData _reviewTypeIcon(String type) => switch (type) {
 
 String _tripOptionLabel(TripRecord trip) =>
     '${_formatTripDate(trip.departureTime)} · ${trip.trainNumber} · ${trip.fromStation} → ${trip.toStation}';
+
+bool _canUseAsReviewTrip(TripRecord trip) =>
+    trip.ticketId != null && !trip.isLocalOnly;
 
 String _ratingLabel(int rating) => switch (rating) {
   1 => '很差',
@@ -1431,12 +1638,6 @@ String _reviewTypeLabel(String type) => switch (type) {
   _ => type,
 };
 
-String _formatReviewDate(String value) {
-  final d = DateTime.tryParse(value)?.toLocal();
-  if (d == null) return value;
-  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-}
-
 class _ReviewTile extends StatelessWidget {
   const _ReviewTile({
     required this.review,
@@ -1452,170 +1653,18 @@ class _ReviewTile extends StatelessWidget {
   final bool showDivider;
 
   @override
-  Widget build(BuildContext context) {
-    final primaryMatches = trips.where((t) => t.id == review.tripId);
-    final secondaryMatches = trips.where((t) => t.id == review.secondTripId);
-    final primary = primaryMatches.isEmpty ? null : primaryMatches.first;
-    final secondary = secondaryMatches.isEmpty ? null : secondaryMatches.first;
-    final extra = _reviewExtra(review);
-    final seat = review.reviewType == 'rollingStock'
-        ? [primary?.seatType, secondary?.seatType]
-              .where((value) => value?.trim().isNotEmpty == true)
-              .map((value) => value!.trim())
-              .toSet()
-              .join(' / ')
-        : '';
-    final routeRange = review.reviewType == 'route' && primary != null
-        ? _routeRange(primary, entityName)
-        : '';
-    return Padding(
-      padding: EdgeInsets.only(bottom: showDivider ? 8 : 0),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: showDivider
-                ? BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  )
-                : BorderSide.none,
-          ),
-        ),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(12, 12, 8, showDivider ? 14 : 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(24),
-                onTap: () => _openUser(context),
-                child: CachedAvatar(
-                  name: review.displayName,
-                  imageUrl: review.avatarUrl,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                review.displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (review.userId == SessionService.instance.user?.id)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                tooltip: '编辑评价',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _editReview(context),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                              ),
-                              IconButton(
-                                tooltip: '删除评价',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () => _deleteReview(context),
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  size: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(
-                          '★' * review.rating,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        if (extra.isNotEmpty ||
-                            seat.isNotEmpty ||
-                            routeRange.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              [
-                                extra,
-                                if (seat.isNotEmpty) '席别：$seat',
-                                if (routeRange.isNotEmpty) '乘坐区间：$routeRange',
-                              ].where((value) => value.isNotEmpty).join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ),
-                        ] else
-                          const Spacer(),
-                        Text(
-                          _formatReviewDate(review.createdAt),
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      review.comment,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    if (primary != null)
-                      _ReviewTripLink(
-                        roleLabel: review.reviewType == 'transfer'
-                            ? '前序行程 · 到站 ${_formatTime(primary.arrivalTime)}'
-                            : null,
-                        trip: primary,
-                        userId: review.userId,
-                        onwerName: review.displayName,
-                        showSeat: false,
-                      ),
-                    if (secondary != null)
-                      _ReviewTripLink(
-                        roleLabel:
-                            '后续行程 · 发车 ${_formatTime(secondary.departureTime)}',
-                        trip: secondary,
-                        userId: review.userId,
-                        onwerName: review.displayName,
-                        showSeat: false,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => EntityReviewCard(
+    review: review,
+    trips: trips,
+    entityName: entityName,
+    showDivider: showDivider,
+    contentPadding: EdgeInsets.fromLTRB(12, 12, 8, showDivider ? 14 : 4),
+    onChanged: onChanged,
+    onEdit: () => _editReview(context),
+    onDelete: () => _deleteReview(context),
+    onUserTap: () => _openUser(context),
+    onTripTap: (trip) => _openTrip(context, trip),
+  );
 
   Future<void> _editReview(BuildContext context) async {
     final draft = await showDialog<_ReviewDraft>(
@@ -1637,6 +1686,8 @@ class _ReviewTile extends StatelessWidget {
         tripId: draft.tripId,
         secondTripId: draft.secondTripId,
         transferMinutes: draft.transferMinutes,
+        routeFromStation: draft.routeFromStation,
+        routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
       );
@@ -1668,91 +1719,59 @@ class _ReviewTile extends StatelessWidget {
   void _openUser(BuildContext context) => Navigator.of(
     context,
   ).push(m3PageRoute(builder: (_) => PublicUserPage(userId: review.userId)));
-}
 
-class _ReviewTripLink extends StatelessWidget {
-  const _ReviewTripLink({
-    required this.trip,
-    required this.userId,
-    required this.onwerName,
-    this.roleLabel,
-    this.showSeat = false,
-  });
-  final TripRecord trip;
-  final String userId;
-  final String onwerName;
-  final String? roleLabel;
-  final bool showSeat;
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final seat = trip.seatType?.trim() ?? '';
-    final summary = [
-      _formatTripDate(trip.departureTime),
-      trip.trainNumber,
-      '${trip.fromStation} → ${trip.toStation}',
-      if (showSeat && seat.isNotEmpty) seat,
-    ].where((part) => part.isNotEmpty).join(' · ');
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      leading: const Icon(Icons.confirmation_number_outlined, size: 18),
-      title: Text(
-        roleLabel ?? summary,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: colors.onSurface,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: roleLabel == null
-          ? null
-          : Text(
-              summary,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-            ),
-      onTap: () => Navigator.of(context).push(
+  void _openTrip(BuildContext context, TripRecord trip) =>
+      Navigator.of(context).push(
         m3PageRoute(
           builder: (_) => TripRecordDetailsPage.public(
             ticketId: trip.ticketId ?? trip.id,
-            onOwnerTap: () => Navigator.of(
-              context,
-            ).push(m3PageRoute(builder: (_) => PublicUserPage(userId: userId))),
+            onOwnerTap: () => Navigator.of(context).push(
+              m3PageRoute(
+                builder: (_) => PublicUserPage(userId: review.userId),
+              ),
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
-String _formatTime(DateTime? value) => value == null
-    ? '未记录'
-    : '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-String _routeRange(TripRecord trip, String route) {
-  final segment = trip.viaRouteSegments.where(
-    (s) => _normalize(s.routeName) == _normalize(route),
+Future<List<String>> _routeStationsForReview(
+  TripRecord trip,
+  String routeName,
+) async {
+  final segments = trip.viaRouteSegments
+      .where(
+        (segment) => _normalize(segment.routeName) == _normalize(routeName),
+      )
+      .toList();
+  if (segments.isEmpty) {
+    return RouteService.getStationsForRoute(routeName);
+  }
+  final stations = await RouteService.getStationsBetweenRoute(
+    routeName,
+    segments.first.fromStation,
+    segments.last.toStation,
   );
-  if (segment.isEmpty) return '${trip.fromStation}→${trip.toStation}';
-  final first = segment.first;
-  final last = segment.last;
-  return '${first.fromStation}→${last.toStation}';
+  if (stations.isNotEmpty) {
+    return stations.map((station) => station.name).toList();
+  }
+  final fallback = <String>[];
+  void append(String value) {
+    final station = value.trim();
+    if (station.isNotEmpty && (fallback.isEmpty || fallback.last != station)) {
+      fallback.add(station);
+    }
+  }
+
+  append(segments.first.fromStation);
+  for (final segment in segments) {
+    append(segment.toStation);
+  }
+  return fallback;
 }
 
 String _formatTripDate(DateTime value) =>
     '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-String _reviewExtra(EntityReview r) {
-  final parts = <String>[];
-  if (r.transferMinutes != null) parts.add('换乘 ${r.transferMinutes} 分钟');
-  if (r.dish?.isNotEmpty == true) parts.add('菜品：${r.dish}');
-  if (r.price != null) parts.add('¥${r.price!.toStringAsFixed(2)}');
-  return parts.join(' · ');
-}
 
 String _typeKey(EntityType type) => switch (type) {
   EntityType.station => 'station',
@@ -1760,6 +1779,22 @@ String _typeKey(EntityType type) => switch (type) {
   EntityType.company => 'company',
   EntityType.rollingStock => 'rollingStock',
   EntityType.train => 'train',
+};
+
+String _typeLabel(EntityType type) => switch (type) {
+  EntityType.station => '车站',
+  EntityType.route => '线路',
+  EntityType.company => '承运单位',
+  EntityType.rollingStock => '车型',
+  EntityType.train => '车次',
+};
+
+IconData _typeIcon(EntityType type) => switch (type) {
+  EntityType.station => Icons.location_on_outlined,
+  EntityType.route => Icons.alt_route,
+  EntityType.company => Icons.business_outlined,
+  EntityType.rollingStock => Icons.directions_railway_outlined,
+  EntityType.train => Icons.train_outlined,
 };
 
 String _normalize(String value) =>
@@ -1777,4 +1812,58 @@ Future<void> openEntityPage(
       builder: (_) => EntityDetailPage(type: type, name: value),
     ),
   );
+}
+
+Future<void> _openRailGoStation(BuildContext context, String name) async {
+  final codes = await TrainService.initializeStationCodes();
+  if (!context.mounted) return;
+  final code = codes[name.trim()];
+  if (code == null || code.isEmpty) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('未找到$name的车站代码')));
+    return;
+  }
+  final encoded = Uri.encodeQueryComponent(code);
+  await _openRailGoLinks(
+    context,
+    appUri: Uri.parse('railgo://pages/station/result?keyword=$encoded'),
+    webUri: Uri.parse('https://railgo.dev/station/result?telecode=$encoded'),
+  );
+}
+
+Future<void> _openRailGoTrain(BuildContext context, String name) async {
+  final encoded = Uri.encodeQueryComponent(name.trim());
+  await _openRailGoLinks(
+    context,
+    appUri: Uri.parse('railgo://pages/train/trainResult?keyword=$encoded'),
+    webUri: Uri.parse('https://railgo.dev/train/result?keyword=$encoded'),
+  );
+}
+
+Future<void> _openRailGoLinks(
+  BuildContext context, {
+  required Uri appUri,
+  required Uri webUri,
+}) async {
+  var opened = false;
+  if (Platform.isAndroid || Platform.isIOS) {
+    try {
+      opened = await launchUrl(appUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened) {
+    try {
+      opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('无法打开 RailGo 链接')));
+  }
 }

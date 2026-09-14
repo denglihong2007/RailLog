@@ -44,6 +44,7 @@ class PublicUser {
     this.avatarUrl,
     this.bio,
     this.email,
+    this.achievementExperience = 0,
   });
 
   factory PublicUser.fromJson(Map<String, dynamic> json) => PublicUser(
@@ -52,6 +53,8 @@ class PublicUser {
     avatarUrl: json['avatarUrl'] as String?,
     bio: json['bio'] as String?,
     email: json['email'] as String?,
+    achievementExperience:
+        (json['achievementExperience'] as num?)?.toInt() ?? 0,
   );
 
   final String id;
@@ -59,6 +62,7 @@ class PublicUser {
   final String? avatarUrl;
   final String? bio;
   final String? email;
+  final int achievementExperience;
 }
 
 class PublicTripDetails {

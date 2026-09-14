@@ -6,13 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/route_station.dart';
-import 'package:raillog/src/models/trip_dashboard_stats.dart';
+import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
+import 'package:raillog/src/services/entity_review_service.dart';
+import 'package:raillog/src/services/entity_review_navigation.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
@@ -21,8 +23,13 @@ import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
+import 'package:raillog/src/widgets/entity_review_card.dart';
+import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/user_level_badge.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+const _tripLoginRequiredMessage = '登录后查看';
 
 class TripRecordDetailsPage extends StatefulWidget {
   const TripRecordDetailsPage({super.key, required this.tripId})
@@ -172,12 +179,17 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
         message: '未找到这条行程记录',
       );
     }
-    return _TripDetailsContent(
-      trip: loaded.trip,
-      ownerName: loaded.ownerName,
-      ownerAvatarUrl: loaded.ownerAvatarUrl,
-      ownerBio: loaded.ownerBio,
-      onOwnerTap: widget.onOwnerTap,
+    return AnimatedBuilder(
+      animation: SessionService.instance,
+      builder: (context, _) => _TripDetailsContent(
+        trip: loaded.trip,
+        ownerName: loaded.ownerName,
+        ownerAvatarUrl: loaded.ownerAvatarUrl,
+        ownerBio: loaded.ownerBio,
+        ownerAchievementExperience: loaded.ownerAchievementExperience,
+        onOwnerTap: widget.onOwnerTap,
+        isOwnerView: !widget.isReadOnly,
+      ),
     );
   }
 }
@@ -186,18 +198,21 @@ class _LoadedTrip {
   const _LoadedTrip.local(this.trip)
     : ownerName = null,
       ownerAvatarUrl = null,
-      ownerBio = null;
+      ownerBio = null,
+      ownerAchievementExperience = 0;
 
   _LoadedTrip.public(PublicTripDetails details)
     : trip = details.trip,
       ownerName = details.user.displayName,
       ownerAvatarUrl = details.user.avatarUrl,
-      ownerBio = details.user.bio;
+      ownerBio = details.user.bio,
+      ownerAchievementExperience = details.user.achievementExperience;
 
   final TripRecord trip;
   final String? ownerName;
   final String? ownerAvatarUrl;
   final String? ownerBio;
+  final int ownerAchievementExperience;
 }
 
 class _TripDetailsContent extends StatelessWidget {
@@ -206,17 +221,22 @@ class _TripDetailsContent extends StatelessWidget {
     this.ownerName,
     this.ownerAvatarUrl,
     this.ownerBio,
+    this.ownerAchievementExperience = 0,
     this.onOwnerTap,
+    required this.isOwnerView,
   });
 
   final TripRecord trip;
   final String? ownerName;
   final String? ownerAvatarUrl;
   final String? ownerBio;
+  final int ownerAchievementExperience;
   final VoidCallback? onOwnerTap;
+  final bool isOwnerView;
 
   @override
   Widget build(BuildContext context) {
+    final parsedRollingStock = TrainModelParser.parse(trip.rollingStock);
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -229,6 +249,7 @@ class _TripDetailsContent extends StatelessWidget {
                   name: ownerName!,
                   avatarUrl: ownerAvatarUrl,
                   bio: ownerBio,
+                  achievementExperience: ownerAchievementExperience,
                   onTap: onOwnerTap,
                 ),
                 const SizedBox(height: 12),
@@ -243,6 +264,9 @@ class _TripDetailsContent extends StatelessWidget {
                   );
                   if (displayStyle == TicketDisplayStyle.md3) {
                     return M3Reveal(child: _DetailsTicket(trip: trip));
+                  }
+                  if (!SessionService.instance.isSignedIn) {
+                    return const M3Reveal(child: _TripLoginRequired());
                   }
                   return M3Reveal(
                     child: _GeneratedTicketPanel(
@@ -265,31 +289,37 @@ class _TripDetailsContent extends StatelessWidget {
                     _InfoItem(
                       label: '车次',
                       value: _optionalText(trip.trainNumber),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.train,
-                        trip.trainNumber,
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.train,
+                              trip.trainNumber,
+                            )
+                          : null,
                       infoTooltip: '查看车次详情',
                     ),
                     _InfoItem(
                       label: '始发站',
                       value: _optionalText(trip.fromStation),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.station,
-                        trip.fromStation,
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.station,
+                              trip.fromStation,
+                            )
+                          : null,
                       infoTooltip: '查看车站详情',
                     ),
                     _InfoItem(
                       label: '终到站',
                       value: _optionalText(trip.toStation),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.station,
-                        trip.toStation,
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.station,
+                              trip.toStation,
+                            )
+                          : null,
                       infoTooltip: '查看车站详情',
                     ),
                     _InfoItem(
@@ -314,28 +344,23 @@ class _TripDetailsContent extends StatelessWidget {
                 title: '运行信息',
                 child: _InfoGrid(
                   children: [
-                    _InfoItem(
-                      label: '车型',
-                      value: _optionalText(trip.rollingStock),
-                      valueFontFamily: _usesHvcbFont(trip.rollingStock)
-                          ? 'HVCB'
-                          : null,
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.rollingStock,
-                        rollingStockModelCode(trip.rollingStock),
+                    if (trip.isRailTrip)
+                      _RollingStockInfoItem(items: parsedRollingStock)
+                    else
+                      _InfoItem(
+                        label: '车型',
+                        value: _optionalText(trip.rollingStock),
                       ),
-                      infoTooltip: '查询车型',
-                      railGoTap: _railGoEmuTap(context, trip.rollingStock),
-                    ),
                     _InfoItem(
                       label: '承运单位',
                       value: _optionalText(trip.companyName),
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.company,
-                        trip.companyName ?? '',
-                      ),
+                      infoTap: trip.isRailTrip
+                          ? () => openEntityPage(
+                              context,
+                              EntityType.company,
+                              trip.companyName ?? '',
+                            )
+                          : null,
                       infoTooltip: '查看承运单位详情',
                     ),
                     _InfoItem(
@@ -377,30 +402,54 @@ class _TripDetailsContent extends StatelessWidget {
                   ],
                 ),
               ),
-              _DetailsSection(
-                icon: Icons.alt_route,
-                title: '经由线路 · ${trip.viaRouteSegments.length} 段',
-                trailing: trip.viaRouteSegments.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: '查看单次行程轨迹',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => Navigator.of(context).push(
-                          m3PageRoute(
-                            builder: (_) => TripMapPage(trips: [trip]),
+              if (trip.isRailTrip)
+                _DetailsSection(
+                  icon: Icons.alt_route,
+                  title: '经由线路 · ${trip.viaRouteSegments.length} 段',
+                  trailing: trip.viaRouteSegments.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '查看单次行程轨迹',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => Navigator.of(context).push(
+                            m3PageRoute(
+                              builder: (_) => TripMapPage(trips: [trip]),
+                            ),
                           ),
+                          icon: const Icon(Icons.map_outlined),
                         ),
-                        icon: const Icon(Icons.map_outlined),
-                      ),
-                child: trip.viaRouteSegments.isEmpty
-                    ? const Text('未记录')
-                    : _ViaRouteDiagram(trip: trip),
-              ),
+                  child: trip.viaRouteSegments.isEmpty
+                      ? const Text('未记录')
+                      : _ViaRouteDiagram(trip: trip),
+                ),
               _DetailsSection(
                 icon: Icons.notes_outlined,
                 title: '备注',
                 child: Text(_optionalText(trip.notes)),
               ),
+              if (trip.isRailTrip &&
+                  trip.ticketId != null &&
+                  !trip.isLocalOnly) ...[
+                _TripReviewsSection(
+                  ticketId: trip.ticketId!,
+                  title: '关联评价',
+                  icon: Icons.rate_review_outlined,
+                  loader: EntityReviewService.fetchForTrip,
+                  emptyText: '暂无关联评价',
+                  showTripLinks: false,
+                  signedIn: SessionService.instance.isSignedIn,
+                ),
+                if (isOwnerView)
+                  _TripReviewsSection(
+                    ticketId: trip.ticketId!,
+                    title: '出行指南',
+                    icon: Icons.explore_outlined,
+                    loader: EntityReviewService.fetchTravelGuide,
+                    emptyText: '暂无出行指南',
+                    showTripLinks: true,
+                    signedIn: SessionService.instance.isSignedIn,
+                  ),
+              ],
             ],
           ),
         ),
@@ -409,17 +458,162 @@ class _TripDetailsContent extends StatelessWidget {
   }
 }
 
+typedef _ReviewListLoader = Future<List<EntityReview>> Function(int ticketId);
+
+class _TripReviewsSection extends StatefulWidget {
+  const _TripReviewsSection({
+    required this.ticketId,
+    required this.title,
+    required this.icon,
+    required this.loader,
+    required this.emptyText,
+    required this.showTripLinks,
+    required this.signedIn,
+  });
+
+  final int ticketId;
+  final String title;
+  final IconData icon;
+  final _ReviewListLoader loader;
+  final String emptyText;
+  final bool showTripLinks;
+  final bool signedIn;
+
+  @override
+  State<_TripReviewsSection> createState() => _TripReviewsSectionState();
+}
+
+class _TripReviewsSectionState extends State<_TripReviewsSection> {
+  late Future<List<EntityReview>> _reviewsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TripReviewsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ticketId != widget.ticketId ||
+        oldWidget.loader != widget.loader ||
+        oldWidget.signedIn != widget.signedIn) {
+      _load();
+    }
+  }
+
+  void _load() {
+    _reviewsFuture = widget.signedIn
+        ? widget.loader(widget.ticketId)
+        : Future.value(const <EntityReview>[]);
+  }
+
+  void _retry() => setState(_load);
+
+  void _refresh() {
+    if (mounted) setState(_load);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _DetailsSection(
+      icon: widget.icon,
+      title: widget.title,
+      child: !widget.signedIn
+          ? const _TripLoginRequired()
+          : FutureBuilder<List<EntityReview>>(
+              future: _reviewsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const SizedBox(
+                    height: 72,
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${widget.title}读取失败：${snapshot.error}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                      TextButton(onPressed: _retry, child: const Text('重试')),
+                    ],
+                  );
+                }
+                final reviews = snapshot.data ?? const <EntityReview>[];
+                if (reviews.isEmpty) return Text(widget.emptyText);
+                return Column(
+                  children: [
+                    for (var index = 0; index < reviews.length; index++) ...[
+                      EntityReviewCard(
+                        review: reviews[index],
+                        showTarget: true,
+                        showTripLinks: widget.showTripLinks,
+                        showDivider: index < reviews.length - 1,
+                        contentPadding: EdgeInsets.fromLTRB(
+                          0,
+                          index == 0 ? 0 : 12,
+                          0,
+                          index < reviews.length - 1 ? 14 : 4,
+                        ),
+                        onChanged: _refresh,
+                        onTargetTap: () =>
+                            openEntityReviewTarget(context, reviews[index]),
+                        onTripTap: widget.showTripLinks
+                            ? (trip) => _openTrip(context, trip)
+                            : null,
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+    );
+  }
+
+  void _openTrip(BuildContext context, TripRecord trip) {
+    Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) =>
+            TripRecordDetailsPage.public(ticketId: trip.ticketId ?? trip.id),
+      ),
+    );
+  }
+}
+
+class _TripLoginRequired extends StatelessWidget {
+  const _TripLoginRequired();
+
+  @override
+  Widget build(BuildContext context) => const LoginRequiredView(
+    icon: Icons.lock_outline,
+    message: _tripLoginRequiredMessage,
+  );
+}
+
 class _PublicOwnerBanner extends StatelessWidget {
   const _PublicOwnerBanner({
     required this.name,
     this.avatarUrl,
     this.bio,
+    required this.achievementExperience,
     this.onTap,
   });
 
   final String name;
   final String? avatarUrl;
   final String? bio;
+  final int achievementExperience;
   final VoidCallback? onTap;
 
   @override
@@ -437,13 +631,20 @@ class _PublicOwnerBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    UserLevelBadge(experience: achievementExperience),
+                  ],
                 ),
                 const SizedBox(height: 3),
                 Text(
@@ -1010,16 +1211,12 @@ class _InfoItem extends StatelessWidget {
     required this.value,
     this.infoTap,
     this.infoTooltip = '查看详情',
-    this.railGoTap,
-    this.valueFontFamily,
   });
 
   final String label;
   final String value;
   final VoidCallback? infoTap;
   final String infoTooltip;
-  final VoidCallback? railGoTap;
-  final String? valueFontFamily;
 
   @override
   Widget build(BuildContext context) {
@@ -1036,35 +1233,26 @@ class _InfoItem extends StatelessWidget {
         const SizedBox(height: 3),
         Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Flexible(
               child: SelectableText(
                 value,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(fontFamily: valueFontFamily),
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
             ),
             if (infoTap != null && value != '未记录') ...[
-              const SizedBox(width: 4),
               IconButton(
                 tooltip: infoTooltip,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 onPressed: infoTap,
-                icon: Icon(Icons.info_outline, size: 16, color: colors.primary),
-              ),
-            ],
-            if (railGoTap != null && value != '未记录') ...[
-              const SizedBox(width: 2),
-              IconButton(
-                tooltip: '在 RailGo 中查询该车组',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-                onPressed: railGoTap,
-                icon: Icon(Icons.open_in_new, size: 16, color: colors.primary),
+                icon: Icon(
+                  Icons.play_arrow_rounded,
+                  size: 16,
+                  color: colors.primary,
+                ),
               ),
             ],
           ],
@@ -1072,6 +1260,160 @@ class _InfoItem extends StatelessWidget {
       ],
     );
     return content;
+  }
+}
+
+class _RollingStockInfoItem extends StatelessWidget {
+  const _RollingStockInfoItem({required this.items});
+
+  final List<TrainModelParseResult> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final displayItems = [
+      for (final item in items)
+        if (item.numbers.isEmpty)
+          _RollingStockDisplayItem(model: item)
+        else
+          for (final number in item.numbers)
+            _RollingStockDisplayItem(model: item, number: number),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '车型',
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 3),
+        if (items.isEmpty)
+          Text('未记录', style: Theme.of(context).textTheme.bodyLarge)
+        else
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var index = 0; index < displayItems.length; index++) ...[
+                if (index > 0)
+                  Icon(
+                    Icons.link_rounded,
+                    size: 14,
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+                    semanticLabel: '连接',
+                  ),
+                _RollingStockEntityChip(item: displayItems[index]),
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _RollingStockDisplayItem {
+  const _RollingStockDisplayItem({required this.model, this.number});
+
+  final TrainModelParseResult model;
+  final String? number;
+
+  String get label {
+    if (model.modelCode.trim().isEmpty) return model.rawSegment;
+    final number = this.number;
+    if (number == null) return model.modelCode;
+    return model.category == TrainCategory.emu
+        ? '${model.modelCode}-$number'
+        : '${model.modelCode} $number';
+  }
+
+  String get entityKey => model.statisticsCode.trim().isEmpty
+      ? model.rawSegment
+      : model.statisticsCode;
+
+  String? get railGoCode =>
+      model.category == TrainCategory.emu && number != null
+      ? '${model.modelCode}-$number'
+      : null;
+}
+
+class _RollingStockEntityChip extends StatelessWidget {
+  const _RollingStockEntityChip({required this.item});
+
+  final _RollingStockDisplayItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final accentColor = switch (item.model.category) {
+      TrainCategory.emu => colors.primary,
+      TrainCategory.locomotive => colors.error,
+      TrainCategory.coach => colors.tertiary,
+    };
+    final isEmu = item.model.category == TrainCategory.emu;
+    final valueStyle = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurface,
+      fontWeight: FontWeight.w500,
+      fontFamily: isEmu ? 'HVCB' : null,
+    );
+    final railGoCode = item.railGoCode;
+
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: accentColor.withValues(alpha: 0.5)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => openEntityPage(
+              context,
+              EntityType.rollingStock,
+              item.entityKey,
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(6, 4, railGoCode == null ? 6 : 3, 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(item.label, style: valueStyle),
+                  const SizedBox(width: 2),
+                  Icon(Icons.play_arrow_rounded, size: 13, color: accentColor),
+                ],
+              ),
+            ),
+          ),
+          if (railGoCode != null) ...[
+            Container(
+              width: 1,
+              height: 14,
+              color: accentColor.withValues(alpha: 0.38),
+            ),
+            Tooltip(
+              message: '在 RailGo 中查询该车组',
+              child: InkWell(
+                onTap: () => _openRailGoEmu(context, railGoCode),
+                child: SizedBox(
+                  width: 26,
+                  height: 24,
+                  child: Icon(
+                    Icons.open_in_new,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -1290,14 +1632,19 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       builder: (context, constraints) {
         final columns = stations.length == 1
             ? 1
-            : math.max(2, math.min(8, (constraints.maxWidth / 80).floor()));
-        final rowCount = (stations.length + columns - 1) ~/ columns;
+            : math.max(2, math.min(7, (constraints.maxWidth / 80).floor()));
+        final trackLayout = _ViaTrackLayout.build(
+          stationCount: stations.length,
+          routeSectionIds: routeSectionIds,
+          columns: columns,
+        );
+        final rowCount = (trackLayout.slotCount + columns - 1) ~/ columns;
         final height = rowCount * _rowHeight;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '点击车站名查看图片',
+              '点击名称查看详情',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
@@ -1316,6 +1663,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                         stationCount: stations.length,
                         columns: columns,
                         trackUnderlayColor: colors.surfaceContainerHighest,
+                        trackLayout: trackLayout,
                       ),
                     ),
                   ),
@@ -1331,6 +1679,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                         segmentColors: segmentColors,
                         fallback: colors.primary,
                         columns: columns,
+                        slot: trackLayout.stationSlots[index],
                       ),
                       rightColor: _stationSideColor(
                         index,
@@ -1338,9 +1687,11 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                         segmentColors: segmentColors,
                         fallback: colors.primary,
                         columns: columns,
+                        slot: trackLayout.stationSlots[index],
                       ),
                       width: constraints.maxWidth,
                       columns: columns,
+                      slot: trackLayout.stationSlots[index],
                     ),
                   ..._buildRouteLabels(
                     context,
@@ -1350,6 +1701,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                     segmentColors: segmentColors,
                     width: constraints.maxWidth,
                     columns: columns,
+                    trackLayout: trackLayout,
                   ),
                 ],
               ),
@@ -1368,6 +1720,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required List<Color> segmentColors,
     required double width,
     required int columns,
+    required _ViaTrackLayout trackLayout,
   }) {
     final labels = <Widget>[];
     var firstSegment = 0;
@@ -1384,6 +1737,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         lastSegment,
         width,
         columns,
+        trackLayout,
       );
       final routeName = routeNames[firstSegment];
       final labelWidth = math.min(112.0, width);
@@ -1402,7 +1756,8 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
               route: routeName,
               color: segmentColors[firstSegment],
               expanded: canExpand && _expandedRouteSections.contains(sectionId),
-              onTap: canExpand
+              onTap: () => openEntityPage(context, EntityType.route, routeName),
+              onToggle: canExpand
                   ? () {
                       setState(() {
                         if (!_expandedRouteSections.add(sectionId)) {
@@ -1411,8 +1766,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       });
                     }
                   : null,
-              onInfo: () =>
-                  openEntityPage(context, EntityType.route, routeName),
             ),
           ),
         ),
@@ -1427,27 +1780,39 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     int lastSegment,
     double width,
     int columns,
+    _ViaTrackLayout trackLayout,
   ) {
-    final startsAtTurn = firstSegment % columns == columns - 1;
-    final start = _viaStationOffset(firstSegment, width, columns, _rowHeight);
-    if (startsAtTurn && lastSegment == firstSegment) return start;
+    final firstSlot = trackLayout.stationSlots[firstSegment];
+    if (trackLayout.hasVirtualAfter(firstSegment) &&
+        lastSegment == firstSegment) {
+      final virtual = _viaSlotOffset(
+        trackLayout.virtualSlotAfter(firstSegment),
+        width,
+        columns,
+        _rowHeight,
+      );
+      final nextStation = _viaSlotOffset(
+        trackLayout.stationSlots[firstSegment + 1],
+        width,
+        columns,
+        _rowHeight,
+      );
+      return Offset((virtual.dx + nextStation.dx) / 2, nextStation.dy);
+    }
 
-    final firstRowSegment = startsAtTurn ? firstSegment + 1 : firstSegment;
-    final firstRow = firstRowSegment ~/ columns;
-    final rowStart = _viaStationOffset(
-      firstRowSegment,
-      width,
-      columns,
-      _rowHeight,
-    );
+    final startsAtTurn = firstSlot % columns == columns - 1;
+    final firstRowSlot = startsAtTurn ? firstSlot + 1 : firstSlot;
+    final firstRow = firstRowSlot ~/ columns;
+    final endSlot = trackLayout.stationSlots[lastSegment + 1];
+    final rowStart = _viaSlotOffset(firstRowSlot, width, columns, _rowHeight);
     var endX = rowStart.dx;
-    for (var index = firstRowSegment; index <= lastSegment; index++) {
-      if (index ~/ columns != firstRow) break;
-      final end = _viaStationOffset(index + 1, width, columns, _rowHeight);
-      if (index ~/ columns == (index + 1) ~/ columns) {
+    for (var slot = firstRowSlot; slot < endSlot; slot++) {
+      if (slot ~/ columns != firstRow) break;
+      final end = _viaSlotOffset(slot + 1, width, columns, _rowHeight);
+      if (slot ~/ columns == (slot + 1) ~/ columns) {
         endX = end.dx;
       } else {
-        endX = _viaStationOffset(index, width, columns, _rowHeight).dx;
+        endX = _viaSlotOffset(slot, width, columns, _rowHeight).dx;
         break;
       }
     }
@@ -1460,13 +1825,14 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required List<Color> segmentColors,
     required Color fallback,
     required int columns,
+    required int slot,
   }) {
     if (segmentColors.isEmpty) return fallback;
     final incoming = index > 0 ? segmentColors[index - 1] : segmentColors.first;
     final outgoing = index < segmentColors.length
         ? segmentColors[index]
         : segmentColors.last;
-    final incomingIsLeft = (index ~/ columns).isEven;
+    final incomingIsLeft = (slot ~/ columns).isEven;
     return left == incomingIsLeft ? incoming : outgoing;
   }
 
@@ -1508,9 +1874,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required Color rightColor,
     required double width,
     required int columns,
+    required int slot,
   }) {
-    final row = index ~/ columns;
-    final x = _viaStationX(index, width, columns);
+    final row = slot ~/ columns;
+    final x = _viaSlotX(slot, width, columns);
     final labelWidth = math.min(104.0, width / columns);
     return Positioned(
       top: row * _rowHeight + 25,
@@ -1548,72 +1915,79 @@ class _ViaRouteLabel extends StatelessWidget {
     required this.color,
     required this.expanded,
     this.onTap,
-    this.onInfo,
+    this.onToggle,
   });
 
   final String route;
   final Color color;
   final bool expanded;
   final VoidCallback? onTap;
-  final VoidCallback? onInfo;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(
-            child: Text(
-              route,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          if (onTap != null) ...[
-            const SizedBox(width: 2),
-            Icon(
-              expanded ? Icons.expand_less : Icons.expand_more,
-              size: 14,
-              color: colors.onSurfaceVariant,
-            ),
-          ],
-          if (onInfo != null)
-            IconButton(
-              tooltip: '查看线路详情',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-              icon: const Icon(Icons.info_outline, size: 14),
-              onPressed: onInfo,
-            ),
-        ],
-      ),
-    );
-    final label = Material(
+    return Material(
       color: colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
         side: BorderSide(color: color.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(8),
       ),
       clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? content
-          : InkWell(
-              onTap: onTap,
-              splashFactory: NoSplash.splashFactory,
-              highlightColor: Colors.transparent,
-              child: content,
+      child: SizedBox(
+        height: 24,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Tooltip(
+                message: '查看$route详情',
+                child: InkWell(
+                  onTap: onTap,
+                  splashFactory: NoSplash.splashFactory,
+                  highlightColor: Colors.transparent,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      route,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
+            if (onToggle != null) ...[
+              Container(
+                width: 1,
+                height: 14,
+                color: color.withValues(alpha: 0.32),
+              ),
+              Tooltip(
+                message: expanded ? '收起$route' : '展开$route',
+                child: InkWell(
+                  onTap: onToggle,
+                  splashFactory: NoSplash.splashFactory,
+                  highlightColor: Colors.transparent,
+                  child: SizedBox(
+                    width: 22,
+                    height: 24,
+                    child: Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 14,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
-    return onTap == null
-        ? label
-        : Tooltip(message: expanded ? '收起$route' : '展开$route', child: label);
   }
 }
 
@@ -1625,6 +1999,7 @@ class _ViaRoutePainter extends CustomPainter {
     required this.stationCount,
     required this.columns,
     required this.trackUnderlayColor,
+    required this.trackLayout,
   });
 
   final List<Color> segmentColors;
@@ -1633,6 +2008,7 @@ class _ViaRoutePainter extends CustomPainter {
   final int stationCount;
   final int columns;
   final Color trackUnderlayColor;
+  final _ViaTrackLayout trackLayout;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1657,10 +2033,27 @@ class _ViaRoutePainter extends CustomPainter {
           routeSectionIds[lastSegment + 1] == routeSectionIds[firstSegment]) {
         lastSegment++;
       }
-      final points = [
-        for (var index = firstSegment; index <= lastSegment + 1; index++)
-          _viaStationOffset(index, size.width, columns, rowHeight),
-      ];
+      final points = <Offset>[];
+      for (var station = firstSegment; station <= lastSegment + 1; station++) {
+        points.add(
+          _viaSlotOffset(
+            trackLayout.stationSlots[station],
+            size.width,
+            columns,
+            rowHeight,
+          ),
+        );
+        if (trackLayout.hasVirtualAfter(station)) {
+          points.add(
+            _viaSlotOffset(
+              trackLayout.virtualSlotAfter(station),
+              size.width,
+              columns,
+              rowHeight,
+            ),
+          );
+        }
+      }
       final path = _roundedRoutePath(_addTurnaroundPoints(points, size.width));
       canvas.drawPath(path, underlayPaint);
       routePaint.color = segmentColors[firstSegment];
@@ -1718,6 +2111,10 @@ class _ViaRoutePainter extends CustomPainter {
       oldDelegate.stationCount != stationCount ||
       oldDelegate.columns != columns ||
       oldDelegate.trackUnderlayColor != trackUnderlayColor ||
+      !_sameInts(
+        oldDelegate.trackLayout.stationSlots,
+        trackLayout.stationSlots,
+      ) ||
       !_sameInts(oldDelegate.routeSectionIds, routeSectionIds) ||
       !_sameColors(oldDelegate.segmentColors, segmentColors);
 
@@ -1738,26 +2135,75 @@ class _ViaRoutePainter extends CustomPainter {
   }
 }
 
-Offset _viaStationOffset(
-  int index,
-  double width,
-  int columns,
-  double rowHeight,
-) {
+/// 行尾线路卡需要额外空间时插入虚拟站距，并推动后续线路整体后移。
+class _ViaTrackLayout {
+  const _ViaTrackLayout({
+    required this.stationSlots,
+    required this.virtualSlotsAfter,
+  });
+
+  factory _ViaTrackLayout.build({
+    required int stationCount,
+    required List<int> routeSectionIds,
+    required int columns,
+  }) {
+    final virtualSlotsAfter = <int>{};
+    var priorVirtualSlots = 0;
+    var firstSegment = 0;
+    while (firstSegment < routeSectionIds.length) {
+      var lastSegment = firstSegment;
+      while (lastSegment + 1 < routeSectionIds.length &&
+          routeSectionIds[lastSegment + 1] == routeSectionIds[firstSegment]) {
+        lastSegment++;
+      }
+      final mappedFirstSlot = firstSegment + priorVirtualSlots;
+      if (lastSegment == firstSegment &&
+          firstSegment + 1 < stationCount &&
+          mappedFirstSlot % columns == columns - 1) {
+        virtualSlotsAfter.add(firstSegment);
+        priorVirtualSlots++;
+      }
+      firstSegment = lastSegment + 1;
+    }
+
+    final stationSlots = List<int>.filled(stationCount, 0);
+    var offset = 0;
+    for (var station = 0; station < stationCount; station++) {
+      stationSlots[station] = station + offset;
+      if (virtualSlotsAfter.contains(station)) offset++;
+    }
+    return _ViaTrackLayout(
+      stationSlots: List.unmodifiable(stationSlots),
+      virtualSlotsAfter: Set.unmodifiable(virtualSlotsAfter),
+    );
+  }
+
+  final List<int> stationSlots;
+  final Set<int> virtualSlotsAfter;
+
+  int get slotCount => stationSlots.length + virtualSlotsAfter.length;
+
+  bool hasVirtualAfter(int stationIndex) =>
+      virtualSlotsAfter.contains(stationIndex);
+
+  int virtualSlotAfter(int stationIndex) => stationSlots[stationIndex] + 1;
+}
+
+Offset _viaSlotOffset(int slot, double width, int columns, double rowHeight) {
   return Offset(
-    _viaStationX(index, width, columns),
-    index ~/ columns * rowHeight + 34,
+    _viaSlotX(slot, width, columns),
+    slot ~/ columns * rowHeight + 34,
   );
 }
 
-double _viaStationX(int index, double width, int columns) {
+double _viaSlotX(int slot, double width, int columns) {
   final horizontalPadding = math.min(44.0, width / 4);
   final step = columns == 1
       ? 0.0
       : (width - horizontalPadding * 2) / (columns - 1);
-  final slot = index % columns;
-  final row = index ~/ columns;
-  final actualSlot = row.isEven ? slot : columns - 1 - slot;
+  final slotInRow = slot % columns;
+  final row = slot ~/ columns;
+  final actualSlot = row.isEven ? slotInRow : columns - 1 - slotInRow;
   return horizontalPadding + actualSlot * step;
 }
 
@@ -1784,7 +2230,7 @@ class _ViaStationLabel extends StatelessWidget {
           : CrossAxisAlignment.center,
       children: [
         Tooltip(
-          message: '查看$station图片',
+          message: '查看$station详情',
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(4),
@@ -1924,28 +2370,6 @@ class _MessageState extends StatelessWidget {
 String _optionalText(String? value) {
   final text = value?.trim() ?? '';
   return text.isEmpty ? '未记录' : text;
-}
-
-bool _usesHvcbFont(String? value) =>
-    value?.toUpperCase().contains('CR') ?? false;
-
-/// 完整动车组写法（车型 + 四位车号）的车组号，重联车组取靠前的一组。
-/// 例如 CR400BF-5033&5034 → CR400BF-5033，CRH380B-3606+CRH380B-3607 → CRH380B-3606。
-String? _completeEmuCode(String? rawValue) {
-  final text = rawValue?.trim() ?? '';
-  if (text.isEmpty) return null;
-  final leading = text.split('+').first.trim();
-  final emuPattern = RegExp(r'^(.+?)-\d{4}(?:&\d{4})*$', caseSensitive: false);
-  if (!emuPattern.hasMatch(leading)) return null;
-  final unit = leading.split('&').first.trim();
-  final model = rollingStockModelCode(unit).toUpperCase();
-  if (!model.contains('CR') && !model.startsWith('CJ')) return null;
-  return unit;
-}
-
-VoidCallback? _railGoEmuTap(BuildContext context, String? rollingStock) {
-  final code = _completeEmuCode(rollingStock);
-  return code == null ? null : () => _openRailGoEmu(context, code);
 }
 
 Future<void> _openRailGoEmu(BuildContext context, String code) async {

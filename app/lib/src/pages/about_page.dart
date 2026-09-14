@@ -180,12 +180,6 @@ class _AboutPageState extends State<AboutPage> {
                           url: 'https://www.12306.cn/',
                         ),
                         _LinkTile(
-                          icon: Icons.directions_railway_outlined,
-                          title: 'Rail.Re API',
-                          subtitle: '列车车型数据',
-                          url: 'https://api.rail.re/',
-                        ),
-                        _LinkTile(
                           icon: Icons.route_outlined,
                           title: '数智枫都 API',
                           subtitle: '担当企业与里程数据',
@@ -244,14 +238,19 @@ class _AboutPageState extends State<AboutPage> {
                           ),
                         ),
                         const _InfoTile(
-                          icon: Icons.data_object_outlined,
-                          title: '枫糖 wangxiaole',
-                          subtitle: '收集相关数据',
-                        ),
-                        const _InfoTile(
                           icon: Icons.emoji_events_outlined,
                           title: '西行寺启动子',
                           subtitle: '提供部分成就',
+                        ),
+                        const _InfoTile(
+                          icon: Icons.cloud_outlined,
+                          title: 'SS7D',
+                          subtitle: '提供下载服务器',
+                        ),
+                        const _InfoTile(
+                          icon: Icons.data_object_outlined,
+                          title: '枫糖 wangxiaole',
+                          subtitle: '收集相关数据',
                         ),
                         const _InfoTile(
                           icon: Icons.texture_outlined,

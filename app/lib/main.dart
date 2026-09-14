@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/main_navigation_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,6 +81,7 @@ class RailLogApp extends StatelessWidget {
             themeMode: settings.themeMode,
             theme: _theme(lightScheme),
             darkTheme: _theme(darkScheme),
+            onGenerateRoute: _onGenerateRoute,
             home: const MainNavigationPage(),
           );
         },
@@ -91,4 +94,20 @@ class RailLogApp extends StatelessWidget {
     colorScheme: colorScheme,
     fontFamily: 'Noto Sans SC',
   );
+
+  Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
+    const userRoutePrefix = '/users/';
+    final routeName = settings.name;
+    if (routeName == null || !routeName.startsWith(userRoutePrefix)) {
+      return null;
+    }
+    final userId = Uri.decodeComponent(
+      routeName.substring(userRoutePrefix.length),
+    );
+    if (userId.isEmpty) return null;
+    return m3PageRoute(
+      settings: settings,
+      builder: (_) => PublicUserPage(userId: userId),
+    );
+  }
 }
