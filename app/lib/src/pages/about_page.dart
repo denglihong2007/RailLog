@@ -180,12 +180,6 @@ class _AboutPageState extends State<AboutPage> {
                           url: 'https://www.12306.cn/',
                         ),
                         _LinkTile(
-                          icon: Icons.directions_railway_outlined,
-                          title: 'Rail.Re API',
-                          subtitle: '列车车型数据',
-                          url: 'https://api.rail.re/',
-                        ),
-                        _LinkTile(
                           icon: Icons.route_outlined,
                           title: '数智枫都 API',
                           subtitle: '担当企业与里程数据',
