@@ -1020,6 +1020,7 @@ class _InfoItem extends StatelessWidget {
         const SizedBox(height: 3),
         Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Flexible(
               child: SelectableText(
@@ -1028,14 +1029,17 @@ class _InfoItem extends StatelessWidget {
               ),
             ),
             if (infoTap != null && value != '未记录') ...[
-              const SizedBox(width: 4),
               IconButton(
                 tooltip: infoTooltip,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                 onPressed: infoTap,
-                icon: Icon(Icons.info_outline, size: 16, color: colors.primary),
+                icon: Icon(
+                  Icons.play_arrow_rounded,
+                  size: 16,
+                  color: colors.primary,
+                ),
               ),
             ],
           ],
@@ -1415,14 +1419,19 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       builder: (context, constraints) {
         final columns = stations.length == 1
             ? 1
-            : math.max(2, math.min(8, (constraints.maxWidth / 80).floor()));
-        final rowCount = (stations.length + columns - 1) ~/ columns;
+            : math.max(2, math.min(7, (constraints.maxWidth / 80).floor()));
+        final trackLayout = _ViaTrackLayout.build(
+          stationCount: stations.length,
+          routeSectionIds: routeSectionIds,
+          columns: columns,
+        );
+        final rowCount = (trackLayout.slotCount + columns - 1) ~/ columns;
         final height = rowCount * _rowHeight;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '点击车站名查看图片',
+              '点击名称查看详情',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
@@ -1441,6 +1450,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                         stationCount: stations.length,
                         columns: columns,
                         trackUnderlayColor: colors.surfaceContainerHighest,
+                        trackLayout: trackLayout,
                       ),
                     ),
                   ),
@@ -1456,6 +1466,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                         segmentColors: segmentColors,
                         fallback: colors.primary,
                         columns: columns,
+                        slot: trackLayout.stationSlots[index],
                       ),
                       rightColor: _stationSideColor(
                         index,
@@ -1463,9 +1474,11 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                         segmentColors: segmentColors,
                         fallback: colors.primary,
                         columns: columns,
+                        slot: trackLayout.stationSlots[index],
                       ),
                       width: constraints.maxWidth,
                       columns: columns,
+                      slot: trackLayout.stationSlots[index],
                     ),
                   ..._buildRouteLabels(
                     context,
@@ -1475,6 +1488,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                     segmentColors: segmentColors,
                     width: constraints.maxWidth,
                     columns: columns,
+                    trackLayout: trackLayout,
                   ),
                 ],
               ),
@@ -1493,6 +1507,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required List<Color> segmentColors,
     required double width,
     required int columns,
+    required _ViaTrackLayout trackLayout,
   }) {
     final labels = <Widget>[];
     var firstSegment = 0;
@@ -1509,6 +1524,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         lastSegment,
         width,
         columns,
+        trackLayout,
       );
       final routeName = routeNames[firstSegment];
       final labelWidth = math.min(112.0, width);
@@ -1527,7 +1543,8 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
               route: routeName,
               color: segmentColors[firstSegment],
               expanded: canExpand && _expandedRouteSections.contains(sectionId),
-              onTap: canExpand
+              onTap: () => openEntityPage(context, EntityType.route, routeName),
+              onToggle: canExpand
                   ? () {
                       setState(() {
                         if (!_expandedRouteSections.add(sectionId)) {
@@ -1536,8 +1553,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       });
                     }
                   : null,
-              onInfo: () =>
-                  openEntityPage(context, EntityType.route, routeName),
             ),
           ),
         ),
@@ -1552,27 +1567,39 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     int lastSegment,
     double width,
     int columns,
+    _ViaTrackLayout trackLayout,
   ) {
-    final startsAtTurn = firstSegment % columns == columns - 1;
-    final start = _viaStationOffset(firstSegment, width, columns, _rowHeight);
-    if (startsAtTurn && lastSegment == firstSegment) return start;
+    final firstSlot = trackLayout.stationSlots[firstSegment];
+    if (trackLayout.hasVirtualAfter(firstSegment) &&
+        lastSegment == firstSegment) {
+      final virtual = _viaSlotOffset(
+        trackLayout.virtualSlotAfter(firstSegment),
+        width,
+        columns,
+        _rowHeight,
+      );
+      final nextStation = _viaSlotOffset(
+        trackLayout.stationSlots[firstSegment + 1],
+        width,
+        columns,
+        _rowHeight,
+      );
+      return Offset((virtual.dx + nextStation.dx) / 2, nextStation.dy);
+    }
 
-    final firstRowSegment = startsAtTurn ? firstSegment + 1 : firstSegment;
-    final firstRow = firstRowSegment ~/ columns;
-    final rowStart = _viaStationOffset(
-      firstRowSegment,
-      width,
-      columns,
-      _rowHeight,
-    );
+    final startsAtTurn = firstSlot % columns == columns - 1;
+    final firstRowSlot = startsAtTurn ? firstSlot + 1 : firstSlot;
+    final firstRow = firstRowSlot ~/ columns;
+    final endSlot = trackLayout.stationSlots[lastSegment + 1];
+    final rowStart = _viaSlotOffset(firstRowSlot, width, columns, _rowHeight);
     var endX = rowStart.dx;
-    for (var index = firstRowSegment; index <= lastSegment; index++) {
-      if (index ~/ columns != firstRow) break;
-      final end = _viaStationOffset(index + 1, width, columns, _rowHeight);
-      if (index ~/ columns == (index + 1) ~/ columns) {
+    for (var slot = firstRowSlot; slot < endSlot; slot++) {
+      if (slot ~/ columns != firstRow) break;
+      final end = _viaSlotOffset(slot + 1, width, columns, _rowHeight);
+      if (slot ~/ columns == (slot + 1) ~/ columns) {
         endX = end.dx;
       } else {
-        endX = _viaStationOffset(index, width, columns, _rowHeight).dx;
+        endX = _viaSlotOffset(slot, width, columns, _rowHeight).dx;
         break;
       }
     }
@@ -1585,13 +1612,14 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required List<Color> segmentColors,
     required Color fallback,
     required int columns,
+    required int slot,
   }) {
     if (segmentColors.isEmpty) return fallback;
     final incoming = index > 0 ? segmentColors[index - 1] : segmentColors.first;
     final outgoing = index < segmentColors.length
         ? segmentColors[index]
         : segmentColors.last;
-    final incomingIsLeft = (index ~/ columns).isEven;
+    final incomingIsLeft = (slot ~/ columns).isEven;
     return left == incomingIsLeft ? incoming : outgoing;
   }
 
@@ -1633,9 +1661,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required Color rightColor,
     required double width,
     required int columns,
+    required int slot,
   }) {
-    final row = index ~/ columns;
-    final x = _viaStationX(index, width, columns);
+    final row = slot ~/ columns;
+    final x = _viaSlotX(slot, width, columns);
     final labelWidth = math.min(104.0, width / columns);
     return Positioned(
       top: row * _rowHeight + 25,
@@ -1673,72 +1702,79 @@ class _ViaRouteLabel extends StatelessWidget {
     required this.color,
     required this.expanded,
     this.onTap,
-    this.onInfo,
+    this.onToggle,
   });
 
   final String route;
   final Color color;
   final bool expanded;
   final VoidCallback? onTap;
-  final VoidCallback? onInfo;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(
-            child: Text(
-              route,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          if (onTap != null) ...[
-            const SizedBox(width: 2),
-            Icon(
-              expanded ? Icons.expand_less : Icons.expand_more,
-              size: 14,
-              color: colors.onSurfaceVariant,
-            ),
-          ],
-          if (onInfo != null)
-            IconButton(
-              tooltip: '查看线路详情',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-              icon: const Icon(Icons.info_outline, size: 14),
-              onPressed: onInfo,
-            ),
-        ],
-      ),
-    );
-    final label = Material(
+    return Material(
       color: colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
         side: BorderSide(color: color.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(8),
       ),
       clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? content
-          : InkWell(
-              onTap: onTap,
-              splashFactory: NoSplash.splashFactory,
-              highlightColor: Colors.transparent,
-              child: content,
+      child: SizedBox(
+        height: 24,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Tooltip(
+                message: '查看$route详情',
+                child: InkWell(
+                  onTap: onTap,
+                  splashFactory: NoSplash.splashFactory,
+                  highlightColor: Colors.transparent,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      route,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
+            if (onToggle != null) ...[
+              Container(
+                width: 1,
+                height: 14,
+                color: color.withValues(alpha: 0.32),
+              ),
+              Tooltip(
+                message: expanded ? '收起$route' : '展开$route',
+                child: InkWell(
+                  onTap: onToggle,
+                  splashFactory: NoSplash.splashFactory,
+                  highlightColor: Colors.transparent,
+                  child: SizedBox(
+                    width: 22,
+                    height: 24,
+                    child: Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 14,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
-    return onTap == null
-        ? label
-        : Tooltip(message: expanded ? '收起$route' : '展开$route', child: label);
   }
 }
 
@@ -1750,6 +1786,7 @@ class _ViaRoutePainter extends CustomPainter {
     required this.stationCount,
     required this.columns,
     required this.trackUnderlayColor,
+    required this.trackLayout,
   });
 
   final List<Color> segmentColors;
@@ -1758,6 +1795,7 @@ class _ViaRoutePainter extends CustomPainter {
   final int stationCount;
   final int columns;
   final Color trackUnderlayColor;
+  final _ViaTrackLayout trackLayout;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1782,10 +1820,27 @@ class _ViaRoutePainter extends CustomPainter {
           routeSectionIds[lastSegment + 1] == routeSectionIds[firstSegment]) {
         lastSegment++;
       }
-      final points = [
-        for (var index = firstSegment; index <= lastSegment + 1; index++)
-          _viaStationOffset(index, size.width, columns, rowHeight),
-      ];
+      final points = <Offset>[];
+      for (var station = firstSegment; station <= lastSegment + 1; station++) {
+        points.add(
+          _viaSlotOffset(
+            trackLayout.stationSlots[station],
+            size.width,
+            columns,
+            rowHeight,
+          ),
+        );
+        if (trackLayout.hasVirtualAfter(station)) {
+          points.add(
+            _viaSlotOffset(
+              trackLayout.virtualSlotAfter(station),
+              size.width,
+              columns,
+              rowHeight,
+            ),
+          );
+        }
+      }
       final path = _roundedRoutePath(_addTurnaroundPoints(points, size.width));
       canvas.drawPath(path, underlayPaint);
       routePaint.color = segmentColors[firstSegment];
@@ -1843,6 +1898,10 @@ class _ViaRoutePainter extends CustomPainter {
       oldDelegate.stationCount != stationCount ||
       oldDelegate.columns != columns ||
       oldDelegate.trackUnderlayColor != trackUnderlayColor ||
+      !_sameInts(
+        oldDelegate.trackLayout.stationSlots,
+        trackLayout.stationSlots,
+      ) ||
       !_sameInts(oldDelegate.routeSectionIds, routeSectionIds) ||
       !_sameColors(oldDelegate.segmentColors, segmentColors);
 
@@ -1863,26 +1922,75 @@ class _ViaRoutePainter extends CustomPainter {
   }
 }
 
-Offset _viaStationOffset(
-  int index,
-  double width,
-  int columns,
-  double rowHeight,
-) {
+/// 行尾线路卡需要额外空间时插入虚拟站距，并推动后续线路整体后移。
+class _ViaTrackLayout {
+  const _ViaTrackLayout({
+    required this.stationSlots,
+    required this.virtualSlotsAfter,
+  });
+
+  factory _ViaTrackLayout.build({
+    required int stationCount,
+    required List<int> routeSectionIds,
+    required int columns,
+  }) {
+    final virtualSlotsAfter = <int>{};
+    var priorVirtualSlots = 0;
+    var firstSegment = 0;
+    while (firstSegment < routeSectionIds.length) {
+      var lastSegment = firstSegment;
+      while (lastSegment + 1 < routeSectionIds.length &&
+          routeSectionIds[lastSegment + 1] == routeSectionIds[firstSegment]) {
+        lastSegment++;
+      }
+      final mappedFirstSlot = firstSegment + priorVirtualSlots;
+      if (lastSegment == firstSegment &&
+          firstSegment + 1 < stationCount &&
+          mappedFirstSlot % columns == columns - 1) {
+        virtualSlotsAfter.add(firstSegment);
+        priorVirtualSlots++;
+      }
+      firstSegment = lastSegment + 1;
+    }
+
+    final stationSlots = List<int>.filled(stationCount, 0);
+    var offset = 0;
+    for (var station = 0; station < stationCount; station++) {
+      stationSlots[station] = station + offset;
+      if (virtualSlotsAfter.contains(station)) offset++;
+    }
+    return _ViaTrackLayout(
+      stationSlots: List.unmodifiable(stationSlots),
+      virtualSlotsAfter: Set.unmodifiable(virtualSlotsAfter),
+    );
+  }
+
+  final List<int> stationSlots;
+  final Set<int> virtualSlotsAfter;
+
+  int get slotCount => stationSlots.length + virtualSlotsAfter.length;
+
+  bool hasVirtualAfter(int stationIndex) =>
+      virtualSlotsAfter.contains(stationIndex);
+
+  int virtualSlotAfter(int stationIndex) => stationSlots[stationIndex] + 1;
+}
+
+Offset _viaSlotOffset(int slot, double width, int columns, double rowHeight) {
   return Offset(
-    _viaStationX(index, width, columns),
-    index ~/ columns * rowHeight + 34,
+    _viaSlotX(slot, width, columns),
+    slot ~/ columns * rowHeight + 34,
   );
 }
 
-double _viaStationX(int index, double width, int columns) {
+double _viaSlotX(int slot, double width, int columns) {
   final horizontalPadding = math.min(44.0, width / 4);
   final step = columns == 1
       ? 0.0
       : (width - horizontalPadding * 2) / (columns - 1);
-  final slot = index % columns;
-  final row = index ~/ columns;
-  final actualSlot = row.isEven ? slot : columns - 1 - slot;
+  final slotInRow = slot % columns;
+  final row = slot ~/ columns;
+  final actualSlot = row.isEven ? slotInRow : columns - 1 - slotInRow;
   return horizontalPadding + actualSlot * step;
 }
 
@@ -1909,7 +2017,7 @@ class _ViaStationLabel extends StatelessWidget {
           : CrossAxisAlignment.center,
       children: [
         Tooltip(
-          message: '查看$station图片',
+          message: '查看$station详情',
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(4),
