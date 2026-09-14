@@ -218,9 +218,6 @@ class _TripDetailsContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parsedRollingStock = TrainModelParser.parse(trip.rollingStock);
-    final primaryRollingStockModel = parsedRollingStock.isEmpty
-        ? ''
-        : parsedRollingStock.first.statisticsCode;
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -318,21 +315,7 @@ class _TripDetailsContent extends StatelessWidget {
                 title: '运行信息',
                 child: _InfoGrid(
                   children: [
-                    _InfoItem(
-                      label: '车型',
-                      value: _optionalText(trip.rollingStock),
-                      valueFontFamily:
-                          TrainModelParser.containsEmu(trip.rollingStock)
-                          ? 'HVCB'
-                          : null,
-                      infoTap: () => openEntityPage(
-                        context,
-                        EntityType.rollingStock,
-                        primaryRollingStockModel,
-                      ),
-                      infoTooltip: '查询车型',
-                      railGoTap: _railGoEmuTap(context, trip.rollingStock),
-                    ),
+                    _RollingStockInfoItem(items: parsedRollingStock),
                     _InfoItem(
                       label: '承运单位',
                       value: _optionalText(trip.companyName),
@@ -1015,16 +998,12 @@ class _InfoItem extends StatelessWidget {
     required this.value,
     this.infoTap,
     this.infoTooltip = '查看详情',
-    this.railGoTap,
-    this.valueFontFamily,
   });
 
   final String label;
   final String value;
   final VoidCallback? infoTap;
   final String infoTooltip;
-  final VoidCallback? railGoTap;
-  final String? valueFontFamily;
 
   @override
   Widget build(BuildContext context) {
@@ -1045,9 +1024,7 @@ class _InfoItem extends StatelessWidget {
             Flexible(
               child: SelectableText(
                 value,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(fontFamily: valueFontFamily),
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
             ),
             if (infoTap != null && value != '未记录') ...[
@@ -1061,22 +1038,165 @@ class _InfoItem extends StatelessWidget {
                 icon: Icon(Icons.info_outline, size: 16, color: colors.primary),
               ),
             ],
-            if (railGoTap != null && value != '未记录') ...[
-              const SizedBox(width: 2),
-              IconButton(
-                tooltip: '在 RailGo 中查询该车组',
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-                onPressed: railGoTap,
-                icon: Icon(Icons.open_in_new, size: 16, color: colors.primary),
-              ),
-            ],
           ],
         ),
       ],
     );
     return content;
+  }
+}
+
+class _RollingStockInfoItem extends StatelessWidget {
+  const _RollingStockInfoItem({required this.items});
+
+  final List<TrainModelParseResult> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final displayItems = [
+      for (final item in items)
+        if (item.numbers.isEmpty)
+          _RollingStockDisplayItem(model: item)
+        else
+          for (final number in item.numbers)
+            _RollingStockDisplayItem(model: item, number: number),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '车型',
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 3),
+        if (items.isEmpty)
+          Text('未记录', style: Theme.of(context).textTheme.bodyLarge)
+        else
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var index = 0; index < displayItems.length; index++) ...[
+                if (index > 0)
+                  Icon(
+                    Icons.link_rounded,
+                    size: 14,
+                    color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+                    semanticLabel: '连接',
+                  ),
+                _RollingStockEntityChip(item: displayItems[index]),
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _RollingStockDisplayItem {
+  const _RollingStockDisplayItem({required this.model, this.number});
+
+  final TrainModelParseResult model;
+  final String? number;
+
+  String get label {
+    if (model.modelCode.trim().isEmpty) return model.rawSegment;
+    final number = this.number;
+    if (number == null) return model.modelCode;
+    return model.category == TrainCategory.emu
+        ? '${model.modelCode}-$number'
+        : '${model.modelCode} $number';
+  }
+
+  String get entityKey => model.statisticsCode.trim().isEmpty
+      ? model.rawSegment
+      : model.statisticsCode;
+
+  String? get railGoCode =>
+      model.category == TrainCategory.emu && number != null
+      ? '${model.modelCode}-$number'
+      : null;
+}
+
+class _RollingStockEntityChip extends StatelessWidget {
+  const _RollingStockEntityChip({required this.item});
+
+  final _RollingStockDisplayItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final accentColor = switch (item.model.category) {
+      TrainCategory.emu => colors.primary,
+      TrainCategory.locomotive => colors.error,
+      TrainCategory.coach => colors.tertiary,
+    };
+    final isEmu = item.model.category == TrainCategory.emu;
+    final valueStyle = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurface,
+      fontWeight: FontWeight.w500,
+      fontFamily: isEmu ? 'HVCB' : null,
+    );
+    final railGoCode = item.railGoCode;
+
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: accentColor.withValues(alpha: 0.5)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () => openEntityPage(
+              context,
+              EntityType.rollingStock,
+              item.entityKey,
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(6, 4, railGoCode == null ? 6 : 3, 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(item.label, style: valueStyle),
+                  const SizedBox(width: 2),
+                  Icon(Icons.play_arrow_rounded, size: 13, color: accentColor),
+                ],
+              ),
+            ),
+          ),
+          if (railGoCode != null) ...[
+            Container(
+              width: 1,
+              height: 14,
+              color: accentColor.withValues(alpha: 0.38),
+            ),
+            Tooltip(
+              message: '在 RailGo 中查询该车组',
+              child: InkWell(
+                onTap: () => _openRailGoEmu(context, railGoCode),
+                child: SizedBox(
+                  width: 26,
+                  height: 24,
+                  child: Icon(
+                    Icons.open_in_new,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -1929,24 +2049,6 @@ class _MessageState extends StatelessWidget {
 String _optionalText(String? value) {
   final text = value?.trim() ?? '';
   return text.isEmpty ? '未记录' : text;
-}
-
-/// 完整动车组写法（车型 + 车号）的车组号，重联车组取靠前的一组。
-/// 例如 CR400BF-5033&5034 → CR400BF-5033，CRH380B-3606+CRH380B-3607 → CRH380B-3606。
-String? _completeEmuCode(String? rawValue) {
-  final parsed = TrainModelParser.parse(rawValue);
-  if (parsed.isEmpty) return null;
-
-  final leading = parsed.first;
-  if (leading.category != TrainCategory.emu || leading.numbers.isEmpty) {
-    return null;
-  }
-  return '${leading.modelCode}-${leading.numbers.first}';
-}
-
-VoidCallback? _railGoEmuTap(BuildContext context, String? rollingStock) {
-  final code = _completeEmuCode(rollingStock);
-  return code == null ? null : () => _openRailGoEmu(context, code);
 }
 
 Future<void> _openRailGoEmu(BuildContext context, String code) async {
