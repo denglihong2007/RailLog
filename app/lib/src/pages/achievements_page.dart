@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
+import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
@@ -54,6 +55,7 @@ class AchievementsPage extends StatelessWidget {
                     totalAchievements: achievements.length,
                     totalExperience: totalExperience,
                     openAchievement: _openAchievement,
+                    openRequirements: _openRequirements,
                   ),
               ],
             ),
@@ -77,6 +79,17 @@ class AchievementsPage extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _openRequirements(
+    BuildContext context,
+    DashboardAchievement achievement,
+  ) async {
+    await Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => AchievementRequirementsPage(achievement: achievement),
+      ),
+    );
+  }
 }
 
 class _AchievementCategoryView extends StatelessWidget {
@@ -87,6 +100,7 @@ class _AchievementCategoryView extends StatelessWidget {
     required this.totalAchievements,
     required this.totalExperience,
     required this.openAchievement,
+    required this.openRequirements,
   });
 
   final AchievementCategory category;
@@ -96,6 +110,8 @@ class _AchievementCategoryView extends StatelessWidget {
   final int totalExperience;
   final Future<void> Function(BuildContext, DashboardAchievement)
   openAchievement;
+  final Future<void> Function(BuildContext, DashboardAchievement)
+  openRequirements;
 
   @override
   Widget build(BuildContext context) {
@@ -166,6 +182,9 @@ class _AchievementCategoryView extends StatelessWidget {
                           onTap: achievement.unlockedBy == null
                               ? null
                               : () => openAchievement(context, achievement),
+                          onRequirementsTap: achievement.hasRequirements
+                              ? () => openRequirements(context, achievement)
+                              : null,
                         );
                       }, childCount: achievements.length),
                     ),

@@ -19,9 +19,14 @@ public sealed record AchievementEvaluation(
     public bool Hidden { get; init; }
     public string? Note { get; init; }
     public string? NarrativeNote { get; init; }
+    public IReadOnlyList<AchievementRequirement>? Requirements { get; init; }
 }
 
 public sealed record AchievementProgress(double Current, double Target);
+public sealed record AchievementRequirement(string Key, string Label, PublicTrip? Trip)
+{
+    public bool Completed => Trip is not null;
+}
 public sealed record AchievementReview(string EntityType, string EntityKey);
 public sealed record AchievementContext(int TotalExperience, int TotalReviewReactions);
 
@@ -895,9 +900,13 @@ public static partial class AchievementEngine
                     today,
                     fifteenYearsAgo,
                     context);
+                var requirements = metadata.Hidden
+                    ? null
+                    : RequirementsFor(item.Id, trips);
                 return item with
                 {
                     Progress = progress,
+                    Requirements = requirements,
                     Experience = ExperienceFor(
                         item.Id,
                         metadata,
@@ -1042,7 +1051,7 @@ public static partial class AchievementEngine
         "thousandCities" => P(StationCount(trips), 2500),
         "thousandKilometers" => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 1000),
         "airRail" => P(AirportStationCount(trips), 3),
-        "lonelyPlanet" => P(CollectedCount(trips, trip => new[] { "和若线", "格库线" }.Where(route => RouteNames(trip).Any(name => name.Contains(route, StringComparison.Ordinal)))), 2),
+        "lonelyPlanet" => P(CollectedCount(trips, trip => new[] { "若和铁路", "格库线" }.Where(route => RouteNames(trip).Any(name => name.Contains(route, StringComparison.Ordinal)))), 2),
         "hundredThousandKilometers" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
         "travelAllMountains" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 500000),
         "fiftyThousandSpending" => P(trips.Sum(trip => trip.Price), 50000),
@@ -1061,6 +1070,16 @@ public static partial class AchievementEngine
         "unnecessaryExtra" => P(MaxSameTrainTicketChain(trips), 3),
         "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
         "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
+        "verticalChina" => P(VisitedStationCount(trips, ["漠河", "三亚"]), 2),
+        "horizontalChina" => P(VisitedStationCount(trips, ["阿克陶", "抚远"]), 2),
+        "skyAndSea" => P(VisitedStationCount(trips, ["雁石坪", "香港西九龙"]), 2),
+        "fourExtremes" => P(VisitedStationCount(trips, ["漠河", "三亚", "阿克陶", "抚远"]), 4),
+        "borderPorts" => P(
+            VisitedStationCount(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]),
+            7),
+        "fourFamousNorths" => P(
+            VisitedStationCount(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
+            4),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "goddessYangtzeBridges" => P(
             YangtzeBridgeCount(trips),
@@ -1096,6 +1115,212 @@ public static partial class AchievementEngine
 
     private static AchievementProgress P(double current, double target) =>
         new(Math.Clamp(current, 0, target), target);
+
+    private static IReadOnlyList<AchievementRequirement>? RequirementsFor(
+        string id,
+        List<PublicTrip> trips) => id switch
+    {
+        "all25Series" => RollingStockRequirements(
+            trips,
+            new[] { "25B", "25G", "25Z", "25K", "25T", "25DT" }
+                .Select(model => new RollingStockTarget(model))),
+        "allEmuSeries" => CollectionRequirements(
+            trips,
+            EmuModelFamilies.Select(family => (Key: family.Series, Label: family.Series)),
+            trip => EmuMatches(trip.RollingStock)),
+        "allSeatTypes" => CollectionRequirements(
+            trips,
+            new[]
+            {
+                "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
+                "硬卧", "软卧", "二等卧", "一等卧", "高级软卧", "动卧", "高级动卧"
+            }.Select(seat => (Key: seat, Label: seat)),
+            trip => SeatTypeMatches(trip.SeatType)),
+        "lonelyPlanet" => RouteRequirements(trips, ["若和铁路", "格库线"]),
+        "verticalChina" => StationRequirements(trips, ["漠河", "三亚"]),
+        "horizontalChina" => StationRequirements(trips, ["阿克陶", "抚远"]),
+        "skyAndSea" => StationRequirements(trips, ["雁石坪", "香港西九龙"]),
+        "fourExtremes" => StationRequirements(trips, ["漠河", "三亚", "阿克陶", "抚远"]),
+        "borderPorts" => StationRequirements(
+            trips,
+            ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]),
+        "fourFamousNorths" => StationRequirements(
+            trips,
+            ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
+        "eastRedSunRises" => StationRequirements(trips, ["东方红", "太阳升"]),
+        "completeTrainLetters" => CollectionRequirements(
+            trips,
+        [
+            (Key: "G", Label: "G 字头"),
+            (Key: "D", Label: "D 字头"),
+            (Key: "C", Label: "C 字头"),
+            (Key: "S", Label: "S 字头"),
+            (Key: "Z", Label: "Z 字头"),
+            (Key: "T", Label: "T 字头"),
+            (Key: "K", Label: "K 字头"),
+            (Key: "Y", Label: "Y 字头"),
+            (Key: "numeric", Label: "纯数字车次")
+        ],
+            trip => CommonTrainCategory(trip.TrainNumber) is { } category
+                ? [category]
+                : []),
+        "grandSlam" => CollectionRequirements(
+            trips,
+            RailwayBureaus.Keys.Select(bureau => (Key: bureau, Label: bureau)),
+            trip =>
+            {
+                var company = trip.CompanyName?.Trim() ?? string.Empty;
+                var bureau = RailwayBureaus.FirstOrDefault(entry => entry.Value.Contains(company)).Key;
+                return bureau is null ? [] : [bureau];
+            }),
+        "railwayTrailblazer" => RollingStockRequirements(trips, EarlyEmuModels),
+        "whatAgeIsThis" => RollingStockRequirements(trips, EarlyPassengerCoachModels),
+        "revivalPrototype" => RollingStockRequirements(trips, PrototypeModels),
+        "meritAndHonor" => RollingStockRequirements(trips, HonorLocomotives),
+        "friendshipForever" => RollingStockRequirements(trips, EarlyImportedLocomotives),
+        "steamPower" => RollingStockRequirements(trips, SteamLocomotives),
+        "goddessYangtzeBridges" => YangtzeBridgeRequirements(trips),
+        "flowersAmong" => CollectionRequirements(
+            trips,
+            EmuModelFamilies.SelectMany(family => family.Models)
+                .Select(model => (Key: model, Label: model)),
+            trip => SmallEmuMatches(trip.RollingStock)),
+        "refinedMechanic" => CollectionRequirements(
+            trips,
+            ModernLocomotives.OrderBy(model => model, StringComparer.Ordinal)
+                .Select(model => (Key: model, Label: model)),
+            trip => RollingStockMatches(trip.RollingStock, ModernLocomotives)),
+        "dawnBreaks" => CollectionRequirements(
+            trips,
+            DongfengShaoshanLocomotives.OrderBy(model => model, StringComparer.Ordinal)
+                .Select(model => (Key: model, Label: model)),
+            trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives)),
+        "hundredPeople" => CollectionRequirements(
+            trips,
+            AllPassengerCompanies.OrderBy(company => company, StringComparer.Ordinal)
+                .Select(company => (Key: company, Label: company)),
+            trip =>
+            {
+                var company = trip.CompanyName?.Trim() ?? string.Empty;
+                return AllPassengerCompanies.Where(candidate =>
+                    company.Contains(candidate, StringComparison.Ordinal));
+            }),
+        "roamFreely" => RouteCatalogRequirements(trips),
+        _ => null
+    };
+
+    private static IReadOnlyList<AchievementRequirement> CollectionRequirements(
+        List<PublicTrip> trips,
+        IEnumerable<(string Key, string Label)> targets,
+        Func<PublicTrip, IEnumerable<string>> keysForTrip)
+    {
+        var entries = targets
+            .GroupBy(target => target.Key, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+        var targetKeys = entries
+            .Select(target => target.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var completedTrips = new Dictionary<string, PublicTrip>(StringComparer.Ordinal);
+        foreach (var trip in trips)
+        {
+            foreach (var key in keysForTrip(trip))
+            {
+                if (targetKeys.Contains(key))
+                    completedTrips.TryAdd(key, trip);
+            }
+        }
+
+        return entries
+            .Select(target => new AchievementRequirement(
+                target.Key,
+                target.Label,
+                completedTrips.GetValueOrDefault(target.Key)))
+            .ToList();
+    }
+
+    private static IReadOnlyList<AchievementRequirement> StationRequirements(
+        List<PublicTrip> trips,
+        IEnumerable<string> stations) =>
+        CollectionRequirements(
+            trips,
+            stations.Select(station =>
+            {
+                var normalized = NormalizedStation(station);
+                return (Key: normalized, Label: $"{normalized}站");
+            }),
+            trip => new[] { trip.FromStation, trip.ToStation }.Select(NormalizedStation));
+
+    private static IReadOnlyList<AchievementRequirement> RouteRequirements(
+        List<PublicTrip> trips,
+        IEnumerable<string> routes) =>
+        CollectionRequirements(
+            trips,
+            routes.Select(route => (Key: route, Label: route)),
+            trip =>
+            {
+                var routeNames = RouteNames(trip).ToList();
+                return routes.Where(route =>
+                    routeNames.Any(name => name.Contains(route, StringComparison.Ordinal)));
+            });
+
+    private static IReadOnlyList<AchievementRequirement> RollingStockRequirements(
+        List<PublicTrip> trips,
+        IEnumerable<RollingStockTarget> targets)
+    {
+        var values = targets.ToList();
+        return CollectionRequirements(
+            trips,
+            values.Select(target => (
+                Key: RollingStockTargetKey(target),
+                Label: RollingStockTargetLabel(target))),
+            trip => RollingStockMatches(trip.RollingStock, values)
+                .Select(RollingStockTargetKey));
+    }
+
+    private static string RollingStockTargetKey(RollingStockTarget target) =>
+        target.Number is null ? target.Model : $"{target.Model}-{target.Number}";
+
+    private static string RollingStockTargetLabel(RollingStockTarget target) =>
+        RollingStockTargetKey(target);
+
+    private static IReadOnlyList<AchievementRequirement> YangtzeBridgeRequirements(
+        List<PublicTrip> trips)
+    {
+        var bridges = AvailableYangtzeBridges
+            .GroupBy(bridge => bridge.Name, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+        return CollectionRequirements(
+            trips,
+            bridges.Select(bridge => (Key: bridge.Name, Label: bridge.Name)),
+            trip =>
+            {
+                var segments = RouteSegments(trip);
+                return bridges
+                    .Where(bridge => segments.Any(segment => CoversRouteSection(
+                        segment,
+                        bridge.RouteName,
+                        bridge.FromStation,
+                        bridge.ToStation)))
+                    .Select(bridge => bridge.Name);
+            });
+    }
+
+    private static IReadOnlyList<AchievementRequirement> RouteCatalogRequirements(
+        List<PublicTrip> trips)
+    {
+        var catalog = RouteStations.Value.Keys.ToHashSet(StringComparer.Ordinal);
+        return CollectionRequirements(
+            trips,
+            catalog.OrderBy(route => route, StringComparer.Ordinal)
+                .Select(route => (Key: route, Label: route)),
+            trip => RouteNames(trip)
+                .Select(name => catalog.Contains(name)
+                    ? name
+                    : catalog.FirstOrDefault(route => route.Contains(name, StringComparison.Ordinal)))
+                .Where(name => !string.IsNullOrEmpty(name))!);
+    }
 
     private static double MaxDurationHours(IEnumerable<PublicTrip> trips) => trips
         .Select(trip => ValidDuration(trip).TotalHours)

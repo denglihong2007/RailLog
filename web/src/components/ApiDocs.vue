@@ -75,6 +75,11 @@ const achievementFields: FieldDefinition[] = [
   { path: 'achievements[].experience', type: 'integer', description: '该成就提供的基础经验值；隐藏成就未解锁时返回 0。' },
   { path: 'achievements[].note', type: 'string | null', description: '技术性注释，例如车型清单或判定区间；没有技术注释时为 null。' },
   { path: 'achievements[].narrativeNote', type: 'string | null', description: '叙事性注释；隐藏成就未解锁时返回 null。' },
+  { path: 'achievements[].requirements', type: 'array<object> | null', description: '固定候选集合型成就的逐项达成情况；不适用或隐藏成就时为 null。' },
+  { path: 'achievements[].requirements[].key', type: 'string', description: '要求项的稳定标识，例如席别、车型、车站或线路名称。' },
+  { path: 'achievements[].requirements[].label', type: 'string', description: '要求项的中文展示名称。' },
+  { path: 'achievements[].requirements[].completed', type: 'boolean', description: '该要求项是否已经完成。' },
+  { path: 'achievements[].requirements[].trip', type: 'object | null', description: '首次完成该要求项的行程摘要；尚未完成时为 null。' },
 ]
 
 const props = defineProps<{ apiBase: string }>()

@@ -9,6 +9,7 @@ import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/achievements_page.dart';
+import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
@@ -712,6 +713,9 @@ class _AchievementsSection extends StatelessWidget {
                   onTap: achievements[index].unlockedBy == null
                       ? null
                       : () => _openAchievement(context, achievements[index]),
+                  onRequirementsTap: achievements[index].hasRequirements
+                      ? () => _openRequirements(context, achievements[index])
+                      : null,
                 ),
               ),
             );
@@ -738,6 +742,17 @@ class _AchievementsSection extends StatelessWidget {
           achievementId: achievement.id,
           title: achievement.title,
         ),
+      ),
+    );
+  }
+
+  Future<void> _openRequirements(
+    BuildContext context,
+    DashboardAchievement achievement,
+  ) async {
+    await Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => AchievementRequirementsPage(achievement: achievement),
       ),
     );
   }

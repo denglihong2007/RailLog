@@ -207,7 +207,14 @@ public sealed record AchievementResponse(
     int Experience,
     bool Hidden,
     string? Note,
-    string? NarrativeNote);
+    string? NarrativeNote,
+    IReadOnlyList<AchievementRequirementResponse>? Requirements = null);
+
+public sealed record AchievementRequirementResponse(
+    string Key,
+    string Label,
+    bool Completed,
+    PublicTripSummary? Trip);
 
 public sealed record AchievementsResponse(
     int TotalUserCount,

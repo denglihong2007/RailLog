@@ -2522,7 +2522,18 @@ public sealed class RailLogDatabase
                     hiddenLocked ? 0 : item.Definition.Experience,
                     item.Definition.Hidden,
                     hiddenLocked ? null : item.Definition.Note,
-                    hiddenLocked ? null : item.Definition.NarrativeNote);
+                    hiddenLocked ? null : item.Definition.NarrativeNote,
+                    item.Definition.Hidden || item.Definition.Requirements is null
+                        ? null
+                        : item.Definition.Requirements
+                            .Select(requirement => new AchievementRequirementResponse(
+                                requirement.Key,
+                                requirement.Label,
+                                requirement.Completed,
+                                requirement.Trip is null
+                                    ? null
+                                    : ToSummary(requirement.Trip)))
+                            .ToList());
             })
             .ToList();
         return new AchievementsResponse(totalUsers, items);

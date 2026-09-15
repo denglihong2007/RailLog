@@ -7,10 +7,12 @@ class DashboardAchievementCard extends StatelessWidget {
     super.key,
     required this.achievement,
     this.onTap,
+    this.onRequirementsTap,
   });
 
   final DashboardAchievement achievement;
   final VoidCallback? onTap;
+  final VoidCallback? onRequirementsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +22,12 @@ class DashboardAchievementCard extends StatelessWidget {
     final hasNarrative =
         unlocked && (achievement.narrativeNote?.trim().isNotEmpty ?? false);
     final content = Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        onRequirementsTap == null ? 16 : 11,
+        16,
+        onRequirementsTap == null ? 16 : 11,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -41,6 +48,37 @@ class DashboardAchievementCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (achievement.note?.trim().isNotEmpty ?? false) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Semantics(
+                  label: '注释：${achievement.note!.trim()}',
+                  child: Tooltip(
+                    message: achievement.note!.trim(),
+                    triggerMode: TooltipTriggerMode.tap,
+                    child: Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+              if (onRequirementsTap != null) ...[
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: '达成要求',
+                  onPressed: onRequirementsTap,
+                  iconSize: 18,
+                  color: colors.onSurfaceVariant,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 24,
+                    height: 24,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.checklist_outlined),
+                ),
+              ],
               if (achievement.experience > 0) ...[
                 const SizedBox(width: 8),
                 Container(
@@ -65,21 +103,6 @@ class DashboardAchievementCard extends StatelessWidget {
                   ),
                 ),
               ],
-              if (achievement.note?.trim().isNotEmpty ?? false) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Semantics(
-                  label: '注释：${achievement.note!.trim()}',
-                  child: Tooltip(
-                    message: achievement.note!.trim(),
-                    triggerMode: TooltipTriggerMode.tap,
-                    child: Icon(
-                      Icons.info_outline,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
               const SizedBox(width: 8),
               Icon(
                 unlocked ? Icons.verified_outlined : Icons.lock_outline,
@@ -88,7 +111,7 @@ class DashboardAchievementCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: onRequirementsTap == null ? 8 : 6),
           Text(
             achievement.requirement,
             maxLines: hasNarrative ? 1 : 2,
@@ -96,7 +119,7 @@ class DashboardAchievementCard extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (hasNarrative) ...[
-            const SizedBox(height: 4),
+            SizedBox(height: onRequirementsTap == null ? 4 : 2),
             Tooltip(
               message: achievement.narrativeNote!.trim(),
               triggerMode: TooltipTriggerMode.tap,
