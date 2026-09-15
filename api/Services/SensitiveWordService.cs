@@ -5,7 +5,7 @@ namespace RailLog.API.Services;
 
 public sealed class ContentModerationOptions
 {
-    public string SensitiveWordsFile { get; set; } = string.Empty;
+    public string SensitiveWordsDirectory { get; set; } = string.Empty;
 }
 
 public sealed class SensitiveWordService
@@ -18,7 +18,7 @@ public sealed class SensitiveWordService
         ILogger<SensitiveWordService> logger)
     {
         _sensitiveWords = LoadWords(
-            options.Value.SensitiveWordsFile,
+            options.Value.SensitiveWordsDirectory,
             environment.ContentRootPath,
             logger);
     }
@@ -34,33 +34,48 @@ public sealed class SensitiveWordService
     }
 
     private static IReadOnlyList<string> LoadWords(
-        string? filePath,
+        string? directoryPath,
         string contentRootPath,
         ILogger logger)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (string.IsNullOrWhiteSpace(directoryPath))
         {
             logger.LogWarning(
-                "内容审核未启用：请通过 User Secrets 配置 ContentModeration:SensitiveWordsFile。");
+                "内容审核未启用：请通过 User Secrets 配置 ContentModeration:SensitiveWordsDirectory。");
             return [];
         }
 
-        var resolvedPath = Path.IsPathRooted(filePath)
-            ? filePath
-            : Path.Combine(contentRootPath, filePath);
-        resolvedPath = Path.GetFullPath(resolvedPath);
+        var resolvedDirectory = Path.IsPathRooted(directoryPath)
+            ? directoryPath
+            : Path.Combine(contentRootPath, directoryPath);
+        resolvedDirectory = Path.GetFullPath(resolvedDirectory);
 
-        if (!File.Exists(resolvedPath))
+        if (!Directory.Exists(resolvedDirectory))
         {
             logger.LogWarning(
-                "内容审核未启用：敏感词文件不存在，路径为 {SensitiveWordsFile}。",
-                resolvedPath);
+                "内容审核未启用：敏感词目录不存在，路径为 {SensitiveWordsDirectory}。",
+                resolvedDirectory);
             return [];
         }
 
         try
         {
-            return File.ReadLines(resolvedPath)
+            var files = Directory
+                .EnumerateFiles(resolvedDirectory, "*", SearchOption.AllDirectories)
+                .Where(path => Path.GetExtension(path)
+                    .Equals(".txt", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (files.Length == 0)
+            {
+                logger.LogWarning(
+                    "内容审核未启用：敏感词目录中没有 .txt 文件，路径为 {SensitiveWordsDirectory}。",
+                    resolvedDirectory);
+                return [];
+            }
+
+            return files
+                .SelectMany(File.ReadLines)
                 .Select(Normalize)
                 .Where(word => word.Length > 0)
                 .Distinct(StringComparer.Ordinal)
@@ -72,8 +87,8 @@ public sealed class SensitiveWordService
         {
             logger.LogError(
                 exception,
-                "内容审核未启用：读取敏感词文件失败，路径为 {SensitiveWordsFile}。",
-                resolvedPath);
+                "内容审核未启用：读取敏感词目录失败，路径为 {SensitiveWordsDirectory}。",
+                resolvedDirectory);
             return [];
         }
     }
