@@ -153,7 +153,7 @@ class QuickAddCard extends StatelessWidget {
             ),
             AnimatedSize(
               duration: m3MotionDuration,
-              curve: Curves.easeOutCubic,
+              curve: Easing.standard,
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.topCenter,
                 child: _buildSearchState(context),
@@ -162,7 +162,7 @@ class QuickAddCard extends StatelessWidget {
           ],
           AnimatedSize(
             duration: m3MotionDuration,
-            curve: Curves.easeOutCubic,
+            curve: Easing.standard,
             child: M3FadeThroughSwitcher(
               alignment: Alignment.topCenter,
               child: _buildTrainSelection(context, colors),
@@ -325,7 +325,7 @@ class QuickAddCard extends StatelessWidget {
             const SizedBox(height: 12),
             AnimatedSize(
               duration: m3MotionDuration,
-              curve: Curves.easeOutCubic,
+              curve: Easing.standard,
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.topCenter,
                 child: _buildScheduleState(),
@@ -333,7 +333,7 @@ class QuickAddCard extends StatelessWidget {
             ),
             AnimatedSize(
               duration: m3MotionDurationShort,
-              curve: Curves.easeOutCubic,
+              curve: Easing.standard,
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.centerRight,
                 child: departureStopIndex != null && arrivalStopIndex != null
@@ -702,7 +702,7 @@ class _ScheduleStopTile extends StatelessWidget {
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(end: backgroundColor),
       duration: m3MotionDurationShort,
-      curve: Curves.easeOutCubic,
+      curve: Easing.standardDecelerate,
       builder: (context, animatedColor, child) {
         return InkWell(
           borderRadius: BorderRadius.circular(AppRadius.small),

@@ -897,6 +897,11 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     super.build(context);
     final colors = Theme.of(context).colorScheme;
     final bytes = _imageBytes;
+    final imageState = _error != null
+        ? 'error'
+        : bytes == null
+        ? 'loading'
+        : 'ready';
     final image = bytes == null
         ? AspectRatio(aspectRatio: 1800 / 1120, child: _buildState(colors))
         : Stack(
@@ -955,7 +960,15 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
           ? BorderRadius.circular(AppRadius.card)
           : BorderRadius.zero,
       clipBehavior: Clip.antiAlias,
-      child: image,
+      child: AnimatedSize(
+        duration: m3MotionDurationShort,
+        curve: Easing.standard,
+        alignment: Alignment.topCenter,
+        child: M3FadeThroughSwitcher(
+          alignment: Alignment.topCenter,
+          child: KeyedSubtree(key: ValueKey(imageState), child: image),
+        ),
+      ),
     );
   }
 

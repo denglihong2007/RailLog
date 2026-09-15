@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class CtPhotoSearchPage extends StatefulWidget {
@@ -206,6 +207,8 @@ class _PhotoTile extends StatelessWidget {
                     imageUrl: photo.thumbnailUrl,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    fadeInDuration: m3MotionDurationShort,
+                    fadeInCurve: Easing.standardDecelerate,
                     placeholder: (_, _) => const Center(
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),

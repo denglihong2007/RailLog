@@ -82,6 +82,8 @@ class RailLogApp extends StatelessWidget {
             themeMode: settings.themeMode,
             theme: _theme(lightScheme),
             darkTheme: _theme(darkScheme),
+            themeAnimationDuration: m3MotionDuration,
+            themeAnimationCurve: Easing.standard,
             onGenerateRoute: _onGenerateRoute,
             home: const MainNavigationPage(),
           );

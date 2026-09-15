@@ -18,6 +18,7 @@ import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/help_dialog.dart';
 import 'package:raillog/src/widgets/excel_import_action.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -1013,8 +1014,9 @@ Widget _appearanceSettings(BuildContext context) {
               value: settings.useSystemColor,
               onChanged: settings.setUseSystemColor,
             ),
-            if (!settings.useSystemColor)
-              ListTile(
+            M3AnimatedVisibility(
+              visible: !settings.useSystemColor,
+              child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: _ThemeColorSwatch(color: settings.seedColor),
                 title: const Text('主题色'),
@@ -1022,6 +1024,7 @@ Widget _appearanceSettings(BuildContext context) {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _chooseThemeColor(context),
               ),
+            ),
           ],
         );
       },

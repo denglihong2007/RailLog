@@ -83,7 +83,7 @@ class SeatEditor extends StatelessWidget {
         const SizedBox(height: 16),
         AnimatedSize(
           duration: m3MotionDuration,
-          curve: Curves.easeOutCubic,
+          curve: Easing.standard,
           child: M3FadeThroughSwitcher(
             alignment: Alignment.topCenter,
             child: _buildSeatDetails(),

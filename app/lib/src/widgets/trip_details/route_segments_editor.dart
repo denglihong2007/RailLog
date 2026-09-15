@@ -132,7 +132,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
         const SizedBox(height: 12),
         AnimatedSize(
           duration: m3MotionDuration,
-          curve: Curves.easeOutCubic,
+          curve: Easing.standard,
           child: M3FadeThroughSwitcher(
             alignment: Alignment.topCenter,
             child: _buildSegments(context),

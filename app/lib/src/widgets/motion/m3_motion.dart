@@ -20,8 +20,8 @@ class M3FadeThroughSwitcher extends StatelessWidget {
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return child;
     return AnimatedSwitcher(
       duration: duration,
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
+      switchInCurve: Easing.emphasizedDecelerate,
+      switchOutCurve: Easing.emphasizedAccelerate,
       layoutBuilder: (currentChild, previousChildren) {
         return Stack(
           alignment: alignment,
@@ -31,8 +31,12 @@ class M3FadeThroughSwitcher extends StatelessWidget {
       transitionBuilder: (child, animation) {
         final fade = CurvedAnimation(
           parent: animation,
-          curve: const Interval(0.2, 1, curve: Curves.easeOutCubic),
-          reverseCurve: const Interval(0, 0.8, curve: Curves.easeInCubic),
+          curve: const Interval(0.2, 1, curve: Easing.standardDecelerate),
+          reverseCurve: const Interval(
+            0,
+            0.8,
+            curve: Easing.standardAccelerate,
+          ),
         );
         return FadeTransition(
           opacity: fade,
@@ -67,7 +71,7 @@ class M3Reveal extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: duration,
-      curve: Curves.easeOutCubic,
+      curve: Easing.standardDecelerate,
       child: child,
       builder: (context, value, child) {
         return Opacity(
@@ -95,8 +99,8 @@ Route<T> m3PageRoute<T>({
       if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return child;
       final curvedAnimation = CurvedAnimation(
         parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+        curve: Easing.emphasizedDecelerate,
+        reverseCurve: Easing.emphasizedAccelerate,
       );
       return FadeTransition(
         opacity: curvedAnimation,
@@ -110,4 +114,40 @@ Route<T> m3PageRoute<T>({
       );
     },
   );
+}
+
+class M3AnimatedVisibility extends StatelessWidget {
+  const M3AnimatedVisibility({
+    super.key,
+    required this.visible,
+    required this.child,
+    this.alignment = Alignment.topCenter,
+    this.duration = m3MotionDurationShort,
+  });
+
+  final bool visible;
+  final Widget child;
+  final AlignmentGeometry alignment;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    final disableAnimations =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disableAnimations) {
+      return visible ? child : const SizedBox.shrink();
+    }
+    return AnimatedSize(
+      duration: duration,
+      curve: Easing.standard,
+      alignment: alignment,
+      child: M3FadeThroughSwitcher(
+        duration: duration,
+        alignment: alignment,
+        child: visible
+            ? KeyedSubtree(key: const ValueKey(true), child: child)
+            : const SizedBox.shrink(key: ValueKey(false)),
+      ),
+    );
+  }
 }

@@ -149,10 +149,13 @@ class _HomePageState extends State<HomePage> {
                 padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
                 children: [
                   _PartnerAdvertisementLoader(future: _advertisementFuture),
-                  if (!SessionService.instance.isSignedIn) ...[
-                    const M3Reveal(child: _SignInBanner()),
-                    const SizedBox(height: 16),
-                  ],
+                  M3AnimatedVisibility(
+                    visible: !SessionService.instance.isSignedIn,
+                    child: const Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: M3Reveal(child: _SignInBanner()),
+                    ),
+                  ),
                   M3Reveal(
                     child: _OverviewSection(stats: stats, onChanged: _refresh),
                   ),

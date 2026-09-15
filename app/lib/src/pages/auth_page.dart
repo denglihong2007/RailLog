@@ -177,33 +177,40 @@ class _AuthPageState extends State<AuthPage> {
                     validator: (value) =>
                         (value?.length ?? 0) < 8 ? '密码至少需要 8 个字符' : null,
                   ),
-                  if (isRegister) ...[
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _confirmController,
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: const InputDecoration(
-                        labelText: '确认密码',
-                        prefixIcon: Icon(Icons.lock_reset_outlined),
-                        border: OutlineInputBorder(),
+                  M3AnimatedVisibility(
+                    visible: isRegister,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: TextFormField(
+                        controller: _confirmController,
+                        obscureText: true,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _submit(),
+                        decoration: const InputDecoration(
+                          labelText: '确认密码',
+                          prefixIcon: Icon(Icons.lock_reset_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) => value != _passwordController.text
+                            ? '两次输入的密码不一致'
+                            : null,
                       ),
-                      validator: (value) => value != _passwordController.text
-                          ? '两次输入的密码不一致'
-                          : null,
                     ),
-                  ],
-                  if (!isRegister)
-                    Align(
+                  ),
+                  M3AnimatedVisibility(
+                    visible: !isRegister,
+                    child: Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: _busy ? null : _forgotPassword,
                         child: const Text('忘记密码'),
                       ),
-                    )
-                  else
-                    const SizedBox(height: 24),
+                    ),
+                  ),
+                  M3AnimatedVisibility(
+                    visible: isRegister,
+                    child: const SizedBox(height: 24),
+                  ),
                   FilledButton.icon(
                     onPressed: _busy ? null : _submit,
                     icon: _busy

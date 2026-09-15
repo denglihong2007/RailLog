@@ -202,6 +202,14 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
     final colors = Theme.of(context).colorScheme;
+    final resultKey = [
+      _loading,
+      _error != null,
+      _hasSearched,
+      _scope.name,
+      _users.length,
+      _entities.length,
+    ].join(':');
     return ColoredBox(
       color: colors.surfaceContainerLowest,
       child: ListView(
@@ -228,7 +236,18 @@ class _SearchPageState extends State<SearchPage> {
                     onSearch: _search,
                   ),
                   const SizedBox(height: 24),
-                  _buildResults(context),
+                  AnimatedSize(
+                    duration: m3MotionDurationShort,
+                    curve: Easing.standard,
+                    alignment: Alignment.topCenter,
+                    child: M3FadeThroughSwitcher(
+                      alignment: Alignment.topCenter,
+                      child: KeyedSubtree(
+                        key: ValueKey(resultKey),
+                        child: _buildResults(context),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
