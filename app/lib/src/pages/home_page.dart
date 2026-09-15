@@ -341,7 +341,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
   }
 
   Future<void> _refresh() async {
-    final future = PublicUserService.fetch(widget.userId);
+    final future = PublicUserService.fetch(widget.userId, forceRefresh: true);
     setState(() => _dashboardFuture = future);
     await future;
   }
@@ -366,7 +366,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
           }
 
           final dashboard = snapshot.data!;
-          final stats = TripDashboardStats.fromTrips(dashboard.trips);
+          final stats = dashboard.stats;
           Future<bool?> openTrip(
             BuildContext context,
             DashboardTripEntry entry,

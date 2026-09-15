@@ -1,4 +1,5 @@
 using RailLog.API.Services;
+using Microsoft.AspNetCore.ResponseCompression;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,10 @@ builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email
 builder.Services.AddSingleton<EmailSender>();
 builder.Services.AddSingleton<EmailVerificationService>();
 builder.Services.AddMemoryCache();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Updates"));
 builder.Services.Configure<TicketAssetsOptions>(builder.Configuration.GetSection("TicketAssets"));
 builder.Services.Configure<TicketPdfOptions>(builder.Configuration.GetSection("TicketPdf"));
@@ -95,6 +100,7 @@ var app = builder.Build();
 
 await app.Services.GetRequiredService<RailLogDatabase>().InitializeAsync();
 
+app.UseResponseCompression();
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();

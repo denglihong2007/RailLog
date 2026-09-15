@@ -13,6 +13,8 @@ class CloudSyncService extends ChangeNotifier {
   static final CloudSyncService instance = CloudSyncService._();
   bool _isSyncing = false;
   bool _autoSyncEnabled = true;
+  bool _syncRequested = false;
+  Future<void>? _activeSync;
   DateTime? _lastSyncedAt;
   String? _lastError;
   VoidCallback? onDataChanged;
@@ -37,8 +39,11 @@ class CloudSyncService extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    final value = await DbHelper.instance.getSetting('last_synced_at');
-    _lastSyncedAt = value == null ? null : DateTime.tryParse(value);
+    final userId = SessionService.instance.user?.id;
+    final timeValue = userId == null
+        ? null
+        : await DbHelper.instance.getSetting(_syncTimeKey(userId));
+    _lastSyncedAt = timeValue == null ? null : DateTime.tryParse(timeValue);
     final autoSyncValue = await DbHelper.instance.getSetting(
       'auto_sync_enabled',
     );
@@ -46,9 +51,7 @@ class CloudSyncService extends ChangeNotifier {
   }
 
   Future<void> syncIfSignedIn() async {
-    if (!_autoSyncEnabled ||
-        !SessionService.instance.isSignedIn ||
-        _isSyncing) {
+    if (!_autoSyncEnabled || !SessionService.instance.isSignedIn) {
       return;
     }
     try {
@@ -66,33 +69,34 @@ class CloudSyncService extends ChangeNotifier {
     if (value) await syncIfSignedIn();
   }
 
-  Future<void> sync() async {
-    final token = SessionService.instance.token;
-    final userId = SessionService.instance.user?.id;
-    if (token == null) throw const SessionException('请先登录');
-    if (userId == null) throw const SessionException('请先登录');
-    if (_isSyncing) return;
+  Future<void> sync() {
+    final activeSync = _activeSync;
+    if (activeSync != null) {
+      _syncRequested = true;
+      return activeSync;
+    }
+
+    late final Future<void> operation;
+    operation = _runSyncLoop().whenComplete(() {
+      if (!identical(_activeSync, operation)) return;
+      _activeSync = null;
+      if (_syncRequested && SessionService.instance.isSignedIn) {
+        unawaited(sync());
+      }
+    });
+    _activeSync = operation;
+    return operation;
+  }
+
+  Future<void> _runSyncLoop() async {
     _isSyncing = true;
     _lastError = null;
     notifyListeners();
     try {
-      final localTrips = await DbHelper.instance.getTripsForSync(userId);
-      final response = await ApiClient.instance.dio.post<Map<String, dynamic>>(
-        '/api/trips/sync',
-        options: ApiClient.instance.authorized(token),
-        data: {'trips': localTrips.map(_toCloudJson).toList()},
-      );
-      final rows = response.data?['trips'] as List<dynamic>? ?? const [];
-      final cloudTrips = rows
-          .map((row) => _fromCloudJson(row as Map<String, dynamic>))
-          .toList();
-      await DbHelper.instance.mergeCloudTrips(userId, cloudTrips);
-      onDataChanged?.call();
-      _lastSyncedAt = DateTime.now();
-      await DbHelper.instance.setSetting(
-        'last_synced_at',
-        _lastSyncedAt!.toIso8601String(),
-      );
+      do {
+        _syncRequested = false;
+        await _syncOnce();
+      } while (_syncRequested && SessionService.instance.isSignedIn);
     } on DioException catch (error) {
       _lastError = apiErrorMessage(error);
       if (error.response?.statusCode == 401) {
@@ -107,6 +111,53 @@ class CloudSyncService extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> _syncOnce() async {
+    final token = SessionService.instance.token;
+    final userId = SessionService.instance.user?.id;
+    if (token == null || userId == null) throw const SessionException('请先登录');
+
+    final versionValue = await DbHelper.instance.getSetting(
+      _syncVersionKey(userId),
+    );
+    final lastSyncedVersion = int.tryParse(versionValue ?? '');
+    final localTrips = await DbHelper.instance.getTripsForSync(userId);
+    final response = await ApiClient.instance.dio.post<Map<String, dynamic>>(
+      '/api/trips/sync',
+      options: ApiClient.instance.authorized(token),
+      data: {
+        'trips': localTrips.map(_toCloudJson).toList(),
+        'sinceVersion': ?lastSyncedVersion,
+      },
+    );
+    final rows = response.data?['trips'] as List<dynamic>? ?? const [];
+    final cloudTrips = rows
+        .map((row) => _fromCloudJson(row as Map<String, dynamic>))
+        .toList();
+    await DbHelper.instance.mergeCloudTrips(userId, cloudTrips);
+    await DbHelper.instance.markTripsSynced(userId, localTrips);
+    if (cloudTrips.isNotEmpty) onDataChanged?.call();
+
+    final serverTimeValue = response.data?['serverTime'] as String?;
+    _lastSyncedAt =
+        DateTime.tryParse(serverTimeValue ?? '')?.toUtc() ??
+        DateTime.now().toUtc();
+    final serverVersion = (response.data?['serverVersion'] as num?)?.toInt();
+    if (serverVersion != null) {
+      await DbHelper.instance.setSetting(
+        _syncVersionKey(userId),
+        serverVersion.toString(),
+      );
+    }
+    await DbHelper.instance.setSetting(
+      _syncTimeKey(userId),
+      _lastSyncedAt!.toIso8601String(),
+    );
+  }
+
+  String _syncVersionKey(String userId) => 'sync_version_$userId';
+
+  String _syncTimeKey(String userId) => 'sync_time_$userId';
 
   Map<String, dynamic> _toCloudJson(TripRecord trip) => {
     'ticketId': trip.ticketId,

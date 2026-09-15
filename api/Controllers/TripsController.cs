@@ -49,8 +49,14 @@ public sealed class TripsController(
             return BadRequest(new MessageResponse("单次同步的行程数量过多"));
         if (request.Trips.Any(trip => sensitiveWords.ContainsSensitiveWord(trip.Notes)))
             return BadRequest(new MessageResponse("内容不合法"));
-        var trips = await database.SyncTripsAsync(UserId, request.Trips);
-        return Ok(new SyncResponse(trips, DateTime.Now));
+        var serverTime = DateTime.UtcNow;
+        var result = await database.SyncTripsAsync(
+            UserId,
+            request.Trips,
+            request.Since,
+            request.SinceVersion,
+            serverTime);
+        return Ok(new SyncResponse(result.Trips, serverTime, result.ServerVersion));
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;

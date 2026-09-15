@@ -2,11 +2,12 @@ import 'dart:convert';
 
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 
 class PublicUserDashboard {
-  const PublicUserDashboard({
+  PublicUserDashboard({
     required this.user,
     required this.trips,
     required this.achievements,
@@ -35,6 +36,7 @@ class PublicUserDashboard {
   final PublicUser user;
   final List<TripRecord> trips;
   final List<DashboardAchievement> achievements;
+  late final TripDashboardStats stats = TripDashboardStats.fromTrips(trips);
 }
 
 class PublicUser {

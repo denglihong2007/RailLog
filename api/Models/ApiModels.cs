@@ -120,8 +120,14 @@ public sealed record SyncTrip(
     DateTime UpdatedAt,
     DateTime? DeletedAt);
 
-public sealed record SyncRequest(IReadOnlyList<SyncTrip> Trips);
-public sealed record SyncResponse(IReadOnlyList<SyncTrip> Trips, DateTime ServerTime);
+public sealed record SyncRequest(
+    IReadOnlyList<SyncTrip> Trips,
+    DateTime? Since = null,
+    long? SinceVersion = null);
+public sealed record SyncResponse(
+    IReadOnlyList<SyncTrip> Trips,
+    DateTime ServerTime,
+    long ServerVersion);
 
 public sealed record IntersectionTrip(
     long TicketId,
