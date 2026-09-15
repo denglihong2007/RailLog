@@ -82,7 +82,7 @@ class EntityReviewCard extends StatelessWidget {
             children: [
               if (showTarget) ...[
                 _EntityReviewTargetLine(review: review, onTap: onTargetTap),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpacing.md),
               ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,7 +96,7 @@ class EntityReviewCard extends StatelessWidget {
                       size: 40,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -118,7 +118,7 @@ class EntityReviewCard extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: AppSpacing.sm),
                                   UserLevelBadge(
                                     experience: review.achievementExperience,
                                   ),
@@ -291,11 +291,14 @@ class _EntityReviewTargetLine extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             children: [
               Icon(target.icon, size: 17, color: colors.primary),
-              const SizedBox(width: 7),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   '${target.category} · ${target.name}',

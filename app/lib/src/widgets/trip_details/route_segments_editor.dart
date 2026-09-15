@@ -118,7 +118,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.info_outline, size: 16, color: colors.onSurfaceVariant),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
                 '自动识别可能不准确，建议结合路路通时刻表的经由信息修改',
@@ -163,7 +163,6 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   void _showInferenceLog() {
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (context) => _InferenceLogSheet(entries: inferenceLog),
     );
@@ -277,7 +276,7 @@ class _InferenceLogSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(Icons.receipt_long_outlined, color: colors.primary),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Text(
                       '路径推断日志',
@@ -297,7 +296,8 @@ class _InferenceLogSheet extends StatelessWidget {
               child: ListView.separated(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                 itemCount: entries.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.md),
                 itemBuilder: (context, index) => SelectableText(
                   entries[index],
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -384,7 +384,7 @@ class _EditorHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               title,
-              const SizedBox(height: 6),
+              const SizedBox(height: AppSpacing.sm),
               Align(alignment: Alignment.centerRight, child: actions),
             ],
           );
@@ -818,7 +818,7 @@ class _SearchPickerFormField extends StatelessWidget {
               prefixIcon: icon == null ? null : Icon(icon),
               suffixIcon: isLoading
                   ? const Padding(
-                      padding: EdgeInsets.all(14),
+                      padding: EdgeInsets.all(AppSpacing.lg),
                       child: SizedBox.square(
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
@@ -875,17 +875,6 @@ class _SearchPickerSheetState extends State<_SearchPickerSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 32,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(AppRadius.extraSmall),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
             Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             SearchBar(

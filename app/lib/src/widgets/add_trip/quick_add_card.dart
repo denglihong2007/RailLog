@@ -504,17 +504,6 @@ class _StationPickerSheetState extends State<_StationPickerSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 32,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(AppRadius.extraSmall),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
             Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             SearchBar(

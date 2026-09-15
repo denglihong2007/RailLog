@@ -385,7 +385,6 @@ class _AllTripsPageState extends State<AllTripsPage> {
     final settings = await showModalBottomSheet<_TripListSettings>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
@@ -704,7 +703,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               status,
-                              const SizedBox(height: 10),
+                              const SizedBox(height: AppSpacing.md),
                               search,
                             ],
                           );
@@ -989,7 +988,7 @@ class TripTicketCard extends StatelessWidget {
                         children: [
                           const Icon(Icons.arrow_forward, size: 20),
                           if (duration != null) ...[
-                            const SizedBox(height: 3),
+                            const SizedBox(height: AppSpacing.xs),
                             Text(
                               _formatDuration(duration),
                               style: Theme.of(context).textTheme.labelSmall,
@@ -1009,7 +1008,7 @@ class TripTicketCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Divider(height: 1, color: colors.outlineVariant),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpacing.md),
                 Row(
                   children: [
                     Expanded(
@@ -1085,7 +1084,7 @@ class _StationTime extends StatelessWidget {
           textAlign: alignEnd ? TextAlign.end : TextAlign.start,
           style: Theme.of(context).textTheme.titleMedium,
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: AppSpacing.xs),
         Text(dateTime == null ? '--:--' : _formatMonthDayTime(dateTime!)),
       ],
     );

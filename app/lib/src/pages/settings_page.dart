@@ -1035,7 +1035,6 @@ Widget _appearanceSettings(BuildContext context) {
 Future<void> _chooseThemeColor(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,
-    showDragHandle: true,
     builder: (context) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),

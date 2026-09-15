@@ -232,7 +232,6 @@ class _AddTripPageState extends State<AddTripPage> {
     }
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      showDragHandle: true,
       builder: (context) => SafeArea(
         child: Wrap(
           children: [

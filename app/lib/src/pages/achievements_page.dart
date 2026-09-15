@@ -235,7 +235,7 @@ class _AchievementProgressSummary extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Divider(height: 1, color: colors.outlineVariant),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Icon(
@@ -243,7 +243,7 @@ class _AchievementProgressSummary extends StatelessWidget {
                 size: 18,
                 color: colors.secondary,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: AppSpacing.sm),
               const Expanded(child: Text('累计成就经验')),
               Text(
                 '$totalExperience XP',
@@ -254,7 +254,7 @@ class _AchievementProgressSummary extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               UserLevelBadge(experience: totalExperience),
@@ -269,7 +269,7 @@ class _AchievementProgressSummary extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.sm),
           LinearProgressIndicator(
             value: levelProgress.value,
             minHeight: 6,
@@ -314,13 +314,13 @@ class _AchievementProgressMetric extends StatelessWidget {
         Row(
           children: [
             Icon(icon, size: 18, color: indicatorColor),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: AppSpacing.md),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [

@@ -60,7 +60,6 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
     var descending = _descending;
     final settings = await showModalBottomSheet<_UnlockSortSettings>(
       context: context,
-      showDragHandle: true,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
