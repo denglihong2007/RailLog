@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/email_verification_field.dart';
 
 class PasswordResetPage extends StatefulWidget {
@@ -77,7 +78,7 @@ class _PasswordResetPageState extends State<PasswordResetPage> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
+            constraints: const BoxConstraints(maxWidth: AppLayout.authMaxWidth),
             child: Form(
               key: _formKey,
               child: Column(

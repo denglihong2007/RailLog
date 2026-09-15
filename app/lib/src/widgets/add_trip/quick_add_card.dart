@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/timetable_source.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class QuickAddCard extends StatelessWidget {
@@ -67,124 +68,114 @@ class QuickAddCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.bolt_outlined, color: colors.primary),
-                const SizedBox(width: 12),
-                Text('快捷添加', style: Theme.of(context).textTheme.titleLarge),
+    return AppCard.filled(
+      title: '快捷添加',
+      icon: Icons.bolt_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('出行日期', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 2,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.small),
+            ),
+            tileColor: colors.surfaceContainerHighest,
+            leading: const Icon(Icons.calendar_today_outlined),
+            title: Text(
+              travelDate.toIso8601String().substring(0, 10),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            subtitle: Text(
+              timetableSource.isOnline
+                  ? '数据库 · 在线'
+                  : '数据库 · ${timetableSource.year} 年',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: PopupMenuButton<TimetableSource>(
+              initialValue: timetableSource,
+              tooltip: '选择时刻表数据库',
+              icon: const Icon(Icons.storage_outlined),
+              onSelected: onSelectTimetableSource,
+              itemBuilder: (context) => [
+                _databaseMenuItem(
+                  context,
+                  TimetableSource.online,
+                  timetableSource,
+                ),
+                const PopupMenuDivider(),
+                for (final source
+                    in TimetableSource.values.skip(1).toList().reversed)
+                  _databaseMenuItem(context, source, timetableSource),
               ],
             ),
-            const SizedBox(height: 24),
-            Text('出行日期', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 2,
+            onTap: onPickDate,
+          ),
+          const SizedBox(height: 24),
+          Text('车次信息', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.search_outlined),
+                label: Text('车次查询'),
               ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              tileColor: colors.surfaceContainerHighest,
-              leading: const Icon(Icons.calendar_today_outlined),
-              title: Text(
-                travelDate.toIso8601String().substring(0, 10),
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              subtitle: Text(
-                timetableSource.isOnline
-                    ? '数据库 · 在线'
-                    : '数据库 · ${timetableSource.year} 年',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: PopupMenuButton<TimetableSource>(
-                initialValue: timetableSource,
-                tooltip: '选择时刻表数据库',
-                icon: const Icon(Icons.storage_outlined),
-                onSelected: onSelectTimetableSource,
-                itemBuilder: (context) => [
-                  _databaseMenuItem(
-                    context,
-                    TimetableSource.online,
-                    timetableSource,
-                  ),
-                  const PopupMenuDivider(),
-                  for (final source
-                      in TimetableSource.values.skip(1).toList().reversed)
-                    _databaseMenuItem(context, source, timetableSource),
-                ],
-              ),
-              onTap: onPickDate,
-            ),
-            const SizedBox(height: 24),
-            Text('车次信息', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(
-                  value: false,
-                  icon: Icon(Icons.search_outlined),
-                  label: Text('车次查询'),
-                ),
-                ButtonSegment(
-                  value: true,
-                  icon: Icon(Icons.swap_horiz_outlined),
-                  label: Text('站站查询'),
-                ),
-              ],
-              selected: {stationQueryMode},
-              onSelectionChanged: (selection) =>
-                  onLookupModeChanged(selection.single),
-            ),
-            const SizedBox(height: 16),
-            if (stationQueryMode)
-              _buildStationLookup(context, colors)
-            else ...[
-              TextField(
-                controller: trainNumberController,
-                textCapitalization: TextCapitalization.characters,
-                onChanged: onSearchChanged,
-                decoration: const InputDecoration(
-                  labelText: '车次',
-                  hintText: '例如 G1234',
-                  prefixIcon: Icon(Icons.train_outlined),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              AnimatedSize(
-                duration: m3MotionDuration,
-                curve: Curves.easeOutCubic,
-                child: M3FadeThroughSwitcher(
-                  alignment: Alignment.topCenter,
-                  child: _buildSearchState(context),
-                ),
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.swap_horiz_outlined),
+                label: Text('站站查询'),
               ),
             ],
+            selected: {stationQueryMode},
+            onSelectionChanged: (selection) =>
+                onLookupModeChanged(selection.single),
+          ),
+          const SizedBox(height: 16),
+          if (stationQueryMode)
+            _buildStationLookup(context, colors)
+          else ...[
+            TextField(
+              controller: trainNumberController,
+              textCapitalization: TextCapitalization.characters,
+              onChanged: onSearchChanged,
+              decoration: const InputDecoration(
+                labelText: '车次',
+                hintText: '例如 G1234',
+                prefixIcon: Icon(Icons.train_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
             AnimatedSize(
               duration: m3MotionDuration,
               curve: Curves.easeOutCubic,
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.topCenter,
-                child: _buildTrainSelection(context, colors),
+                child: _buildSearchState(context),
               ),
             ),
           ],
-        ),
+          AnimatedSize(
+            duration: m3MotionDuration,
+            curve: Curves.easeOutCubic,
+            child: M3FadeThroughSwitcher(
+              alignment: Alignment.topCenter,
+              child: _buildTrainSelection(context, colors),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildStationLookup(BuildContext context, ColorScheme colors) {
     if (timetableSource.isOnline) {
-      return Card.outlined(
-        margin: EdgeInsets.zero,
+      return AppCard.outlined(
         child: const Padding(
           padding: EdgeInsets.all(16),
           child: Text('站站查询仅支持年度数据库，请先选择具体年份'),
@@ -414,9 +405,8 @@ class QuickAddCard extends StatelessWidget {
       );
     }
     if (scheduleStops.isEmpty) {
-      return const Card.outlined(
+      return const AppCard.outlined(
         key: ValueKey('schedule-empty'),
-        margin: EdgeInsets.zero,
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Text('暂未获取到该车次的时刻表'),
@@ -462,7 +452,7 @@ class _StationPickerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadius.micro),
       child: InputDecorator(
         isEmpty: value.isEmpty,
         decoration: InputDecoration(
@@ -520,7 +510,7 @@ class _StationPickerSheetState extends State<_StationPickerSheet> {
                 height: 4,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(AppRadius.micro),
                 ),
               ),
             ),
@@ -569,9 +559,8 @@ class _TrainSearchResultsState extends State<_TrainSearchResults> {
 
   @override
   Widget build(BuildContext context) {
-    return Card.outlined(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
+    return AppCard.outlined(
+      padding: EdgeInsets.zero,
       child: SizedBox(
         height: widget.results.length < 4 ? widget.results.length * 72.0 : 288,
         child: Scrollbar(
@@ -716,13 +705,13 @@ class _ScheduleStopTile extends StatelessWidget {
       curve: Curves.easeOutCubic,
       builder: (context, animatedColor, child) {
         return InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.small),
           onTap: onTap,
           child: Ink(
             height: 86,
             decoration: BoxDecoration(
               color: animatedColor ?? backgroundColor,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.small),
               border: Border.all(
                 color: selected ? colors.primary : colors.outlineVariant,
               ),

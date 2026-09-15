@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/ct_photo_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class CtPhotoSearchPage extends StatefulWidget {
@@ -186,99 +187,100 @@ class _PhotoTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.outlined(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-              aspectRatio: 4 / 3,
-              child: photo.thumbnailUrl.isEmpty
-                  ? ColoredBox(
-                      color: colors.surfaceContainerHighest,
-                      child: const Center(
-                        child: Icon(Icons.broken_image_outlined),
-                      ),
-                    )
-                  : CachedNetworkImage(
-                      imageUrl: photo.thumbnailUrl,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      errorWidget: (_, _, _) => const Center(
-                        child: Icon(Icons.broken_image_outlined),
+    return AppCard.outlined(
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: photo.thumbnailUrl.isEmpty
+                ? ColoredBox(
+                    color: colors.surfaceContainerHighest,
+                    child: const Center(
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  )
+                : CachedNetworkImage(
+                    imageUrl: photo.thumbnailUrl,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    errorWidget: (_, _, _) =>
+                        const Center(child: Icon(Icons.broken_image_outlined)),
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        photo.title.isEmpty ? '照片 #${photo.id}' : photo.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge,
                       ),
                     ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          photo.title.isEmpty ? '照片 #${photo.id}' : photo.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                      ),
-                      if (photo.shootDate.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        const Tooltip(
-                          message: '拍摄日期',
-                          child: Icon(Icons.calendar_today_outlined, size: 13),
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          photo.shootDate,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
+                    if (photo.shootDate.isNotEmpty) ...[
+                      const SizedBox(width: 6),
                       const Tooltip(
-                        message: '摄影师',
-                        child: Icon(Icons.person_outline, size: 14),
+                        message: '拍摄日期',
+                        child: Icon(Icons.calendar_today_outlined, size: 13),
                       ),
                       const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          photo.author.isEmpty ? '未署名' : photo.author,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      _PhotoMetric(
-                        tooltip: '查看数',
-                        icon: Icons.visibility_outlined,
-                        value: photo.viewsCount,
-                      ),
-                      const SizedBox(width: 6),
-                      _PhotoMetric(
-                        tooltip: '点赞数',
-                        icon: Icons.favorite_border,
-                        value: photo.likesCount,
+                      Text(
+                        photo.shootDate,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
-                  ),
-                ],
-              ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    const Tooltip(
+                      message: '摄影师',
+                      child: Icon(Icons.person_outline, size: 14),
+                    ),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(
+                        photo.author.isEmpty ? '未署名' : photo.author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _PhotoMetric(
+                      tooltip: '查看数',
+                      icon: Icons.visibility_outlined,
+                      value: photo.viewsCount,
+                    ),
+                    const SizedBox(width: 6),
+                    _PhotoMetric(
+                      tooltip: '点赞数',
+                      icon: Icons.favorite_border,
+                      value: photo.likesCount,
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

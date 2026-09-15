@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 
 const _reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🥵', '🤔', '❔'];
 
@@ -90,7 +91,7 @@ class _EntityReviewReactionBarState extends State<EntityReviewReactionBar> {
               padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
               shape: WidgetStatePropertyAll(
                 RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadius.card),
                   side: BorderSide(color: colors.outlineVariant),
                 ),
               ),

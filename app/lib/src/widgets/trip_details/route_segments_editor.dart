@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 typedef RouteDistanceResolver =
@@ -482,7 +483,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 12),
@@ -794,7 +795,7 @@ class _SearchPickerFormField extends StatelessWidget {
       validator: validator,
       builder: (field) {
         return InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.small),
           onTap: isLoading || options.isEmpty
               ? null
               : () async {
@@ -883,7 +884,7 @@ class _SearchPickerSheetState extends State<_SearchPickerSheet> {
                 height: 4,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(AppRadius.micro),
                 ),
               ),
             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/seat_selection.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class SeatEditor extends StatelessWidget {
@@ -236,14 +237,13 @@ class _TicketSeatGroupCard extends StatelessWidget {
     );
     if (!group.isBerthGroup) {
       final option = group.options.single;
-      return Material(
+      return AppCard.filled(
         color: selected
             ? colors.secondaryContainer
             : colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
+        padding: EdgeInsets.zero,
+        onTap: () => onChanged(option),
         child: ListTile(
-          onTap: () => onChanged(option),
           leading: Icon(
             selected ? Icons.check_circle : Icons.circle_outlined,
             color: selected ? colors.primary : colors.onSurfaceVariant,
@@ -251,64 +251,43 @@ class _TicketSeatGroupCard extends StatelessWidget {
           title: Text(option.seatType),
           trailing: Text(
             _formatTicketPrice(option.price),
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
       );
     }
 
-    return Material(
+    return AppCard.filled(
       color: selected ? colors.secondaryContainer : colors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      leading: Icon(
+        selected ? Icons.check_circle : Icons.bed_outlined,
+        color: selected ? colors.primary : colors.onSurfaceVariant,
+      ),
+      title: group.name,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: group.options.map((option) {
+          final berth = option.berth!;
+          return ChoiceChip(
+            selected: _isSelectedOption(
+              option,
+              selectedSeatType,
+              selectedSecondaryNumber,
+            ),
+            onSelected: (_) => onChanged(option),
+            label: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  selected ? Icons.check_circle : Icons.bed_outlined,
-                  color: selected ? colors.primary : colors.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
+                Text(berth),
                 Text(
-                  group.name,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  _formatTicketPrice(option.price),
+                  style: Theme.of(context).textTheme.labelSmall,
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: group.options.map((option) {
-                final berth = option.berth!;
-                return ChoiceChip(
-                  selected: _isSelectedOption(
-                    option,
-                    selectedSeatType,
-                    selectedSecondaryNumber,
-                  ),
-                  onSelected: (_) => onChanged(option),
-                  label: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(berth),
-                      Text(
-                        _formatTicketPrice(option.price),
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
+          );
+        }).toList(),
       ),
     );
   }

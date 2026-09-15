@@ -23,11 +23,11 @@ import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 
 enum EntityType { station, route, company, rollingStock, train }
 
-const _entityMaxWidth = 820.0;
-const _entityCardRadius = 8.0;
+const _entityMaxWidth = AppLayout.detailMaxWidth;
 const _transferWindow = Duration(hours: 24);
 final ButtonStyle _ratingIconStyle = IconButton.styleFrom(
   minimumSize: const Size(40, 40),
@@ -167,11 +167,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final appBar = AppBar(
-      title: Text(widget.name),
-      scrolledUnderElevation: 0,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-    );
+    final appBar = AppBar(title: Text(widget.name), scrolledUnderElevation: 0);
     if (!SessionService.instance.isSignedIn) {
       return Scaffold(
         appBar: appBar,
@@ -203,7 +199,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
           return Container(
             color: colors.surface,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              padding: AppSpacing.page,
               children: [
                 Center(
                   child: ConstrainedBox(
@@ -388,37 +384,11 @@ class _SectionCard extends StatelessWidget {
   final Widget? action;
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Card(
-      color: colors.surfaceContainerLow,
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_entityCardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: colors.primary),
-                const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (action != null) ...[const Spacer(), action!],
-              ],
-            ),
-            const SizedBox(height: 8),
-            child,
-          ],
-        ),
-      ),
+    return AppCard.filled(
+      title: title,
+      icon: icon,
+      trailing: action,
+      child: child,
     );
   }
 }
@@ -503,26 +473,18 @@ class _MetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
+    return AppCard.filled(
       color: highlighted
           ? colors.secondaryContainer
           : colors.surfaceContainerLow,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_entityCardRadius),
-      ),
+      padding: EdgeInsets.zero,
       child: ListTile(
         leading: Icon(
           icon,
           color: highlighted ? colors.onSecondaryContainer : colors.primary,
         ),
         title: Text(label),
-        trailing: Text(
-          value,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
+        trailing: Text(value, style: Theme.of(context).textTheme.titleLarge),
       ),
     );
   }
@@ -554,17 +516,24 @@ class EntityIntersectionsPage extends StatelessWidget {
     final trips = _orderedIntersectionTrips(intersections);
     return Scaffold(
       appBar: AppBar(title: Text('$title · 行程交集')),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: trips.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (_, i) {
-          final t = trips[i];
-          return AchievementTripRow(
-            trip: _toAchievementTrip(t),
-            highlight: t.isStrict,
-          );
-        },
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: AppLayout.contentMaxWidth,
+          ),
+          child: ListView.separated(
+            padding: AppSpacing.page,
+            itemCount: trips.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) {
+              final t = trips[i];
+              return AchievementTripRow(
+                trip: _toAchievementTrip(t),
+                highlight: t.isStrict,
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -655,69 +624,61 @@ class _EntityHeader extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final label = _typeLabel(type);
     final entityIcon = _typeIcon(type);
-    return Card.filled(
+    return AppCard.filled(
       color: colors.primaryContainer,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_entityCardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 12, 12, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.onPrimaryContainer.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(5),
-                    child: Icon(
-                      entityIcon,
-                      size: 20,
-                      color: colors.onPrimaryContainer,
-                    ),
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.onPrimaryContainer.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                child: Padding(
+                  padding: const EdgeInsets.all(5),
+                  child: Icon(
+                    entityIcon,
+                    size: 20,
                     color: colors.onPrimaryContainer,
                   ),
                 ),
-                const Spacer(),
-                ...actions.map(
-                  (action) => Theme(
-                    data: Theme.of(context).copyWith(
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: IconTheme(
-                      data: IconThemeData(color: colors.onPrimaryContainer),
-                      child: action,
-                    ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colors.onPrimaryContainer,
+                ),
+              ),
+              const Spacer(),
+              ...actions.map(
+                (action) => Theme(
+                  data: Theme.of(context).copyWith(
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: IconTheme(
+                    data: IconThemeData(color: colors.onPrimaryContainer),
+                    child: action,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              name,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: colors.onPrimaryContainer,
-                fontWeight: FontWeight.w700,
-                fontFamily:
-                    type == EntityType.rollingStock &&
-                        TrainModelParser.containsEmu(name)
-                    ? 'HVCB'
-                    : null,
               ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            name,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: colors.onPrimaryContainer,
+              fontFamily:
+                  type == EntityType.rollingStock &&
+                      TrainModelParser.containsEmu(name)
+                  ? 'HVCB'
+                  : null,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1134,12 +1095,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.title,
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                Text(widget.title, style: textTheme.titleLarge),
                 const SizedBox(height: 2),
                 Text(
                   _reviewTypeLabel(widget.reviewType),
@@ -1169,7 +1125,7 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
                 decoration: BoxDecoration(
                   color: colors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(_entityCardRadius),
+                  borderRadius: BorderRadius.circular(AppRadius.small),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1419,7 +1375,7 @@ class _TransferGapHint extends StatelessWidget {
             : done
             ? colors.secondaryContainer
             : colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(_entityCardRadius),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       child: Row(
         children: [
@@ -1472,7 +1428,7 @@ String _ratingLabel(int rating) => switch (rating) {
 
 InputDecorationThemeData _reviewFieldTheme(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
-  final radius = BorderRadius.circular(_entityCardRadius);
+  final radius = BorderRadius.circular(AppRadius.small);
   return InputDecorationThemeData(
     filled: true,
     fillColor: colors.surfaceContainerHighest,
@@ -1562,59 +1518,39 @@ class _ReviewGroupCard extends StatelessWidget {
   final VoidCallback onReview;
   final VoidCallback onChanged;
   @override
-  Widget build(BuildContext context) => Card(
-    color: Theme.of(context).colorScheme.surfaceContainerLow,
-    elevation: 0,
-    margin: const EdgeInsets.only(bottom: 12),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(_entityCardRadius),
+  Widget build(BuildContext context) => AppCard.filled(
+    title: title,
+    icon: icon,
+    margin: const EdgeInsets.only(bottom: AppSpacing.md),
+    trailing: FilledButton.tonalIcon(
+      onPressed: enabled ? onReview : null,
+      icon: const Icon(Icons.edit_outlined, size: 18),
+      label: const Text('评论'),
     ),
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (reviews.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Text('暂无评价'),
+          )
+        else
+          ...reviews
+              .take(10)
+              .toList()
+              .asMap()
+              .entries
+              .map(
+                (entry) => _ReviewTile(
+                  review: entry.value,
+                  trips: trips,
+                  entityName: entityName,
+                  onChanged: onChanged,
+                  showDivider: entry.key < reviews.take(10).length - 1,
                 ),
               ),
-              FilledButton.tonalIcon(
-                onPressed: enabled ? onReview : null,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('评论'),
-              ),
-            ],
-          ),
-          if (reviews.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('暂无评价'),
-            )
-          else
-            ...reviews
-                .take(10)
-                .toList()
-                .asMap()
-                .entries
-                .map(
-                  (entry) => _ReviewTile(
-                    review: entry.value,
-                    trips: trips,
-                    entityName: entityName,
-                    onChanged: onChanged,
-                    showDivider: entry.key < reviews.take(10).length - 1,
-                  ),
-                ),
-        ],
-      ),
+      ],
     ),
   );
 }

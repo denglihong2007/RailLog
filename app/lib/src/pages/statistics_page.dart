@@ -6,6 +6,7 @@ import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/statistics_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
@@ -102,7 +103,9 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   color: Theme.of(context).colorScheme.surfaceContainerLow,
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1200),
+                      constraints: const BoxConstraints(
+                        maxWidth: AppLayout.dashboardMaxWidth,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -220,11 +223,13 @@ class _SiteStatisticsView extends StatelessWidget {
           final columns = constraints.maxWidth >= 720 ? 4 : 2;
           return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            padding: AppSpacing.page,
             children: [
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 960),
+                  constraints: const BoxConstraints(
+                    maxWidth: AppLayout.wideContentMaxWidth,
+                  ),
                   child: GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -277,51 +282,46 @@ class _SiteMetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: backgroundColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleSmall?.copyWith(color: foregroundColor),
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: foregroundColor),
                 ),
-                Icon(icon, color: foregroundColor),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _SiteMetricLine(
-              label: '次数',
-              value: '${value.tripCount} 次',
-              color: foregroundColor,
-            ),
-            _SiteMetricLine(
-              label: '里程',
-              value: '${value.mileageKm.round()} km',
-              color: foregroundColor,
-            ),
-            _SiteMetricLine(
-              label: '时长',
-              value: _formatSeconds(value.durationSeconds),
-              color: foregroundColor,
-            ),
-            _SiteMetricLine(
-              label: '花费',
-              value: '¥${value.spending.toStringAsFixed(2)}',
-              color: foregroundColor,
-            ),
-          ],
-        ),
+              ),
+              Icon(icon, color: foregroundColor),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _SiteMetricLine(
+            label: '次数',
+            value: '${value.tripCount} 次',
+            color: foregroundColor,
+          ),
+          _SiteMetricLine(
+            label: '里程',
+            value: '${value.mileageKm.round()} km',
+            color: foregroundColor,
+          ),
+          _SiteMetricLine(
+            label: '时长',
+            value: _formatSeconds(value.durationSeconds),
+            color: foregroundColor,
+          ),
+          _SiteMetricLine(
+            label: '花费',
+            value: '¥${value.spending.toStringAsFixed(2)}',
+            color: foregroundColor,
+          ),
+        ],
       ),
     );
   }
@@ -559,11 +559,13 @@ class _LeaderboardScrollView extends StatelessWidget {
       onRefresh: onRefresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: AppSpacing.page,
         children: [
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 840),
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.detailMaxWidth,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -741,17 +743,13 @@ class _RankingRow extends StatelessWidget {
         ],
       ),
     );
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard(
+      variant: emphasized ? AppCardVariant.outlined : AppCardVariant.filled,
       color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: emphasized
-            ? BorderSide(color: rankColors.$3, width: 1.2)
-            : BorderSide.none,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+      borderColor: emphasized ? rankColors.$3 : null,
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: content,
     );
   }
 }

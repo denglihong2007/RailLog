@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/partner_application.dart';
 import 'package:raillog/src/services/partner_application_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PartnerApplicationsPage extends StatefulWidget {
@@ -60,11 +61,13 @@ class _PartnerApplicationsPageState extends State<PartnerApplicationsPage> {
           }
           return Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.detailMaxWidth,
+              ),
               child: RefreshIndicator(
                 onRefresh: _retry,
                 child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                  padding: AppSpacing.page,
                   itemCount: partners.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, index) => _PartnerCard(
@@ -90,84 +93,81 @@ class _PartnerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.outlined(
-      margin: EdgeInsets.zero,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            CachedNetworkImage(
-              imageUrl: partner.posterUrl,
-              width: double.infinity,
-              fit: BoxFit.contain,
-              placeholder: (_, _) => AspectRatio(
-                aspectRatio: 16 / 9,
-                child: ColoredBox(
-                  color: colors.surfaceContainerHighest,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-              ),
-              errorWidget: (_, _, _) => AspectRatio(
-                aspectRatio: 16 / 9,
-                child: ColoredBox(
-                  color: colors.surfaceContainerHighest,
-                  child: const Center(child: Icon(Icons.broken_image_outlined)),
-                ),
+    return AppCard.outlined(
+      padding: EdgeInsets.zero,
+      onTap: onOpen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CachedNetworkImage(
+            imageUrl: partner.posterUrl,
+            width: double.infinity,
+            fit: BoxFit.contain,
+            placeholder: (_, _) => AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ColoredBox(
+                color: colors.surfaceContainerHighest,
+                child: const Center(child: CircularProgressIndicator()),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: partner.iconUrl,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.contain,
-                      errorWidget: (_, _, _) => ColoredBox(
-                        color: colors.surfaceContainerHighest,
-                        child: const Icon(Icons.apps_outlined),
+            errorWidget: (_, _, _) => AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ColoredBox(
+                color: colors.surfaceContainerHighest,
+                child: const Center(child: Icon(Icons.broken_image_outlined)),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.small),
+                  child: CachedNetworkImage(
+                    imageUrl: partner.iconUrl,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.contain,
+                    errorWidget: (_, _, _) => ColoredBox(
+                      color: colors.surfaceContainerHighest,
+                      child: const Icon(Icons.apps_outlined),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        partner.title,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          partner.title,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                      const SizedBox(height: 4),
+                      Text(
+                        partner.description,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          partner.description,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: colors.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Tooltip(
-                    message: '访问官网',
-                    child: Icon(
-                      Icons.open_in_new,
-                      size: 20,
-                      color: colors.primary,
-                    ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: '访问官网',
+                  child: Icon(
+                    Icons.open_in_new,
+                    size: 20,
+                    color: colors.primary,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

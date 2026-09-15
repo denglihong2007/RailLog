@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/app_update_info.dart';
 import 'package:raillog/src/services/update_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/update_prompt.dart';
 import 'package:raillog/src/widgets/update_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,11 +33,13 @@ class _UpdateLogPageState extends State<UpdateLogPage> {
             return _LoadFailure(onRetry: _retry);
           }
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            padding: AppSpacing.page,
             children: [
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
+                  constraints: const BoxConstraints(
+                    maxWidth: AppLayout.contentMaxWidth,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

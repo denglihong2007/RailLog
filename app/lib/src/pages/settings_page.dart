@@ -13,6 +13,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/help_dialog.dart';
@@ -31,11 +32,13 @@ class SettingsPage extends StatelessWidget {
         return ColoredBox(
           color: Theme.of(context).colorScheme.surfaceContainerLowest,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            padding: AppSpacing.page,
             children: [
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
+                  constraints: const BoxConstraints(
+                    maxWidth: AppLayout.contentMaxWidth,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -433,7 +436,6 @@ class _SettingsCategoryHeader extends StatelessWidget {
       title,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
         color: Theme.of(context).colorScheme.primary,
-        fontWeight: FontWeight.w700,
       ),
     ),
   );
@@ -452,30 +454,7 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 20, color: colors.primary),
-                const SizedBox(width: 10),
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 12),
-            child,
-          ],
-        ),
-      ),
-    );
+    return AppCard.filled(title: title, icon: icon, child: child);
   }
 }
 
@@ -897,7 +876,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           children: [
             Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
+                constraints: const BoxConstraints(
+                  maxWidth: AppLayout.compactMaxWidth,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1087,7 +1068,7 @@ class _ThemeColorOption extends StatelessWidget {
     return Tooltip(
       message: option.label,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.small),
         onTap: () {
           ThemeSettings.instance.setSeedColor(option.color);
           Navigator.of(context).pop();

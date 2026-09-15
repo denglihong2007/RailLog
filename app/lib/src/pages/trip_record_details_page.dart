@@ -21,6 +21,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
@@ -240,9 +241,9 @@ class _TripDetailsContent extends StatelessWidget {
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: AppLayout.detailMaxWidth),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            padding: AppSpacing.page,
             children: [
               if (ownerName != null) ...[
                 _PublicOwnerBanner(
@@ -638,8 +639,7 @@ class _PublicOwnerBanner extends StatelessWidget {
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -665,12 +665,11 @@ class _PublicOwnerBanner extends StatelessWidget {
         ],
       ),
     );
-    return Card.outlined(
-      margin: EdgeInsets.zero,
+    return AppCard.outlined(
       color: colors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: content,
     );
   }
 }
@@ -808,13 +807,12 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
                 ),
                 decoration: BoxDecoration(
                   color: Theme.of(dialogContext).colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.small),
                 ),
                 child: SelectableText(
                   download.key,
                   textAlign: TextAlign.center,
                   style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -902,7 +900,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     final bytes = _imageBytes;
     return Material(
       color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.card),
       clipBehavior: Clip.antiAlias,
       child: AspectRatio(
         aspectRatio: 1800 / 1120,
@@ -926,7 +924,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
                     child: Material(
                       elevation: 3,
                       color: colors.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.small),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1005,13 +1003,9 @@ class _DetailsTicket extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final duration = _duration(trip);
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border.all(color: colors.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return AppCard.outlined(
+      color: colors.surface,
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           Container(
@@ -1032,9 +1026,7 @@ class _DetailsTicket extends StatelessWidget {
                     _optionalText(trip.trainNumber),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1115,9 +1107,7 @@ class _TicketStation extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(dateTime == null ? '--:--' : _formatMonthDayTime(dateTime!)),
@@ -1141,38 +1131,15 @@ class _DetailsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: M3Reveal(
         distance: 6,
-        child: Material(
-          color: colors.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(icon, size: 18, color: colors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    ?trailing,
-                  ],
-                ),
-                const SizedBox(height: 14),
-                child,
-              ],
-            ),
-          ),
+        child: AppCard.filled(
+          title: title,
+          icon: icon,
+          trailing: trailing,
+          child: child,
         ),
       ),
     );
@@ -1364,7 +1331,7 @@ class _RollingStockEntityChip extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadius.small),
         side: BorderSide(color: accentColor.withValues(alpha: 0.5)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -1931,7 +1898,7 @@ class _ViaRouteLabel extends StatelessWidget {
       color: colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
         side: BorderSide(color: color.withValues(alpha: 0.45)),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
@@ -2233,7 +2200,7 @@ class _ViaStationLabel extends StatelessWidget {
           message: '查看$station详情',
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(AppRadius.micro),
             child: Text(
               station,
               maxLines: 1,

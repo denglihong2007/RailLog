@@ -12,6 +12,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 void main() async {
@@ -89,11 +90,7 @@ class RailLogApp extends StatelessWidget {
     );
   }
 
-  ThemeData _theme(ColorScheme colorScheme) => ThemeData(
-    useMaterial3: true,
-    colorScheme: colorScheme,
-    fontFamily: 'Noto Sans SC',
-  );
+  ThemeData _theme(ColorScheme colorScheme) => AppTheme.build(colorScheme);
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
     const userRoutePrefix = '/users/';

@@ -3,6 +3,7 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/entity_review_reaction_bar.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
@@ -87,7 +88,7 @@ class EntityReviewCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   InkWell(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                     onTap: onUserTap ?? () => _openUser(context),
                     child: CachedAvatar(
                       name: review.displayName,
@@ -297,7 +298,9 @@ class _EntityReviewTargetLine extends StatelessWidget {
     final target = entityReviewTarget(review);
     return Material(
       color: colors.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.small),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,

@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/trip_excel_import_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 
 Future<void> showExcelImportGuide(
   BuildContext context, {
@@ -12,7 +13,7 @@ Future<void> showExcelImportGuide(
       icon: const Icon(Icons.upload_file_outlined),
       title: const Text('从 Excel 导入行程'),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: const BoxConstraints(maxWidth: AppLayout.compactMaxWidth),
         child: const SingleChildScrollView(child: ExcelImportGuide()),
       ),
       actions: [
@@ -94,37 +95,37 @@ class ExcelImportGuide extends StatelessWidget {
           '请先按以下规范整理表格。最稳妥的做法是先导出一份 RailLog Excel，在其“行程”工作表中追加记录。',
           style: TextStyle(color: colors.onSurfaceVariant),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: AppSpacing.xxl),
         const _ImportGuideItem(
           icon: Icons.view_column_outlined,
           title: '必填列',
           detail: '本地记录号、车次/班次、出发站、到达站、出发时间。首行必须是列名，列的顺序可以调整。本地记录号可留空。',
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.md),
         const _ImportGuideItem(
           icon: Icons.calendar_month_outlined,
           title: '日期与数字',
           detail: '时间使用 Excel 日期单元格，或 yyyy-MM-dd HH:mm:ss；里程和票价只填写数字。',
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.md),
         const _ImportGuideItem(
           icon: Icons.description_outlined,
           title: '文件与编码',
           detail: '保存为 .xlsx 文件。该格式使用 Unicode，无需另选字符编码；不支持 .xls 或 .csv。',
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.md),
         const _ImportGuideItem(
           icon: Icons.tune_outlined,
           title: '其他字段',
           detail: '可使用导出文件中的其他列；行程编号和乘坐时长会忽略，经由线路应保留 JSON 格式。',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             color: colors.secondaryContainer,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.small),
           ),
           child: Text(
             '导入规则：本地记录号匹配时更新原行程；记录号为空或不存在时新增行程。',

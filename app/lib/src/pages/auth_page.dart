@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/email_verification_field.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
@@ -89,7 +90,7 @@ class _AuthPageState extends State<AuthPage> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
+            constraints: const BoxConstraints(maxWidth: AppLayout.authMaxWidth),
             child: Form(
               key: _formKey,
               child: Column(

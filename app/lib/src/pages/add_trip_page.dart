@@ -12,6 +12,7 @@ import 'package:raillog/src/pages/import_12306_page.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/add_trip/entry_method_card.dart';
 import 'package:raillog/src/widgets/add_trip/quick_add_card.dart';
 import 'package:raillog/src/widgets/excel_import_action.dart';
@@ -503,7 +504,7 @@ class _AddTripPageState extends State<AddTripPage> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+      padding: AppSpacing.page,
       children: [
         Text('添加行程', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 4),
@@ -588,10 +589,9 @@ class _PublicTripNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.secondaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      padding: EdgeInsets.zero,
       child: ListTile(
         leading: Icon(Icons.public, color: colors.onSecondaryContainer),
         title: Text(

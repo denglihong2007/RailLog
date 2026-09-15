@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 
 class DashboardAchievementCard extends StatelessWidget {
   const DashboardAchievementCard({
@@ -51,7 +52,7 @@ class DashboardAchievementCard extends StatelessWidget {
                     color: unlocked
                         ? colors.primaryContainer
                         : colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(AppRadius.small),
                   ),
                   child: Text(
                     '${achievement.experience} XP',
@@ -173,17 +174,11 @@ class DashboardAchievementCard extends StatelessWidget {
           ),
       ],
     );
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
+      padding: EdgeInsets.zero,
       color: unlocked ? colors.tertiaryContainer : null,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? cardContent
-          : Semantics(
-              button: true,
-              child: InkWell(onTap: onTap, child: cardContent),
-            ),
+      onTap: onTap,
+      child: cardContent,
     );
   }
 }

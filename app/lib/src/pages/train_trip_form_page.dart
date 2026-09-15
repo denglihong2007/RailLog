@@ -11,6 +11,7 @@ import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/train_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/trip_details/form_section.dart';
 import 'package:raillog/src/widgets/trip_details/company_editor.dart';
 import 'package:raillog/src/widgets/trip_details/route_segments_editor.dart';
@@ -399,10 +400,14 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       body: TripFormShell(
         formKey: _formKey,
         padding: EdgeInsets.fromLTRB(
-          MediaQuery.sizeOf(context).width >= 720 ? 24 : 16,
-          12,
-          MediaQuery.sizeOf(context).width >= 720 ? 24 : 16,
-          32,
+          MediaQuery.sizeOf(context).width >= 720
+              ? AppSpacing.xxl
+              : AppSpacing.lg,
+          AppSpacing.xl,
+          MediaQuery.sizeOf(context).width >= 720
+              ? AppSpacing.xxl
+              : AppSpacing.lg,
+          AppSpacing.section,
         ),
         children: [
           TripTicket(

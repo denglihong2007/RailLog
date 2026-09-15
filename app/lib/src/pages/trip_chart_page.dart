@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_chart_series.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 
 enum _TripChartStyle { line, heatmap }
 
@@ -71,13 +72,14 @@ class _TripChartPageState extends State<TripChartPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('行程趋势')),
-      backgroundColor: colors.surfaceContainerLowest,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        padding: AppSpacing.page,
         children: [
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1080),
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.dashboardMaxWidth,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -86,37 +88,31 @@ class _TripChartPageState extends State<TripChartPage> {
                     onChanged: (value) => setState(() => _metric = value),
                   ),
                   const SizedBox(height: 12),
-                  Material(
+                  AppCard.outlined(
                     color: colors.surfaceContainerLow,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: colors.outlineVariant),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _TripTypeMenu(
-                            value: _railFilter,
-                            onChanged: (value) =>
-                                setState(() => _railFilter = value),
+                    padding: const EdgeInsets.all(12),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _TripTypeMenu(
+                          value: _railFilter,
+                          onChanged: (value) =>
+                              setState(() => _railFilter = value),
+                        ),
+                        _CompactIntervalSelector(
+                          value: _interval,
+                          onChanged: _changeInterval,
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _selectDateRange,
+                          icon: const Icon(Icons.date_range_outlined),
+                          label: Text(
+                            '${_formatShortDate(_range.start)} - ${_formatShortDate(_range.end)}',
                           ),
-                          _CompactIntervalSelector(
-                            value: _interval,
-                            onChanged: _changeInterval,
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: _selectDateRange,
-                            icon: const Icon(Icons.date_range_outlined),
-                            label: Text(
-                              '${_formatShortDate(_range.start)} - ${_formatShortDate(_range.end)}',
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -142,10 +138,9 @@ class _TripChartPageState extends State<TripChartPage> {
                               const SizedBox(height: 2),
                               Text(
                                 _formatMetricValue(_metric, total),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.headlineMedium,
                               ),
                             ],
                           ),
@@ -159,59 +154,54 @@ class _TripChartPageState extends State<TripChartPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Material(
+                  AppCard.outlined(
                     color: colors.surface,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: colors.outlineVariant),
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      _style == _TripChartStyle.heatmap
+                          ? AppSpacing.md
+                          : AppSpacing.xxl,
+                      AppSpacing.lg,
+                      AppSpacing.md,
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        12,
-                        _style == _TripChartStyle.heatmap ? 12 : 24,
-                        16,
-                        12,
-                      ),
-                      child: _isLoadingChart
-                          ? const SizedBox(
-                              height: 154,
-                              child: Center(child: CircularProgressIndicator()),
-                            )
-                          : matchingTripCount == 0
-                          ? SizedBox(
-                              height: 300,
-                              child: Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.show_chart,
-                                      size: 32,
-                                      color: colors.onSurfaceVariant,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    const Text('当前筛选范围内暂无行程'),
-                                  ],
-                                ),
+                    child: _isLoadingChart
+                        ? const SizedBox(
+                            height: 154,
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        : matchingTripCount == 0
+                        ? SizedBox(
+                            height: 300,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.show_chart,
+                                    size: 32,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  const Text('当前筛选范围内暂无行程'),
+                                ],
                               ),
-                            )
-                          : _style == _TripChartStyle.line
-                          ? _TripLineChart(
-                              points: points,
-                              metric: _metric,
-                              interval: _interval,
-                            )
-                          : _CalendarHeatmap(
-                              points: points,
-                              trips: widget.trips,
-                              metric: _metric,
-                              interval: _interval,
-                              railFilter: _railFilter,
-                              onCellTap: _showBucketTrips,
-                              scrollController: _heatmapScrollController,
                             ),
-                    ),
+                          )
+                        : _style == _TripChartStyle.line
+                        ? _TripLineChart(
+                            points: points,
+                            metric: _metric,
+                            interval: _interval,
+                          )
+                        : _CalendarHeatmap(
+                            points: points,
+                            trips: widget.trips,
+                            metric: _metric,
+                            interval: _interval,
+                            railFilter: _railFilter,
+                            onCellTap: _showBucketTrips,
+                            scrollController: _heatmapScrollController,
+                          ),
                   ),
                   const SizedBox(height: 12),
                   Padding(
@@ -634,7 +624,9 @@ class _TripHeatmap extends StatelessWidget {
                               (rowCount - 1 - entry.$1) /
                                   math.max(1, rowCount - 1),
                             ),
-                            borderRadius: BorderRadius.circular(2),
+                            borderRadius: BorderRadius.circular(
+                              AppRadius.micro,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 4),
@@ -744,7 +736,9 @@ class _TripHeatmap extends StatelessWidget {
                                       message:
                                           '${_bucketTooltip(point.bucketStart, interval)}\n${_formatMetricValue(metric, point.value)}',
                                       child: InkWell(
-                                        borderRadius: BorderRadius.circular(3),
+                                        borderRadius: BorderRadius.circular(
+                                          AppRadius.micro,
+                                        ),
                                         onTap: tripsInBucket == 0
                                             ? null
                                             : () => onCellTap(point),
@@ -941,7 +935,7 @@ class _HeatmapLegend extends StatelessWidget {
                   height: 10,
                   decoration: BoxDecoration(
                     color: _intervalHeatmapColor(colors, entry.$2, thresholds),
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(AppRadius.micro),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -1027,20 +1021,20 @@ class _HeatmapCell extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.inverseSurface,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       textStyle: TextStyle(
         color: Theme.of(context).colorScheme.onInverseSurface,
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(AppRadius.micro),
         onTap: onTap,
         child: Ink(
           width: 16,
           height: 16,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(AppRadius.micro),
           ),
         ),
       ),
@@ -1061,7 +1055,7 @@ class _EmptyHeatmapCell extends StatelessWidget {
       height: 16,
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(AppRadius.micro),
       ),
     ),
   );
