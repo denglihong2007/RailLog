@@ -9,7 +9,9 @@ namespace RailLog.API.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/profile")]
-public sealed class ProfileController(RailLogDatabase database) : ControllerBase
+public sealed class ProfileController(
+    RailLogDatabase database,
+    SensitiveWordService sensitiveWords) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<UserProfile>> Get()
@@ -21,6 +23,10 @@ public sealed class ProfileController(RailLogDatabase database) : ControllerBase
     [HttpPost]
     public async Task<ActionResult<UserProfile>> Update(UpdateProfileRequest request)
     {
+        if (sensitiveWords.ContainsSensitiveWord(request.DisplayName))
+            return BadRequest(new MessageResponse("内容不合法"));
+        if (sensitiveWords.ContainsSensitiveWord(request.Bio))
+            return BadRequest(new MessageResponse("内容不合法"));
         var result = await database.UpdateProfileAsync(UserId, request);
         return result.Profile is null
             ? BadRequest(new MessageResponse(result.Error!))

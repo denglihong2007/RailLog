@@ -10,7 +10,9 @@ namespace RailLog.API.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/trips")]
-public sealed class TripsController(RailLogDatabase database) : ControllerBase
+public sealed class TripsController(
+    RailLogDatabase database,
+    SensitiveWordService sensitiveWords) : ControllerBase
 {
     [HttpGet("{ticketId:long}")]
     [AllowAnonymous]
@@ -45,6 +47,8 @@ public sealed class TripsController(RailLogDatabase database) : ControllerBase
     {
         if (request.Trips.Count > 10_000)
             return BadRequest(new MessageResponse("单次同步的行程数量过多"));
+        if (request.Trips.Any(trip => sensitiveWords.ContainsSensitiveWord(trip.Notes)))
+            return BadRequest(new MessageResponse("内容不合法"));
         var trips = await database.SyncTripsAsync(UserId, request.Trips);
         return Ok(new SyncResponse(trips, DateTime.Now));
     }

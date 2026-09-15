@@ -10,11 +10,14 @@ namespace RailLog.API.Controllers;
 [Route("api/auth")]
 public sealed class AuthController(
     RailLogDatabase database,
-    EmailVerificationService verificationService) : ControllerBase
+    EmailVerificationService verificationService,
+    SensitiveWordService sensitiveWords) : ControllerBase
 {
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
+        if (sensitiveWords.ContainsSensitiveWord(request.DisplayName))
+            return BadRequest(new MessageResponse("内容不合法"));
         if (!await verificationService.VerifyAndConsumeAsync(
                 request.Email,
                 VerificationPurpose.Register,
