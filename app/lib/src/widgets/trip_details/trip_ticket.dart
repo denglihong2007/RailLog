@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 
 class TripTicket extends StatelessWidget {
   const TripTicket({
@@ -19,18 +20,18 @@ class TripTicket extends StatelessWidget {
     final departureTime = departureStop.departureDateTime!;
     final arrivalTime = arrivalStop.arrivalDateTime!;
     final duration = arrivalTime.difference(departureTime);
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border.all(color: colors.primary, width: 1.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return AppCard.outlined(
+      color: colors.surface,
+      borderColor: colors.primary,
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             color: colors.primaryContainer,
             child: Row(
               children: [
@@ -43,7 +44,6 @@ class TripTicket extends StatelessWidget {
                   trainNumber,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: colors.onPrimaryContainer,
-                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const Spacer(),
@@ -112,9 +112,7 @@ class _TicketStation extends StatelessWidget {
           station,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(_formatDateTime(dateTime)),

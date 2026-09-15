@@ -9,6 +9,7 @@ import 'package:raillog/src/models/trip_dashboard_stats.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/achievements_page.dart';
+import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
@@ -26,6 +27,7 @@ import 'package:raillog/src/services/public_user_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
@@ -33,7 +35,6 @@ import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
 
 const _dashboardMaxWidth = 1200.0;
-const _cardRadius = 8.0;
 const _dashboardPreviewLimit = 6;
 const _cloudSignInMessage = '登录并同步行程后即可查看。';
 
@@ -149,10 +150,13 @@ class _HomePageState extends State<HomePage> {
                 padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
                 children: [
                   _PartnerAdvertisementLoader(future: _advertisementFuture),
-                  if (!SessionService.instance.isSignedIn) ...[
-                    const M3Reveal(child: _SignInBanner()),
-                    const SizedBox(height: 16),
-                  ],
+                  M3AnimatedVisibility(
+                    visible: !SessionService.instance.isSignedIn,
+                    child: const Padding(
+                      padding: EdgeInsets.only(bottom: 16),
+                      child: M3Reveal(child: _SignInBanner()),
+                    ),
+                  ),
                   M3Reveal(
                     child: _OverviewSection(stats: stats, onChanged: _refresh),
                   ),
@@ -233,13 +237,9 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.surfaceContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.zero,
       child: Row(
         children: [
           Expanded(
@@ -248,7 +248,12 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
                 m3PageRoute(builder: (_) => const PartnerApplicationsPage()),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -256,7 +261,7 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
                       height: 40,
                       decoration: BoxDecoration(
                         color: colors.secondaryContainer,
-                        borderRadius: BorderRadius.circular(_cardRadius),
+                        borderRadius: BorderRadius.circular(AppRadius.small),
                       ),
                       child: Icon(
                         Icons.campaign_outlined,
@@ -282,6 +287,8 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             advertisement.text,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(
                                   color: colors.onSurfaceVariant,
@@ -307,9 +314,6 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
             tooltip: '关闭广告',
             icon: const Icon(Icons.close),
             iconSize: 18,
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             style: IconButton.styleFrom(
               foregroundColor: colors.onSurfaceVariant,
               backgroundColor: colors.surfaceContainerHighest,
@@ -341,7 +345,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
   }
 
   Future<void> _refresh() async {
-    final future = PublicUserService.fetch(widget.userId);
+    final future = PublicUserService.fetch(widget.userId, forceRefresh: true);
     setState(() => _dashboardFuture = future);
     await future;
   }
@@ -366,7 +370,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
           }
 
           final dashboard = snapshot.data!;
-          final stats = TripDashboardStats.fromTrips(dashboard.trips);
+          final stats = dashboard.stats;
           Future<bool?> openTrip(
             BuildContext context,
             DashboardTripEntry entry,
@@ -486,73 +490,65 @@ class _PublicProfileCard extends StatelessWidget {
     final bio = user.bio?.trim() ?? '';
     final displayBio = bio.isEmpty ? '这个人很懒，还没有个人简介~' : bio;
     final email = user.email?.trim() ?? '';
-    return Card.outlined(
-      margin: EdgeInsets.zero,
+    return AppCard.outlined(
       color: colors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _PublicProfileAvatar(user: user, size: 64),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _PublicProfileAvatar(user: user, size: 64),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        user.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    UserLevelBadge(
+                      experience: user.achievementExperience,
+                      width: 30,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  displayBio,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                if (email.isNotEmpty) ...[
+                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      Flexible(
-                        child: Text(
-                          user.displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
+                      Icon(
+                        Icons.email_outlined,
+                        size: 18,
+                        color: colors.onSurfaceVariant,
                       ),
-                      const SizedBox(width: 8),
-                      UserLevelBadge(
-                        experience: user.achievementExperience,
-                        width: 30,
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          email,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    displayBio,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                  if (email.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.email_outlined,
-                          size: 18,
-                          color: colors.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            email,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: colors.onSurfaceVariant),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -642,8 +638,8 @@ class _AchievementServerStatus extends StatelessWidget {
       children: [
         const _SectionHeading(title: '成就'),
         const SizedBox(height: 12),
-        Card.outlined(
-          margin: EdgeInsets.zero,
+        AppCard.outlined(
+          padding: EdgeInsets.zero,
           child: ListTile(
             leading: Icon(icon),
             title: Text(message),
@@ -717,6 +713,9 @@ class _AchievementsSection extends StatelessWidget {
                   onTap: achievements[index].unlockedBy == null
                       ? null
                       : () => _openAchievement(context, achievements[index]),
+                  onRequirementsTap: achievements[index].hasRequirements
+                      ? () => _openRequirements(context, achievements[index])
+                      : null,
                 ),
               ),
             );
@@ -743,6 +742,17 @@ class _AchievementsSection extends StatelessWidget {
           achievementId: achievement.id,
           title: achievement.title,
         ),
+      ),
+    );
+  }
+
+  Future<void> _openRequirements(
+    BuildContext context,
+    DashboardAchievement achievement,
+  ) async {
+    await Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => AchievementRequirementsPage(achievement: achievement),
       ),
     );
   }
@@ -814,8 +824,8 @@ class _HomeTravelGuideStatus extends StatelessWidget {
       children: [
         const _SectionHeading(title: '出行指南'),
         const SizedBox(height: 12),
-        Card.outlined(
-          margin: EdgeInsets.zero,
+        AppCard.outlined(
+          padding: EdgeInsets.zero,
           child: ListTile(
             leading: Icon(icon),
             title: Text(message),
@@ -897,37 +907,29 @@ class _SignInBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.secondaryContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        child: Row(
-          children: [
-            Icon(Icons.cloud_off_outlined, color: colors.onSecondaryContainer),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '尚未登录，当前行程仅保存在本机',
-                style: TextStyle(color: colors.onSecondaryContainer),
-              ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, color: colors.onSecondaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '尚未登录，当前行程仅保存在本机',
+              style: TextStyle(color: colors.onSecondaryContainer),
             ),
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                foregroundColor: colors.onSecondaryContainer,
-              ),
-              onPressed: () => Navigator.of(
-                context,
-              ).push(m3PageRoute(builder: (_) => const AuthPage())),
-              icon: const Icon(Icons.login),
-              label: const Text('登录'),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(
+              foregroundColor: colors.onSecondaryContainer,
             ),
-          ],
-        ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(m3PageRoute(builder: (_) => const AuthPage())),
+            icon: const Icon(Icons.login),
+            label: const Text('登录'),
+          ),
+        ],
       ),
     );
   }
@@ -1024,47 +1026,39 @@ class _OverviewCard extends StatelessWidget {
         ? '添加行程后开始记录'
         : '${_formatDate(stats.firstRecordAt!)} 至 ${_formatDate(stats.lastRecordAt!)}';
 
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.primaryContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$subject已累计出发 ${stats.tripCount} 次',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: colors.onPrimaryContainer,
-                fontWeight: FontWeight.w700,
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$subject已累计出发 ${stats.tripCount} 次',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              color: colors.onPrimaryContainer,
             ),
-            const SizedBox(height: 8),
-            Text(
-              '记录时间：$dateRange',
-              style: TextStyle(color: colors.onPrimaryContainer),
-            ),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isCompact = constraints.maxWidth < 380;
-                return Column(
-                  children: [
-                    SizedBox(height: isCompact ? 12 : 20),
-                    Divider(
-                      height: isCompact ? 1 : null,
-                      color: colors.onPrimaryContainer.withValues(alpha: 0.24),
-                    ),
-                    SizedBox(height: isCompact ? 6 : 12),
-                    _OverviewMetrics(stats: stats),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '记录时间：$dateRange',
+            style: TextStyle(color: colors.onPrimaryContainer),
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isCompact = constraints.maxWidth < 380;
+              return Column(
+                children: [
+                  SizedBox(height: isCompact ? 12 : 20),
+                  Divider(
+                    height: isCompact ? 1 : null,
+                    color: colors.onPrimaryContainer.withValues(alpha: 0.24),
+                  ),
+                  SizedBox(height: isCompact ? 6 : 12),
+                  _OverviewMetrics(stats: stats),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1101,7 +1095,7 @@ class _OverviewMetrics extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 380) {
+        if (constraints.maxWidth < 560) {
           return _CompactOverviewMetrics(metrics: metrics);
         }
         return Row(
@@ -1230,10 +1224,7 @@ class _OverviewMetric extends StatelessWidget {
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
-          ),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color),
         ),
         const SizedBox(height: 2),
         Text(
@@ -1500,8 +1491,7 @@ class _MetricCard extends StatelessWidget {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         metric.value,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
                   ),
@@ -1534,18 +1524,10 @@ class _MetricCard extends StatelessWidget {
       ),
     );
 
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: metric.onTap == null
-          ? content
-          : Semantics(
-              button: true,
-              child: InkWell(onTap: metric.onTap, child: content),
-            ),
+    return AppCard.filled(
+      padding: EdgeInsets.zero,
+      onTap: metric.onTap,
+      child: content,
     );
   }
 }
@@ -1555,23 +1537,16 @@ class _EmptyStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card.outlined(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(
-              Icons.info_outlined,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('还没有铁路行程记录。添加后，数据会自动汇总在这里。')),
-          ],
-        ),
+    return AppCard.outlined(
+      child: Row(
+        children: [
+          Icon(
+            Icons.info_outlined,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('还没有铁路行程记录。添加后，数据会自动汇总在这里。')),
+        ],
       ),
     );
   }

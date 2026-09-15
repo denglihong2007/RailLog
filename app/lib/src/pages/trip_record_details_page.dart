@@ -21,6 +21,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
@@ -240,9 +241,9 @@ class _TripDetailsContent extends StatelessWidget {
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: AppLayout.detailMaxWidth),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            padding: AppSpacing.page,
             children: [
               if (ownerName != null) ...[
                 _PublicOwnerBanner(
@@ -410,7 +411,6 @@ class _TripDetailsContent extends StatelessWidget {
                       ? null
                       : IconButton(
                           tooltip: '查看单次行程轨迹',
-                          visualDensity: VisualDensity.compact,
                           onPressed: () => Navigator.of(context).push(
                             m3PageRoute(
                               builder: (_) => TripMapPage(trips: [trip]),
@@ -638,8 +638,7 @@ class _PublicOwnerBanner extends StatelessWidget {
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -665,12 +664,11 @@ class _PublicOwnerBanner extends StatelessWidget {
         ],
       ),
     );
-    return Card.outlined(
-      margin: EdgeInsets.zero,
+    return AppCard.outlined(
       color: colors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: content,
     );
   }
 }
@@ -808,13 +806,12 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
                 ),
                 decoration: BoxDecoration(
                   color: Theme.of(dialogContext).colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.small),
                 ),
                 child: SelectableText(
                   download.key,
                   textAlign: TextAlign.center,
                   style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -900,66 +897,77 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     super.build(context);
     final colors = Theme.of(context).colorScheme;
     final bytes = _imageBytes;
-    return Material(
-      color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: AspectRatio(
-        aspectRatio: 1800 / 1120,
-        child: bytes == null
-            ? _buildState(colors)
-            : Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: colors.surface,
-                    child: Image.memory(
-                      bytes,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: Material(
-                      elevation: 3,
-                      color: colors.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: '下载车票图片',
-                            onPressed: _savingImage ? null : _saveImage,
-                            icon: _savingImage
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.download_outlined),
-                          ),
-                          IconButton(
-                            tooltip: '购买实体纪念票',
-                            onPressed: _buying ? null : _buy,
-                            icon: _buying
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.shopping_bag_outlined),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+    final imageState = _error != null
+        ? 'error'
+        : bytes == null
+        ? 'loading'
+        : 'ready';
+    final image = bytes == null
+        ? AspectRatio(aspectRatio: 1800 / 1120, child: _buildState(colors))
+        : Stack(
+            children: [
+              Image.memory(
+                bytes,
+                width: double.infinity,
+                fit: BoxFit.fitWidth,
+                alignment: Alignment.topCenter,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.high,
               ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Material(
+                  elevation: 3,
+                  color: colors.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(AppRadius.small),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '下载车票图片',
+                        onPressed: _savingImage ? null : _saveImage,
+                        icon: _savingImage
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.download_outlined),
+                      ),
+                      IconButton(
+                        tooltip: '购买实体纪念票',
+                        onPressed: _buying ? null : _buy,
+                        icon: _buying
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.shopping_bag_outlined),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+    return Material(
+      color: bytes == null ? colors.surfaceContainerLow : Colors.transparent,
+      borderRadius: bytes == null
+          ? BorderRadius.circular(AppRadius.card)
+          : BorderRadius.zero,
+      clipBehavior: Clip.antiAlias,
+      child: AnimatedSize(
+        duration: m3MotionDurationShort,
+        curve: Easing.standard,
+        alignment: Alignment.topCenter,
+        child: M3FadeThroughSwitcher(
+          alignment: Alignment.topCenter,
+          child: KeyedSubtree(key: ValueKey(imageState), child: image),
+        ),
       ),
     );
   }
@@ -1005,20 +1013,19 @@ class _DetailsTicket extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final duration = _duration(trip);
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border.all(color: colors.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return AppCard.outlined(
+      color: colors.surface,
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           Container(
             color: trip.isRailTrip
                 ? colors.primaryContainer
                 : colors.secondaryContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             child: Row(
               children: [
                 Icon(
@@ -1032,9 +1039,7 @@ class _DetailsTicket extends StatelessWidget {
                     _optionalText(trip.trainNumber),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1115,9 +1120,7 @@ class _TicketStation extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(dateTime == null ? '--:--' : _formatMonthDayTime(dateTime!)),
@@ -1141,38 +1144,15 @@ class _DetailsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: M3Reveal(
         distance: 6,
-        child: Material(
-          color: colors.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(icon, size: 18, color: colors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    ?trailing,
-                  ],
-                ),
-                const SizedBox(height: 14),
-                child,
-              ],
-            ),
-          ),
+        child: AppCard.filled(
+          title: title,
+          icon: icon,
+          trailing: trailing,
+          child: child,
         ),
       ),
     );
@@ -1364,7 +1344,7 @@ class _RollingStockEntityChip extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadius.small),
         side: BorderSide(color: accentColor.withValues(alpha: 0.5)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -1931,7 +1911,7 @@ class _ViaRouteLabel extends StatelessWidget {
       color: colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
         side: BorderSide(color: color.withValues(alpha: 0.45)),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
@@ -2233,7 +2213,7 @@ class _ViaStationLabel extends StatelessWidget {
           message: '查看$station详情',
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(AppRadius.extraSmall),
             child: Text(
               station,
               maxLines: 1,

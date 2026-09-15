@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 
 class DashboardAchievementCard extends StatelessWidget {
   const DashboardAchievementCard({
     super.key,
     required this.achievement,
     this.onTap,
+    this.onRequirementsTap,
   });
 
   final DashboardAchievement achievement;
   final VoidCallback? onTap;
+  final VoidCallback? onRequirementsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +22,12 @@ class DashboardAchievementCard extends StatelessWidget {
     final hasNarrative =
         unlocked && (achievement.narrativeNote?.trim().isNotEmpty ?? false);
     final content = Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        onRequirementsTap == null ? 16 : 11,
+        16,
+        onRequirementsTap == null ? 16 : 11,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -40,32 +48,8 @@ class DashboardAchievementCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (achievement.experience > 0) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: unlocked
-                        ? colors.primaryContainer
-                        : colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    '${achievement.experience} XP',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: unlocked
-                          ? colors.onPrimaryContainer
-                          : colors.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
               if (achievement.note?.trim().isNotEmpty ?? false) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpacing.sm),
                 Semantics(
                   label: '注释：${achievement.note!.trim()}',
                   child: Tooltip(
@@ -79,6 +63,46 @@ class DashboardAchievementCard extends StatelessWidget {
                   ),
                 ),
               ],
+              if (onRequirementsTap != null) ...[
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: '达成要求',
+                  onPressed: onRequirementsTap,
+                  iconSize: 18,
+                  color: colors.onSurfaceVariant,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 24,
+                    height: 24,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.checklist_outlined),
+                ),
+              ],
+              if (achievement.experience > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: unlocked
+                        ? colors.primaryContainer
+                        : colors.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(AppRadius.small),
+                  ),
+                  child: Text(
+                    '${achievement.experience} XP',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: unlocked
+                          ? colors.onPrimaryContainer
+                          : colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 8),
               Icon(
                 unlocked ? Icons.verified_outlined : Icons.lock_outline,
@@ -87,7 +111,7 @@ class DashboardAchievementCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: onRequirementsTap == null ? 8 : 6),
           Text(
             achievement.requirement,
             maxLines: hasNarrative ? 1 : 2,
@@ -95,7 +119,7 @@ class DashboardAchievementCard extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (hasNarrative) ...[
-            const SizedBox(height: 4),
+            SizedBox(height: onRequirementsTap == null ? 4 : 2),
             Tooltip(
               message: achievement.narrativeNote!.trim(),
               triggerMode: TooltipTriggerMode.tap,
@@ -173,17 +197,11 @@ class DashboardAchievementCard extends StatelessWidget {
           ),
       ],
     );
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
+      padding: EdgeInsets.zero,
       color: unlocked ? colors.tertiaryContainer : null,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? cardContent
-          : Semantics(
-              button: true,
-              child: InkWell(onTap: onTap, child: cardContent),
-            ),
+      onTap: onTap,
+      child: cardContent,
     );
   }
 }
@@ -268,6 +286,67 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'visibility_outlined' => Icons.visibility_outlined,
   'currency_yen' => Icons.currency_yen,
   'timer_outlined' => Icons.timer_outlined,
+  'abc_outlined' => Icons.abc_outlined,
+  'add_road_outlined' => Icons.add_road_outlined,
+  'airline_seat_flat_angled_outlined' =>
+    Icons.airline_seat_flat_angled_outlined,
+  'airline_seat_individual_suite_outlined' =>
+    Icons.airline_seat_individual_suite_outlined,
+  'assistant_navigation' => Icons.assistant_navigation,
+  'auto_stories_outlined' => Icons.auto_stories_outlined,
+  'beach_access_outlined' => Icons.beach_access_outlined,
+  'call_split_outlined' => Icons.call_split_outlined,
+  'campaign_outlined' => Icons.campaign_outlined,
+  'confirmation_number_outlined' => Icons.confirmation_number_outlined,
+  'departure_board_outlined' => Icons.departure_board_outlined,
+  'diamond_outlined' => Icons.diamond_outlined,
+  'downhill_skiing_outlined' => Icons.downhill_skiing_outlined,
+  'electric_bolt_outlined' => Icons.electric_bolt_outlined,
+  'favorite' => Icons.favorite,
+  'filter_hdr_outlined' => Icons.filter_hdr_outlined,
+  'fitness_center_outlined' => Icons.fitness_center_outlined,
+  'flag_circle_outlined' => Icons.flag_circle_outlined,
+  'forest_outlined' => Icons.forest_outlined,
+  'forum_outlined' => Icons.forum_outlined,
+  'foundation_outlined' => Icons.foundation_outlined,
+  'groups_outlined' => Icons.groups_outlined,
+  'handyman_outlined' => Icons.handyman_outlined,
+  'history_outlined' => Icons.history_outlined,
+  'hotel_outlined' => Icons.hotel_outlined,
+  'hourglass_bottom_outlined' => Icons.hourglass_bottom_outlined,
+  'hub_outlined' => Icons.hub_outlined,
+  'king_bed_outlined' => Icons.king_bed_outlined,
+  'leaderboard_outlined' => Icons.leaderboard_outlined,
+  'linear_scale_outlined' => Icons.linear_scale_outlined,
+  'list_alt_outlined' => Icons.list_alt_outlined,
+  'local_fire_department_outlined' => Icons.local_fire_department_outlined,
+  'local_florist_outlined' => Icons.local_florist_outlined,
+  'location_city_outlined' => Icons.location_city_outlined,
+  'movie_outlined' => Icons.movie_outlined,
+  'navigation_outlined' => Icons.navigation_outlined,
+  'near_me_outlined' => Icons.near_me_outlined,
+  'outbound_outlined' => Icons.outbound_outlined,
+  'payments_outlined' => Icons.payments_outlined,
+  'pie_chart_outline' => Icons.pie_chart_outline,
+  'repeat_outlined' => Icons.repeat_outlined,
+  'replay_outlined' => Icons.replay_outlined,
+  'rocket_launch_outlined' => Icons.rocket_launch_outlined,
+  'savings_outlined' => Icons.savings_outlined,
+  'science_outlined' => Icons.science_outlined,
+  'signpost_outlined' => Icons.signpost_outlined,
+  'sort_by_alpha_outlined' => Icons.sort_by_alpha_outlined,
+  'sports_score_outlined' => Icons.sports_score_outlined,
+  'stairs_outlined' => Icons.stairs_outlined,
+  'stars_outlined' => Icons.stars_outlined,
+  'straighten_outlined' => Icons.straighten_outlined,
+  'terrain_outlined' => Icons.terrain_outlined,
+  'tour_outlined' => Icons.tour_outlined,
+  'travel_explore_outlined' => Icons.travel_explore_outlined,
+  'trending_up_outlined' => Icons.trending_up_outlined,
+  'trip_origin' => Icons.trip_origin,
+  'view_day_outlined' => Icons.view_day_outlined,
+  'waves_outlined' => Icons.waves_outlined,
+  'wb_twilight_outlined' => Icons.wb_twilight_outlined,
   _ => Icons.emoji_events_outlined,
 };
 

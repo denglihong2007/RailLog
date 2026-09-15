@@ -16,6 +16,7 @@ public sealed class RailLogDatabase
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly TimeSpan _statisticsCacheLifetime;
 
     public RailLogDatabase(
@@ -30,6 +31,7 @@ public sealed class RailLogDatabase
         var builder = new SqliteConnectionStringBuilder(configured);
         if (!Path.IsPathRooted(builder.DataSource))
             builder.DataSource = Path.Combine(environment.ContentRootPath, builder.DataSource);
+        builder.DefaultTimeout = 30;
         _connectionString = builder.ToString();
     }
 
@@ -54,6 +56,11 @@ public sealed class RailLogDatabase
                 TokenHash TEXT NOT NULL PRIMARY KEY,
                 UserId TEXT NOT NULL,
                 ExpiresAt TEXT NOT NULL,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS UserSyncState (
+                UserId TEXT NOT NULL PRIMARY KEY,
+                Version INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS EmailVerificationCodes (
@@ -88,6 +95,8 @@ public sealed class RailLogDatabase
                 IsRailTrip INTEGER NOT NULL DEFAULT 1,
                 UpdatedAt TEXT NOT NULL,
                 DeletedAt TEXT NULL,
+                ServerUpdatedAt TEXT NULL,
+                SyncVersion INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
                 UNIQUE (UserId, ClientId)
             );
@@ -135,6 +144,7 @@ public sealed class RailLogDatabase
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_Entity ON EntityReviews(EntityType, EntityKey);
+            CREATE INDEX IF NOT EXISTS IX_EntityReviews_UserId ON EntityReviews(UserId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_TripId ON EntityReviews(TripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_SecondTripId ON EntityReviews(SecondTripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviewReactions_ReviewId ON EntityReviewReactions(ReviewId);
@@ -151,6 +161,8 @@ public sealed class RailLogDatabase
         await EnsureColumnAsync(connection, "TripRecords", "CompanyName", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "UpdatedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
+        await EnsureColumnAsync(connection, "TripRecords", "ServerUpdatedAt", "TEXT NULL");
+        await EnsureColumnAsync(connection, "TripRecords", "SyncVersion", "INTEGER NOT NULL DEFAULT 0");
         await EnsureColumnAsync(connection, "EntityReviews", "SecondTripId", "INTEGER NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteFromStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteToStation", "TEXT NULL");
@@ -165,6 +177,11 @@ public sealed class RailLogDatabase
             UPDATE TripRecords
             SET UpdatedAt = CreatedAt
             WHERE UpdatedAt IS NULL OR UpdatedAt = '';
+            UPDATE TripRecords
+            SET ServerUpdatedAt = '{ToDbUtc(DateTime.UtcNow)}'
+            WHERE ServerUpdatedAt IS NULL OR ServerUpdatedAt = '';
+            INSERT OR IGNORE INTO UserSyncState (UserId, Version)
+            SELECT Id, 0 FROM AspNetUsers;
             CREATE UNIQUE INDEX IF NOT EXISTS IX_AspNetUsers_Email
                 ON AspNetUsers (Email COLLATE NOCASE);
             CREATE UNIQUE INDEX IF NOT EXISTS IX_AspNetUsers_DisplayName
@@ -175,6 +192,12 @@ public sealed class RailLogDatabase
             CREATE INDEX IF NOT EXISTS IX_TripRecords_UserId ON TripRecords (UserId);
             CREATE UNIQUE INDEX IF NOT EXISTS IX_TripRecords_UserClient
                 ON TripRecords (UserId, ClientId);
+            CREATE INDEX IF NOT EXISTS IX_TripRecords_UserServerUpdatedAt
+                ON TripRecords (UserId, ServerUpdatedAt);
+            CREATE INDEX IF NOT EXISTS IX_TripRecords_UserSyncVersion
+                ON TripRecords (UserId, SyncVersion);
+            CREATE INDEX IF NOT EXISTS IX_TripRecords_UserPublicDashboard
+                ON TripRecords (UserId, DeletedAt, DepartureTime DESC, Id DESC);
             CREATE INDEX IF NOT EXISTS IX_TicketPdfDownloads_ExpiresAt
                 ON TicketPdfDownloads (ExpiresAt);
             CREATE INDEX IF NOT EXISTS IX_UserAchievements_AchievementId
@@ -496,50 +519,131 @@ public sealed class RailLogDatabase
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<IReadOnlyList<SyncTrip>> SyncTripsAsync(
-        string userId, IReadOnlyList<SyncTrip> incoming)
+    public async Task<(IReadOnlyList<SyncTrip> Trips, long ServerVersion)> SyncTripsAsync(
+        string userId,
+        IReadOnlyList<SyncTrip> incoming,
+        DateTime? since,
+        long? sinceVersion,
+        DateTime serverTime)
+    {
+        await _writeLock.WaitAsync();
+        try
+        {
+            return await SyncTripsCoreAsync(
+                userId,
+                incoming,
+                since,
+                sinceVersion,
+                serverTime);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task<(IReadOnlyList<SyncTrip> Trips, long ServerVersion)> SyncTripsCoreAsync(
+        string userId,
+        IReadOnlyList<SyncTrip> incoming,
+        DateTime? since,
+        long? sinceVersion,
+        DateTime serverTime)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-        foreach (var trip in incoming)
-        {
-            if (string.IsNullOrWhiteSpace(trip.ClientId) || trip.ClientId.Length > 100) continue;
-            await using var command = connection.CreateCommand();
-            command.Transaction = (SqliteTransaction)transaction;
-            command.CommandText = """
-                UPDATE TripRecords SET
-                    CreatedAt=$createdAt, TrainNumber=$trainNumber,
-                    TravelDate=$travelDate, RollingStock=$rollingStock,
-                    CompanyName=$companyName, FromStation=$fromStation,
-                    ToStation=$toStation, DepartureTime=$departureTime,
-                    ArrivalTime=$arrivalTime, MileageKm=$mileage,
-                    ViaRoutes=$routes, SeatType=$seatType,
-                    SeatNumber=$seatNumber, Price=$price, Notes=$notes,
-                    IsRailTrip=$isRail, UpdatedAt=$updatedAt, DeletedAt=$deletedAt
-                WHERE UserId=$userId AND ClientId=$clientId
-                  AND $updatedAt > UpdatedAt;
+        await using var transaction = await BeginTransactionWithRetryAsync(connection);
+        await using var upsert = connection.CreateCommand();
+        upsert.Transaction = (SqliteTransaction)transaction;
+        upsert.CommandText = """
+            INSERT INTO TripRecords
+                (UserId, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock,
+                 CompanyName, FromStation, ToStation, DepartureTime, ArrivalTime,
+                 MileageKm, ViaRoutes, SeatType, SeatNumber, Price, Notes,
+                 IsRailTrip, UpdatedAt, DeletedAt, ServerUpdatedAt, SyncVersion)
+            VALUES
+                ($userId, $clientId, $createdAt, $trainNumber, $travelDate,
+                 $rollingStock, $companyName, $fromStation, $toStation,
+                 $departureTime, $arrivalTime, $mileage, $routes, $seatType,
+                 $seatNumber, $price, $notes, $isRail, $updatedAt, $deletedAt,
+                 $serverUpdatedAt, $syncVersion)
+            ON CONFLICT(UserId, ClientId) DO UPDATE SET
+                CreatedAt=excluded.CreatedAt,
+                TrainNumber=excluded.TrainNumber,
+                TravelDate=excluded.TravelDate,
+                RollingStock=excluded.RollingStock,
+                CompanyName=excluded.CompanyName,
+                FromStation=excluded.FromStation,
+                ToStation=excluded.ToStation,
+                DepartureTime=excluded.DepartureTime,
+                ArrivalTime=excluded.ArrivalTime,
+                MileageKm=excluded.MileageKm,
+                ViaRoutes=excluded.ViaRoutes,
+                SeatType=excluded.SeatType,
+                SeatNumber=excluded.SeatNumber,
+                Price=excluded.Price,
+                Notes=excluded.Notes,
+                IsRailTrip=excluded.IsRailTrip,
+                UpdatedAt=excluded.UpdatedAt,
+                DeletedAt=excluded.DeletedAt,
+                ServerUpdatedAt=excluded.ServerUpdatedAt,
+                SyncVersion=excluded.SyncVersion
+            WHERE julianday(excluded.UpdatedAt) > julianday(TripRecords.UpdatedAt);
+            """;
+        AddTripParameters(upsert);
+        upsert.Parameters.Add("$serverUpdatedAt", SqliteType.Text);
+        upsert.Parameters.Add("$syncVersion", SqliteType.Integer);
 
-                INSERT INTO TripRecords
-                    (UserId, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock, CompanyName,
-                     FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm, ViaRoutes,
-                     SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt)
-                SELECT
-                     $userId, $clientId, $createdAt, $trainNumber, $travelDate, $rollingStock, $companyName,
-                     $fromStation, $toStation, $departureTime, $arrivalTime, $mileage, $routes,
-                     $seatType, $seatNumber, $price, $notes, $isRail, $updatedAt, $deletedAt
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM TripRecords
-                    WHERE UserId=$userId AND ClientId=$clientId
-                );
-                """;
-            AddTripParameters(command, userId, trip);
-            await command.ExecuteNonQueryAsync();
+        await using var touch = connection.CreateCommand();
+        touch.Transaction = (SqliteTransaction)transaction;
+        touch.CommandText = """
+            UPDATE TripRecords
+            SET ServerUpdatedAt = $serverUpdatedAt, SyncVersion = $syncVersion
+            WHERE UserId = $userId AND ClientId = $clientId
+              AND julianday(UpdatedAt) > julianday($updatedAt);
+            """;
+        touch.Parameters.Add("$userId", SqliteType.Text);
+        touch.Parameters.Add("$clientId", SqliteType.Text);
+        touch.Parameters.Add("$serverUpdatedAt", SqliteType.Text);
+        touch.Parameters.Add("$syncVersion", SqliteType.Integer);
+        touch.Parameters.Add("$updatedAt", SqliteType.Text);
+
+        var validIncoming = incoming
+            .Where(trip =>
+                !string.IsNullOrWhiteSpace(trip.ClientId) &&
+                trip.ClientId.Length <= 100)
+            .ToList();
+        var serverVersion = validIncoming.Count == 0
+            ? await GetSyncVersionAsync(connection, userId, (SqliteTransaction)transaction)
+            : await AllocateSyncVersionAsync(connection, userId, (SqliteTransaction)transaction);
+        var hasChanges = false;
+        foreach (var trip in validIncoming)
+        {
+            SetTripParameters(upsert, userId, trip, serverTime, serverVersion);
+            var changed = await upsert.ExecuteNonQueryAsync() > 0;
+            hasChanges |= changed;
+            if (changed) continue;
+
+            touch.Parameters["$userId"].Value = userId;
+            touch.Parameters["$clientId"].Value = trip.ClientId;
+            touch.Parameters["$serverUpdatedAt"].Value = ToDbUtc(serverTime);
+            touch.Parameters["$syncVersion"].Value = serverVersion;
+            touch.Parameters["$updatedAt"].Value = ToDb(trip.UpdatedAt);
+            await touch.ExecuteNonQueryAsync();
         }
-        await RecalculateAchievementsAsync(
-            connection, userId, (SqliteTransaction)transaction);
+        if (hasChanges)
+        {
+            await RecalculateAchievementsAsync(
+                connection, userId, (SqliteTransaction)transaction);
+        }
         await transaction.CommitAsync();
-        return await GetTripsAsync(connection, userId);
+        var trips = await GetTripsAsync(
+            connection,
+            userId,
+            since,
+            sinceVersion,
+            serverTime,
+            serverVersion);
+        return (trips, serverVersion);
     }
 
     public async Task<IReadOnlyList<EntityReviewResponse>> GetEntityReviewsAsync(
@@ -1724,7 +1828,7 @@ public sealed class RailLogDatabase
                 NullableString(tripsReader, 14), tripsReader.GetInt32(15) == 1));
         }
         await tripsReader.CloseAsync();
-        var achievements = await GetAchievementsAsync(connection, userId);
+        var achievements = await GetAchievementsAsync(connection, userId, trips);
         user = user with
         {
             AchievementExperience = achievements.Achievements
@@ -1900,16 +2004,45 @@ public sealed class RailLogDatabase
 
     private static string StatisticsCacheKey(string userId) => $"statistics:{userId}";
 
-    private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(SqliteConnection connection, string userId)
+    private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(
+        SqliteConnection connection,
+        string userId,
+        DateTime? since,
+        long? sinceVersion,
+        DateTime serverTime,
+        long serverVersion)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        var filter = sinceVersion is not null
+            ? "AND SyncVersion > $sinceVersion AND SyncVersion <= $serverVersion"
+            : since is not null
+                ? "AND ServerUpdatedAt > $since AND ServerUpdatedAt <= $serverTime"
+                : string.Empty;
+        var orderBy = sinceVersion is not null
+            ? "SyncVersion, Id"
+            : since is not null
+                ? "ServerUpdatedAt, Id"
+                : "Id";
+        command.CommandText = $"""
             SELECT Id, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock, CompanyName,
                    FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm, ViaRoutes,
                    SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt
-            FROM TripRecords WHERE UserId = $userId ORDER BY UpdatedAt;
+            FROM TripRecords
+            WHERE UserId = $userId
+              {filter}
+            ORDER BY {orderBy};
             """;
         command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("$serverVersion", serverVersion);
+        if (sinceVersion is not null)
+        {
+            command.Parameters.AddWithValue("$sinceVersion", sinceVersion.Value);
+        }
+        else if (since is not null)
+        {
+            command.Parameters.AddWithValue("$serverTime", ToDbUtc(serverTime));
+            command.Parameters.AddWithValue("$since", ToDbUtc(since.Value));
+        }
         await using var reader = await command.ExecuteReaderAsync();
         var trips = new List<SyncTrip>();
         while (await reader.ReadAsync())
@@ -1925,28 +2058,84 @@ public sealed class RailLogDatabase
         return trips;
     }
 
-    private static void AddTripParameters(SqliteCommand command, string userId, SyncTrip trip)
+    private static void AddTripParameters(SqliteCommand command)
     {
+        foreach (var name in new[]
+                 {
+                     "$userId", "$clientId", "$createdAt", "$trainNumber",
+                     "$travelDate", "$rollingStock", "$companyName",
+                     "$fromStation", "$toStation", "$departureTime",
+                     "$arrivalTime", "$mileage", "$routes", "$seatType",
+                     "$seatNumber", "$price", "$notes", "$isRail",
+                     "$updatedAt", "$deletedAt",
+                 })
+        {
+            command.Parameters.Add(name, SqliteType.Text);
+        }
+    }
+
+    private static void SetTripParameters(
+        SqliteCommand command,
+        string userId,
+        SyncTrip trip,
+        DateTime serverTime,
+        long serverVersion)
+    {
+        command.Parameters["$userId"].Value = userId;
+        command.Parameters["$clientId"].Value = trip.ClientId;
+        command.Parameters["$createdAt"].Value = ToDb(trip.CreatedAt);
+        command.Parameters["$trainNumber"].Value = trip.TrainNumber;
+        command.Parameters["$travelDate"].Value = ToDb(trip.TravelDate);
+        command.Parameters["$rollingStock"].Value = DbValue(trip.RollingStock);
+        command.Parameters["$companyName"].Value = DbValue(trip.CompanyName);
+        command.Parameters["$fromStation"].Value = trip.FromStation;
+        command.Parameters["$toStation"].Value = trip.ToStation;
+        command.Parameters["$departureTime"].Value = DbValue(trip.DepartureTime);
+        command.Parameters["$arrivalTime"].Value = DbValue(trip.ArrivalTime);
+        command.Parameters["$mileage"].Value = trip.MileageKm;
+        command.Parameters["$routes"].Value = trip.ViaRoutes;
+        command.Parameters["$seatType"].Value = DbValue(trip.SeatType);
+        command.Parameters["$seatNumber"].Value = DbValue(trip.SeatNumber);
+        command.Parameters["$price"].Value = trip.Price;
+        command.Parameters["$notes"].Value = DbValue(trip.Notes);
+        command.Parameters["$isRail"].Value = trip.IsRailTrip ? 1 : 0;
+        command.Parameters["$updatedAt"].Value = ToDb(trip.UpdatedAt);
+        command.Parameters["$deletedAt"].Value = DbValue(trip.DeletedAt);
+        command.Parameters["$serverUpdatedAt"].Value = ToDbUtc(serverTime);
+        command.Parameters["$syncVersion"].Value = serverVersion;
+    }
+
+    private static async Task<long> GetSyncVersionAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction transaction)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COALESCE((
+                SELECT Version FROM UserSyncState WHERE UserId = $userId
+            ), 0);
+            """;
         command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$clientId", trip.ClientId);
-        command.Parameters.AddWithValue("$createdAt", ToDb(trip.CreatedAt));
-        command.Parameters.AddWithValue("$trainNumber", trip.TrainNumber);
-        command.Parameters.AddWithValue("$travelDate", ToDb(trip.TravelDate));
-        command.Parameters.AddWithValue("$rollingStock", DbValue(trip.RollingStock));
-        command.Parameters.AddWithValue("$companyName", DbValue(trip.CompanyName));
-        command.Parameters.AddWithValue("$fromStation", trip.FromStation);
-        command.Parameters.AddWithValue("$toStation", trip.ToStation);
-        command.Parameters.AddWithValue("$departureTime", DbValue(trip.DepartureTime));
-        command.Parameters.AddWithValue("$arrivalTime", DbValue(trip.ArrivalTime));
-        command.Parameters.AddWithValue("$mileage", trip.MileageKm);
-        command.Parameters.AddWithValue("$routes", trip.ViaRoutes);
-        command.Parameters.AddWithValue("$seatType", DbValue(trip.SeatType));
-        command.Parameters.AddWithValue("$seatNumber", DbValue(trip.SeatNumber));
-        command.Parameters.AddWithValue("$price", trip.Price);
-        command.Parameters.AddWithValue("$notes", DbValue(trip.Notes));
-        command.Parameters.AddWithValue("$isRail", trip.IsRailTrip ? 1 : 0);
-        command.Parameters.AddWithValue("$updatedAt", ToDb(trip.UpdatedAt));
-        command.Parameters.AddWithValue("$deletedAt", DbValue(trip.DeletedAt));
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<long> AllocateSyncVersionAsync(
+        SqliteConnection connection,
+        string userId,
+        SqliteTransaction transaction)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO UserSyncState (UserId, Version)
+            VALUES ($userId, 1)
+            ON CONFLICT(UserId) DO UPDATE SET Version = Version + 1
+            RETURNING Version;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     private async Task<AuthResponse> CreateSessionAsync(SqliteConnection connection, UserProfile profile)
@@ -1965,12 +2154,37 @@ public sealed class RailLogDatabase
         return new AuthResponse(token, expiresAt, profile);
     }
 
+    private static async Task<SqliteTransaction> BeginTransactionWithRetryAsync(
+        SqliteConnection connection)
+    {
+        const int maxAttempts = 5;
+        var delay = TimeSpan.FromMilliseconds(50);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return (SqliteTransaction)await connection.BeginTransactionAsync();
+            }
+            catch (SqliteException exception)
+                when (attempt < maxAttempts &&
+                      exception.SqliteErrorCode is 5 or 6)
+            {
+                await Task.Delay(delay);
+                delay *= 2;
+            }
+        }
+    }
+
     private SqliteConnection OpenConnection() => new(_connectionString);
     private static bool IsValidEmail(string value) =>
         value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');
     private static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private static string ToDb(DateTime value) => value.ToString("O");
+    private static string ToDbUtc(DateTime value) =>
+        value.ToUniversalTime().ToString(
+            "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+            System.Globalization.CultureInfo.InvariantCulture);
     private static DateTime FromDb(string value) => DateTime.Parse(value);
     private static object DbValue(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     private static object DbValue(DateTime? value) => value is null ? DBNull.Value : ToDb(value.Value);
@@ -2218,13 +2432,22 @@ public sealed class RailLogDatabase
         foreach (var userId in userIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await RecalculateAchievementsAsync(connection, userId);
+            await _writeLock.WaitAsync(cancellationToken);
+            try
+            {
+                await RecalculateAchievementsAsync(connection, userId);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
     }
 
     private static async Task<AchievementsResponse> GetAchievementsAsync(
         SqliteConnection connection,
-        string userId)
+        string userId,
+        IReadOnlyList<PublicTrip>? loadedTrips = null)
     {
         var triggers = new Dictionary<string, long>(StringComparer.Ordinal);
         await using (var command = connection.CreateCommand())
@@ -2256,7 +2479,13 @@ public sealed class RailLogDatabase
             totalUsers = Convert.ToInt32(await command.ExecuteScalarAsync());
         }
 
-        var trips = await GetAchievementTripsAsync(connection, userId);
+        var trips = loadedTrips is null
+            ? await GetAchievementTripsAsync(connection, userId)
+            : loadedTrips
+                .Where(trip => trip.IsRailTrip)
+                .OrderBy(trip => trip.DepartureTime)
+                .ThenBy(trip => trip.TicketId)
+                .ToList();
         var reviews = await GetAchievementReviewsAsync(connection, userId);
         var totalExperience = await GetAchievementExperienceAsync(connection, userId);
         var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
@@ -2293,7 +2522,18 @@ public sealed class RailLogDatabase
                     hiddenLocked ? 0 : item.Definition.Experience,
                     item.Definition.Hidden,
                     hiddenLocked ? null : item.Definition.Note,
-                    hiddenLocked ? null : item.Definition.NarrativeNote);
+                    hiddenLocked ? null : item.Definition.NarrativeNote,
+                    item.Definition.Hidden || item.Definition.Requirements is null
+                        ? null
+                        : item.Definition.Requirements
+                            .Select(requirement => new AchievementRequirementResponse(
+                                requirement.Key,
+                                requirement.Label,
+                                requirement.Completed,
+                                requirement.Trip is null
+                                    ? null
+                                    : ToSummary(requirement.Trip)))
+                            .ToList());
             })
             .ToList();
         return new AchievementsResponse(totalUsers, items);

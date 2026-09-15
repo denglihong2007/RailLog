@@ -8,7 +8,9 @@ namespace RailLog.API.Controllers;
 
 [ApiController]
 [Route("api/entities")]
-public sealed class EntityReviewsController(RailLogDatabase database) : ControllerBase
+public sealed class EntityReviewsController(
+    RailLogDatabase database,
+    SensitiveWordService sensitiveWords) : ControllerBase
 {
     private static readonly HashSet<string> AllowedReviewReactions =
         ["👍", "❤️", "😂", "😮", "😢", "🎉", "🥵", "🤔", "❔"];
@@ -30,6 +32,8 @@ public sealed class EntityReviewsController(RailLogDatabase database) : Controll
     public async Task<ActionResult<EntityReviewResponse>> Post(string type, string key, CreateEntityReviewRequest request)
     {
         if (request.Rating is < 1 or > 5 || string.IsNullOrWhiteSpace(request.Comment)) return BadRequest(new { message = "评分和评论不能为空，评分范围为 1-5" });
+        if (sensitiveWords.ContainsSensitiveWord(request.Comment))
+            return BadRequest(new { message = "内容不合法" });
         if (!string.Equals(type, request.EntityType, StringComparison.OrdinalIgnoreCase) || !string.Equals(key, request.EntityKey, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { message = "实体参数不匹配" });
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await database.AreReviewTripsValidAsync(userId, request.TripId, request.SecondTripId))
@@ -51,6 +55,8 @@ public sealed class EntityReviewsController(RailLogDatabase database) : Controll
     public async Task<IActionResult> Put(long id, UpdateEntityReviewRequest request)
     {
         if (request.Rating is < 1 or > 5 || string.IsNullOrWhiteSpace(request.Comment)) return BadRequest(new { message = "评分和评论不能为空，评分范围为 1-5" });
+        if (sensitiveWords.ContainsSensitiveWord(request.Comment))
+            return BadRequest(new { message = "内容不合法" });
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await database.AreReviewTripsValidAsync(userId, request.TripId, request.SecondTripId))
             return BadRequest(new { message = "关联行程不存在或不属于当前用户" });

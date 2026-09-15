@@ -7,12 +7,10 @@ import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/public_trip_service.dart';
 import 'package:raillog/src/services/search_service.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
-
-const _searchMaxWidth = 720.0;
-const _searchRadius = 8.0;
 
 enum _SearchScope { station, route, company, rollingStock, train, user, trip }
 
@@ -204,15 +202,25 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
     final colors = Theme.of(context).colorScheme;
+    final resultKey = [
+      _loading,
+      _error != null,
+      _hasSearched,
+      _scope.name,
+      _users.length,
+      _entities.length,
+    ].join(':');
     return ColoredBox(
       color: colors.surfaceContainerLowest,
       child: ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+        padding: AppSpacing.page,
         children: [
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _searchMaxWidth),
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.detailMaxWidth,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -228,7 +236,18 @@ class _SearchPageState extends State<SearchPage> {
                     onSearch: _search,
                   ),
                   const SizedBox(height: 24),
-                  _buildResults(context),
+                  AnimatedSize(
+                    duration: m3MotionDurationShort,
+                    curve: Easing.standard,
+                    alignment: Alignment.topCenter,
+                    child: M3FadeThroughSwitcher(
+                      alignment: Alignment.topCenter,
+                      child: KeyedSubtree(
+                        key: ValueKey(resultKey),
+                        child: _buildResults(context),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -273,13 +292,9 @@ class _SearchPageState extends State<SearchPage> {
         );
       } else {
         countLabel = '$resultCount 条';
-        content = Card.filled(
-          margin: EdgeInsets.zero,
+        content = AppCard.filled(
           color: Theme.of(context).colorScheme.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_searchRadius),
-          ),
-          clipBehavior: Clip.antiAlias,
+          padding: EdgeInsets.zero,
           child: _scope == _SearchScope.user
               ? _UserResultList(users: _users, onTap: _openUser)
               : _EntityResultList(
@@ -339,110 +354,95 @@ class _SearchConditionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_searchRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.search, size: 20, color: colors.primary),
-                const SizedBox(width: 10),
-                Text('查询条件', style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 560;
-                final scopeField = DropdownButtonFormField<_SearchScope>(
-                  initialValue: scope,
-                  decoration: const InputDecoration(
-                    labelText: '搜索范围',
-                    prefixIcon: Icon(Icons.category_outlined),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _SearchScope.values
-                      .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Row(
-                            children: [
-                              Icon(item.icon, size: 18),
-                              const SizedBox(width: 8),
-                              Text(item.label),
-                            ],
-                          ),
+    return AppCard.filled(
+      title: '查询条件',
+      icon: Icons.search,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 560;
+              final scopeField = DropdownButtonFormField<_SearchScope>(
+                initialValue: scope,
+                decoration: const InputDecoration(
+                  labelText: '搜索范围',
+                  prefixIcon: Icon(Icons.category_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: _SearchScope.values
+                    .map(
+                      (item) => DropdownMenuItem(
+                        value: item,
+                        child: Row(
+                          children: [
+                            Icon(item.icon, size: 18),
+                            const SizedBox(width: 8),
+                            Text(item.label),
+                          ],
                         ),
-                      )
-                      .toList(growable: false),
-                  onChanged: onScopeChanged,
-                );
-                final keywordField = TextField(
-                  controller: controller,
-                  keyboardType: scope == _SearchScope.trip
-                      ? TextInputType.number
-                      : TextInputType.text,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (_) => onChanged(),
-                  onSubmitted: (_) => onSearch(),
-                  decoration: InputDecoration(
-                    labelText: '关键词',
-                    hintText: scope.hint,
-                    prefixIcon: Icon(scope.icon),
-                    suffixIcon: controller.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: '清除',
-                            onPressed: onClear,
-                            icon: const Icon(Icons.close),
-                          ),
-                    border: const OutlineInputBorder(),
-                  ),
-                );
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: onScopeChanged,
+              );
+              final keywordField = TextField(
+                controller: controller,
+                keyboardType: scope == _SearchScope.trip
+                    ? TextInputType.number
+                    : TextInputType.text,
+                textInputAction: TextInputAction.search,
+                onChanged: (_) => onChanged(),
+                onSubmitted: (_) => onSearch(),
+                decoration: InputDecoration(
+                  labelText: '关键词',
+                  hintText: scope.hint,
+                  prefixIcon: Icon(scope.icon),
+                  suffixIcon: controller.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '清除',
+                          onPressed: onClear,
+                          icon: const Icon(Icons.close),
+                        ),
+                  border: const OutlineInputBorder(),
+                ),
+              );
 
-                if (!wide) {
-                  return Column(
-                    children: [
-                      scopeField,
-                      const SizedBox(height: 12),
-                      keywordField,
-                    ],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              if (!wide) {
+                return Column(
                   children: [
-                    SizedBox(width: 220, child: scopeField),
-                    const SizedBox(width: 12),
-                    Expanded(child: keywordField),
+                    scopeField,
+                    const SizedBox(height: 12),
+                    keywordField,
                   ],
                 );
-              },
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 220, child: scopeField),
+                  const SizedBox(width: 12),
+                  Expanded(child: keywordField),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: loading ? null : onSearch,
+              icon: loading
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search),
+              label: Text(loading ? '搜索中' : '搜索'),
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: loading ? null : onSearch,
-                icon: loading
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.search),
-                label: Text(loading ? '搜索中' : '搜索'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -593,37 +593,27 @@ class _SearchStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_searchRadius),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            if (isLoading)
-              const CircularProgressIndicator()
-            else if (icon != null)
-              Icon(icon, size: 36, color: colors.onSurfaceVariant),
+      child: Column(
+        children: [
+          if (isLoading)
+            const CircularProgressIndicator()
+          else if (icon != null)
+            Icon(icon, size: 36, color: colors.onSurfaceVariant),
+          const SizedBox(height: 16),
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: colors.onSurfaceVariant),
+          ),
+          if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: colors.onSurfaceVariant),
-            ),
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 16),
-              FilledButton.tonal(
-                onPressed: onAction,
-                child: Text(actionLabel!),
-              ),
-            ],
+            FilledButton.tonal(onPressed: onAction, child: Text(actionLabel!)),
           ],
-        ),
+        ],
       ),
     );
   }

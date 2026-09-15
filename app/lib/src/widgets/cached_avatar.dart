@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class CachedAvatar extends StatelessWidget {
   const CachedAvatar({
@@ -38,7 +39,8 @@ class CachedAvatar extends StatelessWidget {
                   fit: BoxFit.cover,
                   maxWidthDiskCache: 256,
                   maxHeightDiskCache: 256,
-                  fadeInDuration: const Duration(milliseconds: 150),
+                  fadeInDuration: m3MotionDurationShort,
+                  fadeInCurve: Easing.standardDecelerate,
                   placeholder: (_, _) => fallback,
                   errorWidget: (_, _, _) => fallback,
                 ),

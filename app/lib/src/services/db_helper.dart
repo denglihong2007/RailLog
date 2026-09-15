@@ -24,7 +24,7 @@ class DbHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -34,7 +34,7 @@ class DbHelper {
     await _database?.close();
     _database = await openDatabase(
       inMemoryDatabasePath,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -64,6 +64,7 @@ class DbHelper {
         price REAL NOT NULL,
         is_rail_trip INTEGER NOT NULL,
         is_local_only INTEGER NOT NULL DEFAULT 0,
+        sync_dirty INTEGER NOT NULL DEFAULT 1,
         notes TEXT
       )
     ''');
@@ -72,6 +73,9 @@ class DbHelper {
     );
     await db.execute(
       'CREATE INDEX ix_trip_records_owner_user_id ON trip_records(owner_user_id)',
+    );
+    await db.execute(
+      'CREATE INDEX ix_trip_records_sync_queue ON trip_records(owner_user_id, sync_dirty, updated_at)',
     );
     await _createSettingsTable(db);
   }
@@ -111,6 +115,17 @@ class DbHelper {
         'ALTER TABLE trip_records ADD COLUMN is_local_only INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 7) {
+      await db.execute(
+        'ALTER TABLE trip_records ADD COLUMN sync_dirty INTEGER NOT NULL DEFAULT 1',
+      );
+      await db.execute(
+        'UPDATE trip_records SET sync_dirty = 0 WHERE is_local_only = 1',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS ix_trip_records_sync_queue ON trip_records(owner_user_id, sync_dirty, updated_at)',
+      );
+    }
   }
 
   Future<void> _createSettingsTable(Database db) async {
@@ -128,8 +143,10 @@ class DbHelper {
     if (trip.isLocalOnly) {
       values['ticket_id'] = null;
       values['owner_user_id'] = null;
+      values['sync_dirty'] = 0;
     } else {
       values['owner_user_id'] ??= activeUserId?.call();
+      values['sync_dirty'] = 1;
     }
     final result = await db.insert('trip_records', values);
     _notifyTripsChanged();
@@ -146,9 +163,11 @@ class DbHelper {
         if (trip.isLocalOnly) {
           values
             ..['ticket_id'] = null
-            ..['owner_user_id'] = null;
+            ..['owner_user_id'] = null
+            ..['sync_dirty'] = 0;
         } else {
           values['owner_user_id'] ??= userId;
+          values['sync_dirty'] = 1;
         }
         await txn.insert('trip_records', values);
       }
@@ -162,7 +181,8 @@ class DbHelper {
     final updatedAt = DateTime.now().toIso8601String();
     final values = trip.toMap()
       ..remove('id')
-      ..['updated_at'] = updatedAt;
+      ..['updated_at'] = updatedAt
+      ..['sync_dirty'] = 1;
     final result = await db.transaction((txn) async {
       final rows = await txn.query(
         'trip_records',
@@ -180,7 +200,8 @@ class DbHelper {
         values
           ..['client_id'] = TripRecord.createClientId()
           ..['ticket_id'] = null
-          ..['owner_user_id'] = null;
+          ..['owner_user_id'] = null
+          ..['sync_dirty'] = 0;
         final updated = await txn.update(
           'trip_records',
           values,
@@ -191,7 +212,8 @@ class DbHelper {
           ..remove('id')
           ..['updated_at'] = updatedAt
           ..['deleted_at'] = updatedAt
-          ..['is_local_only'] = 0;
+          ..['is_local_only'] = 0
+          ..['sync_dirty'] = 1;
         await txn.insert('trip_records', tombstone);
         return updated;
       }
@@ -199,7 +221,8 @@ class DbHelper {
       if (trip.isLocalOnly) {
         values
           ..['ticket_id'] = null
-          ..['owner_user_id'] = null;
+          ..['owner_user_id'] = null
+          ..['sync_dirty'] = 0;
       } else if (wasLocalOnly) {
         values['owner_user_id'] ??= activeUserId?.call();
       }
@@ -236,7 +259,7 @@ class DbHelper {
       }
       return txn.update(
         'trip_records',
-        {'deleted_at': now, 'updated_at': now},
+        {'deleted_at': now, 'updated_at': now, 'sync_dirty': 1},
         where: where,
         whereArgs: whereArgs,
       );
@@ -283,14 +306,34 @@ class DbHelper {
     final db = await database;
     await db.update('trip_records', {
       'owner_user_id': userId,
+      'sync_dirty': 1,
     }, where: 'owner_user_id IS NULL AND is_local_only = 0');
     final maps = await db.query(
       'trip_records',
-      where: 'owner_user_id = ? AND is_local_only = 0',
+      where: 'owner_user_id = ? AND is_local_only = 0 AND sync_dirty = 1',
       whereArgs: [userId],
       orderBy: 'updated_at',
     );
     return maps.map(TripRecord.fromMap).toList();
+  }
+
+  Future<void> markTripsSynced(
+    String userId,
+    Iterable<TripRecord> trips,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final trip in trips) {
+        await txn.update(
+          'trip_records',
+          {'sync_dirty': 0},
+          where:
+              'owner_user_id = ? AND client_id = ? '
+              'AND julianday(updated_at) <= julianday(?)',
+          whereArgs: [userId, trip.clientId, trip.updatedAt.toIso8601String()],
+        );
+      }
+    });
   }
 
   Future<void> mergeCloudTrips(
@@ -313,7 +356,8 @@ class DbHelper {
         }
         final values = cloudTrip.toMap()
           ..remove('id')
-          ..['owner_user_id'] = userId;
+          ..['owner_user_id'] = userId
+          ..['sync_dirty'] = 0;
         if (existing.isEmpty) {
           await txn.insert('trip_records', values);
           continue;

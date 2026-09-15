@@ -5,6 +5,7 @@ import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 enum _UnlockSortField { unlockTime, tripCount }
@@ -59,7 +60,6 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
     var descending = _descending;
     final settings = await showModalBottomSheet<_UnlockSortSettings>(
       context: context,
-      showDragHandle: true,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
@@ -174,9 +174,11 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.detailMaxWidth,
+            ),
             child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              padding: AppSpacing.page,
               itemCount: entries.length + 1,
               separatorBuilder: (context, index) => index == 0
                   ? const SizedBox(height: 8)
@@ -366,11 +368,11 @@ class _UnlockProgress extends StatelessWidget {
               Row(
                 children: [
                   Icon(icon, size: 18, color: colors.primary),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: AppSpacing.sm),
                   const Expanded(child: Text('解锁进度')),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.md),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -398,7 +400,7 @@ class _UnlockProgress extends StatelessWidget {
               LinearProgressIndicator(
                 value: value.clamp(0, 1),
                 minHeight: 6,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadius.small),
                 color: colors.primary,
                 backgroundColor: colors.primary.withValues(alpha: 0.14),
               ),
@@ -427,10 +429,12 @@ class _UnlockPieChartPage extends StatelessWidget {
       appBar: AppBar(title: Text('$title · 次数占比')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          padding: AppSpacing.page,
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.detailMaxWidth,
+              ),
               child: _UnlockPieChart(entries: entries, icon: icon),
             ),
           ),
@@ -468,7 +472,7 @@ class _UnlockPieChart extends StatelessWidget {
                     size: 32,
                     color: colors.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.md),
                   Text(
                     '暂无统计数据',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -659,7 +663,7 @@ class _PieLegendState extends State<_PieLegend> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: AppSpacing.sm),
                           Text(
                             _formatPercentage(slice.count, widget.total),
                             style: textTheme.labelMedium?.copyWith(

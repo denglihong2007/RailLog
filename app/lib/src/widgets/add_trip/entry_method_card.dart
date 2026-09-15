@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 
 class EntryMethodCard extends StatelessWidget {
   const EntryMethodCard({
@@ -17,8 +18,8 @@ class EntryMethodCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.outlined(
-      clipBehavior: Clip.antiAlias,
+    return AppCard.outlined(
+      padding: EdgeInsets.zero,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 20,

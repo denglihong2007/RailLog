@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/update_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/update_prompt.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -76,12 +77,14 @@ class _AboutPageState extends State<AboutPage> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
+                  constraints: const BoxConstraints(
+                    maxWidth: AppLayout.contentMaxWidth,
+                  ),
                   child: Row(
                     children: [
                       Material(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppRadius.small),
                         clipBehavior: Clip.antiAlias,
                         child: Padding(
                           padding: const EdgeInsets.all(8),
@@ -99,10 +102,7 @@ class _AboutPageState extends State<AboutPage> {
                           Text(
                             '轨记',
                             style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(
-                                  color: colors.onPrimaryContainer,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                ?.copyWith(color: colors.onPrimaryContainer),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -119,10 +119,12 @@ class _AboutPageState extends State<AboutPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+            padding: AppSpacing.page,
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
+                constraints: const BoxConstraints(
+                  maxWidth: AppLayout.contentMaxWidth,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -169,7 +171,7 @@ class _AboutPageState extends State<AboutPage> {
                         );
                       },
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     _AboutSection(
                       title: '使用的 API',
                       children: [
@@ -199,7 +201,7 @@ class _AboutPageState extends State<AboutPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     const _AboutSection(
                       title: '项目链接',
                       children: [
@@ -223,7 +225,7 @@ class _AboutPageState extends State<AboutPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     _AboutSection(
                       title: '鸣谢',
                       children: [
@@ -278,29 +280,18 @@ class _AboutSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-        ),
-        Material(
-          color: colors.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (var index = 0; index < children.length; index++) ...[
-                children[index],
-                if (index != children.length - 1)
-                  const Divider(height: 1, indent: 56),
-              ],
-            ],
-          ),
-        ),
-      ],
+    return AppCard.filled(
+      title: title,
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            children[index],
+            if (index != children.length - 1)
+              const Divider(height: 1, indent: 56),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -340,9 +331,11 @@ class _FinancialSponsorsPage extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.contentMaxWidth,
+            ),
             child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              padding: AppSpacing.page,
               itemCount: _financialSponsors.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) =>

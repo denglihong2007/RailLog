@@ -3,6 +3,7 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/session_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/entity_review_reaction_bar.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
@@ -81,13 +82,13 @@ class EntityReviewCard extends StatelessWidget {
             children: [
               if (showTarget) ...[
                 _EntityReviewTargetLine(review: review, onTap: onTargetTap),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpacing.md),
               ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   InkWell(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                     onTap: onUserTap ?? () => _openUser(context),
                     child: CachedAvatar(
                       name: review.displayName,
@@ -95,7 +96,7 @@ class EntityReviewCard extends StatelessWidget {
                       size: 40,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -117,7 +118,7 @@ class EntityReviewCard extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: AppSpacing.sm),
                                   UserLevelBadge(
                                     experience: review.achievementExperience,
                                   ),
@@ -199,13 +200,6 @@ class EntityReviewCard extends StatelessWidget {
                                   if (onEdit != null)
                                     IconButton(
                                       tooltip: '编辑评价',
-                                      visualDensity: VisualDensity.compact,
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size.square(32),
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
                                       onPressed: onEdit,
                                       icon: const Icon(
                                         Icons.edit_outlined,
@@ -215,13 +209,6 @@ class EntityReviewCard extends StatelessWidget {
                                   if (onDelete != null)
                                     IconButton(
                                       tooltip: '删除评价',
-                                      visualDensity: VisualDensity.compact,
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size.square(32),
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
                                       onPressed: onDelete,
                                       icon: const Icon(
                                         Icons.delete_outline,
@@ -297,16 +284,21 @@ class _EntityReviewTargetLine extends StatelessWidget {
     final target = entityReviewTarget(review);
     return Material(
       color: colors.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.small),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.sm,
+          ),
           child: Row(
             children: [
               Icon(target.icon, size: 17, color: colors.primary),
-              const SizedBox(width: 7),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   '${target.category} · ${target.name}',
@@ -353,12 +345,10 @@ class _EntityReviewTripLink extends StatelessWidget {
       '${trip.fromStation} → ${trip.toStation}',
     ].where((part) => part.isNotEmpty).join(' · ');
     return ListTile(
-      dense: true,
       contentPadding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      minTileHeight: roleLabel == null ? 30 : 42,
-      horizontalTitleGap: 6,
-      minLeadingWidth: 18,
+      minTileHeight: 48,
+      horizontalTitleGap: AppSpacing.sm,
+      minLeadingWidth: 24,
       leading: const Icon(Icons.confirmation_number_outlined, size: 18),
       title: Text(
         roleLabel ?? summary,

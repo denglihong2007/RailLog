@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 typedef RouteDistanceResolver =
@@ -117,7 +118,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.info_outline, size: 16, color: colors.onSurfaceVariant),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
                 '自动识别可能不准确，建议结合路路通时刻表的经由信息修改',
@@ -131,7 +132,7 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
         const SizedBox(height: 12),
         AnimatedSize(
           duration: m3MotionDuration,
-          curve: Curves.easeOutCubic,
+          curve: Easing.standard,
           child: M3FadeThroughSwitcher(
             alignment: Alignment.topCenter,
             child: _buildSegments(context),
@@ -162,7 +163,6 @@ class _RouteSegmentsEditorState extends State<RouteSegmentsEditor> {
   void _showInferenceLog() {
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (context) => _InferenceLogSheet(entries: inferenceLog),
     );
@@ -276,7 +276,7 @@ class _InferenceLogSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(Icons.receipt_long_outlined, color: colors.primary),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Text(
                       '路径推断日志',
@@ -296,7 +296,8 @@ class _InferenceLogSheet extends StatelessWidget {
               child: ListView.separated(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                 itemCount: entries.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.md),
                 itemBuilder: (context, index) => SelectableText(
                   entries[index],
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -350,7 +351,6 @@ class _EditorHeader extends StatelessWidget {
           children: [
             IconButton(
               tooltip: '查看推断日志',
-              visualDensity: VisualDensity.compact,
               onPressed: onShowLog,
               icon: const Icon(Icons.receipt_long_outlined, size: 20),
             ),
@@ -384,7 +384,7 @@ class _EditorHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               title,
-              const SizedBox(height: 6),
+              const SizedBox(height: AppSpacing.sm),
               Align(alignment: Alignment.centerRight, child: actions),
             ],
           );
@@ -482,7 +482,7 @@ class _SegmentEditorState extends State<_SegmentEditor> {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.small),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 12),
@@ -498,7 +498,6 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                       index: widget.index,
                       child: IconButton(
                         tooltip: '拖动调整顺序',
-                        visualDensity: VisualDensity.compact,
                         iconSize: 18,
                         onPressed: () {},
                         icon: const Icon(Icons.drag_indicator),
@@ -512,7 +511,6 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                 const Spacer(),
                 IconButton(
                   tooltip: '删除该段',
-                  visualDensity: VisualDensity.compact,
                   onPressed: widget.onRemove,
                   icon: const Icon(Icons.delete_outline),
                 ),
@@ -794,7 +792,7 @@ class _SearchPickerFormField extends StatelessWidget {
       validator: validator,
       builder: (field) {
         return InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.extraSmall),
           onTap: isLoading || options.isEmpty
               ? null
               : () async {
@@ -820,7 +818,7 @@ class _SearchPickerFormField extends StatelessWidget {
               prefixIcon: icon == null ? null : Icon(icon),
               suffixIcon: isLoading
                   ? const Padding(
-                      padding: EdgeInsets.all(14),
+                      padding: EdgeInsets.all(AppSpacing.lg),
                       child: SizedBox.square(
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
@@ -877,17 +875,6 @@ class _SearchPickerSheetState extends State<_SearchPickerSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 32,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
             Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             SearchBar(

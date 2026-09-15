@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 import 'package:raillog/src/pages/add_trip_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/search_page.dart';
@@ -12,6 +11,34 @@ import 'package:raillog/src/services/update_service.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/update_prompt.dart';
+
+const _mainDestinations = [
+  NavigationDestination(
+    icon: Icon(Icons.home_outlined),
+    selectedIcon: Icon(Icons.home),
+    label: '主页',
+  ),
+  NavigationDestination(
+    icon: Icon(Icons.add_circle_outline),
+    selectedIcon: Icon(Icons.add_circle),
+    label: '录入',
+  ),
+  NavigationDestination(
+    icon: Icon(Icons.search_outlined),
+    selectedIcon: Icon(Icons.search),
+    label: '搜索',
+  ),
+  NavigationDestination(
+    icon: Icon(Icons.bar_chart_outlined),
+    selectedIcon: Icon(Icons.bar_chart),
+    label: '统计',
+  ),
+  NavigationDestination(
+    icon: Icon(Icons.settings_outlined),
+    selectedIcon: Icon(Icons.settings),
+    label: '设置',
+  ),
+];
 
 class MainNavigationPage extends StatefulWidget {
   const MainNavigationPage({super.key});
@@ -86,46 +113,22 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveScaffold(
-      appBar: AppBar(title: const Text('轨记')),
-      internalAnimations: false,
+    final isDesktop =
+        Theme.of(context).platform == TargetPlatform.windows ||
+        Theme.of(context).platform == TargetPlatform.macOS ||
+        Theme.of(context).platform == TargetPlatform.linux;
+    final appBar = isDesktop ? null : AppBar(title: const Text('轨记'));
 
+    return _AdaptiveNavigationScaffold(
+      appBar: appBar,
       selectedIndex: _currentIdx,
-
-      onSelectedIndexChange: (int index) {
+      onSelectedIndexChange: (index) {
         setState(() {
           _currentIdx = index;
         });
       },
-
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: '主页',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.add_circle_outline),
-          selectedIcon: Icon(Icons.add_circle),
-          label: '录入',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.search_outlined),
-          selectedIcon: Icon(Icons.search),
-          label: '搜索',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.bar_chart_outlined),
-          selectedIcon: Icon(Icons.bar_chart),
-          label: '统计',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.settings_outlined),
-          selectedIcon: Icon(Icons.settings),
-          label: '设置',
-        ),
-      ],
-      body: (_) => SafeArea(
+      destinations: _mainDestinations,
+      body: SafeArea(
         bottom: false,
         child: M3FadeThroughSwitcher(
           child: KeyedSubtree(
@@ -134,6 +137,71 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AdaptiveNavigationScaffold extends StatelessWidget {
+  const _AdaptiveNavigationScaffold({
+    required this.appBar,
+    required this.selectedIndex,
+    required this.onSelectedIndexChange,
+    required this.destinations,
+    required this.body,
+  });
+
+  static const compactBreakpoint = 600.0;
+  static const expandedBreakpoint = 840.0;
+
+  final PreferredSizeWidget? appBar;
+  final int selectedIndex;
+  final ValueChanged<int> onSelectedIndexChange;
+  final List<NavigationDestination> destinations;
+  final Widget body;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < compactBreakpoint) {
+          return Scaffold(
+            appBar: appBar,
+            body: body,
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: onSelectedIndexChange,
+              destinations: destinations,
+            ),
+          );
+        }
+
+        final extended = constraints.maxWidth >= expandedBreakpoint;
+        return Scaffold(
+          appBar: appBar,
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              NavigationRail(
+                selectedIndex: selectedIndex,
+                onDestinationSelected: onSelectedIndexChange,
+                extended: extended,
+                labelType: extended ? null : NavigationRailLabelType.all,
+                groupAlignment: -1,
+                destinations: [
+                  for (final destination in destinations)
+                    NavigationRailDestination(
+                      icon: destination.icon,
+                      selectedIcon: destination.selectedIcon,
+                      label: Text(destination.label),
+                    ),
+                ],
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: body),
+            ],
+          ),
+        );
+      },
     );
   }
 }

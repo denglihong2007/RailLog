@@ -3,6 +3,7 @@ import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/achievement_unlock_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
@@ -65,9 +66,11 @@ class _AchievementUnlockTripsPageState
         }
         return Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(
+              maxWidth: AppLayout.contentMaxWidth,
+            ),
             child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              padding: AppSpacing.page,
               itemCount: trips.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) =>
@@ -81,7 +84,11 @@ class _AchievementUnlockTripsPageState
 }
 
 class AchievementTripRow extends StatelessWidget {
-  const AchievementTripRow({super.key, required this.trip, this.highlight = false});
+  const AchievementTripRow({
+    super.key,
+    required this.trip,
+    this.highlight = false,
+  });
 
   final AchievementUnlockTrip trip;
   final bool highlight;
@@ -89,12 +96,11 @@ class AchievementTripRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Material(
+    return AppCard.filled(
       color: (trip.isCurrentUser || highlight)
           ? colors.primaryContainer
           : colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.zero,
       child: ListTile(
         leading: _AchievementTripAvatar(trip: trip, highlight: highlight),
         title: Text(trip.displayName),
@@ -136,7 +142,9 @@ class _AchievementTripAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: (trip.isCurrentUser || highlight) ? colors.primary : colors.outlineVariant,
+          color: (trip.isCurrentUser || highlight)
+              ? colors.primary
+              : colors.outlineVariant,
           width: (trip.isCurrentUser || highlight) ? 3 : 1,
         ),
       ),

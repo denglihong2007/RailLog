@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class FormSection extends StatelessWidget {
@@ -17,31 +18,12 @@ class FormSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return M3Reveal(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, size: 20, color: colors.primary),
-                  const SizedBox(width: 8),
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  if (trailing != null) ...[const Spacer(), trailing!],
-                ],
-              ),
-              const SizedBox(height: 16),
-              child,
-            ],
-          ),
-        ),
+      child: AppCard.filled(
+        title: title,
+        icon: icon,
+        trailing: trailing,
+        child: child,
       ),
     );
   }
@@ -77,7 +59,7 @@ class FormPageScrollView extends StatelessWidget {
     super.key,
     required this.children,
     required this.padding,
-    this.maxWidth = 840,
+    this.maxWidth = AppLayout.formMaxWidth,
   });
 
   final List<Widget> children;

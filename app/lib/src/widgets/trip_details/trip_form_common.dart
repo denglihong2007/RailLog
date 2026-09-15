@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/seat_selection.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/trip_details/form_section.dart';
 import 'package:raillog/src/widgets/trip_details/seat_editor.dart';
 
@@ -115,11 +116,15 @@ class TripFormShell extends StatelessWidget {
           fillColor: colors.surfaceContainerHighest,
           border: const OutlineInputBorder(
             borderSide: BorderSide.none,
-            borderRadius: BorderRadius.all(Radius.circular(8)),
+            borderRadius: BorderRadius.all(
+              Radius.circular(AppRadius.extraSmall),
+            ),
           ),
           enabledBorder: const OutlineInputBorder(
             borderSide: BorderSide.none,
-            borderRadius: BorderRadius.all(Radius.circular(8)),
+            borderRadius: BorderRadius.all(
+              Radius.circular(AppRadius.extraSmall),
+            ),
           ),
         ),
       ),

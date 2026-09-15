@@ -4,6 +4,7 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/route_service.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/trip_details/form_section.dart';
 import 'package:raillog/src/widgets/trip_details/company_editor.dart';
 import 'package:raillog/src/widgets/trip_details/route_segments_editor.dart';
@@ -265,7 +266,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
       ),
       body: TripFormShell(
         formKey: _formKey,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        padding: AppSpacing.page,
         children: [
           FormSection(
             icon: Icons.edit_location_alt_outlined,
@@ -499,9 +500,9 @@ class _DateTimeInput extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: colors.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.extraSmall),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.extraSmall),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

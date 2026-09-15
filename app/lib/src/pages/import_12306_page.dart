@@ -8,6 +8,7 @@ import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 import 'package:raillog/src/services/train_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class Import12306Page extends StatefulWidget {
@@ -445,7 +446,9 @@ class _Import12306PageState extends State<Import12306Page> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
-    final horizontalPadding = width > 880 ? (width - 840) / 2 : 16.0;
+    final horizontalPadding = width > 880
+        ? (width - AppLayout.detailMaxWidth) / 2
+        : AppSpacing.lg;
     final selectable = _selectableOrders;
     final allSelected =
         selectable.isNotEmpty &&
@@ -595,7 +598,7 @@ class _Import12306PageState extends State<Import12306Page> {
                   color: _messageIsError
                       ? colors.errorContainer
                       : colors.secondaryContainer,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.small),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -744,10 +747,9 @@ class _CompletedStepCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.primaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      padding: EdgeInsets.zero,
       child: ListTile(
         leading: Icon(Icons.check_circle_outline, color: colors.primary),
         title: Text(message),
@@ -764,10 +766,9 @@ class _PendingStepCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      padding: EdgeInsets.zero,
       child: ListTile(
         leading: Icon(Icons.lock_outline, color: colors.onSurfaceVariant),
         title: Text(message, style: TextStyle(color: colors.onSurfaceVariant)),
@@ -782,10 +783,9 @@ class _SmallWindowTip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.tertiaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      padding: EdgeInsets.zero,
       child: ListTile(
         leading: Icon(
           Icons.picture_in_picture_alt_outlined,
@@ -826,13 +826,11 @@ class _LoginPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: isLoggedIn ? colors.primaryContainer : colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 560;
@@ -853,7 +851,7 @@ class _LoginPanel extends StatelessWidget {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.small),
                     ),
                     child: Image.memory(qrImage!, gaplessPlayback: true),
                   );
@@ -1053,82 +1051,76 @@ class _OrderTile extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final status = imported ? '已导入' : order.statusText;
     final canToggle = enabled && !imported && onChanged != null;
-    return Material(
+    return AppCard.filled(
       color: selected ? colors.primaryContainer : colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: canToggle ? () => onChanged!(!selected) : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 14, 16, 14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Checkbox(
-                value: selected,
-                onChanged: canToggle ? onChanged : null,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          order.trainCode,
-                          style: Theme.of(context).textTheme.titleMedium,
+      padding: EdgeInsets.zero,
+      onTap: canToggle ? () => onChanged!(!selected) : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 14, 16, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Checkbox(value: selected, onChanged: canToggle ? onChanged : null),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        order.trainCode,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${order.fromStation} → ${order.toStation}',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            '${order.fromStation} → ${order.toStation}',
-                            style: Theme.of(context).textTheme.bodyLarge,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 14,
-                      runSpacing: 6,
-                      children: [
-                        _OrderFact(
-                          icon: Icons.schedule,
-                          label: _formatDateTime(order.startTime),
-                        ),
-                        if (order.passengerName.isNotEmpty)
-                          _OrderFact(
-                            icon: Icons.person_outline,
-                            label: order.passengerName,
-                          ),
-                        if (order.seatDisplay.isNotEmpty)
-                          _OrderFact(
-                            icon: Icons.event_seat_outlined,
-                            label: order.seatDisplay,
-                          ),
-                        if (order.price > 0)
-                          _OrderFact(
-                            icon: Icons.payments_outlined,
-                            label: '¥${_formatNumber(order.price)}',
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (status.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Text(
-                  status,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: order.canImport ? colors.primary : colors.error,
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 6,
+                    children: [
+                      _OrderFact(
+                        icon: Icons.schedule,
+                        label: _formatDateTime(order.startTime),
+                      ),
+                      if (order.passengerName.isNotEmpty)
+                        _OrderFact(
+                          icon: Icons.person_outline,
+                          label: order.passengerName,
+                        ),
+                      if (order.seatDisplay.isNotEmpty)
+                        _OrderFact(
+                          icon: Icons.event_seat_outlined,
+                          label: order.seatDisplay,
+                        ),
+                      if (order.price > 0)
+                        _OrderFact(
+                          icon: Icons.payments_outlined,
+                          label: '¥${_formatNumber(order.price)}',
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (status.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                status,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: order.canImport ? colors.primary : colors.error,
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );

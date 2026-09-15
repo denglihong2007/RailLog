@@ -7,6 +7,7 @@ import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -288,13 +289,12 @@ class _AllTripsPageState extends State<AllTripsPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
                 color: Theme.of(dialogContext).colorScheme.surfaceContainer,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.small),
               ),
               child: SelectableText(
                 download.key,
                 textAlign: TextAlign.center,
                 style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
@@ -385,7 +385,6 @@ class _AllTripsPageState extends State<AllTripsPage> {
     final settings = await showModalBottomSheet<_TripListSettings>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
@@ -630,96 +629,109 @@ class _AllTripsPageState extends State<AllTripsPage> {
               )
             : null,
         body: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final status = Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${trips.length} / '
-                            '${widget.trips.length - _removedTripIds.length} 趟行程',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        Text(
-                          '${_sortFieldLabel(_sortField)} · '
-                          '${_descending ? '降序' : '升序'}',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.dashboardMaxWidth,
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final status = Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${trips.length} / '
+                                '${widget.trips.length - _removedTripIds.length} 趟行程',
+                                style: Theme.of(context).textTheme.titleMedium,
                               ),
-                        ),
-                      ],
-                    );
-                    final search = SizedBox(
-                      height: 44,
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (value) =>
-                            setState(() => _searchQuery = value),
-                        decoration: InputDecoration(
-                          hintText: '搜索',
-                          isDense: true,
-                          filled: true,
-                          fillColor: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerLow,
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          prefixIconConstraints: const BoxConstraints(
-                            minWidth: 44,
-                          ),
-                          suffixIcon: _searchQuery.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: '清除搜索',
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                  icon: const Icon(Icons.close, size: 20),
+                            ),
+                            Text(
+                              '${_sortFieldLabel(_sortField)} · '
+                              '${_descending ? '降序' : '升序'}',
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        );
+                        final search = SizedBox(
+                          height: 44,
+                          child: TextField(
+                            controller: _searchController,
+                            onChanged: (value) =>
+                                setState(() => _searchQuery = value),
+                            decoration: InputDecoration(
+                              hintText: '搜索',
+                              isDense: true,
+                              filled: true,
+                              fillColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerLow,
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              prefixIconConstraints: const BoxConstraints(
+                                minWidth: 44,
+                              ),
+                              suffixIcon: _searchQuery.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      tooltip: '清除搜索',
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() => _searchQuery = '');
+                                      },
+                                      icon: const Icon(Icons.close, size: 20),
+                                    ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.extraSmall,
                                 ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide.none,
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    );
+                        );
 
-                    if (constraints.maxWidth < 720) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [status, const SizedBox(height: 10), search],
-                      );
-                    }
-                    return Row(
-                      children: [
-                        Expanded(child: status),
-                        const SizedBox(width: 20),
-                        SizedBox(width: 360, child: search),
-                      ],
-                    );
-                  },
-                ),
+                        if (constraints.maxWidth < 720) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              status,
+                              const SizedBox(height: AppSpacing.md),
+                              search,
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            Expanded(child: status),
+                            const SizedBox(width: 20),
+                            SizedBox(width: 360, child: search),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: trips.isEmpty
+                        ? const _NoTripsFound()
+                        : _ResponsiveTripsList(
+                            trips: trips,
+                            openTrip: widget.openTrip,
+                            selectionMode: _selectionMode,
+                            selectedTripIds: _selectedTripIds,
+                            onToggleSelection: _toggleSelection,
+                          ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: trips.isEmpty
-                    ? const _NoTripsFound()
-                    : _ResponsiveTripsList(
-                        trips: trips,
-                        openTrip: widget.openTrip,
-                        selectionMode: _selectionMode,
-                        selectedTripIds: _selectedTripIds,
-                        onToggleSelection: _toggleSelection,
-                      ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -884,7 +896,8 @@ class _ResponsiveTripsList extends StatelessWidget {
 }
 
 class TripTicketCard extends StatelessWidget {
-  const TripTicketCard({super.key,
+  const TripTicketCard({
+    super.key,
     required this.trip,
     required this.selectionMode,
     required this.selected,
@@ -902,140 +915,132 @@ class TripTicketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final duration = trip.duration;
-    return Material(
-      clipBehavior: Clip.antiAlias,
+    return AppCard.outlined(
       color: colors.surface,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: selected ? colors.primary : colors.outlineVariant,
-          width: selected ? 2 : 1,
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: InkWell(
-        onTap: selectionMode
-            ? () => onToggleSelection(trip)
-            : () => _openDetails(context),
-        onLongPress: () => onToggleSelection(trip),
-        child: Column(
-          children: [
-            Container(
-              color: trip.isRailTrip
-                  ? colors.primaryContainer
-                  : colors.secondaryContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    selectionMode
-                        ? (selected
-                              ? Icons.check_circle
-                              : Icons.radio_button_unchecked)
-                        : trip.isRailTrip
-                        ? Icons.train_outlined
-                        : Icons.commute_outlined,
-                    size: 20,
-                    color: selected ? colors.primary : null,
+      borderColor: selected ? colors.primary : colors.outlineVariant,
+      borderWidth: selected ? 2 : 1,
+      onTap: selectionMode
+          ? () => onToggleSelection(trip)
+          : () => _openDetails(context),
+      onLongPress: () => onToggleSelection(trip),
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          Container(
+            color: trip.isRailTrip
+                ? colors.primaryContainer
+                : colors.secondaryContainer,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  selectionMode
+                      ? (selected
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked)
+                      : trip.isRailTrip
+                      ? Icons.train_outlined
+                      : Icons.commute_outlined,
+                  size: 20,
+                  color: selected ? colors.primary : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _trainLabel(trip.trainNumber),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _trainLabel(trip.trainNumber),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      trip.ticketLabel,
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    Text(_formatDate(trip.departureTime)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _StationTime(
+                        station: trip.fromStation,
+                        dateTime: trip.departureTime,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        trip.ticketLabel,
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                      Text(_formatDate(trip.departureTime)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StationTime(
-                          station: trip.fromStation,
-                          dateTime: trip.departureTime,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Column(
-                          children: [
-                            const Icon(Icons.arrow_forward, size: 20),
-                            if (duration != null) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                _formatDuration(duration),
-                                style: Theme.of(context).textTheme.labelSmall,
-                              ),
-                            ],
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.arrow_forward, size: 20),
+                          if (duration != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              _formatDuration(duration),
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                      Expanded(
-                        child: _StationTime(
-                          station: trip.toStation,
-                          dateTime: trip.arrivalTime,
-                          alignEnd: true,
-                        ),
+                    ),
+                    Expanded(
+                      child: _StationTime(
+                        station: trip.toStation,
+                        dateTime: trip.arrivalTime,
+                        alignEnd: true,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Divider(height: 1, color: colors.outlineVariant),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          spacing: 14,
-                          runSpacing: 4,
-                          children: [
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Divider(height: 1, color: colors.outlineVariant),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        spacing: 14,
+                        runSpacing: 4,
+                        children: [
+                          _TicketDetail(
+                            icon: Icons.event_seat_outlined,
+                            text: _seatLabel(trip),
+                          ),
+                          if (trip.mileageKm > 0)
                             _TicketDetail(
-                              icon: Icons.event_seat_outlined,
-                              text: _seatLabel(trip),
+                              icon: Icons.straighten_outlined,
+                              text: '${trip.mileageKm.round()} km',
                             ),
-                            if (trip.mileageKm > 0)
-                              _TicketDetail(
-                                icon: Icons.straighten_outlined,
-                                text: '${trip.mileageKm.round()} km',
-                              ),
-                          ],
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '¥${trip.price.toStringAsFixed(2)}',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: colors.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '¥${trip.price.toStringAsFixed(2)}',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(color: colors.primary),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1077,11 +1082,9 @@ class _StationTime extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: AppSpacing.xs),
         Text(dateTime == null ? '--:--' : _formatMonthDayTime(dateTime!)),
       ],
     );

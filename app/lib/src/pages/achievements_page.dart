@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
+import 'package:raillog/src/pages/achievement_requirements_page.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
@@ -53,6 +55,7 @@ class AchievementsPage extends StatelessWidget {
                     totalAchievements: achievements.length,
                     totalExperience: totalExperience,
                     openAchievement: _openAchievement,
+                    openRequirements: _openRequirements,
                   ),
               ],
             ),
@@ -76,6 +79,17 @@ class AchievementsPage extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _openRequirements(
+    BuildContext context,
+    DashboardAchievement achievement,
+  ) async {
+    await Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => AchievementRequirementsPage(achievement: achievement),
+      ),
+    );
+  }
 }
 
 class _AchievementCategoryView extends StatelessWidget {
@@ -86,6 +100,7 @@ class _AchievementCategoryView extends StatelessWidget {
     required this.totalAchievements,
     required this.totalExperience,
     required this.openAchievement,
+    required this.openRequirements,
   });
 
   final AchievementCategory category;
@@ -95,6 +110,8 @@ class _AchievementCategoryView extends StatelessWidget {
   final int totalExperience;
   final Future<void> Function(BuildContext, DashboardAchievement)
   openAchievement;
+  final Future<void> Function(BuildContext, DashboardAchievement)
+  openRequirements;
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +133,9 @@ class _AchievementCategoryView extends StatelessWidget {
                 padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1200),
+                    constraints: const BoxConstraints(
+                      maxWidth: AppLayout.dashboardMaxWidth,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.only(top: 14, bottom: 12),
                       child: _AchievementProgressSummary(
@@ -163,6 +182,9 @@ class _AchievementCategoryView extends StatelessWidget {
                           onTap: achievement.unlockedBy == null
                               ? null
                               : () => openAchievement(context, achievement),
+                          onRequirementsTap: achievement.hasRequirements
+                              ? () => openRequirements(context, achievement)
+                              : null,
                         );
                       }, childCount: achievements.length),
                     ),
@@ -198,92 +220,87 @@ class _AchievementProgressSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final levelProgress = userLevelProgressForExperience(totalExperience);
-    return Card.filled(
-      margin: EdgeInsets.zero,
+    return AppCard.filled(
       color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            IntrinsicHeight(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _AchievementProgressMetric(
-                      icon: Icons.donut_large_outlined,
-                      label: '总进度',
-                      unlocked: totalUnlocked,
-                      total: totalAchievements,
-                      indicatorColor: colors.primary,
-                      semanticsLabel: '全部成就解锁进度',
-                    ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          IntrinsicHeight(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _AchievementProgressMetric(
+                    icon: Icons.donut_large_outlined,
+                    label: '总进度',
+                    unlocked: totalUnlocked,
+                    total: totalAchievements,
+                    indicatorColor: colors.primary,
+                    semanticsLabel: '全部成就解锁进度',
                   ),
-                  const VerticalDivider(width: 32),
-                  Expanded(
-                    child: _AchievementProgressMetric(
-                      icon: _categoryIcon(category),
-                      label: category.label,
-                      unlocked: categoryUnlocked,
-                      total: categoryTotal,
-                      indicatorColor: colors.tertiary,
-                      semanticsLabel: '${category.label}解锁进度',
-                    ),
+                ),
+                const VerticalDivider(width: 32),
+                Expanded(
+                  child: _AchievementProgressMetric(
+                    icon: _categoryIcon(category),
+                    label: category.label,
+                    unlocked: categoryUnlocked,
+                    total: categoryTotal,
+                    indicatorColor: colors.tertiary,
+                    semanticsLabel: '${category.label}解锁进度',
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Divider(height: 1, color: colors.outlineVariant),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Icon(
+                Icons.workspace_premium_outlined,
+                size: 18,
+                color: colors.secondary,
               ),
-            ),
-            const SizedBox(height: 12),
-            Divider(height: 1, color: colors.outlineVariant),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(
-                  Icons.workspace_premium_outlined,
-                  size: 18,
+              const SizedBox(width: AppSpacing.sm),
+              const Expanded(child: Text('累计成就经验')),
+              Text(
+                '$totalExperience XP',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: colors.secondary,
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(width: 6),
-                const Expanded(child: Text('累计成就经验')),
-                Text(
-                  '$totalExperience XP',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: colors.secondary,
-                    fontWeight: FontWeight.w700,
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              UserLevelBadge(experience: totalExperience),
+              const Spacer(),
+              Text(
+                levelProgress.isMaxLevel
+                    ? '已达最高等级'
+                    : '升级还需 ${levelProgress.remainingExperience} XP',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                UserLevelBadge(experience: totalExperience),
-                const Spacer(),
-                Text(
-                  levelProgress.isMaxLevel
-                      ? '已达最高等级'
-                      : '升级还需 ${levelProgress.remainingExperience} XP',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            LinearProgressIndicator(
-              value: levelProgress.value,
-              minHeight: 6,
-              borderRadius: BorderRadius.circular(6),
-              color: colors.secondary,
-              backgroundColor: colors.secondary.withValues(alpha: 0.14),
-              semanticsLabel: levelProgress.isMaxLevel
-                  ? '用户等级进度，已满级'
-                  : '用户等级进度，LV${levelProgress.level} 到 '
-                        'LV${levelProgress.level + 1}',
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          LinearProgressIndicator(
+            value: levelProgress.value,
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(AppRadius.small),
+            color: colors.secondary,
+            backgroundColor: colors.secondary.withValues(alpha: 0.14),
+            semanticsLabel: levelProgress.isMaxLevel
+                ? '用户等级进度，已满级'
+                : '用户等级进度，LV${levelProgress.level} 到 '
+                      'LV${levelProgress.level + 1}',
+          ),
+        ],
       ),
     );
   }
@@ -316,13 +333,13 @@ class _AchievementProgressMetric extends StatelessWidget {
         Row(
           children: [
             Icon(icon, size: 18, color: indicatorColor),
-            const SizedBox(width: 6),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: AppSpacing.md),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -351,7 +368,7 @@ class _AchievementProgressMetric extends StatelessWidget {
         LinearProgressIndicator(
           value: progress,
           minHeight: 6,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadius.small),
           color: indicatorColor,
           backgroundColor: indicatorColor.withValues(alpha: 0.14),
           semanticsLabel: semanticsLabel,
