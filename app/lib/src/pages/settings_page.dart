@@ -154,7 +154,7 @@ Widget _accountSettings(
             : Row(
                 children: [
                   _Avatar(user: user, radius: 30),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: AppSpacing.lg),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,7 +174,7 @@ Widget _accountSettings(
                             ).colorScheme.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(height: 5),
+                        const SizedBox(height: AppSpacing.xs),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -190,8 +190,10 @@ Widget _accountSettings(
                             Expanded(
                               child: Tooltip(
                                 message: '长按复制 ID',
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.extraSmall,
+                                  ),
                                   onLongPress: () =>
                                       _copyUserId(context, user.id),
                                   child: Text(
@@ -206,7 +208,7 @@ Widget _accountSettings(
                           ],
                         ),
                         if (user.bio?.isNotEmpty ?? false) ...[
-                          const SizedBox(height: 5),
+                          const SizedBox(height: AppSpacing.xs),
                           Text(
                             user.bio!,
                             maxLines: 2,
@@ -1065,44 +1067,58 @@ class _ThemeColorOption extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected =
         ThemeSettings.instance.seedColor.toARGB32() == option.color.toARGB32();
-    return Tooltip(
-      message: option.label,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.small),
-        onTap: () {
-          ThemeSettings.instance.setSeedColor(option.color);
-          Navigator.of(context).pop();
-        },
-        child: SizedBox(
-          width: 64,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: option.color,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected
-                        ? Theme.of(context).colorScheme.onSurface
-                        : Colors.transparent,
-                    width: 3,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '主题色 ${option.label}',
+      child: Tooltip(
+        message: option.label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          onTap: () {
+            ThemeSettings.instance.setSeedColor(option.color);
+            Navigator.of(context).pop();
+          },
+          child: SizedBox(
+            width: 64,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: option.color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected
+                          ? Theme.of(context).colorScheme.onSurface
+                          : Colors.transparent,
+                      width: 3,
+                    ),
                   ),
+                  child: selected
+                      ? Icon(
+                          Icons.check,
+                          color:
+                              ThemeData.estimateBrightnessForColor(
+                                    option.color,
+                                  ) ==
+                                  Brightness.dark
+                              ? Colors.white
+                              : Colors.black87,
+                        )
+                      : null,
                 ),
-                child: selected
-                    ? const Icon(Icons.check, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                option.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            ],
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  option.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ],
+            ),
           ),
         ),
       ),

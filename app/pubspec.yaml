@@ -44,7 +44,6 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.5
   convert: ^3.1.2
-  flutter_adaptive_scaffold: ^0.3.0
   sqflite: ^2.4.3
   sqlite3: ^3.4.0
   sqflite_common_ffi: ^2.4.2

@@ -351,7 +351,6 @@ class _EditorHeader extends StatelessWidget {
           children: [
             IconButton(
               tooltip: '查看推断日志',
-              visualDensity: VisualDensity.compact,
               onPressed: onShowLog,
               icon: const Icon(Icons.receipt_long_outlined, size: 20),
             ),
@@ -499,7 +498,6 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                       index: widget.index,
                       child: IconButton(
                         tooltip: '拖动调整顺序',
-                        visualDensity: VisualDensity.compact,
                         iconSize: 18,
                         onPressed: () {},
                         icon: const Icon(Icons.drag_indicator),
@@ -513,7 +511,6 @@ class _SegmentEditorState extends State<_SegmentEditor> {
                 const Spacer(),
                 IconButton(
                   tooltip: '删除该段',
-                  visualDensity: VisualDensity.compact,
                   onPressed: widget.onRemove,
                   icon: const Icon(Icons.delete_outline),
                 ),
@@ -795,7 +792,7 @@ class _SearchPickerFormField extends StatelessWidget {
       validator: validator,
       builder: (field) {
         return InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.small),
+          borderRadius: BorderRadius.circular(AppRadius.extraSmall),
           onTap: isLoading || options.isEmpty
               ? null
               : () async {
@@ -884,7 +881,7 @@ class _SearchPickerSheetState extends State<_SearchPickerSheet> {
                 height: 4,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(AppRadius.micro),
+                  borderRadius: BorderRadius.circular(AppRadius.extraSmall),
                 ),
               ),
             ),

@@ -45,8 +45,8 @@ class DashboardAchievementCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
                   ),
                   decoration: BoxDecoration(
                     color: unlocked
@@ -66,7 +66,7 @@ class DashboardAchievementCard extends StatelessWidget {
                 ),
               ],
               if (achievement.note?.trim().isNotEmpty ?? false) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpacing.sm),
                 Semantics(
                   label: '注释：${achievement.note!.trim()}',
                   child: Tooltip(

@@ -129,7 +129,7 @@ class _CtPhotoSearchPageState extends State<CtPhotoSearchPage> {
                                   (constraints.crossAxisExtent -
                                       spacing * (columns - 1)) /
                                   columns;
-                              final tileHeight = tileWidth * 3 / 4 + 53;
+                              final tileHeight = tileWidth * 3 / 4 + 60;
                               return SliverGrid(
                                 delegate: SliverChildBuilderDelegate(
                                   (context, index) => _PhotoTile(
@@ -234,12 +234,12 @@ class _PhotoTile extends StatelessWidget {
                       ),
                     ),
                     if (photo.shootDate.isNotEmpty) ...[
-                      const SizedBox(width: 6),
+                      const SizedBox(width: AppSpacing.sm),
                       const Tooltip(
                         message: '拍摄日期',
                         child: Icon(Icons.calendar_today_outlined, size: 13),
                       ),
-                      const SizedBox(width: 3),
+                      const SizedBox(width: AppSpacing.xs),
                       Text(
                         photo.shootDate,
                         style: Theme.of(context).textTheme.bodySmall,
@@ -254,7 +254,7 @@ class _PhotoTile extends StatelessWidget {
                       message: '摄影师',
                       child: Icon(Icons.person_outline, size: 14),
                     ),
-                    const SizedBox(width: 3),
+                    const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Text(
                         photo.author.isEmpty ? '未署名' : photo.author,
@@ -263,13 +263,13 @@ class _PhotoTile extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: AppSpacing.sm),
                     _PhotoMetric(
                       tooltip: '查看数',
                       icon: Icons.visibility_outlined,
                       value: photo.viewsCount,
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: AppSpacing.sm),
                     _PhotoMetric(
                       tooltip: '点赞数',
                       icon: Icons.favorite_border,

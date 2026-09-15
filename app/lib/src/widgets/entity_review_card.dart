@@ -200,13 +200,6 @@ class EntityReviewCard extends StatelessWidget {
                                   if (onEdit != null)
                                     IconButton(
                                       tooltip: '编辑评价',
-                                      visualDensity: VisualDensity.compact,
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size.square(32),
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
                                       onPressed: onEdit,
                                       icon: const Icon(
                                         Icons.edit_outlined,
@@ -216,13 +209,6 @@ class EntityReviewCard extends StatelessWidget {
                                   if (onDelete != null)
                                     IconButton(
                                       tooltip: '删除评价',
-                                      visualDensity: VisualDensity.compact,
-                                      style: IconButton.styleFrom(
-                                        minimumSize: const Size.square(32),
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
                                       onPressed: onDelete,
                                       icon: const Icon(
                                         Icons.delete_outline,
@@ -356,12 +342,10 @@ class _EntityReviewTripLink extends StatelessWidget {
       '${trip.fromStation} → ${trip.toStation}',
     ].where((part) => part.isNotEmpty).join(' · ');
     return ListTile(
-      dense: true,
       contentPadding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      minTileHeight: roleLabel == null ? 30 : 42,
-      horizontalTitleGap: 6,
-      minLeadingWidth: 18,
+      minTileHeight: 48,
+      horizontalTitleGap: AppSpacing.sm,
+      minLeadingWidth: 24,
       leading: const Icon(Icons.confirmation_number_outlined, size: 18),
       title: Text(
         roleLabel ?? summary,

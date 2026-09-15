@@ -691,7 +691,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
                                     ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(
-                                  AppRadius.small,
+                                  AppRadius.extraSmall,
                                 ),
                                 borderSide: BorderSide.none,
                               ),
@@ -931,7 +931,10 @@ class TripTicketCard extends StatelessWidget {
             color: trip.isRailTrip
                 ? colors.primaryContainer
                 : colors.secondaryContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             child: Row(
               children: [
                 Icon(
@@ -969,7 +972,7 @@ class TripTicketCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               children: [
                 Row(

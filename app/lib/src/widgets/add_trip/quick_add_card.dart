@@ -452,7 +452,7 @@ class _StationPickerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(AppRadius.micro),
+      borderRadius: BorderRadius.circular(AppRadius.extraSmall),
       child: InputDecorator(
         isEmpty: value.isEmpty,
         decoration: InputDecoration(
@@ -510,7 +510,7 @@ class _StationPickerSheetState extends State<_StationPickerSheet> {
                 height: 4,
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(AppRadius.micro),
+                  borderRadius: BorderRadius.circular(AppRadius.extraSmall),
                 ),
               ),
             ),

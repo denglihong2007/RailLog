@@ -49,7 +49,7 @@ class _UpdateLogPageState extends State<UpdateLogPage> {
                             : release.name,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.sm),
                       Text(
                         '版本 ${release.version} · '
                         '${formatUpdateDate(release.publishedAt)}',

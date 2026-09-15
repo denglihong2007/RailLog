@@ -30,10 +30,10 @@ enum EntityType { station, route, company, rollingStock, train }
 const _entityMaxWidth = AppLayout.detailMaxWidth;
 const _transferWindow = Duration(hours: 24);
 final ButtonStyle _ratingIconStyle = IconButton.styleFrom(
-  minimumSize: const Size(40, 40),
-  maximumSize: const Size(40, 40),
+  minimumSize: const Size.square(48),
+  maximumSize: const Size.square(48),
   padding: EdgeInsets.zero,
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  tapTargetSize: MaterialTapTargetSize.padded,
   visualDensity: VisualDensity.standard,
   iconSize: 26,
 );
@@ -195,9 +195,8 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
             return const Center(child: CircularProgressIndicator());
           }
           final trips = _matching(snapshot.data!);
-          final colors = Theme.of(context).colorScheme;
-          return Container(
-            color: colors.surface,
+          return ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
             child: ListView(
               padding: AppSpacing.page,
               children: [
@@ -654,19 +653,14 @@ class _EntityHeader extends StatelessWidget {
               ),
               const Spacer(),
               ...actions.map(
-                (action) => Theme(
-                  data: Theme.of(context).copyWith(
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: IconTheme(
-                    data: IconThemeData(color: colors.onPrimaryContainer),
-                    child: action,
-                  ),
+                (action) => IconTheme(
+                  data: IconThemeData(color: colors.onPrimaryContainer),
+                  child: action,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             name,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -1108,7 +1102,6 @@ class _ReviewEditorDialogState extends State<_ReviewEditorDialog> {
           ),
           IconButton(
             tooltip: '关闭',
-            visualDensity: VisualDensity.compact,
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close, size: 20),
           ),

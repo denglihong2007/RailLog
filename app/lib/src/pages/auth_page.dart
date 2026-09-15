@@ -114,7 +114,7 @@ class _AuthPageState extends State<AuthPage> {
                         ? null
                         : (value) => setState(() => _mode = value.first),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: AppSpacing.xxl),
                   if (isRegister) ...[
                     TextFormField(
                       controller: _nameController,

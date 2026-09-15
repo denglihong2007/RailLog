@@ -120,7 +120,7 @@ class _TripChartPageState extends State<TripChartPage> {
                     value: _style,
                     onChanged: _changeChartStyle,
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: AppSpacing.xxl),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
@@ -608,7 +608,7 @@ class _TripHeatmap extends StatelessWidget {
             width: 58,
             child: Column(
               children: [
-                const SizedBox(height: 26),
+                const SizedBox(height: AppSpacing.xxl),
                 ...scale.labels.indexed.map(
                   (entry) => SizedBox(
                     height: 20,
@@ -625,7 +625,7 @@ class _TripHeatmap extends StatelessWidget {
                                   math.max(1, rowCount - 1),
                             ),
                             borderRadius: BorderRadius.circular(
-                              AppRadius.micro,
+                              AppRadius.extraSmall,
                             ),
                           ),
                         ),
@@ -671,7 +671,7 @@ class _TripHeatmap extends StatelessWidget {
                   child: SingleChildScrollView(
                     controller: scrollController,
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -696,7 +696,7 @@ class _TripHeatmap extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: AppSpacing.sm),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: List.generate(columns, (column) {
@@ -737,7 +737,7 @@ class _TripHeatmap extends StatelessWidget {
                                           '${_bucketTooltip(point.bucketStart, interval)}\n${_formatMetricValue(metric, point.value)}',
                                       child: InkWell(
                                         borderRadius: BorderRadius.circular(
-                                          AppRadius.micro,
+                                          AppRadius.extraSmall,
                                         ),
                                         onTap: tripsInBucket == 0
                                             ? null
@@ -888,7 +888,7 @@ class _CalendarHeatmap extends _TripHeatmap {
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppSpacing.sm),
         Align(
           alignment: Alignment.centerLeft,
           child: _HeatmapLegend(
@@ -935,7 +935,7 @@ class _HeatmapLegend extends StatelessWidget {
                   height: 10,
                   decoration: BoxDecoration(
                     color: _intervalHeatmapColor(colors, entry.$2, thresholds),
-                    borderRadius: BorderRadius.circular(AppRadius.micro),
+                    borderRadius: BorderRadius.circular(AppRadius.extraSmall),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -1027,14 +1027,14 @@ class _HeatmapCell extends StatelessWidget {
         color: Theme.of(context).colorScheme.onInverseSurface,
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.micro),
+        borderRadius: BorderRadius.circular(AppRadius.extraSmall),
         onTap: onTap,
         child: Ink(
           width: 16,
           height: 16,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(AppRadius.micro),
+            borderRadius: BorderRadius.circular(AppRadius.extraSmall),
           ),
         ),
       ),
@@ -1055,7 +1055,7 @@ class _EmptyHeatmapCell extends StatelessWidget {
       height: 16,
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppRadius.micro),
+        borderRadius: BorderRadius.circular(AppRadius.extraSmall),
       ),
     ),
   );

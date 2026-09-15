@@ -369,11 +369,11 @@ class _UnlockProgress extends StatelessWidget {
               Row(
                 children: [
                   Icon(icon, size: 18, color: colors.primary),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: AppSpacing.sm),
                   const Expanded(child: Text('解锁进度')),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.md),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -473,7 +473,7 @@ class _UnlockPieChart extends StatelessWidget {
                     size: 32,
                     color: colors.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.md),
                   Text(
                     '暂无统计数据',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -664,7 +664,7 @@ class _PieLegendState extends State<_PieLegend> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: AppSpacing.sm),
                           Text(
                             _formatPercentage(slice.count, widget.total),
                             style: textTheme.labelMedium?.copyWith(

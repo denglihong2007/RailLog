@@ -20,12 +20,23 @@ void main() {
       {},
     )!;
     final textButtonShape = theme.textButtonTheme.style!.shape!.resolve({})!;
+    final dialogShape = theme.dialogTheme.shape! as RoundedRectangleBorder;
+    final inputBorder =
+        theme.inputDecorationTheme.border! as OutlineInputBorder;
 
     expect(chipShape, isA<StadiumBorder>());
     expect(segmentedShape, isA<StadiumBorder>());
     expect(filledButtonShape, isA<StadiumBorder>());
     expect(outlinedButtonShape, isA<StadiumBorder>());
     expect(textButtonShape, isA<StadiumBorder>());
+    expect(
+      dialogShape.borderRadius,
+      BorderRadius.circular(AppRadius.extraLarge),
+    );
+    expect(
+      inputBorder.borderRadius,
+      BorderRadius.circular(AppRadius.extraSmall),
+    );
     expect(AppLayout.contentMaxWidth, AppLayout.detailMaxWidth);
     expect(theme.textTheme.headlineMedium!.fontSize, 28);
   });

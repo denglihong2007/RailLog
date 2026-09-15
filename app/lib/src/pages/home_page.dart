@@ -244,7 +244,12 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
                 m3PageRoute(builder: (_) => const PartnerApplicationsPage()),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -278,6 +283,8 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             advertisement.text,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(
                                   color: colors.onSurfaceVariant,
@@ -303,9 +310,6 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
             tooltip: '关闭广告',
             icon: const Icon(Icons.close),
             iconSize: 18,
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             style: IconButton.styleFrom(
               foregroundColor: colors.onSurfaceVariant,
               backgroundColor: colors.surfaceContainerHighest,
@@ -1073,7 +1077,7 @@ class _OverviewMetrics extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 380) {
+        if (constraints.maxWidth < 560) {
           return _CompactOverviewMetrics(metrics: metrics);
         }
         return Row(

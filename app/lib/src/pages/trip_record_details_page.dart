@@ -411,7 +411,6 @@ class _TripDetailsContent extends StatelessWidget {
                       ? null
                       : IconButton(
                           tooltip: '查看单次行程轨迹',
-                          visualDensity: VisualDensity.compact,
                           onPressed: () => Navigator.of(context).push(
                             m3PageRoute(
                               builder: (_) => TripMapPage(trips: [trip]),
@@ -898,67 +897,65 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     super.build(context);
     final colors = Theme.of(context).colorScheme;
     final bytes = _imageBytes;
-    return Material(
-      color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(AppRadius.card),
-      clipBehavior: Clip.antiAlias,
-      child: AspectRatio(
-        aspectRatio: 1800 / 1120,
-        child: bytes == null
-            ? _buildState(colors)
-            : Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(
-                    color: colors.surface,
-                    child: Image.memory(
-                      bytes,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.high,
-                    ),
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: Material(
-                      elevation: 3,
-                      color: colors.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(AppRadius.small),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: '下载车票图片',
-                            onPressed: _savingImage ? null : _saveImage,
-                            icon: _savingImage
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.download_outlined),
-                          ),
-                          IconButton(
-                            tooltip: '购买实体纪念票',
-                            onPressed: _buying ? null : _buy,
-                            icon: _buying
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.shopping_bag_outlined),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+    final image = bytes == null
+        ? AspectRatio(aspectRatio: 1800 / 1120, child: _buildState(colors))
+        : Stack(
+            children: [
+              Image.memory(
+                bytes,
+                width: double.infinity,
+                fit: BoxFit.fitWidth,
+                alignment: Alignment.topCenter,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.high,
               ),
-      ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Material(
+                  elevation: 3,
+                  color: colors.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(AppRadius.small),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '下载车票图片',
+                        onPressed: _savingImage ? null : _saveImage,
+                        icon: _savingImage
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.download_outlined),
+                      ),
+                      IconButton(
+                        tooltip: '购买实体纪念票',
+                        onPressed: _buying ? null : _buy,
+                        icon: _buying
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.shopping_bag_outlined),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+    return Material(
+      color: bytes == null ? colors.surfaceContainerLow : Colors.transparent,
+      borderRadius: bytes == null
+          ? BorderRadius.circular(AppRadius.card)
+          : BorderRadius.zero,
+      clipBehavior: Clip.antiAlias,
+      child: image,
     );
   }
 
@@ -1012,7 +1009,10 @@ class _DetailsTicket extends StatelessWidget {
             color: trip.isRailTrip
                 ? colors.primaryContainer
                 : colors.secondaryContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             child: Row(
               children: [
                 Icon(
@@ -2200,7 +2200,7 @@ class _ViaStationLabel extends StatelessWidget {
           message: '查看$station详情',
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(AppRadius.micro),
+            borderRadius: BorderRadius.circular(AppRadius.extraSmall),
             child: Text(
               station,
               maxLines: 1,

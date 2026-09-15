@@ -65,8 +65,6 @@ class _EntityReviewReactionBarState extends State<EntityReviewReactionBar> {
             ),
             selected: reaction.reactedByCurrentUser,
             showCheckmark: false,
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             labelPadding: const EdgeInsets.only(left: 2, right: 4),
             backgroundColor: colors.surfaceContainerHigh,
@@ -87,11 +85,11 @@ class _EntityReviewReactionBarState extends State<EntityReviewReactionBar> {
             style: MenuStyle(
               backgroundColor: WidgetStatePropertyAll(colors.surfaceContainer),
               surfaceTintColor: WidgetStatePropertyAll(colors.surfaceTint),
-              elevation: const WidgetStatePropertyAll(3),
+              elevation: const WidgetStatePropertyAll(2),
               padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
               shape: WidgetStatePropertyAll(
                 RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  borderRadius: BorderRadius.circular(AppRadius.extraSmall),
                   side: BorderSide(color: colors.outlineVariant),
                 ),
               ),
@@ -121,7 +119,6 @@ class _EntityReviewReactionBarState extends State<EntityReviewReactionBar> {
             ],
             builder: (context, controller, child) => IconButton(
               tooltip: '选择表情回复',
-              visualDensity: VisualDensity.compact,
               style: IconButton.styleFrom(
                 foregroundColor: colors.onSurfaceVariant,
               ),

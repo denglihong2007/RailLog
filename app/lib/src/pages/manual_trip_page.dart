@@ -500,9 +500,9 @@ class _DateTimeInput extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: colors.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(AppRadius.small),
+      borderRadius: BorderRadius.circular(AppRadius.extraSmall),
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.small),
+        borderRadius: BorderRadius.circular(AppRadius.extraSmall),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
