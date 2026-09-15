@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using RailLog.API.Models;
 using RailLog.API.Services;
 
@@ -12,7 +13,8 @@ namespace RailLog.API.Controllers;
 [Route("api/trips")]
 public sealed class TripsController(
     RailLogDatabase database,
-    SensitiveWordService sensitiveWords) : ControllerBase
+    SensitiveWordService sensitiveWords,
+    ILogger<TripsController> logger) : ControllerBase
 {
     [HttpGet("{ticketId:long}")]
     [AllowAnonymous]
@@ -50,13 +52,24 @@ public sealed class TripsController(
         if (request.Trips.Any(trip => sensitiveWords.ContainsSensitiveWord(trip.Notes)))
             return BadRequest(new MessageResponse("内容不合法"));
         var serverTime = DateTime.UtcNow;
-        var result = await database.SyncTripsAsync(
-            UserId,
-            request.Trips,
-            request.Since,
-            request.SinceVersion,
-            serverTime);
-        return Ok(new SyncResponse(result.Trips, serverTime, result.ServerVersion));
+        try
+        {
+            var result = await database.SyncTripsAsync(
+                UserId,
+                request.Trips,
+                request.Since,
+                request.SinceVersion,
+                serverTime);
+            return Ok(new SyncResponse(result.Trips, serverTime, result.ServerVersion));
+        }
+        catch (SqliteException exception)
+            when (exception.SqliteErrorCode is 5 or 6)
+        {
+            logger.LogWarning(exception, "Trip sync database remained busy for user {UserId}", UserId);
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new MessageResponse("同步服务繁忙，请稍后重试"));
+        }
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;

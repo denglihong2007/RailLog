@@ -16,6 +16,7 @@ public sealed class RailLogDatabase
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly TimeSpan _statisticsCacheLifetime;
 
     public RailLogDatabase(
@@ -30,6 +31,7 @@ public sealed class RailLogDatabase
         var builder = new SqliteConnectionStringBuilder(configured);
         if (!Path.IsPathRooted(builder.DataSource))
             builder.DataSource = Path.Combine(environment.ContentRootPath, builder.DataSource);
+        builder.DefaultTimeout = 30;
         _connectionString = builder.ToString();
     }
 
@@ -524,9 +526,32 @@ public sealed class RailLogDatabase
         long? sinceVersion,
         DateTime serverTime)
     {
+        await _writeLock.WaitAsync();
+        try
+        {
+            return await SyncTripsCoreAsync(
+                userId,
+                incoming,
+                since,
+                sinceVersion,
+                serverTime);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task<(IReadOnlyList<SyncTrip> Trips, long ServerVersion)> SyncTripsCoreAsync(
+        string userId,
+        IReadOnlyList<SyncTrip> incoming,
+        DateTime? since,
+        long? sinceVersion,
+        DateTime serverTime)
+    {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
+        await using var transaction = await BeginTransactionWithRetryAsync(connection);
         await using var upsert = connection.CreateCommand();
         upsert.Transaction = (SqliteTransaction)transaction;
         upsert.CommandText = """
@@ -2129,6 +2154,27 @@ public sealed class RailLogDatabase
         return new AuthResponse(token, expiresAt, profile);
     }
 
+    private static async Task<SqliteTransaction> BeginTransactionWithRetryAsync(
+        SqliteConnection connection)
+    {
+        const int maxAttempts = 5;
+        var delay = TimeSpan.FromMilliseconds(50);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return (SqliteTransaction)await connection.BeginTransactionAsync();
+            }
+            catch (SqliteException exception)
+                when (attempt < maxAttempts &&
+                      exception.SqliteErrorCode is 5 or 6)
+            {
+                await Task.Delay(delay);
+                delay *= 2;
+            }
+        }
+    }
+
     private SqliteConnection OpenConnection() => new(_connectionString);
     private static bool IsValidEmail(string value) =>
         value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');
@@ -2386,7 +2432,15 @@ public sealed class RailLogDatabase
         foreach (var userId in userIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await RecalculateAchievementsAsync(connection, userId);
+            await _writeLock.WaitAsync(cancellationToken);
+            try
+            {
+                await RecalculateAchievementsAsync(connection, userId);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
     }
 

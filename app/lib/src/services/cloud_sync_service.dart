@@ -95,7 +95,7 @@ class CloudSyncService extends ChangeNotifier {
     try {
       do {
         _syncRequested = false;
-        await _syncOnce();
+        await _syncOnceWithRetry();
       } while (_syncRequested && SessionService.instance.isSignedIn);
     } on DioException catch (error) {
       _lastError = apiErrorMessage(error);
@@ -109,6 +109,20 @@ class CloudSyncService extends ChangeNotifier {
     } finally {
       _isSyncing = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _syncOnceWithRetry() async {
+    var delay = const Duration(seconds: 1);
+    for (var attempt = 1; ; attempt++) {
+      try {
+        await _syncOnce();
+        return;
+      } on DioException catch (error) {
+        if (error.response?.statusCode != 503 || attempt >= 3) rethrow;
+        await Future<void>.delayed(delay);
+        delay *= 2;
+      }
     }
   }
 
