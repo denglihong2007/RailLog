@@ -41,6 +41,12 @@ class TrainModelParser {
     'WX',
   ];
 
+  // 'RZ2' is also the beginning of the standard 25-type coach models (RZ25G,
+  // RZ25K, RZ25T, ...). Such a segment must be split as 'RZ' + '25x' instead,
+  // so a prefix listed here only applies when the segment does not start with
+  // its longer counterpart.
+  static const Map<String, String> _longerPrefixes = {'RZ2': 'RZ25'};
+
   static List<TrainModelParseResult> parse(String? input) {
     final source = input?.trim() ?? '';
     if (source.isEmpty) return const [];
@@ -144,14 +150,18 @@ class TrainModelParser {
     final numbers = numberPart.isEmpty ? <String>[] : _parseNumbers(numberPart);
 
     for (final prefix in _sortedPrefixes) {
-      if (_startsWithIgnoreCase(modelPart, prefix)) {
-        return (
-          TrainCategory.coach,
-          prefix,
-          modelPart.substring(prefix.length),
-          numbers,
-        );
+      if (!_startsWithIgnoreCase(modelPart, prefix)) continue;
+      final longerPrefix = _longerPrefixes[prefix];
+      if (longerPrefix != null &&
+          _startsWithIgnoreCase(modelPart, longerPrefix)) {
+        continue;
       }
+      return (
+        TrainCategory.coach,
+        prefix,
+        modelPart.substring(prefix.length),
+        numbers,
+      );
     }
 
     final category =
