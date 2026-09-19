@@ -138,6 +138,7 @@ public static partial class AchievementEngine
             ["icyWorld"] = Touring,
             ["redFootprints"] = Touring,
             ["advantageIsMine"] = Touring,
+            ["thousandMilesToSea"] = Touring,
             ["platformSubsidence"] = Touring,
             ["strategist"] = Touring,
             ["eastRedSunRises"] = Touring,
@@ -233,7 +234,7 @@ public static partial class AchievementEngine
             ["wealthyTraveler"] = new(40, NarrativeNote: "要是能报销倒还好说"),
             ["all25Series"] = new(30, Note: "25B, 25G, 25Z, 25K, 25T, 25DT", NarrativeNote: "反对直特换桶.mp4"),
             ["allEmuSeries"] = new(40, Note: "CRH1, CRH2, CRH3, CRH5, CRH6, CRH380A, CRH380B, CRH380CL, CRH380D, CR400AF, CR400BF, CR300AF, CR300BF, CR200J, CR200J-C", NarrativeNote: "从博采众长到自主创新的历程缩影"),
-            ["whatAgeIsThis"] = new(20, MaxExperience: 50, Note: "21, 22, 22B, 22C, 23, 24, 25A, 25C, 25Z, 19, 30, 31, M1, 10, 14, 82, 96；每多一种额外获得5点经验，上限为50点", NarrativeNote: "以后或许只能在博物馆里见到了"),
+            ["whatAgeIsThis"] = new(20, MaxExperience: 50, Note: "21, 22, 22A, 22B, 22C, 23, 24, 25A, 25C, 25Z, 19, 30, 31, M1, 10, 14, 82, 96；每多一种额外获得5点经验，上限为50点", NarrativeNote: "以后或许只能在博物馆里见到了"),
             ["allSeatTypes"] = new(40, Note: "无座、硬座、软座、二等座、一等座、特等座、优选一等座、商务座、硬卧、软卧、二等卧、一等卧、高级软卧、动卧、高级动卧", NarrativeNote: "能看出你很热衷于尝试未体验过的事物"),
             ["greatWallExpress"] = new(10, NarrativeNote: "惊人的长度，极致的运量"),
             ["railwayWorkerPassenger"] = new(25, NarrativeNote: "目前为数不多能收到纸票的方式",Note: "车次 57XXX 或 40XXX "),
@@ -266,6 +267,7 @@ public static partial class AchievementEngine
             ["endsOfTheEarth"] = new(10, NarrativeNote: "这其实还不是国铁的最南端"),
             ["greatWallWatch"] = new(10, NarrativeNote: "中国人的铁路就应该中国人自己建"),
             ["advantageIsMine"] = new(10, NarrativeNote: "站场规模，是15线对13线"),
+            ["thousandMilesToSea"] = new(15, NarrativeNote: "并没有想象的那样干燥"),
             ["waterIsCalm"] = new(20, NarrativeNote: "萧瑟秋风今又是，换了人间"),
             ["roadBlazing"] = new(40, NarrativeNote: "草原深处，石破天惊"),
             ["remoteWilderness"] = new(20, NarrativeNote: "望不到周围有别的城市"),
@@ -404,8 +406,8 @@ public static partial class AchievementEngine
     ];
     private static readonly IReadOnlyList<RollingStockTarget> GreatWallExpressModels =
     [
-        new("CR400AF-B"), new("CR400AF-BZ"), new("CR400AF-BS"), new("CR400AF-BX"),
-        new("CR400BF-B"), new("CR400BF-BZ"), new("CR400BF-BS"), new("CR400BF-BX")
+        new("CR400AF-B"), new("CR400AF-BZ"), new("CR400AF-BS"),
+        new("CR400BF-B"), new("CR400BF-BZ"), new("CR400BF-BS")
     ];
     private static readonly IReadOnlyList<RollingStockTarget> VibrantExpressModels =
         Enumerable.Range(251, 9)
@@ -443,7 +445,8 @@ public static partial class AchievementEngine
     private static readonly HashSet<string> DongfengShaoshanLocomotives =
     [
         "DF1", "DF3", "DF4", "DF4B", "DF4C", "DF4D", "DF7D", "DF8",
-        "DF8B", "DF9", "DF10F", "DF11", "DF11Z", "DF11G", "SS1", "SS3",
+        "DF8B", "DF9", "DF10F", "DF11", "DF11Z", "DF11G", "DF21", "SS1",
+        "SS3",
         "SS3B", "SS4", "SS6", "SS6B", "SS7", "SS7C", "SS7D", "SS7E",
         "SS8", "SS9"
     ];
@@ -478,6 +481,7 @@ public static partial class AchievementEngine
 
     private static readonly IReadOnlyList<YangtzeBridge> YangtzeBridges =
     [
+        new("长江源特大桥", "青藏线", "沱沱河", "雁石坪"),
         new("虎跳峡金沙江大桥", "滇藏铁路", "拉市海", "小中甸"),
         new("三堆子金沙江大桥", "成昆线成攀段", "三堆子", "攀枝花"),
         new("成昆复线金沙江大桥", "峨广铁路", "盐边", "普达"),
@@ -565,7 +569,7 @@ public static partial class AchievementEngine
             A("noSeat12Hours", "fitness_center_outlined", "体力非凡", "持无座车票乘坐至少 12 小时",
                 First(trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
                     ValidDuration(trip) >= TimeSpan.FromHours(12))),
-            A("hundredTickets", "collections_bookmark_outlined", "日积月累", "累计留存至少 100 张本人车票",
+            A("hundredTickets", "collections_bookmark_outlined", "日积月累", "累计出发 100 次",
                 trips.Count >= 100 ? trips[99] : null),
             A("midnightBoarding", "nightlight_outlined", "夜半钟声", "在 00:00 至 05:00 乘车或下车",
                 FirstMidnightBoarding(trips)),
@@ -591,8 +595,8 @@ public static partial class AchievementEngine
                 First(trips, trip => ValidDuration(trip) > TimeSpan.FromHours(1) && AverageSpeed(trip) > 300)),
             A("slowCrawl", "slow_motion_video_outlined", "龟速爬行", "完成时长超过 1 小时且均速不超过 50 公里/小时的行程",
                 First(trips, trip => ValidDuration(trip) > TimeSpan.FromHours(1) && AverageSpeed(trip) is > 0 and <= 50)),
-            A("slowerThanCycling", "directions_bike_outlined", "不如骑车", "完成时长超过 1 小时且均速低于 30 公里/小时的行程",
-                First(trips, trip => ValidDuration(trip) > TimeSpan.FromHours(1) && AverageSpeed(trip) is > 0 and < 30)),
+            A("slowerThanCycling", "directions_bike_outlined", "不如骑车", "完成时长超过 1 小时且均速不超过 30 公里/小时的行程",
+                First(trips, trip => ValidDuration(trip) > TimeSpan.FromHours(1) && AverageSpeed(trip) is > 0 and <= 30)),
             A("fleetingMoment", "flash_on_outlined", "转瞬即逝", "乘坐福田或深圳北与香港西九龙间的一等座、商务座或特等座",
                 First(trips, UnlocksFleetingMoment)),
             A("borderPorts", "language_outlined", "异域风情", "到访阿拉山口、二连、满洲里、绥芬河、丹东、崇左或磨憨站",
@@ -621,6 +625,8 @@ public static partial class AchievementEngine
                 FirstRollingStockMatch(trips, [new("CRH380AN")])),
             A("advantageIsMine", "sports_score_outlined", "优势在我", "到访徐州站或徐州东站",
                 FirstStationVisit(trips, ["徐州", "徐州东"])),
+            A("thousandMilesToSea", "sailing_outlined", "去海千里", "到访额敏站或铁厂沟站",
+                FirstStationVisit(trips, ["额敏", "铁厂沟"])),
             A("platformSubsidence", "vertical_align_bottom_outlined", "站台沉降", "到访杭州东站",
                 FirstStationVisit(trips, ["杭州东"])),
             A("archaeologyTeam", "history_edu_outlined", "朝花夕拾", "录入至少 15 年前的行程",
@@ -798,7 +804,7 @@ public static partial class AchievementEngine
                 ContextTrigger((context?.TotalReviewReactions ?? 0) >= 100000)),
             A("reach2500Experience", "stars_outlined", "九重天外", "总经验值达到 2,500 点",
                 ContextTrigger((context?.TotalExperience ?? 0) >= 2500)),
-            A("immovableMountain", "accessibility_new", "不动如山", "持硬座或二等座无座车票乘坐至少 24 小时",
+            A("immovableMountain", "accessibility_new", "不动如山", "持无座车票乘坐至少 24 小时",
                 First(trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
                     ValidDuration(trip) >= TimeSpan.FromHours(24))),
             A("richerThanNation", "diamond_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元",
@@ -2542,7 +2548,7 @@ public static partial class AchievementEngine
                 if (incoming.ArrivalTime is null || NormalizedStation(incoming.ToStation) != station ||
                     NormalizedStation(incoming.FromStation) == destination) continue;
                 var transfer = Departure(outgoing) - incoming.ArrivalTime.Value;
-                if (transfer >= TimeSpan.FromHours(6) && transfer < TimeSpan.FromHours(12)) return outgoing;
+                if (transfer >= TimeSpan.FromHours(6) && transfer <= TimeSpan.FromHours(12)) return outgoing;
             }
         }
         return null;
