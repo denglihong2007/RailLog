@@ -447,24 +447,31 @@ public static partial class AchievementEngine
     private static readonly HashSet<string> DongfengShaoshanLocomotives =
     [
         "DF1", "DF3", "DF4", "DF4B", "DF4C", "DF4D", "DF7D", "DF8",
-        "DF8B", "DF9", "DF10F", "DF11", "DF11Z", "DF11G", "DF21", "SS1",
-        "SS3",
+        "DF8B", "DF9", "DF10F", "DF11", "DF11Z", "DF11G", "DF21", "SS1", "SS3",
         "SS3B", "SS4", "SS6", "SS6B", "SS7", "SS7C", "SS7D", "SS7E",
         "SS8", "SS9"
     ];
 
     // Non-air-conditioned coaches are the older 21/22/23/25B/30/31/M1 types plus
-    // the 18/10/14/82/96 series used on international or special services; only
-    // their hard-seat (YZ) and hard-sleeper (YW) versions carry passengers in the
-    // open air.
-    private static readonly HashSet<string> NonAirConditionedCoachPrefixes =
-        new(StringComparer.OrdinalIgnoreCase) { "YZ", "YW" };
-
-    private static readonly HashSet<string> NonAirConditionedCoachModels =
+    // the 18/10/14/82/96 series used on international or special services. Their
+    // hard-seat and hard-sleeper versions are all unairconditioned, while of the
+    // soft sleepers only the 21/18/22A/22C/10/14/M1 types are.
+    private static readonly HashSet<string> NonAirConditionedHardSeatAndSleeperModels =
         new(StringComparer.OrdinalIgnoreCase)
         {
             "21", "22", "22A", "22B", "22C", "23", "25B", "30", "31", "M1",
             "18", "10", "14", "82", "96"
+        };
+
+    private static readonly HashSet<string> NonAirConditionedSoftSleeperModels =
+        new(StringComparer.OrdinalIgnoreCase) { "21", "18", "22A", "22C", "10", "14", "M1" };
+
+    private static readonly Dictionary<string, HashSet<string>> NonAirConditionedCoaches =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["YZ"] = NonAirConditionedHardSeatAndSleeperModels,
+            ["YW"] = NonAirConditionedHardSeatAndSleeperModels,
+            ["RW"] = NonAirConditionedSoftSleeperModels,
         };
 
     private static readonly IReadOnlyDictionary<string, HashSet<string>> RailwayBureaus =
@@ -1612,8 +1619,8 @@ public static partial class AchievementEngine
     private static bool HasNonAirConditionedCoach(string? value) =>
         TrainModelParser.ParseTrainString(value)
             .Any(model => model.Category == TrainCategory.Coach &&
-                NonAirConditionedCoachPrefixes.Contains(model.Prefix) &&
-                NonAirConditionedCoachModels.Contains(model.Model));
+                NonAirConditionedCoaches.TryGetValue(model.Prefix, out var models) &&
+                models.Contains(model.Model));
 
     private static bool HasCoupledEmu(string? value) =>
         TrainModelParser.ParseTrainString(value)
