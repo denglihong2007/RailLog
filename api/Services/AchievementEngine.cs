@@ -83,6 +83,7 @@ public static partial class AchievementEngine
             ["overnightSeat"] = ExtremeChallenges,
             ["midnightBoarding"] = ExtremeChallenges,
             ["noSeat12Hours"] = ExtremeChallenges,
+            ["sweatLikeRain"] = ExtremeChallenges,
             ["highSpeedExperiment"] = ExtremeChallenges,
             ["slowCrawl"] = ExtremeChallenges,
             ["slowerThanCycling"] = ExtremeChallenges,
@@ -229,6 +230,7 @@ public static partial class AchievementEngine
             ["miniTurnaround"] = new(10, NarrativeNote: "座位还没坐热就到了？！"),
             ["fourThousandKmInDay"] = new(30, NarrativeNote: "早上坐最快的高铁出发，晚上再坐动卧回来……"),
             ["noSeat12Hours"] = new(25, NarrativeNote: "还好国铁没有放开自由席"),
+            ["sweatLikeRain"] = new(15, NarrativeNote: "即使风扇开到最大也是杯水车薪"),
             ["youthPriceless"] = new(40, NarrativeNote: "The sky is the limit."),
             ["zeroDisplacement"] = new(20, NarrativeNote: "再来一圈？"),
             ["wealthyTraveler"] = new(40, NarrativeNote: "要是能报销倒还好说"),
@@ -450,6 +452,21 @@ public static partial class AchievementEngine
         "SS3B", "SS4", "SS6", "SS6B", "SS7", "SS7C", "SS7D", "SS7E",
         "SS8", "SS9"
     ];
+
+    // Non-air-conditioned coaches are the older 21/22/23/25B/30/31/M1 types plus
+    // the 18/10/14/82/96 series used on international or special services; only
+    // their hard-seat (YZ) and hard-sleeper (YW) versions carry passengers in the
+    // open air.
+    private static readonly HashSet<string> NonAirConditionedCoachPrefixes =
+        new(StringComparer.OrdinalIgnoreCase) { "YZ", "YW" };
+
+    private static readonly HashSet<string> NonAirConditionedCoachModels =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "21", "22", "22A", "22B", "22C", "23", "25B", "30", "31", "M1",
+            "18", "10", "14", "82", "96"
+        };
+
     private static readonly IReadOnlyDictionary<string, HashSet<string>> RailwayBureaus =
         new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
         {
@@ -569,6 +586,9 @@ public static partial class AchievementEngine
             A("noSeat12Hours", "fitness_center_outlined", "体力非凡", "持无座车票乘坐至少 12 小时",
                 First(trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
                     ValidDuration(trip) >= TimeSpan.FromHours(12))),
+            A("sweatLikeRain", "mode_fan_off", "汗如雨下", "乘坐单程至少 12 小时的非空调列车",
+                First(trips, trip => ValidDuration(trip) >= TimeSpan.FromHours(12) &&
+                    HasNonAirConditionedCoach(trip.RollingStock))),
             A("hundredTickets", "collections_bookmark_outlined", "日积月累", "累计出发 100 次",
                 trips.Count >= 100 ? trips[99] : null),
             A("midnightBoarding", "nightlight_outlined", "夜半钟声", "在 00:00 至 05:00 乘车或下车",
@@ -1050,6 +1070,7 @@ public static partial class AchievementEngine
             EmuModelFamilies.Count),
         "allSeatTypes" => P(CollectedCount(trips, trip => SeatTypeMatches(trip.SeatType)), RegularSeatTypes.Count),
         "noSeat12Hours" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 12),
+        "sweatLikeRain" => P(MaxDurationHours(trips.Where(trip => HasNonAirConditionedCoach(trip.RollingStock))), 12),
         "immovableMountain" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 24),
         "hundredTickets" => P(trips.Count, 100),
         "thousandTickets" => P(trips.Count, 1000),
@@ -1587,6 +1608,12 @@ public static partial class AchievementEngine
     private static bool ContainsRollingStock(PublicTrip trip, string value) =>
         RollingStockModelCodes(trip.RollingStock)
             .Any(code => code.Contains(value.ToUpperInvariant(), StringComparison.Ordinal));
+
+    private static bool HasNonAirConditionedCoach(string? value) =>
+        TrainModelParser.ParseTrainString(value)
+            .Any(model => model.Category == TrainCategory.Coach &&
+                NonAirConditionedCoachPrefixes.Contains(model.Prefix) &&
+                NonAirConditionedCoachModels.Contains(model.Model));
 
     private static bool HasCoupledEmu(string? value) =>
         TrainModelParser.ParseTrainString(value)

@@ -237,6 +237,7 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'connecting_airports_outlined' => Icons.connecting_airports_outlined,
   'directions_boat_outlined' => Icons.directions_boat_outlined,
   'sailing_outlined' => Icons.sailing_outlined,
+  'mode_fan_off' => Icons.mode_fan_off,
   'engineering_outlined' => Icons.engineering_outlined,
   'visibility_off_outlined' => Icons.visibility_off_outlined,
   'psychology_outlined' => Icons.psychology_outlined,
