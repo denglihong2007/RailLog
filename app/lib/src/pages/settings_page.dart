@@ -12,6 +12,7 @@ import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
+import 'package:raillog/src/services/trip_detail_settings.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
@@ -57,6 +58,8 @@ class SettingsPage extends StatelessWidget {
                       const _SettingsCategoryHeader(title: '个性化'),
                       const SizedBox(height: 8),
                       _appearanceSettings(context),
+                      const SizedBox(height: 12),
+                      const _TripDetailSettingsSection(),
                       const SizedBox(height: 12),
                       const _TicketGeneratorSettingsSection(),
                       const SizedBox(height: 12),
@@ -663,6 +666,32 @@ class _BaiduOcrSettingsSectionState extends State<_BaiduOcrSettingsSection> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _TripDetailSettingsSection extends StatelessWidget {
+  const _TripDetailSettingsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsCard(
+      title: '行程详情',
+      icon: Icons.alt_route_outlined,
+      child: AnimatedBuilder(
+        animation: TripDetailSettings.instance,
+        builder: (context, _) {
+          final settings = TripDetailSettings.instance;
+          return SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.route_outlined),
+            title: const Text('默认展开线路站点'),
+            subtitle: const Text('查看行程详情时展开经由线路的中间车站'),
+            value: settings.expandRouteStationsByDefault,
+            onChanged: settings.setExpandRouteStationsByDefault,
+          );
+        },
+      ),
     );
   }
 }

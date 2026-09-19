@@ -21,6 +21,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
+import 'package:raillog/src/services/trip_detail_settings.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
@@ -1450,7 +1451,27 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     setState(() {
       _routeStations = results;
       _isLoading = false;
+      if (TripDetailSettings.instance.expandRouteStationsByDefault) {
+        _expandedRouteSections.addAll(_expandableRouteSectionIds(results));
+      }
     });
+  }
+
+  /// 与 build 中的区间分组保持一致，找出可展开（含中间站）的线路区间。
+  Set<int> _expandableRouteSectionIds(Map<int, List<RouteStation>> stations) {
+    final segments = widget.trip.viaRouteSegments;
+    final ids = <int>{};
+    var routeSectionId = 0;
+    String? previousRoute;
+    for (var index = 0; index < segments.length; index++) {
+      final route = _routeLabel(segments[index].routeName);
+      if (index == 0 || route != previousRoute) {
+        routeSectionId = index;
+      }
+      previousRoute = route;
+      if ((stations[index]?.length ?? 0) > 2) ids.add(routeSectionId);
+    }
+    return ids;
   }
 
   Future<void> _loadRouteSection(
