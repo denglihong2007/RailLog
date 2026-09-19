@@ -93,7 +93,7 @@ void main() {
       );
     });
 
-    test('treats a refunded ticket as importable while reschedules are not', () {
+    test('marks refunded and rescheduled tickets as not importable', () {
       final refunded = Ticket12306Service.parseOrderTicket(const {
         'start_train_date_page': '2026-09-01 08:00',
         'ticket_status_name': '已退票',
@@ -103,7 +103,7 @@ void main() {
         'ticket_status_name': '已改签',
       });
 
-      expect(refunded!.canImport, isTrue);
+      expect(refunded!.canImport, isFalse);
       expect(rescheduled!.canImport, isFalse);
     });
   });
