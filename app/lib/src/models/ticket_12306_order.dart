@@ -31,6 +31,17 @@ class Ticket12306Order {
   final double price;
   final String statusText;
 
+  /// 跨来源（订单 / 电子发票）识别同一张车票的稳定键。
+  String get dedupKey => [
+    trainCode,
+    fromStation,
+    toStation,
+    startTime.toIso8601String(),
+    passengerName,
+    coachName,
+    seatName,
+  ].join('|');
+
   String get seatDisplay {
     final number = [if (coachName.isNotEmpty) '$coachName车', seatName].join();
     return [seatType, number].where((part) => part.isNotEmpty).join(' ');
@@ -47,6 +58,7 @@ class Ticket12306Order {
 
   bool get canImport => !const [
     '改签',
+    '退票',
     '变更到站',
   ].any((keyword) => statusText.contains(keyword));
 }

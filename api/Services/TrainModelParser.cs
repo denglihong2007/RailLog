@@ -27,6 +27,13 @@ public static class TrainModelParser
         "YZ", "YW", "RZ", "RW", "KD", "WX"
     ];
 
+    // "RZ2" is also the beginning of the standard 25-type coach models (RZ25G,
+    // RZ25K, RZ25T, ...). Such a segment must be split as "RZ" + "25x" instead,
+    // so a prefix listed here only applies when the segment does not start with
+    // its longer counterpart.
+    private static readonly Dictionary<string, string> LongerPrefixes =
+        new(StringComparer.OrdinalIgnoreCase) { ["RZ2"] = "RZ25" };
+
     public static List<TrainModelParseResult> ParseTrainString(string? input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -136,6 +143,12 @@ public static class TrainModelParser
         foreach (var candidate in SortedPrefixes)
         {
             if (!modelPart.StartsWith(candidate, StringComparison.OrdinalIgnoreCase)) continue;
+            if (LongerPrefixes.TryGetValue(candidate, out var longerPrefix) &&
+                modelPart.StartsWith(longerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             category = TrainCategory.Coach;
             prefix = candidate;
             model = modelPart[candidate.Length..].ToString();

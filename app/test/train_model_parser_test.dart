@@ -72,6 +72,25 @@ void main() {
       expect(results.map((result) => result.statisticsCode), ['25T', '19T']);
     });
 
+    test('splits RZ25x models as RZ instead of matching the RZ2 prefix', () {
+      final results = TrainModelParser.parse('RZ25G 1234 + rz25k 5678 + RZ2');
+
+      expect(results.map((result) => result.prefix), ['RZ', 'RZ', 'RZ2']);
+      expect(results.map((result) => result.model), ['25G', '25k', '']);
+      expect(results.map((result) => result.modelCode), [
+        'RZ25G',
+        'RZ25k',
+        'RZ2',
+      ]);
+      expect(results.map((result) => result.statisticsCode), [
+        '25G',
+        '25k',
+        '',
+      ]);
+      expect(results[0].numbers, ['1234']);
+      expect(results[1].numbers, ['5678']);
+    });
+
     test('uses the reference fallback for unlisted prefixes', () {
       final results = TrainModelParser.parse(
         '25G 1234+SS8 0001+DF4B 0002+M1A 0003',

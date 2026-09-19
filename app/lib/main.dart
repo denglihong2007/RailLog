@@ -12,6 +12,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
+import 'package:raillog/src/services/trip_detail_settings.dart';
 import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
@@ -31,6 +32,7 @@ void main() async {
   try {
     await DbHelper.instance.database;
     await TicketGeneratorSettings.instance.initialize();
+    await TripDetailSettings.instance.initialize();
     await TrainService.initializeStationCodes();
     await SessionService.instance.initialize();
     await CloudSyncService.instance.initialize();

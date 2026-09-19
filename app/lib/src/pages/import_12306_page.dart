@@ -36,12 +36,14 @@ class _Import12306PageState extends State<Import12306Page> {
   bool _isPollingQr = false;
   bool _isFinalizingLogin = false;
   bool _invoiceVerified = false;
+  bool _invoiceVerificationStarted = false;
   bool _isQuerying = false;
   bool _isImporting = false;
   int? _preparingPosition;
   int _pollGeneration = 0;
 
-  bool get _canQuery => _invoiceVerified && !_isFinalizingLogin && !_isQuerying;
+  bool get _canQuery =>
+      _username != null && !_isFinalizingLogin && !_isQuerying;
 
   List<Ticket12306Order> get _selectableOrders => _orders
       .where((order) => order.canImport && !_importedIds.contains(order.id))
@@ -61,6 +63,7 @@ class _Import12306PageState extends State<Import12306Page> {
       _qrImage = null;
       _username = null;
       _invoiceVerified = false;
+      _invoiceVerificationStarted = false;
       _orders = const [];
       _selectedIds.clear();
       _importedIds.clear();
@@ -107,7 +110,7 @@ class _Import12306PageState extends State<Import12306Page> {
           }
           await _completeLogin(ticket, generation);
           if (mounted && generation == _pollGeneration) {
-            await _startInvoiceVerification(generation);
+            await _queryRegularOrders();
           }
           return;
         }
@@ -143,7 +146,7 @@ class _Import12306PageState extends State<Import12306Page> {
       if (!mounted || generation != _pollGeneration) return;
       setState(() {
         _username = username.isEmpty ? '已登录账号' : username;
-        _qrMessage = '登录成功，正在准备电子发票访问核验';
+        _qrMessage = '登录成功，正在查询行程';
       });
     } catch (error) {
       if (!mounted || generation != _pollGeneration) return;
@@ -167,6 +170,7 @@ class _Import12306PageState extends State<Import12306Page> {
     if (!mounted || generation != _pollGeneration) return;
     setState(() {
       _invoiceVerified = false;
+      _invoiceVerificationStarted = true;
       _isCreatingQr = true;
       _qrImage = null;
       _qrMessageIsError = false;
@@ -208,7 +212,7 @@ class _Import12306PageState extends State<Import12306Page> {
           _qrMessageIsError = false;
           _qrMessage = status.message;
         });
-        await _queryOrders();
+        await _queryInvoiceAndMerge();
         return;
       }
       if (status.code != '0' && status.code != '1') {
@@ -222,28 +226,58 @@ class _Import12306PageState extends State<Import12306Page> {
     }
   }
 
-  Future<void> _queryOrders() async {
-    if (!_invoiceVerified) return;
+  Future<void> _refreshOrders() async {
+    await _queryRegularOrders();
+    if (_invoiceVerified) {
+      await _queryInvoiceAndMerge();
+    }
+  }
+
+  /// 登录后即可查询，无需电子发票核验。
+  Future<void> _queryRegularOrders() async {
+    if (_username == null) return;
     setState(() {
       _isQuerying = true;
       _message = null;
       _selectedIds.clear();
     });
     try {
-      final orders = await _service.queryInvoiceTrips();
+      final orders = await _service.queryOrderTrips();
       if (!mounted) return;
       setState(() {
         _orders = orders;
         _messageIsError = false;
         _message = orders.isEmpty
-            ? '近 180 天没有可导入行程'
-            : '共查询到 ${orders.length} 张车票';
+            ? '近 1 个月没有可导入行程，可查看更多行程'
+            : '近 1 个月共查询到 ${orders.length} 张车票';
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _messageIsError = true;
         _message = '查询订单失败：$error';
+      });
+    } finally {
+      if (mounted) setState(() => _isQuerying = false);
+    }
+  }
+
+  /// 核验通过后追加电子发票行程，并按车票去重合并（发票数据优先）。
+  Future<void> _queryInvoiceAndMerge() async {
+    setState(() => _isQuerying = true);
+    try {
+      final extra = await _service.queryInvoiceTrips();
+      if (!mounted) return;
+      setState(() {
+        _orders = Ticket12306Service.mergeTrips(_orders, extra);
+        _messageIsError = false;
+        _message = '已加载近 180 天行程，合并去重后共 ${_orders.length} 张车票';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messageIsError = true;
+        _message = '查询电子发票行程失败：$error';
       });
     } finally {
       if (mounted) setState(() => _isQuerying = false);
@@ -519,8 +553,8 @@ class _Import12306PageState extends State<Import12306Page> {
             sliver: const SliverToBoxAdapter(
               child: _StepHeader(
                 step: 2,
-                icon: Icons.domain_verification_outlined,
-                title: '核验电子发票访问',
+                icon: Icons.more_horiz,
+                title: '查看更多行程（可选）',
               ),
             ),
           ),
@@ -533,10 +567,11 @@ class _Import12306PageState extends State<Import12306Page> {
             ),
             sliver: SliverToBoxAdapter(
               child: _username == null
-                  ? const _PendingStepCard(message: '完成登录后进行二次核验')
+                  ? const _PendingStepCard(message: '登录后可查看更多行程')
                   : _invoiceVerified
-                  ? const _CompletedStepCard(message: '电子发票访问核验通过')
-                  : Column(
+                  ? const _CompletedStepCard(message: '已加载近 180 天电子发票行程')
+                  : _invoiceVerificationStarted
+                  ? Column(
                       children: [
                         _LoginPanel(
                           qrImage: _qrImage,
@@ -551,7 +586,8 @@ class _Import12306PageState extends State<Import12306Page> {
                           onCreateQr: _restartInvoiceVerification,
                         ),
                       ],
-                    ),
+                    )
+                  : _MoreTripsCard(onPressed: _restartInvoiceVerification),
             ),
           ),
           SliverPadding(
@@ -573,7 +609,7 @@ class _Import12306PageState extends State<Import12306Page> {
                   ),
                   IconButton.filledTonal(
                     tooltip: '重新查询',
-                    onPressed: _canQuery ? _queryOrders : null,
+                    onPressed: _canQuery ? _refreshOrders : null,
                     icon: _isQuerying
                         ? const SizedBox.square(
                             dimension: 16,
@@ -753,6 +789,62 @@ class _CompletedStepCard extends StatelessWidget {
       child: ListTile(
         leading: Icon(Icons.check_circle_outline, color: colors.primary),
         title: Text(message),
+      ),
+    );
+  }
+}
+
+class _MoreTripsCard extends StatelessWidget {
+  const _MoreTripsCard({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AppCard.filled(
+      color: colors.surfaceContainerLow,
+      padding: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.receipt_long_outlined,
+                  size: 32,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '查看更多行程',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '以上为 12306 订单记录。电子发票行程可覆盖近 180 天，'
+                        '需要再次扫码核验访问权限，重复行程会自动去重。',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton.tonalIcon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.qr_code_2),
+              label: const Text('扫码查看更多'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1019,11 +1111,18 @@ class _EmptyOrders extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              isLoggedIn ? '近 180 天暂无行程' : '登录并核验后显示近 180 天行程',
+              isLoggedIn ? '暂无可导入行程' : '登录后显示近期行程',
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(color: colors.onSurfaceVariant),
             ),
+            if (isLoggedIn) ...[
+              const SizedBox(height: 6),
+              Text(
+                '可尝试查看更多行程以加载更早记录',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+            ],
           ],
         ),
       ),

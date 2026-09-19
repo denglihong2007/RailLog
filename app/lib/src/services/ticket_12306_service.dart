@@ -49,6 +49,8 @@ class Ticket12306Service {
   static const _invoiceIndexPage = '$_otnBase/view/invoice_index.html';
   static const _invoiceListPage =
       '$_otnBase/view/invoice_ticket_list.html?tab_type=1';
+  static const _trainOrderPage = '$_otnBase/view/train_order.html';
+  static const _orderPageSize = 8;
   static const _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 '
@@ -177,6 +179,87 @@ class Ticket12306Service {
     return result;
   }
 
+  /// 查询普通订单行程，仅需扫码登录，无需电子发票访问核验。
+  Future<List<Ticket12306Order>> queryOrderTrips({DateTime? now}) async {
+    await _navigate(_trainOrderPage, referer: '$_otnBase/login/userLogin');
+    final today = _dateOnly(now ?? DateTime.now());
+    final start = _minusOneMonth(today);
+    final merged = <String, Ticket12306Order>{};
+
+    for (final queryWhere in const ['H', 'G']) {
+      final end = queryWhere == 'H'
+          ? today.subtract(const Duration(days: 1))
+          : today;
+      for (final order in await _queryOrdersByType(start, end, queryWhere)) {
+        merged[order.dedupKey] = order;
+      }
+    }
+    final result = merged.values.toList()
+      ..sort((a, b) => b.startTime.compareTo(a.startTime));
+    return result;
+  }
+
+  Future<List<Ticket12306Order>> _queryOrdersByType(
+    DateTime start,
+    DateTime end,
+    String queryWhere,
+  ) async {
+    if (end.isBefore(start)) return const [];
+    final result = <Ticket12306Order>[];
+    var pageIndex = 0;
+    var total = 1 << 30;
+
+    while (pageIndex * _orderPageSize < total) {
+      final json = await _postForm(
+        '$_otnBase/queryOrder/queryMyOrder',
+        {
+          'come_from_flag': 'my_order',
+          'pageIndex': '$pageIndex',
+          'pageSize': '$_orderPageSize',
+          'query_where': queryWhere,
+          'queryStartDate': _formatDate(start),
+          'queryEndDate': _formatDate(end),
+          'queryType': '1',
+          'sequeue_train_name': '',
+        },
+        referer: _trainOrderPage,
+        accept: 'application/json, text/javascript, */*; q=0.01',
+      );
+      if (json['status'] != true) {
+        throw Ticket12306Exception('12306 订单查询失败（query_where=$queryWhere）');
+      }
+      final data = json['data'];
+      if (data is! Map) break;
+      final reportedTotal = _asInt(data['order_total_number']);
+      if (reportedTotal != null && reportedTotal > 0) {
+        total = reportedTotal;
+      }
+      final orders = data['OrderDTODataList'];
+      if (orders is! List || orders.isEmpty) break;
+
+      var currentCount = 0;
+      for (final rawOrder in orders) {
+        if (rawOrder is! Map) continue;
+        currentCount++;
+        final order = Map<String, dynamic>.from(rawOrder);
+        final sequenceNo = _readString(order, 'sequence_no');
+        final tickets = order['tickets'];
+        if (tickets is! List) continue;
+        for (final rawTicket in tickets) {
+          if (rawTicket is! Map) continue;
+          final parsed = parseOrderTicket(
+            Map<String, dynamic>.from(rawTicket),
+            sequenceNo: sequenceNo,
+          );
+          if (parsed != null) result.add(parsed);
+        }
+      }
+      if (currentCount < _orderPageSize) break;
+      pageIndex++;
+    }
+    return result;
+  }
+
   Future<void> _prepareInvoiceQuery() async {
     await _navigate(_invoiceListPage, referer: _invoiceIndexPage);
     final login = await _postForm(
@@ -287,6 +370,74 @@ class Ticket12306Service {
       price: _parseNumber(_readString(ticket, 'ticket_price')) / 10,
       statusText: _readString(ticket, 'status_name'),
     );
+  }
+
+  static Ticket12306Order? parseOrderTicket(
+    Map<String, dynamic> ticket, {
+    String sequenceNo = '',
+  }) {
+    final startTime = _parseSpaceDateTime(
+      _readString(ticket, 'start_train_date_page'),
+    );
+    if (startTime == null) return null;
+
+    final stationTrain = ticket['stationTrainDTO'];
+    final station = stationTrain is Map
+        ? Map<String, dynamic>.from(stationTrain)
+        : const <String, dynamic>{};
+    final passenger = ticket['passengerDTO'];
+    final passengerMap = passenger is Map
+        ? Map<String, dynamic>.from(passenger)
+        : const <String, dynamic>{};
+
+    final trainCode = _readString(station, 'station_train_code');
+    final passengerName = _readString(passengerMap, 'passenger_name');
+    final coachName = _readString(ticket, 'coach_name');
+    final seatName = _readString(ticket, 'seat_name');
+    final arriveTime = _parseSpaceDateTime(
+      '${_readString(station, 'arrive_date_local')} '
+      '${_readString(station, 'arrive_time_local')}',
+    );
+    final orderNo = sequenceNo.trim();
+
+    return Ticket12306Order(
+      id: [
+        orderNo,
+        trainCode,
+        startTime.toIso8601String(),
+        passengerName,
+        coachName,
+        seatName,
+      ].join('|'),
+      sequenceNo: orderNo,
+      startTime: startTime,
+      arriveTime: arriveTime,
+      trainCode: trainCode,
+      fromStation: _readString(station, 'from_station_name'),
+      toStation: _readString(station, 'to_station_name'),
+      distance: _parseNumber(_readString(station, 'distance')),
+      passengerName: passengerName,
+      seatType: _readString(ticket, 'seat_type_name'),
+      coachName: coachName,
+      seatName: seatName,
+      price: _parseNumber(_readString(ticket, 'str_ticket_price_page')),
+      statusText: _readString(ticket, 'ticket_status_name'),
+    );
+  }
+
+  /// 合并两个来源的行程：同一张票以 [extra]（电子发票，信息更全）为准。
+  static List<Ticket12306Order> mergeTrips(
+    List<Ticket12306Order> base,
+    List<Ticket12306Order> extra,
+  ) {
+    final merged = <String, Ticket12306Order>{
+      for (final order in base) order.dedupKey: order,
+    };
+    for (final order in extra) {
+      merged[order.dedupKey] = order;
+    }
+    return merged.values.toList()
+      ..sort((a, b) => b.startTime.compareTo(a.startTime));
   }
 
   Future<Map<String, dynamic>> _postForm(
@@ -411,6 +562,12 @@ class Ticket12306Service {
 
   static DateTime _dateOnly(DateTime value) =>
       DateTime(value.year, value.month, value.day);
+  static DateTime _minusOneMonth(DateTime value) =>
+      DateTime(value.year, value.month - 1, value.day);
+  static String _formatDate(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
   static String _formatCompactDate(DateTime value) =>
       '${value.year.toString().padLeft(4, '0')}'
       '${value.month.toString().padLeft(2, '0')}'
@@ -429,6 +586,27 @@ class Ticket12306Service {
     final match = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(value);
     final parsed = double.tryParse(match?.group(0) ?? '') ?? 0;
     return parsed < 0 ? 0 : parsed;
+  }
+
+  /// 解析 `yyyy-MM-dd HH:mm`（订单接口）及 `yyyy年M月d日 HH:mm` 等变体。
+  static DateTime? _parseSpaceDateTime(String value) {
+    final normalized = value
+        .trim()
+        .replaceAll('年', '-')
+        .replaceAll('月', '-')
+        .replaceAll('日', ' ')
+        .replaceAll('/', '-');
+    final match = RegExp(
+      r'^(\d{4})-(\d{1,2})-(\d{1,2})[ T]+(\d{1,2}):(\d{2})',
+    ).firstMatch(normalized);
+    if (match == null) return null;
+    return DateTime(
+      int.parse(match.group(1)!),
+      int.parse(match.group(2)!),
+      int.parse(match.group(3)!),
+      int.parse(match.group(4)!),
+      int.parse(match.group(5)!),
+    );
   }
 
   static DateTime? _parseCompactDateTime(String value) {
