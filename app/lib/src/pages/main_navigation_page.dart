@@ -113,14 +113,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop =
-        Theme.of(context).platform == TargetPlatform.windows ||
-        Theme.of(context).platform == TargetPlatform.macOS ||
-        Theme.of(context).platform == TargetPlatform.linux;
-    final appBar = isDesktop ? null : AppBar(title: const Text('轨记'));
-
     return _AdaptiveNavigationScaffold(
-      appBar: appBar,
       selectedIndex: _currentIdx,
       onSelectedIndexChange: (index) {
         setState(() {
@@ -143,7 +136,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
 class _AdaptiveNavigationScaffold extends StatelessWidget {
   const _AdaptiveNavigationScaffold({
-    required this.appBar,
     required this.selectedIndex,
     required this.onSelectedIndexChange,
     required this.destinations,
@@ -153,7 +145,6 @@ class _AdaptiveNavigationScaffold extends StatelessWidget {
   static const compactBreakpoint = 600.0;
   static const expandedBreakpoint = 840.0;
 
-  final PreferredSizeWidget? appBar;
   final int selectedIndex;
   final ValueChanged<int> onSelectedIndexChange;
   final List<NavigationDestination> destinations;
@@ -165,7 +156,6 @@ class _AdaptiveNavigationScaffold extends StatelessWidget {
       builder: (context, constraints) {
         if (constraints.maxWidth < compactBreakpoint) {
           return Scaffold(
-            appBar: appBar,
             body: body,
             bottomNavigationBar: NavigationBar(
               selectedIndex: selectedIndex,
@@ -177,7 +167,6 @@ class _AdaptiveNavigationScaffold extends StatelessWidget {
 
         final extended = constraints.maxWidth >= expandedBreakpoint;
         return Scaffold(
-          appBar: appBar,
           body: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
