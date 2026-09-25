@@ -81,6 +81,7 @@ flutter:
   assets:
     - assets/db/routes.db
     - assets/db/coordinates.csv
+    - assets/db/rail_tracks.db
     - assets/icon/icon.png
     - assets/level/
   fonts:
