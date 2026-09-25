@@ -484,8 +484,14 @@ class _TripReviewsSection extends StatefulWidget {
   State<_TripReviewsSection> createState() => _TripReviewsSectionState();
 }
 
-class _TripReviewsSectionState extends State<_TripReviewsSection> {
+class _TripReviewsSectionState extends State<_TripReviewsSection>
+    with AutomaticKeepAliveClientMixin {
   late Future<List<EntityReview>> _reviewsFuture;
+
+  // 评价与指南都是联网取的，而外层 ListView 滑出视野后会回收子节点。
+  // 不保活的话，滑回来时会重新 initState→重新请求，于是又闪一次加载动画。
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -517,6 +523,7 @@ class _TripReviewsSectionState extends State<_TripReviewsSection> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return _DetailsSection(
       icon: widget.icon,
       title: widget.title,
