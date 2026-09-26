@@ -198,6 +198,13 @@ const achievementIconCodepoints: Record<string, number> = {
   airline_seat_individual_suite_outlined: 0xee58,
   workspace_premium_outlined: 0xf06a1,
   handshake_outlined: 0xf06a4,
+  directions_railway_outlined: 0xefca,
+  format_list_numbered_outlined: 0xf0a6,
+  gps_fixed_outlined: 0xf0c9,
+  heart_broken_outlined: 0xf060f,
+  tsunami: 0xf07cf,
+  anchor: 0xe084,
+  menu_book_outlined: 0xf1c2,
 }
 
 const userInitial = computed(() => dashboard.value?.user.displayName.trim().charAt(0) || '旅')
