@@ -10,7 +10,6 @@ import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
-import 'package:raillog/src/models/timetable_source.dart';
 import 'package:raillog/src/services/api_client.dart';
 
 class TrainService {
@@ -44,6 +43,8 @@ class TrainService {
   }
 
   static Future<Map<String, String>>? _stationCodeRequest;
+  static List<String>? _timetableVersions;
+  static Future<List<String>>? _timetableVersionsRequest;
   static final Map<String, String> _ticketCookies = {};
   static Future<void>? _ticketSessionRequest;
   static bool _browserSessionInitialized = false;
@@ -446,13 +447,14 @@ class TrainService {
     }
   }
 
+  /// [historicalVersion] 非空时走本地历史库（版本形如 `2003.11.25`），否则走在线查询。
   static Future<List<TrainScheduleStop>> fetchTrainSchedule(
     String trainNo,
     DateTime queryDate, {
-    TimetableSource source = TimetableSource.online,
+    String? historicalVersion,
   }) async {
-    if (!source.isOnline) {
-      return _fetchHistoricalTrainSchedule(trainNo, source.year!);
+    if (historicalVersion != null) {
+      return _fetchHistoricalTrainSchedule(trainNo, historicalVersion);
     }
     final formattedDate =
         '${queryDate.year}-'
@@ -486,12 +488,12 @@ class TrainService {
 
   static Future<List<TrainScheduleStop>> _fetchHistoricalTrainSchedule(
     String trainNumber,
-    int year,
+    String version,
   ) async {
     try {
       final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
         '/api/train-timetables',
-        queryParameters: {'trainNumber': trainNumber, 'year': year},
+        queryParameters: {'trainNumber': trainNumber, 'version': version},
       );
       final stops = response.data?['stops'];
       if (response.statusCode != 200 || stops is! List) return const [];
@@ -504,14 +506,45 @@ class TrainService {
     }
   }
 
+  static Future<List<String>> fetchTimetableVersions() async {
+    final cached = _timetableVersions;
+    if (cached != null) return cached;
+    final existing = _timetableVersionsRequest;
+    if (existing != null) return existing;
+
+    final request = _loadTimetableVersions();
+    _timetableVersionsRequest = request;
+    try {
+      final versions = await request;
+      // 拿不到就下次再试，别把空列表永久缓存下来。
+      if (versions.isNotEmpty) _timetableVersions = versions;
+      return versions;
+    } finally {
+      _timetableVersionsRequest = null;
+    }
+  }
+
+  static Future<List<String>> _loadTimetableVersions() async {
+    try {
+      final response = await ApiClient.instance.dio.get<dynamic>(
+        '/api/train-timetables/versions',
+      );
+      final versions = response.data;
+      if (response.statusCode != 200 || versions is! List) return const [];
+      return versions.whereType<String>().toList(growable: false);
+    } on DioException {
+      return const [];
+    }
+  }
+
   static Future<List<TrainSearchResult>> searchHistoricalTrains(
     String trainNumberPrefix,
-    int year,
+    String version,
   ) async {
     try {
       final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
         '/api/train-timetables/search',
-        queryParameters: {'trainNumber': trainNumberPrefix, 'year': year},
+        queryParameters: {'trainNumber': trainNumberPrefix, 'version': version},
       );
       final trains = response.data?['trains'];
       if (response.statusCode != 200 || trains is! List) return const [];
@@ -525,11 +558,11 @@ class TrainService {
     }
   }
 
-  static Future<List<String>> fetchHistoricalStations(int year) async {
+  static Future<List<String>> fetchHistoricalStations(String version) async {
     try {
       final response = await ApiClient.instance.dio.get<dynamic>(
         '/api/train-timetables/stations',
-        queryParameters: {'year': year},
+        queryParameters: {'version': version},
       );
       final stations = response.data;
       if (response.statusCode != 200 || stations is! List) return const [];
@@ -542,7 +575,7 @@ class TrainService {
   static Future<List<TrainSearchResult>> searchHistoricalTrainsBetween({
     required String fromStation,
     required String toStation,
-    required int year,
+    required String version,
   }) async {
     try {
       final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
@@ -550,7 +583,7 @@ class TrainService {
         queryParameters: {
           'fromStation': fromStation,
           'toStation': toStation,
-          'year': year,
+          'version': version,
         },
       );
       final trains = response.data?['trains'];

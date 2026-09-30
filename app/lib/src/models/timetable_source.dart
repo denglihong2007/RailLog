@@ -1,72 +1,14 @@
+/// 时刻表来源：在线查询，或本地历史数据库。
+///
+/// 历史数据库按「快照日期」版本化（见 [resolveTimetableVersion]），版本由行程日期自动推导，
+/// 所以这里只区分在线/历史，不再逐个列出年份。
 enum TimetableSource {
   online('在线'),
-  year2009('2009'),
-  year2010('2010'),
-  year2011('2011'),
-  year2012('2012'),
-  year2013('2013'),
-  year2014('2014'),
-  year2015('2015'),
-  year2016('2016'),
-  year2017('2017'),
-  year2018('2018'),
-  year2019('2019'),
-  year2020('2020'),
-  year2021('2021'),
-  year2022('2022'),
-  year2023('2023'),
-  year2024('2024'),
-  year2025('2025'),
-  year2026('2026');
+  historical('历史数据库');
 
   const TimetableSource(this.label);
 
   final String label;
 
-  int? get year => switch (this) {
-    online => null,
-    year2009 => 2009,
-    year2010 => 2010,
-    year2011 => 2011,
-    year2012 => 2012,
-    year2013 => 2013,
-    year2014 => 2014,
-    year2015 => 2015,
-    year2016 => 2016,
-    year2017 => 2017,
-    year2018 => 2018,
-    year2019 => 2019,
-    year2020 => 2020,
-    year2021 => 2021,
-    year2022 => 2022,
-    year2023 => 2023,
-    year2024 => 2024,
-    year2025 => 2025,
-    year2026 => 2026,
-  };
-
   bool get isOnline => this == TimetableSource.online;
-
-  static TimetableSource forYear(int year) {
-    return switch (year) {
-      2009 => year2009,
-      2010 => year2010,
-      2011 => year2011,
-      2012 => year2012,
-      2013 => year2013,
-      2014 => year2014,
-      2015 => year2015,
-      2016 => year2016,
-      2017 => year2017,
-      2018 => year2018,
-      2019 => year2019,
-      2020 => year2020,
-      2021 => year2021,
-      2022 => year2022,
-      2023 => year2023,
-      2024 => year2024,
-      2025 => year2025,
-      _ => online,
-    };
-  }
 }

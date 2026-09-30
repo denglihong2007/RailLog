@@ -9,6 +9,8 @@ builder.Configuration
 
 builder.Services.AddSingleton<RailLogDatabase>();
 builder.Services.AddHostedService<AchievementBackfillService>();
+builder.Services.Configure<TrainTimetablesOptions>(
+    builder.Configuration.GetSection("TrainTimetables"));
 builder.Services.AddSingleton<TrainTimetableService>();
 builder.Services.Configure<ContentModerationOptions>(
     builder.Configuration.GetSection("ContentModeration"));

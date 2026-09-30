@@ -1,47 +1,121 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace RailLog.API.Services;
 
-public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<TrainTimetableService> logger)
+/// <summary>
+/// 历史时刻表库按快照日期版本化，一个版本一张 <c>timetable_&lt;yyyy.MM.dd&gt;</c> 表。
+/// 库本体不进仓库（约 800MB），路径由 user-secrets 里的
+/// <c>TrainTimetables:DatabasePath</c> 指定；没配置时接口一律返回空结果。
+/// </summary>
+public sealed class TrainTimetableService(
+    IOptions<TrainTimetablesOptions> options,
+    ILogger<TrainTimetableService> logger)
 {
-    public static bool SupportsYear(int year) =>
-        year >= 2009 && year <= 2026;
+    private readonly TrainTimetablesOptions _options = options.Value;
+    private readonly SemaphoreSlim _versionsGate = new(1, 1);
+    private IReadOnlyList<string>? _versions;
+    private bool _missingPathReported;
+
+    /// <summary>可用的版本号，升序。表名的字典序恰好等于时间序。</summary>
+    public async Task<IReadOnlyList<string>> GetVersionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var cached = _versions;
+        if (cached is not null) return cached;
+
+        await _versionsGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_versions is not null) return _versions;
+
+            var databasePath = ResolveDatabasePath();
+            if (databasePath is null)
+            {
+                _versions = [];
+                return _versions;
+            }
+
+            var versions = new List<string>();
+            try
+            {
+                await using var connection = await OpenConnectionAsync(databasePath, cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText =
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'timetable\\_%' ESCAPE '\\'";
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var name = reader.GetString(0);
+                    var version = name["timetable_".Length..];
+                    if (IsValidVersion(version)) versions.Add(version);
+                }
+            }
+            catch (SqliteException exception)
+            {
+                logger.LogError(exception, "Failed to read timetable versions from {Path}", databasePath);
+                return [];
+            }
+
+            versions.Sort(StringComparer.Ordinal);
+            _versions = versions;
+            logger.LogInformation(
+                "Historical timetable database offers {Count} versions ({First} .. {Last})",
+                versions.Count,
+                versions.Count > 0 ? versions[0] : "-",
+                versions.Count > 0 ? versions[^1] : "-");
+            return _versions;
+        }
+        finally
+        {
+            _versionsGate.Release();
+        }
+    }
+
+    public async Task<bool> SupportsVersionAsync(
+        string version,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsValidVersion(version)) return false;
+        var versions = await GetVersionsAsync(cancellationToken);
+        return versions.Contains(version, StringComparer.Ordinal);
+    }
 
     public async Task<IReadOnlyList<TrainTimetableSearchItem>> SearchAsync(
         string trainNumberPrefix,
-        int year,
+        string version,
         CancellationToken cancellationToken = default)
     {
         var prefix = trainNumberPrefix.Trim().ToUpperInvariant();
-        if (prefix.Length == 0 || !SupportsYear(year)) return [];
+        if (prefix.Length == 0) return [];
 
-        await using var connection = await OpenConnectionAsync(year, cancellationToken);
+        await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return [];
 
         await using var command = connection.CreateCommand();
-        var table = Quote(TableName(year));
+        var table = Quote(TableName(version));
         command.CommandText = $"""
     WITH matching_trains(train_number) AS (
-        SELECT TrainCode1 FROM {table} 
+        SELECT TrainCode1 FROM {table}
         WHERE TrainCode1 LIKE @prefix || '%'
         UNION
-        SELECT TrainCode2 FROM {table} 
+        SELECT TrainCode2 FROM {table}
         WHERE TrainCode2 LIKE @prefix || '%'
     )
     SELECT
         m.train_number,
         (
             SELECT t.TrainStation FROM {table} t
-            WHERE t.TrainCode1 = m.train_number 
+            WHERE t.TrainCode1 = m.train_number
                OR t.TrainCode2 = m.train_number
             ORDER BY t.OrderID ASC, t.rowid ASC
             LIMIT 1
         ) AS departure_station,
         (
             SELECT t.TrainStation FROM {table} t
-            WHERE t.TrainCode1 = m.train_number 
+            WHERE t.TrainCode1 = m.train_number
                OR t.TrainCode2 = m.train_number
             ORDER BY t.OrderID DESC, t.rowid DESC
             LIMIT 1
@@ -68,16 +142,15 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
     }
 
     public async Task<IReadOnlyList<string>> GetStationsAsync(
-        int year,
+        string version,
         CancellationToken cancellationToken = default)
     {
-        if (!SupportsYear(year)) return [];
-        await using var connection = await OpenConnectionAsync(year, cancellationToken);
+        await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return [];
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT DISTINCT trim(TrainStation) AS station_name
-            FROM {Quote(TableName(year))}
+            FROM {Quote(TableName(version))}
             WHERE trim(TrainStation) <> ''
             ORDER BY station_name;
             """;
@@ -91,16 +164,16 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
     public async Task<IReadOnlyList<TrainTimetableSearchItem>> SearchBetweenAsync(
         string fromStation,
         string toStation,
-        int year,
+        string version,
         CancellationToken cancellationToken = default)
     {
         var from = fromStation.Trim();
         var to = toStation.Trim();
-        if (from.Length == 0 || to.Length == 0 || from == to || !SupportsYear(year)) return [];
-        await using var connection = await OpenConnectionAsync(year, cancellationToken);
+        if (from.Length == 0 || to.Length == 0 || from == to) return [];
+        await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return [];
         await using var command = connection.CreateCommand();
-        var table = Quote(TableName(year));
+        var table = Quote(TableName(version));
         command.CommandText = $"""
             WITH train_stops AS (
                 SELECT trim(TrainCode1) AS train_number, OrderID, trim(TrainStation) AS station
@@ -135,22 +208,13 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
 
     public async Task<IReadOnlyList<TrainTimetableStop>> GetAsync(
         string trainNumber,
-        int year,
+        string version,
         CancellationToken cancellationToken = default)
     {
         var normalizedTrainNumber = trainNumber.Trim().ToUpperInvariant();
-        if (normalizedTrainNumber.Length == 0 || !SupportsYear(year))
-            return [];
+        if (normalizedTrainNumber.Length == 0) return [];
 
-        var databasePath = Path.Combine(environment.ContentRootPath, "Assets", "train_timetables.db");
-        if (!File.Exists(databasePath))
-        {
-            logger.LogWarning("Historical timetable database was not found at {Path}", databasePath);
-            return [];
-        }
-
-        var tableName = $"timetable_{year}";
-        await using var connection = await OpenConnectionAsync(year, cancellationToken);
+        await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return [];
 
         await using var command = connection.CreateCommand();
@@ -162,7 +226,7 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
                 StartTime AS start_time,
                 '' AS running_time,
                 Mileage AS mileage
-            FROM {Quote(tableName)}
+            FROM {Quote(TableName(version))}
             WHERE upper(trim(COALESCE(TrainCode1, ''))) = @trainNumber
                OR upper(trim(COALESCE(TrainCode2, ''))) = @trainNumber
             ORDER BY OrderID, rowid
@@ -206,17 +270,53 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
         return result;
     }
 
-    private async Task<SqliteConnection?> OpenConnectionAsync(
-        int year,
-        CancellationToken cancellationToken)
+    /// <summary>配好且存在的库路径；没配或不存在返回 null（只报一次 warning）。</summary>
+    private string? ResolveDatabasePath()
     {
-        var databasePath = Path.Combine(environment.ContentRootPath, "Assets", "train_timetables.db");
-        if (!File.Exists(databasePath))
+        var configured = _options.DatabasePath?.Trim();
+        if (string.IsNullOrEmpty(configured))
         {
-            logger.LogWarning("Historical timetable database was not found at {Path}", databasePath);
+            if (!_missingPathReported)
+            {
+                _missingPathReported = true;
+                logger.LogWarning(
+                    "历史时刻表数据库未配置，相关接口会返回空结果。请设置 user-secrets："
+                    + "dotnet user-secrets set \"TrainTimetables:DatabasePath\" \"<路径>\\train_timetables.db\"");
+            }
             return null;
         }
 
+        if (!File.Exists(configured))
+        {
+            if (!_missingPathReported)
+            {
+                _missingPathReported = true;
+                logger.LogWarning(
+                    "历史时刻表数据库不存在：{Path}（TrainTimetables:DatabasePath 指向的文件找不到）",
+                    configured);
+            }
+            return null;
+        }
+
+        return configured;
+    }
+
+    private async Task<SqliteConnection?> OpenVersionAsync(
+        string version,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidVersion(version)) return null;
+        if (!await SupportsVersionAsync(version, cancellationToken)) return null;
+
+        var databasePath = ResolveDatabasePath();
+        if (databasePath is null) return null;
+        return await OpenConnectionAsync(databasePath, cancellationToken);
+    }
+
+    private static async Task<SqliteConnection> OpenConnectionAsync(
+        string databasePath,
+        CancellationToken cancellationToken)
+    {
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
@@ -225,25 +325,16 @@ public sealed class TrainTimetableService(IHostEnvironment environment, ILogger<
         }.ToString();
         var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
-        var tableName = TableName(year);
-        if (await TableExistsAsync(connection, tableName, cancellationToken)) return connection;
-        await connection.DisposeAsync();
-        logger.LogWarning("Historical timetable table {Table} was not found in {Path}", tableName, databasePath);
-        return null;
+        return connection;
     }
 
-    private static string TableName(int year) => $"timetable_{year}";
+    /// <summary>版本号形如 2003.11.25。</summary>
+    public static bool IsValidVersion(string? version) =>
+        version is { Length: 10 } &&
+        version[4] == '.' && version[7] == '.' &&
+        DateOnly.TryParseExact(version, "yyyy.MM.dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
 
-    private static async Task<bool> TableExistsAsync(
-        SqliteConnection connection,
-        string tableName,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = @tableName LIMIT 1";
-        command.Parameters.AddWithValue("@tableName", tableName);
-        return await command.ExecuteScalarAsync(cancellationToken) is not null;
-    }
+    private static string TableName(string version) => $"timetable_{version}";
 
     private static string Quote(string identifier) =>
         $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";

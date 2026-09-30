@@ -4,7 +4,6 @@ import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/seat_selection.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
-import 'package:raillog/src/models/timetable_source.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
@@ -24,7 +23,7 @@ class TrainTripFormPage extends StatefulWidget {
     super.key,
     required this.trainNumber,
     required this.scheduleStops,
-    this.timetableSource = TimetableSource.online,
+    this.historicalVersion,
     required this.departureStopIndex,
     required this.arrivalStopIndex,
     this.initialSeatType,
@@ -39,7 +38,10 @@ class TrainTripFormPage extends StatefulWidget {
 
   final String trainNumber;
   final List<TrainScheduleStop> scheduleStops;
-  final TimetableSource timetableSource;
+
+  /// 时刻表来源版本（`yyyy.MM.dd`）；`null` 表示在线查询。
+  final String? historicalVersion;
+
   final int departureStopIndex;
   final int arrivalStopIndex;
   final String? initialSeatType;
@@ -135,7 +137,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         _arrivalTime;
     final shouldFetchRollingStock =
         TrainService.shouldFetchRollingStock(widget.trainNumber) &&
-        widget.timetableSource.isOnline;
+        widget.historicalVersion == null;
     final results = await Future.wait<dynamic>([
       TrainService.fetchDistanceInfo(
         trainNumber: widget.trainNumber,
@@ -150,7 +152,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       else
         Future<RollingStockLookupResult?>.value(),
       _resolveRoutes(),
-      if (widget.timetableSource.isOnline)
+      if (widget.historicalVersion == null)
         TrainService.fetchTicketSeatAvailability(
           trainNumber: widget.trainNumber,
           fromStation: _departureStop.stationName,
@@ -165,7 +167,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final rollingStock = results[1] as RollingStockLookupResult?;
     final routeResolution = results[2] as RouteResolution?;
     final ticketSeatAvailability = results[3] as TicketSeatAvailability?;
-    final historicalMileage = widget.timetableSource.isOnline
+    final historicalMileage = widget.historicalVersion == null
         ? null
         : historicalJourneyMileage(_departureStop, _arrivalStop);
     setState(() {
@@ -242,7 +244,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
 
   Future<RouteResolution?> _resolveRoutes() async {
     try {
-      if (!widget.timetableSource.isOnline) {
+      if (widget.historicalVersion != null) {
         final selectedStops = widget.scheduleStops.sublist(
           widget.departureStopIndex,
           widget.arrivalStopIndex + 1,

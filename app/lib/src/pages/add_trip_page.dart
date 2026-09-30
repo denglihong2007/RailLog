@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/timetable_source.dart';
+import 'package:raillog/src/models/timetable_version.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
@@ -30,9 +31,11 @@ class AddTripPage extends StatefulWidget {
 class _AddTripPageState extends State<AddTripPage> {
   final _trainNumberController = TextEditingController();
   DateTime _travelDate = DateTime.now();
-  TimetableSource _timetableSource = TimetableSource.forYear(
-    DateTime.now().year,
-  );
+  TimetableSource _timetableSource = TimetableSource.online;
+
+  /// 服务端可用的历史时刻表版本（形如 `2003.11.25`），进入页面时拉取一次。
+  List<String> _timetableVersions = const [];
+
   List<TrainSearchResult> _searchResults = const [];
   List<TrainSearchResult> _stationSearchResults = const [];
   List<String> _stationNames = const [];
@@ -54,23 +57,53 @@ class _AddTripPageState extends State<AddTripPage> {
   bool _isImportingExcel = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadTimetableVersions();
+  }
+
+  @override
   void dispose() {
     _searchDebounce?.cancel();
     _trainNumberController.dispose();
     super.dispose();
   }
 
+  Future<void> _loadTimetableVersions() async {
+    final versions = await TrainService.fetchTimetableVersions();
+    if (!mounted || versions.isEmpty) return;
+    setState(() => _timetableVersions = versions);
+  }
+
+  /// 当前行程日期应使用的历史时刻表版本；没有可用版本时为 null。
+  String? get _timetableVersion =>
+      resolveTimetableVersion(_travelDate, _timetableVersions);
+
+  /// 传给历史库接口的版本：在线模式下为 null。
+  String? get _historicalVersion =>
+      _timetableSource.isOnline ? null : _timetableVersion;
+
+  /// 取本次操作要用的历史版本，取不到时提示用户。
+  String? _requireHistoricalVersion() {
+    final version = _timetableVersion;
+    if (version == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有可用的历史时刻表版本')),
+      );
+    }
+    return version;
+  }
+
   Future<void> _pickTravelDate() async {
     final date = await showDatePicker(
       context: context,
       initialDate: _travelDate,
-      firstDate: DateTime(2009),
+      firstDate: DateTime(2003, 11, 25),
       lastDate: DateTime.now().add(const Duration(days: 3650)),
     );
     if (date != null && mounted) {
       setState(() {
         _travelDate = date;
-        _timetableSource = TimetableSource.forYear(date.year);
         _stationQueryMode = false;
         _stationSearchResults = const [];
         _hasSearchedBetween = false;
@@ -99,8 +132,20 @@ class _AddTripPageState extends State<AddTripPage> {
       _isSearching = true;
       _clearSelectedTrain();
     });
-    final results = !_timetableSource.isOnline
-        ? await _searchHistoricalTrain(query)
+    String? version;
+    if (!_timetableSource.isOnline) {
+      version = _requireHistoricalVersion();
+      if (version == null) {
+        if (!mounted || requestId != _searchRequestId) return;
+        setState(() {
+          _isSearching = false;
+          _searchResults = const [];
+        });
+        return;
+      }
+    }
+    final results = version != null
+        ? await _searchHistoricalTrain(query, version)
         : await TrainService.searchTrains(query, _travelDate);
     if (!mounted || requestId != _searchRequestId) return;
     setState(() {
@@ -139,7 +184,7 @@ class _AddTripPageState extends State<AddTripPage> {
     final stops = await TrainService.fetchTrainSchedule(
       result.trainNo,
       result.lookupDate ?? _travelDate,
-      source: _timetableSource,
+      historicalVersion: _historicalVersion,
     );
     if (!mounted || requestId != _scheduleRequestId) return;
 
@@ -201,7 +246,7 @@ class _AddTripPageState extends State<AddTripPage> {
       m3PageRoute(
         builder: (context) => TrainTripFormPage(
           trainNumber: train.trainNumber.replaceFirst(' 次', ''),
-          timetableSource: _timetableSource,
+          historicalVersion: _historicalVersion,
           scheduleStops: resolvedStops,
           departureStopIndex: departureIndex,
           arrivalStopIndex: arrivalIndex,
@@ -282,15 +327,18 @@ class _AddTripPageState extends State<AddTripPage> {
         bytes,
         credentials,
       );
-      final source = TimetableSource.forYear(ticket.departureTime.year);
-      final candidates = source.isOnline
+      // 车票日期决定用哪个历史版本；票面日期没有对应版本时退回在线查询。
+      final version = _timetableSource.isOnline
+          ? null
+          : resolveTimetableVersion(ticket.departureTime, _timetableVersions);
+      final candidates = version == null
           ? await TrainService.searchTrains(
               ticket.trainNumber,
               ticket.departureTime,
             )
           : await TrainService.searchHistoricalTrains(
               ticket.trainNumber,
-              source.year!,
+              version,
             );
       final train = candidates.cast<TrainSearchResult?>().firstWhere(
         (candidate) =>
@@ -302,7 +350,7 @@ class _AddTripPageState extends State<AddTripPage> {
       final stops = await TrainService.fetchTrainSchedule(
         train.trainNo,
         ticket.departureTime,
-        source: source,
+        historicalVersion: version,
       );
       final departureIndex = _findStopIndex(stops, ticket.fromStation);
       final arrivalIndex = _findStopIndex(
@@ -323,7 +371,7 @@ class _AddTripPageState extends State<AddTripPage> {
         m3PageRoute(
           builder: (context) => TrainTripFormPage(
             trainNumber: train.trainNumber.replaceFirst(' 次', ''),
-            timetableSource: source,
+            historicalVersion: version,
             scheduleStops: resolvedStops,
             departureStopIndex: departureIndex,
             arrivalStopIndex: arrivalIndex,
@@ -397,11 +445,9 @@ class _AddTripPageState extends State<AddTripPage> {
 
   Future<List<TrainSearchResult>> _searchHistoricalTrain(
     String trainNumber,
+    String version,
   ) async {
-    return TrainService.searchHistoricalTrains(
-      trainNumber,
-      _timetableSource.year!,
-    );
+    return TrainService.searchHistoricalTrains(trainNumber, version);
   }
 
   void _selectTimetableSource(TimetableSource source) {
@@ -416,15 +462,27 @@ class _AddTripPageState extends State<AddTripPage> {
       _toStation = '';
       _clearSelectedTrain();
     });
+    _searchAfterSourceChange();
+  }
+
+  Future<void> _searchAfterSourceChange() async {
+    // 版本列表可能还没回来，先等它，否则会误报「没有可用的历史时刻表版本」。
+    if (!_timetableSource.isOnline) await _loadTimetableVersions();
+    if (!mounted) return;
     _searchTrains(_trainNumberController.text);
   }
 
   Future<void> _setLookupMode(bool stationMode) async {
-    if (stationMode && _timetableSource.isOnline) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('站站查询仅支持本地年度数据库')));
-      return;
+    String? version;
+    if (stationMode) {
+      if (_timetableSource.isOnline) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('站站查询仅支持本地历史数据库')));
+        return;
+      }
+      version = _requireHistoricalVersion();
+      if (version == null) return;
     }
     setState(() {
       _stationQueryMode = stationMode;
@@ -434,9 +492,7 @@ class _AddTripPageState extends State<AddTripPage> {
       _clearSelectedTrain();
     });
     if (stationMode && _stationNames.isEmpty) {
-      final names = await TrainService.fetchHistoricalStations(
-        _timetableSource.year!,
-      );
+      final names = await TrainService.fetchHistoricalStations(version!);
       if (mounted && _stationQueryMode) setState(() => _stationNames = names);
     }
   }
@@ -463,6 +519,8 @@ class _AddTripPageState extends State<AddTripPage> {
 
   Future<void> _searchBetweenStations() async {
     if (_fromStation.trim().isEmpty || _toStation.trim().isEmpty) return;
+    final version = _requireHistoricalVersion();
+    if (version == null) return;
     setState(() {
       _isSearchingBetween = true;
       _hasSearchedBetween = true;
@@ -470,7 +528,7 @@ class _AddTripPageState extends State<AddTripPage> {
     final results = await TrainService.searchHistoricalTrainsBetween(
       fromStation: _fromStation,
       toStation: _toStation,
-      year: _timetableSource.year!,
+      version: version,
     );
     if (!mounted) return;
     setState(() {
@@ -514,6 +572,7 @@ class _AddTripPageState extends State<AddTripPage> {
         QuickAddCard(
           travelDate: _travelDate,
           timetableSource: _timetableSource,
+          historicalVersion: _timetableVersion,
           trainNumberController: _trainNumberController,
           onPickDate: _pickTravelDate,
           onSelectTimetableSource: _selectTimetableSource,
