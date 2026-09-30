@@ -1,0 +1,8 @@
+# 管线的一次性输入与中间产物，都不进仓库：
+#   .cache/           china.osm.pbf（约 1.7GB）与车站坐标缓存
+#   .test_out/        调试用输出库
+#   .test_out*.log    各次运行的日志（含全量生成的失败清单）
+.cache/
+.test_out/
+.test_out*.log
+__pycache__/

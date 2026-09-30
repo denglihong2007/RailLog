@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path_util;
+import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/station_pair_distance.dart';
@@ -42,7 +43,7 @@ class RouteService {
     );
   }
 
-  static Future<Map<String, List<String>>> resolveTripStations(
+  static Future<Map<String, JourneyStations>> resolveTripStations(
     Iterable<TripRecord> source,
   ) async {
     final trips = source.where((trip) => trip.isRailTrip).toList();
@@ -278,24 +279,36 @@ class _RouteGraph {
     ];
   }
 
-  List<String> stationsForJourney(
+  JourneyStations stationsForJourney(
     String fromStation,
     String toStation,
     List<ViaRouteSegment> segments,
   ) {
-    if (segments.isEmpty) return [fromStation, toStation];
-
-    final stations = <String>[];
-    void append(String station) {
-      if (station.isNotEmpty &&
-          (stations.isEmpty || stations.last != station)) {
-        stations.add(station);
-      }
+    if (segments.isEmpty) {
+      return JourneyStations.of([fromStation.trim(), toStation.trim()]);
     }
 
-    append(fromStation.trim());
+    final stations = <String>[];
+    final legRouteNames = <String>[];
+    // 新站加入时，它到上一站那一段归属于「正在展开的线路」。
+    void append(String station, String routeName) {
+      final name = station.trim();
+      if (name.isEmpty) return;
+      if (stations.isEmpty) {
+        stations.add(name);
+        return;
+      }
+      if (stations.last == name) return;
+      stations.add(name);
+      legRouteNames.add(routeName);
+    }
+
+    var currentRouteName = segments.first.routeName.trim();
+    append(fromStation, currentRouteName);
     for (final segment in segments) {
       final routeName = _resolveRouteName(segment.routeName);
+      // 查不到线路时保留原始名字，至少能作为诊断信息带下去。
+      currentRouteName = routeName ?? segment.routeName.trim();
       final section = routeName == null
           ? null
           : _stationsBetweenOnRoute(
@@ -304,16 +317,16 @@ class _RouteGraph {
               segment.toStation,
             );
       if (section == null || section.isEmpty) {
-        append(segment.fromStation.trim());
-        append(segment.toStation.trim());
+        append(segment.fromStation, currentRouteName);
+        append(segment.toStation, currentRouteName);
         continue;
       }
       for (final station in section) {
-        append(station);
+        append(station, currentRouteName);
       }
     }
-    append(toStation.trim());
-    return stations;
+    append(toStation, currentRouteName);
+    return JourneyStations(stations: stations, legRouteNames: legRouteNames);
   }
 
   factory _RouteGraph.fromRows(List<Map<String, Object?>> rows) {

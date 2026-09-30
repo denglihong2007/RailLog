@@ -10,6 +10,7 @@ class QuickAddCard extends StatelessWidget {
     super.key,
     required this.travelDate,
     required this.timetableSource,
+    required this.historicalVersion,
     required this.trainNumberController,
     required this.onPickDate,
     required this.onSelectTimetableSource,
@@ -39,6 +40,10 @@ class QuickAddCard extends StatelessWidget {
 
   final DateTime travelDate;
   final TimetableSource timetableSource;
+
+  /// 行程日期推导出的历史库版本（`yyyy.MM.dd`），没有可用版本时为 null。
+  final String? historicalVersion;
+
   final TextEditingController trainNumberController;
   final VoidCallback onPickDate;
   final ValueChanged<TimetableSource> onSelectTimetableSource;
@@ -93,7 +98,7 @@ class QuickAddCard extends StatelessWidget {
             subtitle: Text(
               timetableSource.isOnline
                   ? '数据库 · 在线'
-                  : '数据库 · ${timetableSource.year} 年',
+                  : '数据库 · ${historicalVersion ?? '无可用版本'}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -109,9 +114,11 @@ class QuickAddCard extends StatelessWidget {
                   timetableSource,
                 ),
                 const PopupMenuDivider(),
-                for (final source
-                    in TimetableSource.values.skip(1).toList().reversed)
-                  _databaseMenuItem(context, source, timetableSource),
+                _databaseMenuItem(
+                  context,
+                  TimetableSource.historical,
+                  timetableSource,
+                ),
               ],
             ),
             onTap: onPickDate,

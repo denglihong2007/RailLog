@@ -552,46 +552,48 @@ public sealed class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await using var transaction = await BeginTransactionWithRetryAsync(connection);
-        await using var upsert = connection.CreateCommand();
-        upsert.Transaction = (SqliteTransaction)transaction;
-        upsert.CommandText = """
+        // Deliberately an UPDATE followed by a guarded INSERT rather than a single
+        // "INSERT ... ON CONFLICT(UserId, ClientId) DO UPDATE". TripRecords.Id is
+        // AUTOINCREMENT, and SQLite allocates the rowid - advancing sqlite_sequence -
+        // before it detects the uniqueness conflict, so an upsert burns an Id for
+        // every trip the client re-uploads even when the row already exists and
+        // nothing changes. "INSERT OR IGNORE" has the same problem; only keeping the
+        // INSERT statement from running at all leaves the sequence alone.
+        await using var merge = connection.CreateCommand();
+        merge.Transaction = (SqliteTransaction)transaction;
+        merge.CommandText = """
+            UPDATE TripRecords SET
+                CreatedAt=$createdAt, TrainNumber=$trainNumber,
+                TravelDate=$travelDate, RollingStock=$rollingStock,
+                CompanyName=$companyName, FromStation=$fromStation,
+                ToStation=$toStation, DepartureTime=$departureTime,
+                ArrivalTime=$arrivalTime, MileageKm=$mileage,
+                ViaRoutes=$routes, SeatType=$seatType,
+                SeatNumber=$seatNumber, Price=$price, Notes=$notes,
+                IsRailTrip=$isRail, UpdatedAt=$updatedAt, DeletedAt=$deletedAt,
+                ServerUpdatedAt=$serverUpdatedAt, SyncVersion=$syncVersion
+            WHERE UserId=$userId AND ClientId=$clientId
+              AND julianday($updatedAt) > julianday(UpdatedAt);
+
             INSERT INTO TripRecords
                 (UserId, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock,
                  CompanyName, FromStation, ToStation, DepartureTime, ArrivalTime,
                  MileageKm, ViaRoutes, SeatType, SeatNumber, Price, Notes,
                  IsRailTrip, UpdatedAt, DeletedAt, ServerUpdatedAt, SyncVersion)
-            VALUES
-                ($userId, $clientId, $createdAt, $trainNumber, $travelDate,
+            SELECT
+                 $userId, $clientId, $createdAt, $trainNumber, $travelDate,
                  $rollingStock, $companyName, $fromStation, $toStation,
                  $departureTime, $arrivalTime, $mileage, $routes, $seatType,
                  $seatNumber, $price, $notes, $isRail, $updatedAt, $deletedAt,
-                 $serverUpdatedAt, $syncVersion)
-            ON CONFLICT(UserId, ClientId) DO UPDATE SET
-                CreatedAt=excluded.CreatedAt,
-                TrainNumber=excluded.TrainNumber,
-                TravelDate=excluded.TravelDate,
-                RollingStock=excluded.RollingStock,
-                CompanyName=excluded.CompanyName,
-                FromStation=excluded.FromStation,
-                ToStation=excluded.ToStation,
-                DepartureTime=excluded.DepartureTime,
-                ArrivalTime=excluded.ArrivalTime,
-                MileageKm=excluded.MileageKm,
-                ViaRoutes=excluded.ViaRoutes,
-                SeatType=excluded.SeatType,
-                SeatNumber=excluded.SeatNumber,
-                Price=excluded.Price,
-                Notes=excluded.Notes,
-                IsRailTrip=excluded.IsRailTrip,
-                UpdatedAt=excluded.UpdatedAt,
-                DeletedAt=excluded.DeletedAt,
-                ServerUpdatedAt=excluded.ServerUpdatedAt,
-                SyncVersion=excluded.SyncVersion
-            WHERE julianday(excluded.UpdatedAt) > julianday(TripRecords.UpdatedAt);
+                 $serverUpdatedAt, $syncVersion
+            WHERE NOT EXISTS (
+                SELECT 1 FROM TripRecords
+                WHERE UserId=$userId AND ClientId=$clientId
+            );
             """;
-        AddTripParameters(upsert);
-        upsert.Parameters.Add("$serverUpdatedAt", SqliteType.Text);
-        upsert.Parameters.Add("$syncVersion", SqliteType.Integer);
+        AddTripParameters(merge);
+        merge.Parameters.Add("$serverUpdatedAt", SqliteType.Text);
+        merge.Parameters.Add("$syncVersion", SqliteType.Integer);
 
         await using var touch = connection.CreateCommand();
         touch.Transaction = (SqliteTransaction)transaction;
@@ -618,8 +620,8 @@ public sealed class RailLogDatabase
         var hasChanges = false;
         foreach (var trip in validIncoming)
         {
-            SetTripParameters(upsert, userId, trip, serverTime, serverVersion);
-            var changed = await upsert.ExecuteNonQueryAsync() > 0;
+            SetTripParameters(merge, userId, trip, serverTime, serverVersion);
+            var changed = await merge.ExecuteNonQueryAsync() > 0;
             hasChanges |= changed;
             if (changed) continue;
 

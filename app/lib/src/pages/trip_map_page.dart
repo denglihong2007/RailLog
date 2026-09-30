@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/rail_track_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/trip_map_service.dart';
 import 'package:raillog/src/widgets/trip_map_webview.dart';
@@ -30,14 +32,26 @@ class _TripMapPageState extends State<TripMapPage> {
 
   Future<_MapSourceData> _loadSource() async {
     final trips = widget.trips ?? await DbHelper.instance.getAllTrips();
+    // 轨道折线是可选增强：读不到也不影响地图，站间退回直线。
     final results = await Future.wait([
-      TripMapService.loadCoordinates(),
       RouteService.resolveTripStations(trips),
+      RailTrackService.loadData().catchError(
+        (_) => const RailTrackData.empty(),
+      ),
+      TripMapService.loadCoordinatesCsv(),
     ]);
+    final railData = results[1] as RailTrackData;
     return _MapSourceData(
       trips: trips,
-      coordinates: results[0] as StationCoordinateIndex,
-      journeyStations: results[1] as Map<String, List<String>>,
+      // rail_tracks.db 的 stations 表是权威：它已按线路几何消歧过同名车站，无条件
+      // 采信（见 StationCoordinateIndex.fromSources）。coordinates.csv 只补它没有的
+      // 站；没有管线数据时 stations 为空，等价于只用 CSV。
+      coordinates: StationCoordinateIndex.fromSources(
+        railData.stations.all,
+        results[2] as String,
+      ),
+      journeyStations: results[0] as Map<String, JourneyStations>,
+      tracks: railData.tracks,
     );
   }
 
@@ -69,6 +83,7 @@ class _TripMapPageState extends State<TripMapPage> {
           snapshot.data!.trips,
           snapshot.data!.coordinates,
           journeyStations: snapshot.data!.journeyStations,
+          tracks: snapshot.data!.tracks,
           start: range?.start,
           endExclusive: range == null
               ? null
@@ -171,11 +186,13 @@ class _MapSourceData {
     required this.trips,
     required this.coordinates,
     required this.journeyStations,
+    required this.tracks,
   });
 
   final List<TripRecord> trips;
   final StationCoordinateIndex coordinates;
-  final Map<String, List<String>> journeyStations;
+  final Map<String, JourneyStations> journeyStations;
+  final RailTrackIndex tracks;
 }
 
 class _FilterBar extends StatelessWidget {

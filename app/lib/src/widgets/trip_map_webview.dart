@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:raillog/src/services/map_payload_store.dart';
 import 'package:webview_flutter/webview_flutter.dart' as mobile;
 import 'package:webview_windows/webview_windows.dart' as windows;
 
@@ -39,6 +39,7 @@ class _WindowsWebView extends StatefulWidget {
 
 class _WindowsWebViewState extends State<_WindowsWebView> {
   final windows.WebviewController _controller = windows.WebviewController();
+  final MapPayloadStore _payloads = MapPayloadStore();
   Object? _error;
 
   @override
@@ -58,13 +59,28 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
       await _controller.setPopupWindowPolicy(
         windows.WebviewPopupWindowPolicy.deny,
       );
-      await _controller.loadStringContent(widget.html);
+      // 先把 Webview 挂上去再装载内容：装载出问题时能看到底色或错误，而不是一直转圈
       if (mounted) setState(() {});
-    } on PlatformException catch (error) {
-      if (mounted) setState(() => _error = error);
-    } on StateError catch (error) {
+      await _reload();
+    } catch (error) {
       if (mounted) setState(() => _error = error);
     }
+  }
+
+  Future<void> _reload() async {
+    try {
+      await _load();
+    } catch (error) {
+      if (mounted) setState(() => _error = error);
+    }
+  }
+
+  /// 见 [MapPayloadStore]：WebView2 的 `NavigateToString` 吃不下大段 HTML，
+  /// 这里落盘后用 `file://` 加载。
+  Future<void> _load() async {
+    final file = await _payloads.write(widget.html);
+    if (file == null || !mounted) return; // 有更新的内容在排队，或页面已销毁
+    await _controller.loadUrl(Uri.file(file.path).toString());
   }
 
   @override
@@ -75,7 +91,7 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
       _controller.setBackgroundColor(widget.backgroundColor);
     }
     if (oldWidget.html != widget.html && _controller.value.isInitialized) {
-      _controller.loadStringContent(widget.html);
+      _reload();
     }
   }
 
@@ -96,6 +112,7 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
   @override
   void dispose() {
     _controller.dispose();
+    _payloads.dispose();
     super.dispose();
   }
 }
@@ -112,14 +129,48 @@ class _MobileWebView extends StatefulWidget {
 
 class _MobileWebViewState extends State<_MobileWebView> {
   late final mobile.WebViewController _controller;
+  final MapPayloadStore _payloads = MapPayloadStore();
+  bool _loaded = false;
+  bool _inlineFallback = false;
 
   @override
   void initState() {
     super.initState();
     _controller = mobile.WebViewController()
       ..setJavaScriptMode(mobile.JavaScriptMode.unrestricted)
-      ..setBackgroundColor(widget.backgroundColor)
-      ..loadHtmlString(widget.html);
+      ..setBackgroundColor(widget.backgroundColor);
+    if (Platform.isAndroid) {
+      _controller.setNavigationDelegate(
+        mobile.NavigationDelegate(
+          onPageFinished: (_) => _loaded = true,
+          onWebResourceError: _onWebResourceError,
+        ),
+      );
+    }
+    _load();
+  }
+
+  /// 安卓落盘后用 `file://` 加载：`loadHtmlString` 会退化成 data URL 走 Binder，
+  /// 上限约 1 MB（见 [MapPayloadStore]）。iOS/macOS 的 WKWebView 没有这个上限，
+  /// 保持原来的字符串加载不动。
+  Future<void> _load() async {
+    _loaded = false;
+    _inlineFallback = false;
+    if (!Platform.isAndroid) {
+      await _controller.loadHtmlString(widget.html);
+      return;
+    }
+    final file = await _payloads.write(widget.html);
+    if (file == null || !mounted) return; // 有更新的内容在排队，或页面已销毁
+    await _controller.loadFile(file.path);
+  }
+
+  /// 极少数设备可能不给 `file://` 权限，这时退回原来的字符串加载：
+  /// 小地图照旧能显示，大地图至少不会比改动前更差（只退一次，不来回切）。
+  void _onWebResourceError(mobile.WebResourceError error) {
+    if (_loaded || _inlineFallback || error.isForMainFrame != true) return;
+    _inlineFallback = true;
+    _controller.loadHtmlString(widget.html);
   }
 
   @override
@@ -128,7 +179,13 @@ class _MobileWebViewState extends State<_MobileWebView> {
     if (oldWidget.backgroundColor != widget.backgroundColor) {
       _controller.setBackgroundColor(widget.backgroundColor);
     }
-    if (oldWidget.html != widget.html) _controller.loadHtmlString(widget.html);
+    if (oldWidget.html != widget.html) _load();
+  }
+
+  @override
+  void dispose() {
+    _payloads.dispose();
+    super.dispose();
   }
 
   @override
