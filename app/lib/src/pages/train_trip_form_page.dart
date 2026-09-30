@@ -130,6 +130,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   }
 
   Future<void> _loadRuntimeInfo() async {
+    final isHistorical = widget.historicalVersion != null;
     final terminalStop = widget.scheduleStops.last;
     final terminalDate =
         terminalStop.arrivalDateTime ??
@@ -137,7 +138,12 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         _arrivalTime;
     final shouldFetchRollingStock =
         TrainService.shouldFetchRollingStock(widget.trainNumber) &&
-        widget.historicalVersion == null;
+        !isHistorical;
+    // 历史模式的席位取自历史库，本来就没打算查 12306，失败标记也要跟着一起跳过，
+    // 否则界面上会挂一句「未获取到当前区间的座位信息」，其实什么都没失败。
+    final shouldFetchTicketSeat = !isHistorical;
+    // 里程改由站序的累计里程算出，但承运单位只有这个外部接口给，所以请求照发，
+    // 只是历史模式下不再采信它返回的 distance。
     final results = await Future.wait<dynamic>([
       TrainService.fetchDistanceInfo(
         trainNumber: widget.trainNumber,
@@ -152,7 +158,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       else
         Future<RollingStockLookupResult?>.value(),
       _resolveRoutes(),
-      if (widget.historicalVersion == null)
+      if (shouldFetchTicketSeat)
         TrainService.fetchTicketSeatAvailability(
           trainNumber: widget.trainNumber,
           fromStation: _departureStop.stationName,
@@ -167,18 +173,18 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final rollingStock = results[1] as RollingStockLookupResult?;
     final routeResolution = results[2] as RouteResolution?;
     final ticketSeatAvailability = results[3] as TicketSeatAvailability?;
-    final historicalMileage = widget.historicalVersion == null
-        ? null
-        : historicalJourneyMileage(_departureStop, _arrivalStop);
+    // 历史模式下区间里程由站序的累计里程相减得到，不采信外部接口的 distance：
+    // 它按「现在」的同号车次作答，查一趟老车次时给的可能是另一趟车的里程。
+    final autoMileage = isHistorical
+        ? historicalJourneyMileage(_departureStop, _arrivalStop)
+        : distanceInfo?.distance;
     setState(() {
       if (distanceInfo != null) {
-        if (_distanceController.text.isEmpty) {
-          _distanceController.text = formatTripNumber(distanceInfo.distance);
-        }
         _companyController.text = distanceInfo.companyName;
-      } else if (historicalMileage != null) {
+      }
+      if (autoMileage != null) {
         if (_distanceController.text.isEmpty) {
-          _distanceController.text = formatTripNumber(historicalMileage);
+          _distanceController.text = formatTripNumber(autoMileage);
         }
       } else {
         _distanceLookupFailed = true;
@@ -206,7 +212,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         if (!_hasImportedSeat) {
           _applyInitialTicketSeat(ticketSeatAvailability);
         }
-      } else {
+      } else if (shouldFetchTicketSeat) {
         _ticketSeatLookupFailed = true;
       }
       _isLoadingRouteInfo = false;
@@ -245,14 +251,13 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   Future<RouteResolution?> _resolveRoutes() async {
     try {
       if (widget.historicalVersion != null) {
-        final selectedStops = widget.scheduleStops.sublist(
+        final sections = historicalSectionDistances(
+          widget.scheduleStops,
           widget.departureStopIndex,
-          widget.arrivalStopIndex + 1,
+          widget.arrivalStopIndex,
         );
-        final hasMileageData = selectedStops.any(
-          (stop) => (stop.mileage ?? 0) > 0,
-        );
-        if (!hasMileageData) {
+        // 整段都没有里程就不下结论 —— 让推断在图里靠"猜"一条线，不如留空。
+        if (sections.every((section) => section.distanceKm == null)) {
           return const RouteResolution(
             segments: [],
             usedShortestPath: false,
@@ -260,6 +265,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
             inferenceLog: ['历史时刻表所选区间无有效里程数据，已跳过路径推断'],
           );
         }
+        return RouteService.resolveJourney(sections);
       }
       final sections = await TrainService.fetchStationPairDistances(
         widget.trainNumber,
