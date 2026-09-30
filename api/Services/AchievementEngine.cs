@@ -87,6 +87,11 @@ public static partial class AchievementEngine
         EmuModelFamilies.Select(family => family.Series).ToHashSet(StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> EmuSubModelNames =
         EmuModelFamilies.SelectMany(family => family.Models).ToHashSet(StringComparer.Ordinal);
+    // 忽略大小写：EmuSetNumbers 不做归一，而 covered / EmuSetCatalog 都是 OrdinalIgnoreCase。
+    private static readonly IReadOnlyDictionary<string, EmuModelFamily> EmuFamilyByModel =
+        EmuModelFamilies
+            .SelectMany(family => family.Models.Select(model => (Model: model, Family: family)))
+            .ToDictionary(entry => entry.Model, entry => entry.Family, StringComparer.OrdinalIgnoreCase);
 
     // 附表4：每个和谐号/复兴号子型号的全部载客车组。车组号一律按 4 位十进制归一后
     // 存成闭区间，因此 "0207" 与 "207" 等价；区间中跳过的号即已退役车组（见 RetiredEmus）。
@@ -890,12 +895,12 @@ public static partial class AchievementEngine
             NarrativeNote: "听说这是HCM的最爱",
             Hidden: true,
             Trigger: i => FirstCollectionCompletion(i.Trips, DongfengShaoshanLocomotives, trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives))),
-        new("completeEmuFleet", RailwayCatalog, "menu_book_outlined", "百车全书", "分别乘坐任意和谐号或复兴号子型号的全部载客车组", 50,
+        new("completeEmuFleet", RailwayCatalog, "menu_book_outlined", "百车全书", "分别乘坐任意和谐号或复兴号大类下全部子型号的载客车组", 50,
             MaxExperience: 150,
             Note: "详见附表4，每多一个子型号额外获得20点经验，上限为150点",
             NarrativeNote: "建议是没有必要继续贪这个成就的额外经验",
             Hidden: true,
-            Trigger: i => FirstCompleteFleet(i.Trips)),
+            Trigger: i => FirstCompleteEmuFamily(i.Trips)),
         new("hundredPeople", RailwayCatalog, "groups_outlined", "百人百相", "分别乘坐全部客运段担当的列车", 50,
             NarrativeNote: "所以你觉得哪个客运段的服务最好，哪个又最差？",
             Hidden: true,
@@ -1237,7 +1242,7 @@ public static partial class AchievementEngine
         "goddessYangtzeBridges" => BridgeProgress(trips, YangtzeBridges),
         "muddyWavesSweepSky" => BridgeProgress(trips, YellowRiverBridges),
         "mistyVastWaters" => BridgeProgress(trips, SeaBayBridges),
-        "completeEmuFleet" => P(CompleteFleetCount(trips), 1),
+        "completeEmuFleet" => P(CompleteEmuFamilyCount(trips), 1),
         "differentRoutesSameDestination" => P(MaxDifferentRoutesSameDestination(trips), 3),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
@@ -1895,6 +1900,8 @@ public static partial class AchievementEngine
             .Range(span.From, span.To - span.From + 1)
             .All(numbers.Contains));
 
+    /// <summary>集齐了全部载客车组的子型号个数。百车全书的额外经验按它计，
+    /// 因此不受解锁条件改成大类的影响。</summary>
     private static int CompleteFleetCount(IEnumerable<PublicTrip> trips)
     {
         var covered = CoveredEmuSets(trips);
@@ -1902,22 +1909,41 @@ public static partial class AchievementEngine
             covered.TryGetValue(entry.Key, out var numbers) && IsFleetComplete(entry.Key, numbers));
     }
 
-    private static PublicTrip? FirstCompleteFleet(List<PublicTrip> trips)
+    /// <summary>该大类下全部子型号是否都已集齐。没在附表4 里登记的子型号不参与判定，
+    /// 免得某个大类被一个无据可查的型号永久卡死。</summary>
+    private static bool IsFamilyFleetComplete(
+        EmuModelFamily family,
+        IReadOnlyDictionary<string, HashSet<int>> covered)
+    {
+        var catalogued = family.Models.Where(EmuSetCatalog.ContainsKey).ToArray();
+        return catalogued.Length > 0
+            && catalogued.All(model =>
+                covered.TryGetValue(model, out var numbers) && IsFleetComplete(model, numbers));
+    }
+
+    private static int CompleteEmuFamilyCount(IEnumerable<PublicTrip> trips)
+    {
+        var covered = CoveredEmuSets(trips);
+        return EmuModelFamilies.Count(family => IsFamilyFleetComplete(family, covered));
+    }
+
+    private static PublicTrip? FirstCompleteEmuFamily(List<PublicTrip> trips)
     {
         var covered = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
-        var complete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var complete = new HashSet<EmuModelFamily>();
         foreach (var trip in trips)
         {
-            var touched = new List<string>();
+            var touched = new HashSet<EmuModelFamily>();
             foreach (var (model, number) in EmuSetNumbers(trip.RollingStock))
             {
                 if (!covered.TryGetValue(model, out var numbers))
                     covered[model] = numbers = [];
-                if (numbers.Add(number)) touched.Add(model);
+                if (numbers.Add(number) && EmuFamilyByModel.TryGetValue(model, out var family))
+                    touched.Add(family);
             }
-            foreach (var model in touched)
-                if (!complete.Contains(model) && IsFleetComplete(model, covered[model]))
-                    complete.Add(model);
+            foreach (var family in touched)
+                if (!complete.Contains(family) && IsFamilyFleetComplete(family, covered))
+                    complete.Add(family);
             if (complete.Count > 0) return trip;
         }
         return null;
