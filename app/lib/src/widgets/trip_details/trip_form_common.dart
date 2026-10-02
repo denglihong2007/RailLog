@@ -17,6 +17,8 @@ String formatTripNumber(double value) => value == value.roundToDouble()
 class TripSeatFormValue {
   const TripSeatFormValue({
     required this.seatType,
+    required this.coachSeatType,
+    required this.isExtraCarriage,
     required this.seatMode,
     required this.carriageNumber,
     required this.primarySeatNumber,
@@ -26,6 +28,13 @@ class TripSeatFormValue {
   });
 
   final String seatType;
+
+  /// 车体席别，非空表示这张票是「车体席别代席别」。
+  final String? coachSeatType;
+
+  /// 加挂车厢，座位串的车厢段写成「加X车」。
+  final bool isExtraCarriage;
+
   final String seatMode;
   final int? carriageNumber;
   final int primarySeatNumber;
@@ -36,17 +45,28 @@ class TripSeatFormValue {
 
 TripSeatFormValue parseTripSeat(String? storedType, String? storedNumber) {
   final originalType = storedType?.trim() ?? '';
-  final seatNumber = storedNumber?.trim() ?? '';
+  final originalNumber = storedNumber?.trim() ?? '';
+  // 位置字母只有大写一种写法（19C号）。12306 给的是大写，但票面 OCR 可能识别成小写，
+  // 统一成大写再解析；认不出而落回「其它」时仍写回原文，不改用户自由输入的文本。
+  final seatNumber = originalNumber.toUpperCase();
   final berthMatch = RegExp(r'^(.*?)(上铺|中铺|下铺)$').firstMatch(originalType);
-  final seatType = berthMatch?.group(1) ?? originalType;
+  // 「车体席别代席别」先拆出基准席别；拆不出时保留原文，后面照旧按未知席别处理。
+  final split = splitSeatType(berthMatch?.group(1) ?? originalType);
+  final seatType = split.seatType;
+  final coachSeatType = split.coachSeatType;
   final legacyBerth = berthMatch?.group(2);
   final carriageMatch = RegExp(
-    r'^(?:(不指定车厢)|(\d+)车)(.*)$',
+    r'^(?:(不指定车厢)|(加)?(\d+)车)(.*)$',
   ).firstMatch(seatNumber);
   final carriage = carriageMatch?.group(1) != null
       ? null
-      : int.tryParse(carriageMatch?.group(2) ?? '');
-  final remaining = carriageMatch?.group(3) ?? '';
+      : int.tryParse(carriageMatch?.group(3) ?? '');
+  // 车厢未知时「加X车」没有意义，读写都不保留，免得界面上勾着而落库没有。
+  final isExtraCarriage =
+      carriageMatch?.group(2) != null &&
+      carriage != null &&
+      carriage != SeatOptions.unknownNumber;
+  final remaining = carriageMatch?.group(4) ?? '';
   final normalizedType = SeatOptions.types.contains(seatType)
       ? seatType
       : '二等座';
@@ -54,6 +74,8 @@ TripSeatFormValue parseTripSeat(String? storedType, String? storedNumber) {
   if (carriageMatch != null && (remaining == '无座' || remaining == '不对号入座')) {
     return TripSeatFormValue(
       seatType: normalizedType,
+      coachSeatType: coachSeatType,
+      isExtraCarriage: isExtraCarriage,
       seatMode: remaining,
       carriageNumber: carriage ?? 1,
       primarySeatNumber: 1,
@@ -74,6 +96,8 @@ TripSeatFormValue parseTripSeat(String? storedType, String? storedNumber) {
       primary <= 128) {
     return TripSeatFormValue(
       seatType: seatType,
+      coachSeatType: coachSeatType,
+      isExtraCarriage: isExtraCarriage,
       seatMode: '席位',
       carriageNumber: carriage ?? 1,
       primarySeatNumber: primary,
@@ -82,14 +106,17 @@ TripSeatFormValue parseTripSeat(String? storedType, String? storedNumber) {
       customSeatNumber: '',
     );
   }
+  // 认不出来就整条交给自定义输入，原文即真相。
   return TripSeatFormValue(
     seatType: '二等座',
+    coachSeatType: null,
+    isExtraCarriage: false,
     seatMode: '其它',
     carriageNumber: 1,
     primarySeatNumber: 1,
     secondarySeatNumber: '无',
     customSeatType: originalType,
-    customSeatNumber: seatNumber,
+    customSeatNumber: originalNumber,
   );
 }
 
@@ -288,6 +315,8 @@ class TripSeatSection extends StatelessWidget {
   const TripSeatSection({
     super.key,
     required this.seatType,
+    required this.coachSeatType,
+    required this.isExtraCarriage,
     required this.seatMode,
     required this.customSeatTypeController,
     required this.customSeatNumberController,
@@ -295,6 +324,8 @@ class TripSeatSection extends StatelessWidget {
     required this.primarySeatNumber,
     required this.secondarySeatNumber,
     required this.onSeatTypeChanged,
+    required this.onCoachSeatTypeChanged,
+    required this.onExtraCarriageChanged,
     required this.onSeatModeChanged,
     required this.onCarriageChanged,
     required this.onPrimaryChanged,
@@ -307,6 +338,8 @@ class TripSeatSection extends StatelessWidget {
   });
 
   final String seatType;
+  final String? coachSeatType;
+  final bool isExtraCarriage;
   final String seatMode;
   final TextEditingController customSeatTypeController;
   final TextEditingController customSeatNumberController;
@@ -314,6 +347,8 @@ class TripSeatSection extends StatelessWidget {
   final int primarySeatNumber;
   final String secondarySeatNumber;
   final ValueChanged<String> onSeatTypeChanged;
+  final ValueChanged<String?> onCoachSeatTypeChanged;
+  final ValueChanged<bool> onExtraCarriageChanged;
   final ValueChanged<String> onSeatModeChanged;
   final ValueChanged<int?> onCarriageChanged;
   final ValueChanged<int> onPrimaryChanged;
@@ -334,6 +369,8 @@ class TripSeatSection extends StatelessWidget {
         SeatEditor(
           seatTypes: SeatOptions.types,
           seatType: seatType,
+          coachSeatType: coachSeatType,
+          isExtraCarriage: isExtraCarriage,
           seatMode: seatMode,
           customSeatTypeController: customSeatTypeController,
           customSeatNumberController: customSeatNumberController,
@@ -342,6 +379,8 @@ class TripSeatSection extends StatelessWidget {
           secondarySeatNumber: secondarySeatNumber,
           secondarySeatNumbers: SeatOptions.secondaryNumbers,
           onSeatTypeChanged: onSeatTypeChanged,
+          onCoachSeatTypeChanged: onCoachSeatTypeChanged,
+          onExtraCarriageChanged: onExtraCarriageChanged,
           onSeatModeChanged: onSeatModeChanged,
           onCarriageChanged: onCarriageChanged,
           onPrimaryChanged: onPrimaryChanged,

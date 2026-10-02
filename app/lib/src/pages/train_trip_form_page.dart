@@ -72,6 +72,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   int? _carriageNumber = 1;
   int _primarySeatNumber = 1;
   String _secondarySeatNumber = '无';
+  String? _coachSeatType;
+  bool _isExtraCarriage = false;
   bool _isLoadingRuntimeInfo = true;
   bool _isSaving = false;
   bool _isLocalOnly = false;
@@ -224,6 +226,9 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       (widget.initialSeatType?.trim().isNotEmpty ?? false) ||
       (widget.initialSeatNumber?.trim().isNotEmpty ?? false);
 
+  /// 落库用的完整席别串；12306 票价选项就是这个粒度，比对时都得用它。
+  String get _fullSeatType => composeSeatType(_seatType, _coachSeatType);
+
   void _initializeImportedTicket() {
     final mileage = widget.initialMileageKm;
     if (mileage != null && mileage > 0) {
@@ -244,6 +249,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     _carriageNumber = seat.carriageNumber;
     _primarySeatNumber = seat.primarySeatNumber;
     _secondarySeatNumber = seat.secondarySeatNumber;
+    _coachSeatType = seat.coachSeatType;
+    _isExtraCarriage = seat.isExtraCarriage;
     _customSeatTypeController.text = seat.customSeatType;
     _customSeatNumberController.text = seat.customSeatNumber;
   }
@@ -340,7 +347,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final isCustomSeat = _seatMode == '其它';
     final seatType = isCustomSeat
         ? _customSeatTypeController.text.trim()
-        : _seatType;
+        : composeSeatType(_seatType, _coachSeatType);
     final seatNumber = isCustomSeat
         ? _customSeatNumberController.text.trim()
         : SeatSelection(
@@ -348,6 +355,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
             carriageNumber: _carriageNumber ?? 1,
             primaryNumber: _primarySeatNumber,
             secondaryNumber: _secondarySeatNumber,
+            isExtraCarriage: _isExtraCarriage,
           ).seatNumber;
     final trip = TripRecord(
       id: 0,
@@ -426,6 +434,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
           const SizedBox(height: 20),
           TripSeatSection(
             seatType: _seatType,
+            coachSeatType: _coachSeatType,
+            isExtraCarriage: _isExtraCarriage,
             seatMode: _seatMode,
             customSeatTypeController: _customSeatTypeController,
             customSeatNumberController: _customSeatNumberController,
@@ -433,6 +443,10 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
             primarySeatNumber: _primarySeatNumber,
             secondarySeatNumber: _secondarySeatNumber,
             onSeatTypeChanged: _changeSeatType,
+            onCoachSeatTypeChanged: (value) =>
+                setState(() => _coachSeatType = value),
+            onExtraCarriageChanged: (value) =>
+                setState(() => _isExtraCarriage = value),
             onSeatModeChanged: _changeSeatMode,
             onCarriageChanged: (value) =>
                 setState(() => _carriageNumber = value),
@@ -598,13 +612,13 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       if (value == '无座') {
         final option = availability.noSeatOption;
         if (option != null) {
-          _seatType = option.seatType;
+          _applyTicketSeatType(option.seatType);
           _priceController.text = formatTripNumber(option.price);
         }
         return;
       }
       final selected = availability.seatOptions
-          .where((option) => option.seatType == _seatType)
+          .where((option) => option.seatType == _fullSeatType)
           .firstOrNull;
       final option = selected ?? availability.seatOptions.firstOrNull;
       if (option != null) _applyTicketSeatOption(option);
@@ -616,7 +630,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       final noSeat = availability.noSeatOption;
       if (noSeat != null) {
         _seatMode = '无座';
-        _seatType = noSeat.seatType;
+        _applyTicketSeatType(noSeat.seatType);
         _priceController.text = formatTripNumber(noSeat.price);
       }
       return;
@@ -626,14 +640,21 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     }
     if (_seatMode == '其它') _seatMode = '席位';
     final selected = availability.seatOptions
-        .where((option) => option.seatType == _seatType)
+        .where((option) => option.seatType == _fullSeatType)
         .firstOrNull;
     final option = selected ?? availability.seatOptions.first;
     _applyTicketSeatOption(option);
   }
 
+  /// 12306 的席别名本身就可能是「硬卧代硬座」，一并拆开，保存时再组合回去。
+  void _applyTicketSeatType(String seatType) {
+    final split = splitSeatType(seatType);
+    _seatType = split.seatType;
+    _coachSeatType = split.coachSeatType;
+  }
+
   void _applyTicketSeatOption(TicketSeatOption option) {
-    _seatType = option.seatType;
+    _applyTicketSeatType(option.seatType);
     _priceController.text = formatTripNumber(option.price);
     _secondarySeatNumber = option.berth ?? _secondarySeatNumber;
   }

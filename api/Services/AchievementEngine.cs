@@ -2004,8 +2004,14 @@ public static partial class AchievementEngine
         return RegularSeatTypes.Where(seat => seat == normalized).ToHashSet(StringComparer.Ordinal);
     }
 
-    private static string NormalizedSeatType(string? value) =>
-        Regex.Replace(value?.Trim() ?? string.Empty, "[上中下]铺$", string.Empty);
+    private static string NormalizedSeatType(string? value)
+    {
+        var normalized = Regex.Replace(value?.Trim() ?? string.Empty, "[上中下]铺$", string.Empty);
+        // 「车体席别代席别」（如硬卧代硬座）表示实际按后一个席别乘车，成就照后者判定。
+        // 中文席别名不含「代」，所以不必维护白名单，取最后一个「代」之后即可。
+        var proxy = normalized.LastIndexOf('代');
+        return proxy > 0 && proxy < normalized.Length - 1 ? normalized[(proxy + 1)..] : normalized;
+    }
 
     private static PublicTrip? FirstMidnightBoarding(List<PublicTrip> trips)
     {

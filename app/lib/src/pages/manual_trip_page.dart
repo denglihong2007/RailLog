@@ -40,6 +40,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
   int? _carriageNumber = 1;
   int _primarySeatNumber = 1;
   String _secondarySeatNumber = '无';
+  String? _coachSeatType;
+  bool _isExtraCarriage = false;
   bool _isRailTrip = true;
   bool _isLocalOnly = false;
   bool _isSaving = false;
@@ -86,6 +88,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
     _carriageNumber = seat.carriageNumber;
     _primarySeatNumber = seat.primarySeatNumber;
     _secondarySeatNumber = seat.secondarySeatNumber;
+    _coachSeatType = seat.coachSeatType;
+    _isExtraCarriage = seat.isExtraCarriage;
     _customSeatTypeController.text = seat.customSeatType;
     _customSeatNumberController.text = seat.customSeatNumber;
   }
@@ -201,7 +205,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
     final isCustomSeat = _seatMode == '其它';
     final seatType = isCustomSeat
         ? nullableTripText(_customSeatTypeController.text)
-        : _seatType;
+        : composeSeatType(_seatType, _coachSeatType);
     final seatNumber = isCustomSeat
         ? nullableTripText(_customSeatNumberController.text)
         : SeatSelection(
@@ -209,6 +213,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
             carriageNumber: _carriageNumber ?? 1,
             primaryNumber: _primarySeatNumber,
             secondaryNumber: _secondarySeatNumber,
+            isExtraCarriage: _isExtraCarriage,
           ).seatNumber;
     final existingTrip = widget.initialTrip;
     final trip = TripRecord(
@@ -320,6 +325,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
           const SizedBox(height: 16),
           TripSeatSection(
             seatType: _seatType,
+            coachSeatType: _coachSeatType,
+            isExtraCarriage: _isExtraCarriage,
             seatMode: _seatMode,
             customSeatTypeController: _customSeatTypeController,
             customSeatNumberController: _customSeatNumberController,
@@ -327,6 +334,10 @@ class _ManualTripPageState extends State<ManualTripPage> {
             primarySeatNumber: _primarySeatNumber,
             secondarySeatNumber: _secondarySeatNumber,
             onSeatTypeChanged: _changeSeatType,
+            onCoachSeatTypeChanged: (value) =>
+                setState(() => _coachSeatType = value),
+            onExtraCarriageChanged: (value) =>
+                setState(() => _isExtraCarriage = value),
             onSeatModeChanged: _changeSeatMode,
             onCarriageChanged: (value) =>
                 setState(() => _carriageNumber = value),

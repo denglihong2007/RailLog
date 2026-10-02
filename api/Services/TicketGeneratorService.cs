@@ -313,7 +313,11 @@ public sealed partial class TicketGeneratorService(
         var seat = normalized;
         if (carriage.Success)
         {
-            prefix = $"{carriage.Groups["car"].Value.PadLeft(2, '0')}车";
+            var car = carriage.Groups["car"].Value;
+            // 加挂车厢按票面习惯写「加1车」，不补零；普通车厢仍补成「01车」。
+            prefix = carriage.Groups["extra"].Value.Length > 0
+                ? $"加{car}车"
+                : $"{car.PadLeft(2, '0')}车";
             seat = carriage.Groups["seat"].Value;
         }
 
@@ -340,7 +344,7 @@ public sealed partial class TicketGeneratorService(
     [GeneratedRegex("^[0-9]{10}$", RegexOptions.CultureInvariant)]
     private static partial Regex SerialPrefixRegex();
 
-    [GeneratedRegex(@"^(?<car>\d+)\s*车\s*(?<seat>.*)$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<extra>加?)(?<car>\d+)\s*车\s*(?<seat>.*)$", RegexOptions.CultureInvariant)]
     private static partial Regex CarriageSeatRegex();
 
     [GeneratedRegex(@"\d+", RegexOptions.CultureInvariant)]
