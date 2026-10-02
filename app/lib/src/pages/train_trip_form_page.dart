@@ -72,6 +72,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   int? _carriageNumber = 1;
   int _primarySeatNumber = 1;
   String _secondarySeatNumber = '无';
+  String? _coachSeatType;
+  bool _isExtraCarriage = false;
   bool _isLoadingRuntimeInfo = true;
   bool _isSaving = false;
   bool _isLocalOnly = false;
@@ -130,6 +132,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   }
 
   Future<void> _loadRuntimeInfo() async {
+    final isHistorical = widget.historicalVersion != null;
     final terminalStop = widget.scheduleStops.last;
     final terminalDate =
         terminalStop.arrivalDateTime ??
@@ -137,7 +140,12 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         _arrivalTime;
     final shouldFetchRollingStock =
         TrainService.shouldFetchRollingStock(widget.trainNumber) &&
-        widget.historicalVersion == null;
+        !isHistorical;
+    // 历史模式的席位取自历史库，本来就没打算查 12306，失败标记也要跟着一起跳过，
+    // 否则界面上会挂一句「未获取到当前区间的座位信息」，其实什么都没失败。
+    final shouldFetchTicketSeat = !isHistorical;
+    // 里程改由站序的累计里程算出，但承运单位只有这个外部接口给，所以请求照发，
+    // 只是历史模式下不再采信它返回的 distance。
     final results = await Future.wait<dynamic>([
       TrainService.fetchDistanceInfo(
         trainNumber: widget.trainNumber,
@@ -152,7 +160,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       else
         Future<RollingStockLookupResult?>.value(),
       _resolveRoutes(),
-      if (widget.historicalVersion == null)
+      if (shouldFetchTicketSeat)
         TrainService.fetchTicketSeatAvailability(
           trainNumber: widget.trainNumber,
           fromStation: _departureStop.stationName,
@@ -167,18 +175,18 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final rollingStock = results[1] as RollingStockLookupResult?;
     final routeResolution = results[2] as RouteResolution?;
     final ticketSeatAvailability = results[3] as TicketSeatAvailability?;
-    final historicalMileage = widget.historicalVersion == null
-        ? null
-        : historicalJourneyMileage(_departureStop, _arrivalStop);
+    // 历史模式下区间里程由站序的累计里程相减得到，不采信外部接口的 distance：
+    // 它按「现在」的同号车次作答，查一趟老车次时给的可能是另一趟车的里程。
+    final autoMileage = isHistorical
+        ? historicalJourneyMileage(_departureStop, _arrivalStop)
+        : distanceInfo?.distance;
     setState(() {
       if (distanceInfo != null) {
-        if (_distanceController.text.isEmpty) {
-          _distanceController.text = formatTripNumber(distanceInfo.distance);
-        }
         _companyController.text = distanceInfo.companyName;
-      } else if (historicalMileage != null) {
+      }
+      if (autoMileage != null) {
         if (_distanceController.text.isEmpty) {
-          _distanceController.text = formatTripNumber(historicalMileage);
+          _distanceController.text = formatTripNumber(autoMileage);
         }
       } else {
         _distanceLookupFailed = true;
@@ -206,7 +214,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         if (!_hasImportedSeat) {
           _applyInitialTicketSeat(ticketSeatAvailability);
         }
-      } else {
+      } else if (shouldFetchTicketSeat) {
         _ticketSeatLookupFailed = true;
       }
       _isLoadingRouteInfo = false;
@@ -217,6 +225,9 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   bool get _hasImportedSeat =>
       (widget.initialSeatType?.trim().isNotEmpty ?? false) ||
       (widget.initialSeatNumber?.trim().isNotEmpty ?? false);
+
+  /// 落库用的完整席别串；12306 票价选项就是这个粒度，比对时都得用它。
+  String get _fullSeatType => composeSeatType(_seatType, _coachSeatType);
 
   void _initializeImportedTicket() {
     final mileage = widget.initialMileageKm;
@@ -238,6 +249,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     _carriageNumber = seat.carriageNumber;
     _primarySeatNumber = seat.primarySeatNumber;
     _secondarySeatNumber = seat.secondarySeatNumber;
+    _coachSeatType = seat.coachSeatType;
+    _isExtraCarriage = seat.isExtraCarriage;
     _customSeatTypeController.text = seat.customSeatType;
     _customSeatNumberController.text = seat.customSeatNumber;
   }
@@ -245,14 +258,13 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   Future<RouteResolution?> _resolveRoutes() async {
     try {
       if (widget.historicalVersion != null) {
-        final selectedStops = widget.scheduleStops.sublist(
+        final sections = historicalSectionDistances(
+          widget.scheduleStops,
           widget.departureStopIndex,
-          widget.arrivalStopIndex + 1,
+          widget.arrivalStopIndex,
         );
-        final hasMileageData = selectedStops.any(
-          (stop) => (stop.mileage ?? 0) > 0,
-        );
-        if (!hasMileageData) {
+        // 整段都没有里程就不下结论 —— 让推断在图里靠"猜"一条线，不如留空。
+        if (sections.every((section) => section.distanceKm == null)) {
           return const RouteResolution(
             segments: [],
             usedShortestPath: false,
@@ -260,6 +272,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
             inferenceLog: ['历史时刻表所选区间无有效里程数据，已跳过路径推断'],
           );
         }
+        return RouteService.resolveJourney(sections);
       }
       final sections = await TrainService.fetchStationPairDistances(
         widget.trainNumber,
@@ -334,7 +347,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final isCustomSeat = _seatMode == '其它';
     final seatType = isCustomSeat
         ? _customSeatTypeController.text.trim()
-        : _seatType;
+        : composeSeatType(_seatType, _coachSeatType);
     final seatNumber = isCustomSeat
         ? _customSeatNumberController.text.trim()
         : SeatSelection(
@@ -342,6 +355,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
             carriageNumber: _carriageNumber ?? 1,
             primaryNumber: _primarySeatNumber,
             secondaryNumber: _secondarySeatNumber,
+            isExtraCarriage: _isExtraCarriage,
           ).seatNumber;
     final trip = TripRecord(
       id: 0,
@@ -420,6 +434,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
           const SizedBox(height: 20),
           TripSeatSection(
             seatType: _seatType,
+            coachSeatType: _coachSeatType,
+            isExtraCarriage: _isExtraCarriage,
             seatMode: _seatMode,
             customSeatTypeController: _customSeatTypeController,
             customSeatNumberController: _customSeatNumberController,
@@ -427,6 +443,10 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
             primarySeatNumber: _primarySeatNumber,
             secondarySeatNumber: _secondarySeatNumber,
             onSeatTypeChanged: _changeSeatType,
+            onCoachSeatTypeChanged: (value) =>
+                setState(() => _coachSeatType = value),
+            onExtraCarriageChanged: (value) =>
+                setState(() => _isExtraCarriage = value),
             onSeatModeChanged: _changeSeatMode,
             onCarriageChanged: (value) =>
                 setState(() => _carriageNumber = value),
@@ -592,13 +612,13 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       if (value == '无座') {
         final option = availability.noSeatOption;
         if (option != null) {
-          _seatType = option.seatType;
+          _applyTicketSeatType(option.seatType);
           _priceController.text = formatTripNumber(option.price);
         }
         return;
       }
       final selected = availability.seatOptions
-          .where((option) => option.seatType == _seatType)
+          .where((option) => option.seatType == _fullSeatType)
           .firstOrNull;
       final option = selected ?? availability.seatOptions.firstOrNull;
       if (option != null) _applyTicketSeatOption(option);
@@ -610,7 +630,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
       final noSeat = availability.noSeatOption;
       if (noSeat != null) {
         _seatMode = '无座';
-        _seatType = noSeat.seatType;
+        _applyTicketSeatType(noSeat.seatType);
         _priceController.text = formatTripNumber(noSeat.price);
       }
       return;
@@ -620,14 +640,21 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     }
     if (_seatMode == '其它') _seatMode = '席位';
     final selected = availability.seatOptions
-        .where((option) => option.seatType == _seatType)
+        .where((option) => option.seatType == _fullSeatType)
         .firstOrNull;
     final option = selected ?? availability.seatOptions.first;
     _applyTicketSeatOption(option);
   }
 
+  /// 12306 的席别名本身就可能是「硬卧代硬座」，一并拆开，保存时再组合回去。
+  void _applyTicketSeatType(String seatType) {
+    final split = splitSeatType(seatType);
+    _seatType = split.seatType;
+    _coachSeatType = split.coachSeatType;
+  }
+
   void _applyTicketSeatOption(TicketSeatOption option) {
-    _seatType = option.seatType;
+    _applyTicketSeatType(option.seatType);
     _priceController.text = formatTripNumber(option.price);
     _secondarySeatNumber = option.berth ?? _secondarySeatNumber;
   }

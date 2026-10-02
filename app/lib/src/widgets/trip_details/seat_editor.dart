@@ -9,6 +9,8 @@ class SeatEditor extends StatelessWidget {
     super.key,
     required this.seatTypes,
     required this.seatType,
+    required this.coachSeatType,
+    required this.isExtraCarriage,
     required this.seatMode,
     required this.customSeatTypeController,
     required this.customSeatNumberController,
@@ -17,6 +19,8 @@ class SeatEditor extends StatelessWidget {
     required this.secondarySeatNumber,
     required this.secondarySeatNumbers,
     required this.onSeatTypeChanged,
+    required this.onCoachSeatTypeChanged,
+    required this.onExtraCarriageChanged,
     required this.onSeatModeChanged,
     required this.onCarriageChanged,
     required this.onPrimaryChanged,
@@ -29,6 +33,13 @@ class SeatEditor extends StatelessWidget {
 
   final List<String> seatTypes;
   final String seatType;
+
+  /// 车体席别，非空即表示「车体席别代席别」。
+  final String? coachSeatType;
+
+  /// 加挂车厢，座位串的车厢段写成「加X车」。
+  final bool isExtraCarriage;
+
   final String seatMode;
   final TextEditingController customSeatTypeController;
   final TextEditingController customSeatNumberController;
@@ -37,6 +48,8 @@ class SeatEditor extends StatelessWidget {
   final String secondarySeatNumber;
   final List<String> secondarySeatNumbers;
   final ValueChanged<String> onSeatTypeChanged;
+  final ValueChanged<String?> onCoachSeatTypeChanged;
+  final ValueChanged<bool> onExtraCarriageChanged;
   final ValueChanged<String> onSeatModeChanged;
   final ValueChanged<int?> onCarriageChanged;
   final ValueChanged<int> onPrimaryChanged;
@@ -48,10 +61,14 @@ class SeatEditor extends StatelessWidget {
 
   bool get _showsSeatType => seatMode != '其它';
   bool get _isTicketRestricted => ticketSeatOptions != null;
+
+  /// 落库用的完整席别串；12306 的票价选项也是这个粒度，比对时都得用它。
+  String get _fullSeatType => composeSeatType(seatType, coachSeatType);
+
   bool get _ticketOptionDefinesBerth =>
       ticketSeatOptions?.any(
         (option) =>
-            option.seatType == seatType &&
+            option.seatType == _fullSeatType &&
             option.berth != null &&
             option.berth == secondarySeatNumber,
       ) ??
@@ -113,10 +130,12 @@ class SeatEditor extends StatelessWidget {
             seatMode: seatMode,
             showSecondaryPosition: true,
             carriageNumber: carriageNumber,
+            isExtraCarriage: isExtraCarriage,
             primarySeatNumber: primarySeatNumber,
             secondarySeatNumber: secondarySeatNumber,
             secondarySeatNumbers: secondarySeatNumbers,
             onCarriageChanged: onCarriageChanged,
+            onExtraCarriageChanged: onExtraCarriageChanged,
             onPrimaryChanged: onPrimaryChanged,
             onSecondaryChanged: onSecondaryChanged,
           ),
@@ -135,10 +154,12 @@ class SeatEditor extends StatelessWidget {
           seatMode: seatMode,
           showSecondaryPosition: !_ticketOptionDefinesBerth,
           carriageNumber: carriageNumber,
+          isExtraCarriage: isExtraCarriage,
           primarySeatNumber: primarySeatNumber,
           secondarySeatNumber: secondarySeatNumber,
           secondarySeatNumbers: secondarySeatNumbers,
           onCarriageChanged: onCarriageChanged,
+          onExtraCarriageChanged: onExtraCarriageChanged,
           onPrimaryChanged: onPrimaryChanged,
           onSecondaryChanged: onSecondaryChanged,
         ),
@@ -151,7 +172,7 @@ class SeatEditor extends StatelessWidget {
     if (pricedOptions != null) {
       return _TicketSeatOptionList(
         options: pricedOptions,
-        selectedSeatType: seatType,
+        selectedSeatType: _fullSeatType,
         selectedSecondaryNumber: secondarySeatNumber,
         onChanged: (option) {
           final ticketCallback = onTicketSeatOptionChanged;
@@ -164,18 +185,97 @@ class SeatEditor extends StatelessWidget {
         },
       );
     }
-    return DropdownButtonFormField<String>(
-      initialValue: seatType,
-      decoration: const InputDecoration(
-        labelText: '席别',
-        prefixIcon: Icon(Icons.airline_seat_recline_normal_outlined),
-      ),
-      items: seatTypes
-          .map((value) => DropdownMenuItem(value: value, child: Text(value)))
-          .toList(),
-      onChanged: (value) {
-        if (value != null) onSeatTypeChanged(value);
-      },
+    // 票面席别受限时席别由票价列表说了算，代用记法在列表里已经自带，不再单给勾选框。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                initialValue: seatType,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: '席别',
+                  prefixIcon: Icon(Icons.airline_seat_recline_normal_outlined),
+                ),
+                items: seatTypes
+                    .map(
+                      (value) =>
+                          DropdownMenuItem(value: value, child: Text(value)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) onSeatTypeChanged(value);
+                },
+              ),
+            ),
+            _RowCheckbox(
+              label: '代',
+              value: coachSeatType != null,
+              onChanged: (checked) => onCoachSeatTypeChanged(
+                checked ? _defaultCoachSeatType() : null,
+              ),
+            ),
+          ],
+        ),
+        if (coachSeatType != null) ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: coachSeatType,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: '车体席别',
+              prefixIcon: Icon(Icons.swap_horiz_outlined),
+            ),
+            items: seatTypes
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) onCoachSeatTypeChanged(value);
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 勾上「代」时先选一个和当前席别不同的车体席别，免得一上来就是「硬座代硬座」。
+  String _defaultCoachSeatType() => seatTypes.firstWhere(
+    (value) => value != seatType,
+    orElse: () => seatTypes.first,
+  );
+}
+
+/// 跟在下拉右边的小勾选框：勾选框自带 48 的点击区，这里压紧到能塞进一个单元格。
+class _RowCheckbox extends StatelessWidget {
+  const _RowCheckbox({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          value: value,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onChanged: enabled ? (checked) => onChanged(checked ?? false) : null,
+        ),
+        Text(label, style: Theme.of(context).textTheme.labelLarge),
+      ],
     );
   }
 }
@@ -431,10 +531,12 @@ class _SeatNumberFields extends StatelessWidget {
     required this.seatMode,
     required this.showSecondaryPosition,
     required this.carriageNumber,
+    required this.isExtraCarriage,
     required this.primarySeatNumber,
     required this.secondarySeatNumber,
     required this.secondarySeatNumbers,
     required this.onCarriageChanged,
+    required this.onExtraCarriageChanged,
     required this.onPrimaryChanged,
     required this.onSecondaryChanged,
   });
@@ -442,10 +544,12 @@ class _SeatNumberFields extends StatelessWidget {
   final String seatMode;
   final bool showSecondaryPosition;
   final int? carriageNumber;
+  final bool isExtraCarriage;
   final int primarySeatNumber;
   final String secondarySeatNumber;
   final List<String> secondarySeatNumbers;
   final ValueChanged<int?> onCarriageChanged;
+  final ValueChanged<bool> onExtraCarriageChanged;
   final ValueChanged<int> onPrimaryChanged;
   final ValueChanged<String> onSecondaryChanged;
 
@@ -481,24 +585,44 @@ class _SeatNumberFields extends StatelessWidget {
           children: [
             SizedBox(
               width: carriageWidth,
-              child: DropdownButtonFormField<int>(
-                initialValue: carriageNumber ?? 1,
-                decoration: const InputDecoration(labelText: '车厢'),
-                items: carriageValues
-                    .map(
-                      (value) => DropdownMenuItem<int>(
-                        value: value,
-                        child: Text(
-                          value == SeatOptions.unknownNumber ? '未知' : '$value',
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    onCarriageChanged(value);
-                  }
-                },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: carriageNumber ?? 1,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: '车厢'),
+                      items: carriageValues
+                          .map(
+                            (value) => DropdownMenuItem<int>(
+                              value: value,
+                              child: Text(
+                                value == SeatOptions.unknownNumber
+                                    ? '未知'
+                                    : '$value',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        onCarriageChanged(value);
+                        // 车厢未知时「加X车」没有意义，顺手把加车也取消掉。
+                        if (value == SeatOptions.unknownNumber) {
+                          onExtraCarriageChanged(false);
+                        }
+                      },
+                    ),
+                  ),
+                  _RowCheckbox(
+                    label: '加',
+                    value: isExtraCarriage,
+                    enabled:
+                        carriageNumber != null &&
+                        carriageNumber != SeatOptions.unknownNumber,
+                    onChanged: onExtraCarriageChanged,
+                  ),
+                ],
               ),
             ),
             if (seatMode == '席位') ...[
@@ -506,6 +630,7 @@ class _SeatNumberFields extends StatelessWidget {
                 width: seatWidth,
                 child: DropdownButtonFormField<int>(
                   initialValue: primarySeatNumber,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: '号码'),
                   items:
                       [
@@ -533,6 +658,7 @@ class _SeatNumberFields extends StatelessWidget {
                   width: seatWidth,
                   child: DropdownButtonFormField<String>(
                     initialValue: secondarySeatNumber,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: '位置'),
                     items: secondarySeatNumbers
                         .map(

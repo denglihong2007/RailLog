@@ -28,6 +28,7 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
     public async Task<ActionResult<TrainTimetableSearchResponse>> Search(
         [FromQuery] string trainNumber,
         [FromQuery] string version,
+        [FromQuery] int? limit,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(trainNumber))
@@ -37,8 +38,27 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
         if (!await service.SupportsVersionAsync(version, cancellationToken))
             return BadRequest(new { message = VersionUnavailableMessage });
 
-        var trains = await service.SearchAsync(trainNumber, version, cancellationToken);
+        // limit 不传就是不截断（旧行为）；要收敛结果集的调用方自己传。
+        var trains = await service.SearchAsync(trainNumber, version, limit, cancellationToken);
         return Ok(new TrainTimetableSearchResponse(version, trains));
+    }
+
+    /// <summary>某一站停靠的全部车次，附在该站的到发时刻。</summary>
+    [HttpGet("at-station")]
+    public async Task<ActionResult<TrainTimetableAtStationResponse>> AtStation(
+        [FromQuery] string station,
+        [FromQuery] string version,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(station))
+            return BadRequest(new { message = "车站名不能为空" });
+        if (!TrainTimetableService.IsValidVersion(version))
+            return BadRequest(new { message = VersionFormatMessage });
+        if (!await service.SupportsVersionAsync(version, cancellationToken))
+            return BadRequest(new { message = VersionUnavailableMessage });
+
+        var trains = await service.GetTrainsAtStationAsync(station, version, cancellationToken);
+        return Ok(new TrainTimetableAtStationResponse(version, trains));
     }
 
     [HttpGet("stations")]
@@ -54,7 +74,7 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
     }
 
     [HttpGet("between")]
-    public async Task<ActionResult<TrainTimetableSearchResponse>> Between(
+    public async Task<ActionResult<TrainTimetableBetweenResponse>> Between(
         [FromQuery] string fromStation,
         [FromQuery] string toStation,
         [FromQuery] string version,
@@ -67,7 +87,7 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
         if (!await service.SupportsVersionAsync(version, cancellationToken))
             return BadRequest(new { message = VersionUnavailableMessage });
         var trains = await service.SearchBetweenAsync(fromStation, toStation, version, cancellationToken);
-        return Ok(new TrainTimetableSearchResponse(version, trains));
+        return Ok(new TrainTimetableBetweenResponse(version, trains));
     }
 
     [HttpGet]
@@ -83,16 +103,26 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
         if (!await service.SupportsVersionAsync(version, cancellationToken))
             return BadRequest(new { message = VersionUnavailableMessage });
 
-        var stops = await service.GetAsync(trainNumber, version, cancellationToken);
-        return Ok(new TrainTimetableResponse(trainNumber.Trim().ToUpperInvariant(), version, stops));
+        var schedule = await service.GetAsync(trainNumber, version, cancellationToken);
+        return Ok(new TrainTimetableResponse(
+            trainNumber.Trim().ToUpperInvariant(),
+            version,
+            schedule.TrainCodes,
+            schedule.Stops));
     }
 }
 
+/// <summary>
+/// 单车次站序。<c>trainNumber</c> 复述请求里的号（这趟车可能挂好几个号），
+/// <c>train_codes</c> 才是展示用的号对 <c>D111/D114</c>。
+/// </summary>
 public sealed record TrainTimetableResponse(
     [property: JsonPropertyName("trainNumber")]
     string TrainNumber,
     [property: JsonPropertyName("version")]
     string Version,
+    [property: JsonPropertyName("train_codes")]
+    string TrainCodes,
     [property: JsonPropertyName("stops")]
     IReadOnlyList<TrainTimetableStop> Stops);
 
@@ -101,3 +131,15 @@ public sealed record TrainTimetableSearchResponse(
     string Version,
     [property: JsonPropertyName("trains")]
     IReadOnlyList<TrainTimetableSearchItem> Trains);
+
+public sealed record TrainTimetableAtStationResponse(
+    [property: JsonPropertyName("version")]
+    string Version,
+    [property: JsonPropertyName("trains")]
+    IReadOnlyList<TrainTimetableAtStationItem> Trains);
+
+public sealed record TrainTimetableBetweenResponse(
+    [property: JsonPropertyName("version")]
+    string Version,
+    [property: JsonPropertyName("trains")]
+    IReadOnlyList<TrainTimetableBetweenItem> Trains);

@@ -12,7 +12,9 @@ public sealed class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
     private const int HomeTravelGuideLimit = 12;
-    private const int HomeTravelGuideHotLimit = 3;
+    private const int HomeTravelGuideHotLimit = 4;
+    // 热门排序的时间衰减：评价每老去这么多天，其反应数的权重减半。
+    private const int HomeTravelGuideHotDecayDays = 45;
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
@@ -992,7 +994,7 @@ public sealed class RailLogDatabase
         int limit)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,
                    u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,
                    r.SecondTripId,r.TransferMinutes,r.RouteFromStation,
@@ -1025,6 +1027,8 @@ public sealed class RailLogDatabase
                 SELECT COUNT(*)
                 FROM EntityReviewReactions reaction
                 WHERE reaction.ReviewId=r.Id
+            ) * 1.0 / (
+                1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
             ) DESC, r.CreatedAt DESC, r.Id DESC
             LIMIT $limit;
             """;

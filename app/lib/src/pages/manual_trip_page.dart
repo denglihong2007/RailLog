@@ -40,6 +40,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
   int? _carriageNumber = 1;
   int _primarySeatNumber = 1;
   String _secondarySeatNumber = '无';
+  String? _coachSeatType;
+  bool _isExtraCarriage = false;
   bool _isRailTrip = true;
   bool _isLocalOnly = false;
   bool _isSaving = false;
@@ -50,6 +52,14 @@ class _ManualTripPageState extends State<ManualTripPage> {
   bool _isRecognizingShortestPath = false;
   bool _routeLookupFailed = false;
   int _routeEditorRevision = 0;
+
+  /// 库里已有的行程，用来决定保存走插入还是更新。
+  /// 不能只看 [ManualTripPage.initialTrip] 是否为空：OCR 兜底那条路会把票面信息
+  /// 包成一个 id=0 的 TripRecord 传进来做预填，它不是库里的一行（id 自增，从 1 起）。
+  TripRecord? get _existingTrip {
+    final trip = widget.initialTrip;
+    return trip == null || trip.id == 0 ? null : trip;
+  }
 
   @override
   void initState() {
@@ -86,6 +96,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
     _carriageNumber = seat.carriageNumber;
     _primarySeatNumber = seat.primarySeatNumber;
     _secondarySeatNumber = seat.secondarySeatNumber;
+    _coachSeatType = seat.coachSeatType;
+    _isExtraCarriage = seat.isExtraCarriage;
     _customSeatTypeController.text = seat.customSeatType;
     _customSeatNumberController.text = seat.customSeatNumber;
   }
@@ -201,7 +213,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
     final isCustomSeat = _seatMode == '其它';
     final seatType = isCustomSeat
         ? nullableTripText(_customSeatTypeController.text)
-        : _seatType;
+        : composeSeatType(_seatType, _coachSeatType);
     final seatNumber = isCustomSeat
         ? nullableTripText(_customSeatNumberController.text)
         : SeatSelection(
@@ -209,8 +221,9 @@ class _ManualTripPageState extends State<ManualTripPage> {
             carriageNumber: _carriageNumber ?? 1,
             primaryNumber: _primarySeatNumber,
             secondaryNumber: _secondarySeatNumber,
+            isExtraCarriage: _isExtraCarriage,
           ).seatNumber;
-    final existingTrip = widget.initialTrip;
+    final existingTrip = _existingTrip;
     final trip = TripRecord(
       id: existingTrip?.id ?? 0,
       ticketId: existingTrip?.ticketId,
@@ -261,7 +274,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
     return Scaffold(
       backgroundColor: colors.surfaceContainerLowest,
       appBar: AppBar(
-        title: Text(widget.initialTrip == null ? '手动录入' : '编辑行程'),
+        title: Text(_existingTrip == null ? '手动录入' : '编辑行程'),
         scrolledUnderElevation: 0,
       ),
       body: TripFormShell(
@@ -320,6 +333,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
           const SizedBox(height: 16),
           TripSeatSection(
             seatType: _seatType,
+            coachSeatType: _coachSeatType,
+            isExtraCarriage: _isExtraCarriage,
             seatMode: _seatMode,
             customSeatTypeController: _customSeatTypeController,
             customSeatNumberController: _customSeatNumberController,
@@ -327,6 +342,10 @@ class _ManualTripPageState extends State<ManualTripPage> {
             primarySeatNumber: _primarySeatNumber,
             secondarySeatNumber: _secondarySeatNumber,
             onSeatTypeChanged: _changeSeatType,
+            onCoachSeatTypeChanged: (value) =>
+                setState(() => _coachSeatType = value),
+            onExtraCarriageChanged: (value) =>
+                setState(() => _isExtraCarriage = value),
             onSeatModeChanged: _changeSeatMode,
             onCarriageChanged: (value) =>
                 setState(() => _carriageNumber = value),
@@ -421,7 +440,7 @@ class _ManualTripPageState extends State<ManualTripPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.save_outlined),
-              label: Text(widget.initialTrip == null ? '保存行程' : '保存修改'),
+              label: Text(_existingTrip == null ? '保存行程' : '保存修改'),
             ),
           ),
         ],

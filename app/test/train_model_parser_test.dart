@@ -143,5 +143,74 @@ void main() {
       expect(TrainModelParser.containsEmu('HXD1D 0001+CR400BF-5033'), isTrue);
       expect(TrainModelParser.containsEmu('CJ2-3456'), isTrue);
     });
+
+    test('splits formations on slashes and counts every model once', () {
+      final results = TrainModelParser.parse(
+        'HXD1D 0563+25T/HXD1D 0100+25T/NJ2 0071+HXN3 0331+25G',
+      );
+
+      expect(results.map((result) => result.model), [
+        'HXD1D',
+        '25T',
+        'NJ2',
+        'HXN3',
+        '25G',
+      ]);
+      expect(results[0].category, TrainCategory.locomotive);
+      expect(results[0].numbers, ['0563', '0100']);
+      expect(results[1].category, TrainCategory.coach);
+      expect(results[1].statisticsCode, '25T');
+      expect(results[1].numbers, isEmpty);
+    });
+
+    test('keeps formations separate for display', () {
+      final formations = TrainModelParser.parseFormations(
+        'HXD1D 0563+25T/HXD1D 0100+25T/NJ2 0071+HXN3 0331+25G',
+      );
+
+      expect(formations, hasLength(3));
+      expect(formations.map((f) => f.segments.length), [2, 2, 3]);
+      expect(formations[0].segments.map((s) => s.model), ['HXD1D', '25T']);
+      expect(formations[0].segments.first.numbers, ['0563']);
+      expect(formations[1].segments.first.numbers, ['0100']);
+      expect(formations[2].segments.map((s) => s.model), [
+        'NJ2',
+        'HXN3',
+        '25G',
+      ]);
+    });
+
+    test('counts a coupled EMU model once', () {
+      final result = TrainModelParser.parse('CRH380B-0001&0002').single;
+
+      expect(result.category, TrainCategory.emu);
+      expect(result.modelCode, 'CRH380B');
+      expect(result.numbers, ['0001', '0002']);
+    });
+
+    test('merges one model across formations but keeps them split for display', () {
+      final merged = TrainModelParser.parse('CRH380B-0001/CRH380B-0002').single;
+
+      expect(merged.modelCode, 'CRH380B');
+      expect(merged.numbers, ['0001', '0002']);
+
+      final formations = TrainModelParser.parseFormations(
+        'CRH380B-0001/CRH380B-0002',
+      );
+      expect(formations, hasLength(2));
+      expect(formations[0].segments.single.numbers, ['0001']);
+      expect(formations[1].segments.single.numbers, ['0002']);
+    });
+
+    test('ignores empty formations', () {
+      expect(TrainModelParser.parseFormations('//'), isEmpty);
+      expect(TrainModelParser.parseFormations('HXD1D 0001/'), hasLength(1));
+      expect(
+        TrainModelParser.parseFormations(
+          'HXD1D 0001//25T',
+        ).map((f) => f.segments.length),
+        [1, 1],
+      );
+    });
   });
 }

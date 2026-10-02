@@ -1,3 +1,5 @@
+import 'package:raillog/src/models/station_pair_distance.dart';
+
 class TrainScheduleStop {
   const TrainScheduleStop({
     required this.stationName,
@@ -69,4 +71,32 @@ double? historicalJourneyMileage(
 
   final distance = (arrivalMileage - departureMileage).abs();
   return distance > 0 ? distance : null;
+}
+
+/// 所选区间里每一对相邻站的里程，全部来自站序自带的累计里程。
+///
+/// 途经线路推断要的是「这一段大概多远」，而站序里每一站都写着从始发站起算的累计
+/// 里程，相邻两站相减就是这一段 —— 不必再对每对相邻站各打一次里程接口。
+/// 缺里程或里程差为 0 的段给 null，推断会退回最短路径。
+List<StationPairDistance> historicalSectionDistances(
+  List<TrainScheduleStop> stops,
+  int departureStopIndex,
+  int arrivalStopIndex,
+) {
+  if (stops.isEmpty ||
+      departureStopIndex < 0 ||
+      arrivalStopIndex >= stops.length ||
+      arrivalStopIndex <= departureStopIndex) {
+    return const [];
+  }
+
+  return List.generate(arrivalStopIndex - departureStopIndex, (offset) {
+    final from = stops[departureStopIndex + offset];
+    final to = stops[departureStopIndex + offset + 1];
+    return StationPairDistance(
+      fromStation: from.stationName,
+      toStation: to.stationName,
+      distanceKm: historicalJourneyMileage(from, to),
+    );
+  }, growable: false);
 }
