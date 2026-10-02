@@ -41,6 +41,9 @@ public static partial class AchievementEngine
 
     private static readonly HashSet<string> Regular25Models =
         ["25B", "25Z", "25G", "25K", "25T", "25DT"];
+    // 梦之特快：全部动力分散式动卧车组。
+    private static readonly HashSet<string> DistributedSleeperEmuModels =
+        ["CRH1E", "CRH2E", "CRH5E", "CR400AF-AE"];
     private static readonly IReadOnlyList<RollingStockTarget> EarlyEmuModels =
     [
         new("X2000"), new("KDZ1A"), new("DJF1"), new("DJF2"), new("DJF3"),
@@ -389,6 +392,19 @@ public static partial class AchievementEngine
     private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> RouteStations = new(LoadRouteStations);
     private static readonly string[] BorderRouteMarkers = ["丹东国境线", "绥芬河交界", "满洲里交界", "二连交界", "阿拉山口交界", "凭祥交界"];
 
+    // 使者莅临的别国首都车站。同一座城市的多个车站算作一项（阿斯塔纳的 1 号站与光明之路站），
+    // 站名按别名做包含匹配，因为行程里的站名是用户自由填写的（"河内嘉林"、"莫斯科雅罗斯拉夫尔"
+    // 都应算作到访）。
+    private static readonly IReadOnlyList<ForeignCapitalStation> ForeignCapitals =
+    [
+        new("莫斯科", "莫斯科（雅罗斯拉夫尔）", ["雅罗斯拉夫尔"]),
+        new("乌兰巴托", "乌兰巴托", ["乌兰巴托"]),
+        new("平壤", "平壤", ["平壤"]),
+        new("河内", "河内（嘉林）", ["嘉林"]),
+        new("万象", "万象", ["万象"]),
+        new("阿斯塔纳", "阿斯塔纳（1号站、光明之路站）", ["阿斯塔纳", "光明之路"])
+    ];
+
     private sealed record AchievementDefinition(
         string Id,
         string Category,
@@ -671,6 +687,12 @@ public static partial class AchievementEngine
         new("vibrantJourney", RailwayCatalog, "movie_outlined", "动感之旅", "乘坐一次港铁动感号列车", 20,
             NarrativeNote: "Caring for life's money",
             Trigger: i => FirstRollingStockMatch(i.Trips, VibrantExpressModels)),
+        new("dreamExpress", RailwayCatalog, "format_list_numbered_outlined", "梦之特快",
+            "乘坐过全部种类的动力分散式动卧列车", 20,
+            Note: "CRH1E, CRH2E, CRH5E, CR400AF-AE",
+            NarrativeNote: "现在已经很晚啦，做个好梦，晚安~",
+            Trigger: i => FirstCollectionCompletion(i.Trips, DistributedSleeperEmuModels,
+                trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels))),
         new("multipleChoices", FunJourneys, "list_alt_outlined", "多重选择", "在同一乘车区间累计乘坐至少 10 个不同车次", 20,
             NarrativeNote: "车次多就是可以为所欲为的",
             Trigger: i => FirstDistinctTrainCountForRoute(i.Trips, 10)),
@@ -876,12 +898,26 @@ public static partial class AchievementEngine
             Hidden: true,
             Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24))),
+        new("standingTall", ExtremeChallenges, "directions_railway_outlined", "顶天立地",
+            "持无座或硬座车票乘坐单程至少 24 小时的非空调列车", 80,
+            NarrativeNote: "老资历我敬你",
+            Hidden: true,
+            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) is "无座" or "硬座" &&
+                ValidDuration(trip) >= TimeSpan.FromHours(24) &&
+                HasNonAirConditionedCoach(trip.RollingStock))),
         new("richerThanNation", ExtremeChallenges, "diamond_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元", 80,
             NarrativeNote: "坐一次丝路梦享号的最豪华包间就够了",
             Hidden: true,
             Trigger: i => FirstThirtyDaySpendingCompletion(i.Trips, 50000)),
+        new("envoyArrival", Touring, "gps_fixed_outlined", "使者莅临",
+            "乘坐直达联运列车到访至少 3 座别国首都车站", 50,
+            MaxExperience: 80,
+            Note: "莫斯科（雅罗斯拉夫尔）、乌兰巴托、平壤、河内（嘉林）、万象、阿斯塔纳（1号站、光明之路站）；每多一站额外获得10点经验，上限为80点",
+            NarrativeNote: "未来还会有更多的跨国铁路，拭目以待吧",
+            Hidden: true,
+            Trigger: i => FirstForeignCapitalCompletion(i.Trips, 3)),
         new("flowersAmong", RailwayCatalog, "local_florist_outlined", "百花丛中", "分别乘坐全部常规和谐号、复兴号小类型号", 80,
-            Note: "截至2026年9月共60种",
+            Note: "截至2026年9月共62种，详见附表4",
             NarrativeNote: "各种技术参数你或许比车辆厂的职工还熟悉",
             Hidden: true,
             Trigger: i => FirstCollectionCompletion(i.Trips, EmuSubModelNames, trip => SmallEmuMatches(trip.RollingStock))),
@@ -895,9 +931,9 @@ public static partial class AchievementEngine
             NarrativeNote: "听说这是HCM的最爱",
             Hidden: true,
             Trigger: i => FirstCollectionCompletion(i.Trips, DongfengShaoshanLocomotives, trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives))),
-        new("completeEmuFleet", RailwayCatalog, "menu_book_outlined", "百车全书", "分别乘坐任意和谐号或复兴号大类下全部子型号的载客车组", 50,
-            MaxExperience: 150,
-            Note: "详见附表4，每多一个子型号额外获得20点经验，上限为150点",
+        new("completeEmuFleet", RailwayCatalog, "menu_book_outlined", "百车全书", "分别乘坐任意和谐号或复兴号系列的全部载客车组", 80,
+            MaxExperience: 200,
+            Note: "详见附表4，每多一个系列额外获得30点经验，上限为200点",
             NarrativeNote: "建议是没有必要继续贪这个成就的额外经验",
             Hidden: true,
             Trigger: i => FirstCompleteEmuFamily(i.Trips)),
@@ -1149,7 +1185,8 @@ public static partial class AchievementEngine
                 0,
                 VisitedStationCount(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]) - 1) * 5,
             "airRail" => Math.Max(0, AirportStationCount(trips) - 3) * 5,
-            "completeEmuFleet" => Math.Max(0, CompleteFleetCount(trips) - 1) * 20,
+            "completeEmuFleet" => Math.Max(0, CompleteEmuFamilyCount(trips) - 1) * 30,
+            "envoyArrival" => Math.Max(0, ForeignCapitalCount(trips) - 3) * 10,
             "multipleLocomotives" => Math.Max(0, MaxLocomotiveCount(trips) - 2) * 10,
             "unnecessaryExtra" => Math.Max(0, MaxSameTrainTicketChain(trips) - 3) * 10,
             "differentRoutesSameDestination" => Math.Max(
@@ -1243,6 +1280,14 @@ public static partial class AchievementEngine
         "muddyWavesSweepSky" => BridgeProgress(trips, YellowRiverBridges),
         "mistyVastWaters" => BridgeProgress(trips, SeaBayBridges),
         "completeEmuFleet" => P(CompleteEmuFamilyCount(trips), 1),
+        "dreamExpress" => P(
+            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels)),
+            DistributedSleeperEmuModels.Count),
+        "standingTall" => P(
+            MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) is "无座" or "硬座" &&
+                HasNonAirConditionedCoach(trip.RollingStock))),
+            24),
+        "envoyArrival" => P(ForeignCapitalCount(trips), 3),
         "differentRoutesSameDestination" => P(MaxDifferentRoutesSameDestination(trips), 3),
         "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
         "blueHorizon" => P(trips.Count(trip => ContainsRollingStock(trip, "CR200J")), 10),
@@ -1332,6 +1377,10 @@ public static partial class AchievementEngine
                 var bureau = RailwayBureaus.FirstOrDefault(entry => entry.Value.Contains(company)).Key;
                 return bureau is null ? [] : [bureau];
             }),
+        "dreamExpress" => RollingStockRequirements(
+            trips,
+            DistributedSleeperEmuModels.OrderBy(model => model, StringComparer.Ordinal)
+                .Select(model => new RollingStockTarget(model))),
         "railwayTrailblazer" => RollingStockRequirements(trips, EarlyEmuModels),
         "whatAgeIsThis" => RollingStockRequirements(trips, EarlyPassengerCoachModels),
         "revivalPrototype" => RollingStockRequirements(trips, PrototypeModels),
@@ -1900,15 +1949,6 @@ public static partial class AchievementEngine
             .Range(span.From, span.To - span.From + 1)
             .All(numbers.Contains));
 
-    /// <summary>集齐了全部载客车组的子型号个数。百车全书的额外经验按它计，
-    /// 因此不受解锁条件改成大类的影响。</summary>
-    private static int CompleteFleetCount(IEnumerable<PublicTrip> trips)
-    {
-        var covered = CoveredEmuSets(trips);
-        return EmuSetCatalog.Count(entry =>
-            covered.TryGetValue(entry.Key, out var numbers) && IsFleetComplete(entry.Key, numbers));
-    }
-
     /// <summary>该大类下全部子型号是否都已集齐。没在附表4 里登记的子型号不参与判定，
     /// 免得某个大类被一个无据可查的型号永久卡死。</summary>
     private static bool IsFamilyFleetComplete(
@@ -2010,6 +2050,32 @@ public static partial class AchievementEngine
         var values = targets.ToHashSet(StringComparer.Ordinal);
         return First(trips, trip => values.Contains(NormalizedStation(trip.FromStation)) ||
             values.Contains(NormalizedStation(trip.ToStation)));
+    }
+
+    /// <summary>这趟行程到访的别国首都车站（按 ForeignCapitals 的键去重，同一城市的
+    /// 多个车站只算一项）。</summary>
+    private static HashSet<string> ForeignCapitalMatches(PublicTrip trip)
+    {
+        var stations = new[] { NormalizedStation(trip.FromStation), NormalizedStation(trip.ToStation) };
+        return ForeignCapitals
+            .Where(capital => capital.Aliases.Any(alias =>
+                stations.Any(station => station.Contains(alias, StringComparison.Ordinal))))
+            .Select(capital => capital.Key)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static int ForeignCapitalCount(IEnumerable<PublicTrip> trips) =>
+        trips.SelectMany(ForeignCapitalMatches).ToHashSet(StringComparer.Ordinal).Count;
+
+    private static PublicTrip? FirstForeignCapitalCompletion(List<PublicTrip> trips, int target)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var trip in trips)
+        {
+            visited.UnionWith(ForeignCapitalMatches(trip));
+            if (visited.Count >= target) return trip;
+        }
+        return null;
     }
 
     private static PublicTrip? FirstStationPairWithin(
@@ -2923,6 +2989,13 @@ public static partial class AchievementEngine
         string ToStation);
 
     private sealed record StationVisit(string Station, DateTime Time, PublicTrip Trip);
+
+    /// <summary>一座别国首都车站。<paramref name="Aliases"/> 中任意一段出现在站名里即算到访，
+    /// 同一 <paramref name="Key"/> 下的多个车站（阿斯塔纳的 1 号站与光明之路站）合并为一项。</summary>
+    private sealed record ForeignCapitalStation(
+        string Key,
+        string Label,
+        IReadOnlyList<string> Aliases);
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
