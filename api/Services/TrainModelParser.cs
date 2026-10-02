@@ -34,21 +34,46 @@ public static class TrainModelParser
     private static readonly Dictionary<string, string> LongerPrefixes =
         new(StringComparer.OrdinalIgnoreCase) { ["RZ2"] = "RZ25" };
 
+    /// <summary>解析整条车型录入串。同一编组内的车型以“+”分隔，同一车型的多个
+    /// 车号以“&amp;”分隔，不同完整编组之间以“/”分隔。跨编组按车型合并，因此
+    /// 一个行程里的同一车型只会出现一次。</summary>
     public static List<TrainModelParseResult> ParseTrainString(string? input)
     {
         if (string.IsNullOrWhiteSpace(input))
             return [];
 
+        var segments = new List<string>();
+        foreach (var formation in input.Split('/'))
+            segments.AddRange(formation.Split('+'));
+
+        return MergeSegments(segments);
+    }
+
+    /// <summary>按编组解析，供需要区分“同时编组”语义的调用方使用：编组内部
+    /// 与 <see cref="ParseTrainString"/> 一样按车型合并去重，空编组直接丢弃。</summary>
+    public static List<List<TrainModelParseResult>> ParseTrainFormations(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return [];
+
+        var formations = new List<List<TrainModelParseResult>>();
+        foreach (var formation in input.Split('/'))
+        {
+            var segments = MergeSegments(formation.Split('+'));
+            if (segments.Count > 0)
+                formations.Add(segments);
+        }
+        return formations;
+    }
+
+    private static List<TrainModelParseResult> MergeSegments(IEnumerable<string> rawSegments)
+    {
         var resultMap = new Dictionary<string, TrainModelParseResult>(StringComparer.OrdinalIgnoreCase);
         var orderedKeys = new List<string>();
-        ReadOnlySpan<char> source = input.AsSpan();
 
-        while (!source.IsEmpty)
+        foreach (var rawSegment in rawSegments)
         {
-            var plusIndex = source.IndexOf('+');
-            var segment = (plusIndex >= 0 ? source[..plusIndex] : source).Trim();
-
-            source = plusIndex >= 0 ? source[(plusIndex + 1)..] : ReadOnlySpan<char>.Empty;
+            var segment = rawSegment.AsSpan().Trim();
             if (segment.IsEmpty) continue;
 
             TrainCategory category;

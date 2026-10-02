@@ -21,6 +21,14 @@ class TrainModelParseResult {
       category == TrainCategory.coach ? model : modelCode;
 }
 
+/// 一次行程中一段完整的列车编组。列车中途改变编组时，各编组之间以“/”
+/// 分隔；编组内部的车型仍以“+”分隔。
+class TrainModelFormation {
+  const TrainModelFormation({required this.segments});
+
+  final List<TrainModelParseResult> segments;
+}
+
 class TrainModelParser {
   const TrainModelParser._();
 
@@ -47,13 +55,39 @@ class TrainModelParser {
   // its longer counterpart.
   static const Map<String, String> _longerPrefixes = {'RZ2': 'RZ25'};
 
+  /// 解析整条车型录入串。同一编组内的车型以“+”分隔，同一车型的多个车号
+  /// 以“&”分隔，不同完整编组之间以“/”分隔。跨编组按车型合并，因此一个
+  /// 行程里的同一车型只会出现一次。
   static List<TrainModelParseResult> parse(String? input) {
     final source = input?.trim() ?? '';
     if (source.isEmpty) return const [];
 
+    return _mergeSegments([
+      for (final formation in source.split('/')) ...formation.split('+'),
+    ]);
+  }
+
+  /// 按编组解析，供界面分组展示。编组内部与 [parse] 一样按车型合并去重，
+  /// 空编组直接丢弃。
+  static List<TrainModelFormation> parseFormations(String? input) {
+    final source = input?.trim() ?? '';
+    if (source.isEmpty) return const [];
+
+    final formations = <TrainModelFormation>[];
+    for (final rawFormation in source.split('/')) {
+      final segments = _mergeSegments(rawFormation.split('+'));
+      if (segments.isEmpty) continue;
+      formations.add(TrainModelFormation(segments: segments));
+    }
+    return List.unmodifiable(formations);
+  }
+
+  static List<TrainModelParseResult> _mergeSegments(
+    Iterable<String> rawSegments,
+  ) {
     final resultsByKey = <String, TrainModelParseResult>{};
     final orderedKeys = <String>[];
-    for (final rawPart in source.split('+')) {
+    for (final rawPart in rawSegments) {
       final segment = rawPart.trim();
       if (segment.isEmpty) continue;
 

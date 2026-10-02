@@ -238,7 +238,9 @@ class _TripDetailsContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final parsedRollingStock = TrainModelParser.parse(trip.rollingStock);
+    final parsedRollingStock = TrainModelParser.parseFormations(
+      trip.rollingStock,
+    );
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -347,7 +349,7 @@ class _TripDetailsContent extends StatelessWidget {
                 child: _InfoGrid(
                   children: [
                     if (trip.isRailTrip)
-                      _RollingStockInfoItem(items: parsedRollingStock)
+                      _RollingStockInfoItem(formations: parsedRollingStock)
                     else
                       _InfoItem(
                         label: '车型',
@@ -1252,21 +1254,31 @@ class _InfoItem extends StatelessWidget {
 }
 
 class _RollingStockInfoItem extends StatelessWidget {
-  const _RollingStockInfoItem({required this.items});
+  const _RollingStockInfoItem({required this.formations});
 
-  final List<TrainModelParseResult> items;
+  final List<TrainModelFormation> formations;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final displayItems = [
-      for (final item in items)
-        if (item.numbers.isEmpty)
-          _RollingStockDisplayItem(model: item)
-        else
-          for (final number in item.numbers)
-            _RollingStockDisplayItem(model: item, number: number),
-    ];
+    // 展平成一行 chip；同时记下每个 chip 之前该放哪种分隔——编组内部是连接
+    // 图标，编组之间是“/”。
+    final entries = <({_RollingStockDisplayItem item, bool startsFormation})>[];
+    for (var index = 0; index < formations.length; index++) {
+      var isFormationStart = true;
+      for (final model in formations[index].segments) {
+        final numbers = model.numbers.isEmpty
+            ? const <String?>[null]
+            : model.numbers;
+        for (final number in numbers) {
+          entries.add((
+            item: _RollingStockDisplayItem(model: model, number: number),
+            startsFormation: isFormationStart && index > 0,
+          ));
+          isFormationStart = false;
+        }
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1277,7 +1289,7 @@ class _RollingStockInfoItem extends StatelessWidget {
           ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
         ),
         const SizedBox(height: 3),
-        if (items.isEmpty)
+        if (entries.isEmpty)
           Text('未记录', style: Theme.of(context).textTheme.bodyLarge)
         else
           Wrap(
@@ -1285,19 +1297,45 @@ class _RollingStockInfoItem extends StatelessWidget {
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              for (var index = 0; index < displayItems.length; index++) ...[
+              for (var index = 0; index < entries.length; index++) ...[
                 if (index > 0)
-                  Icon(
-                    Icons.link_rounded,
-                    size: 14,
-                    color: colors.onSurfaceVariant.withValues(alpha: 0.8),
-                    semanticLabel: '连接',
-                  ),
-                _RollingStockEntityChip(item: displayItems[index]),
+                  if (entries[index].startsFormation)
+                    _RollingStockFormationSeparator(
+                      color: colors.onSurfaceVariant,
+                    )
+                  else
+                    Icon(
+                      Icons.link_rounded,
+                      size: 14,
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.8),
+                      semanticLabel: '连接',
+                    ),
+                _RollingStockEntityChip(item: entries[index].item),
               ],
             ],
           ),
       ],
+    );
+  }
+}
+
+/// 编组之间的“/”分隔符。
+class _RollingStockFormationSeparator extends StatelessWidget {
+  const _RollingStockFormationSeparator({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Text(
+        '/',
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: color),
+        semanticsLabel: '编组分隔',
+      ),
     );
   }
 }

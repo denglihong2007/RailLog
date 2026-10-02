@@ -1791,9 +1791,12 @@ public static partial class AchievementEngine
                 NonAirConditionedCoaches.TryGetValue(model.Prefix, out var models) &&
                 models.Contains(model.Model));
 
+    /// <summary>重联须发生在同一编组内：跨编组的两个车组号只是中途换了编组，
+    /// 不算重联。</summary>
     private static bool HasCoupledEmu(string? value) =>
-        TrainModelParser.ParseTrainString(value)
-            .Any(model => model.Category == TrainCategory.EMU && model.Numbers.Count > 1);
+        TrainModelParser.ParseTrainFormations(value)
+            .Any(formation => formation.Any(model =>
+                model.Category == TrainCategory.EMU && model.Numbers.Count > 1));
 
     private static PublicTrip? FirstRepeatedTripCompletion(List<PublicTrip> trips, int target)
     {
@@ -1989,9 +1992,16 @@ public static partial class AchievementEngine
         return null;
     }
 
+    /// <summary>“其利断金”要的是同时牵引，故按编组分别计数后取最大值：中途换挂
+    /// 机车（各编组各一台）不算双机。机车上按台数计——同一型号写成两个车号
+    /// （HXD1D 0001&amp;0002）就是两台重联机车。</summary>
     private static int LocomotiveCount(string? value) =>
-        TrainModelParser.ParseTrainString(value)
-            .Count(model => model.Category == TrainCategory.Locomotive);
+        TrainModelParser.ParseTrainFormations(value)
+            .Select(formation => formation
+                .Where(model => model.Category == TrainCategory.Locomotive)
+                .Sum(model => Math.Max(model.Numbers.Count, 1)))
+            .DefaultIfEmpty(0)
+            .Max();
 
     private static int MaxLocomotiveCount(IEnumerable<PublicTrip> trips) => trips
         .Select(trip => LocomotiveCount(trip.RollingStock))

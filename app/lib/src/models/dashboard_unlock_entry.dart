@@ -45,6 +45,10 @@ class DashboardUnlockEntry {
     DateTime? unlockTime,
     DashboardUnlockAction action = DashboardUnlockAction.ride,
   }) {
+    // 一个行程对同一解锁项最多只计一次。不同车型可能归一为同一个
+    // statisticsCode（如 YZ25T 与 RW25T 都是 25T），会被重复记录。
+    if (tripIds.contains(trip.id)) return this;
+
     final eventTime = unlockTime ?? trip.departureTime;
     final updatedTripIds = List<int>.unmodifiable([...tripIds, trip.id]);
     if (eventTime.isBefore(this.unlockTime)) {
