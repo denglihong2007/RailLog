@@ -15,6 +15,8 @@ public sealed class SmtpOptions
     public string Password { get; init; } = string.Empty;
     public string FromEmail { get; init; } = string.Empty;
     public string FromName { get; init; } = "RailLog 轨记";
+    // 每次 socket 操作的预算（毫秒）；整次调用的总预算为其两倍，见 EmailSender。
+    public int TimeoutSeconds { get; init; } = 10;
 }
 
 public sealed class VerificationOptions

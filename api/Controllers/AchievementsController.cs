@@ -12,8 +12,9 @@ namespace RailLog.API.Controllers;
 public sealed class AchievementsController(RailLogDatabase database) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<AchievementsResponse>> Get() =>
-        Ok(await database.GetAchievementsAsync(UserId));
+    public async Task<ActionResult<AchievementsResponse>> Get(
+        CancellationToken cancellationToken) =>
+        Ok(await database.GetAchievementsAsync(UserId, cancellationToken));
 
     [HttpGet("{achievementId}/trips")]
     public async Task<ActionResult<AchievementUnlockTripsResponse>> GetTrips(

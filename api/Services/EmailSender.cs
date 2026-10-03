@@ -36,21 +36,44 @@ public sealed class EmailSender(IOptions<EmailOptions> options)
                 """,
         }.ToMessageBody();
 
-        using var client = new SmtpClient();
-        var socketOptions = _options.UseSsl
-            ? SecureSocketOptions.SslOnConnect
-            : SecureSocketOptions.StartTls;
-        await client.ConnectAsync(
-            _options.Host,
-            _options.Port,
-            socketOptions,
-            cancellationToken);
-        await client.AuthenticateAsync(
-            _options.UserName,
-            _options.Password,
-            cancellationToken);
-        await client.SendAsync(message, cancellationToken);
-        await client.DisconnectAsync(true, cancellationToken);
+        // 两层预算：client.Timeout 限制每次 socket 操作，外层 CTS 限制整次调用的总时长
+        // —— DNS 解析和连接黑洞不受 socket 超时约束，只有总预算能兜住。
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds * 2));
+        var token = budget.Token;
+        try
+        {
+            using var client = new SmtpClient { Timeout = _options.TimeoutSeconds * 1000 };
+            var socketOptions = _options.UseSsl
+                ? SecureSocketOptions.SslOnConnect
+                : SecureSocketOptions.StartTls;
+            await client.ConnectAsync(
+                _options.Host,
+                _options.Port,
+                socketOptions,
+                token);
+            await client.AuthenticateAsync(
+                _options.UserName,
+                _options.Password,
+                token);
+            await client.SendAsync(message, token);
+            // SendAsync 返回即表示服务器已接收。若在此之后的断开失败就向上抛，
+            // 调用方会删掉验证码并返回 503，而用户其实已经收到了那封邮件 —— 所以只记录、不上报。
+            try
+            {
+                await client.DisconnectAsync(true, token);
+            }
+            catch (Exception)
+            {
+                // 邮件已投递，断开失败的后果仅为连接被服务端回收。
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // 只有我方总预算耗尽才会走到这里。客户端断开时外层 token 已取消，应原样抛出
+            // （调用方据此区分「用户走了」和「我们超时了」）。
+            throw new EmailDeliveryException("邮件服务超时，请稍后重试");
+        }
     }
 }
 
