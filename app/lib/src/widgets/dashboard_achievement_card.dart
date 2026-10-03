@@ -353,6 +353,12 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'view_day_outlined' => Icons.view_day_outlined,
   'waves_outlined' => Icons.waves_outlined,
   'wb_twilight_outlined' => Icons.wb_twilight_outlined,
+  'card_giftcard_outlined' => Icons.card_giftcard_outlined,
+  'rv_hookup' => Icons.rv_hookup,
+  'event_seat_outlined' => Icons.event_seat_outlined,
+  'sync_alt_outlined' => Icons.sync_alt_outlined,
+  'inventory_2_outlined' => Icons.inventory_2_outlined,
+  'car_repair_outlined' => Icons.car_repair_outlined,
   _ => Icons.emoji_events_outlined,
 };
 

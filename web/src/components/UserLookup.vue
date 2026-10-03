@@ -205,6 +205,12 @@ const achievementIconCodepoints: Record<string, number> = {
   tsunami: 0xf07cf,
   anchor: 0xe084,
   menu_book_outlined: 0xf1c2,
+  card_giftcard_outlined: 0xef2d,
+  rv_hookup: 0xe54b,
+  event_seat_outlined: 0xf030,
+  sync_alt_outlined: 0xf412,
+  inventory_2_outlined: 0xf134,
+  car_repair_outlined: 0xef2c,
 }
 
 const userInitial = computed(() => dashboard.value?.user.displayName.trim().charAt(0) || '旅')

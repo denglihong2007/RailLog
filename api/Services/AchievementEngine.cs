@@ -665,6 +665,11 @@ public static partial class AchievementEngine
         new("newYearsEve", FunJourneys, "celebration_outlined", "新年快乐", "在列车上完成跨年", 10,
             NarrativeNote: "这车去年就发车了，现在才到",
             Trigger: i => First(i.Trips, UnlocksNewYearsEve)),
+        new("specialGift", FunJourneys, "card_giftcard_outlined", "特别贺礼",
+            "在 1 月 1 日乘坐数字部分为该年年份的车次", 15,
+            Note: "中途切换车次也可以",
+            NarrativeNote: "即使不打报销凭证也很有纪念意义了",
+            Trigger: i => First(i.Trips, UnlocksSpecialGift)),
         new("monotonousTrainNumber", FunJourneys, "repeat_outlined", "千篇一律", "乘坐数字部分为三或四个相同数字的车次", 25,
             Note: "中途切换车次也可以",
             NarrativeNote: "但是朗朗上口",
@@ -704,6 +709,14 @@ public static partial class AchievementEngine
         new("farsighted", FunJourneys, "view_day_outlined", "高瞻远瞩", "乘坐双层车厢的上层席位", 25,
             NarrativeNote: "再也不怕隔壁列车挡视线了",
             Trigger: i => First(i.Trips, trip => trip.SeatNumber is not null && Regex.IsMatch(trip.SeatNumber, @"上(?!铺)"))),
+        new("extraCarriage", FunJourneys, "rv_hookup", "未雨绸缪", "乘坐一次加车车厢", 15,
+            NarrativeNote: "看准站务指示，加车可以加在任何位置",
+            Trigger: i => First(i.Trips, trip => HasExtraCarriage(trip.SeatNumber))),
+        new("substituteSeats", FunJourneys, "event_seat_outlined", "物尽其用", "至少乘坐三次代用席位", 20,
+            MaxExperience: 50,
+            Note: "每多一次额外获得5点经验，上限为50点",
+            NarrativeNote: "你当然可以躺下……只要旁边人不介意",
+            Trigger: i => FirstCountCompletion(i.Trips, 3, trip => IsSubstituteSeat(trip.SeatType))),
         new("oneYuanJourney", FunJourneys, "currency_yen", "一元旅程", "单次行程票价为 1 元", 20,
             NarrativeNote: "1995年以后就几乎无法通过全价票取得这一成就了",
             Trigger: i => First(i.Trips, trip => trip.Price == 1)),
@@ -823,6 +836,12 @@ public static partial class AchievementEngine
             Note: "每多一台额外获得10点经验，上限为50点",
             NarrativeNote: "沿线车迷注意接车，今天×××次双机",
             Trigger: i => First(i.Trips, trip => LocomotiveCount(trip.RollingStock) >= 2)),
+        new("relayLocomotives", FunJourneys, "sync_alt_outlined", "前赴后继",
+            "乘坐除上下车站外中途至少换挂三次的列车", 25,
+            MaxExperience: 50,
+            Note: "每多一次额外获得10点经验，上限为50点",
+            NarrativeNote: "当心你的泡面或便当",
+            Trigger: i => First(i.Trips, trip => LocomotiveChangeCount(trip.RollingStock) >= 3)),
         new("snowBlockingBlueGate", FunJourneys, "severe_cold_outlined", "雪拥蓝关",
             "在 2008-01-10 至 2008-02-10 之间行经京广线武昌至广州间的任意区间", 30,
             NarrativeNote: "你知道吗？那年甚至调机也上了正线",
@@ -898,6 +917,11 @@ public static partial class AchievementEngine
             Hidden: true,
             Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24))),
+        new("pitchDark", ExtremeChallenges, "inventory_2_outlined", "暗无天日", "乘坐棚车代客的列车", 80,
+            Note: "路用列车也可以",
+            NarrativeNote: "我是在坐车吗……这分明是在坐牢！",
+            Hidden: true,
+            Trigger: i => First(i.Trips, trip => IsBoxcarSeat(trip.SeatType))),
         new("standingTall", ExtremeChallenges, "directions_railway_outlined", "顶天立地",
             "持无座或硬座车票乘坐单程至少 24 小时的非空调列车", 80,
             NarrativeNote: "老资历我敬你",
@@ -957,6 +981,11 @@ public static partial class AchievementEngine
             NarrativeNote: "我太想进步了",
             Hidden: true,
             Trigger: i => FirstLuxuryStreakCompletion(i.Trips, 20)),
+        new("misfortuneTwice", FunJourneys, "car_repair_outlined", "厄运成双",
+            "乘坐单程因故中途更换过两次编组的动车组列车", 80,
+            NarrativeNote: "什么叫机破了之后换的热备车又机破了？你解释一下",
+            Hidden: true,
+            Trigger: i => First(i.Trips, trip => EmuFormationChangeCount(trip.RollingStock) >= 2)),
         new("nonOrdinary", Milestones, "workspace_premium_outlined", "非同凡人", "完成除本成就外其他所有成就（该成就可能随其他成就增补而失去）", 0,
             NarrativeNote: "这个成就你居然达成了？已经没有人类了。必须给你专门颁个奖，毕竟再多的经验如今对你而言也没有什么意义orz",
             Hidden: true),
@@ -1188,6 +1217,10 @@ public static partial class AchievementEngine
             "completeEmuFleet" => Math.Max(0, CompleteEmuFamilyCount(trips) - 1) * 30,
             "envoyArrival" => Math.Max(0, ForeignCapitalCount(trips) - 3) * 10,
             "multipleLocomotives" => Math.Max(0, MaxLocomotiveCount(trips) - 2) * 10,
+            "relayLocomotives" => Math.Max(0, MaxLocomotiveChangeCount(trips) - 3) * 10,
+            "substituteSeats" => Math.Max(
+                0,
+                trips.Count(trip => IsSubstituteSeat(trip.SeatType)) - 3) * 5,
             "unnecessaryExtra" => Math.Max(0, MaxSameTrainTicketChain(trips) - 3) * 10,
             "differentRoutesSameDestination" => Math.Max(
                 0,
@@ -1313,6 +1346,12 @@ public static partial class AchievementEngine
         "luxuryStreak2" => P(LuxuryStreakCount(trips), 2),
         "luxuryStreak20" => P(LuxuryStreakCount(trips), 20),
         "multipleLocomotives" => P(MaxLocomotiveCount(trips), 2),
+        "relayLocomotives" => P(MaxLocomotiveChangeCount(trips), 3),
+        "substituteSeats" => P(trips.Count(trip => IsSubstituteSeat(trip.SeatType)), 3),
+        "extraCarriage" => P(trips.Count(trip => HasExtraCarriage(trip.SeatNumber)), 1),
+        "specialGift" => P(trips.Count(UnlocksSpecialGift), 1),
+        "pitchDark" => P(trips.Count(trip => IsBoxcarSeat(trip.SeatType)), 1),
+        "misfortuneTwice" => P(MaxEmuFormationChangeCount(trips), 2),
         "roamFreely" => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
         _ => null
     };
@@ -1797,6 +1836,101 @@ public static partial class AchievementEngine
         TrainModelParser.ParseTrainFormations(value)
             .Any(formation => formation.Any(model =>
                 model.Category == TrainCategory.EMU && model.Numbers.Count > 1));
+
+    /// <summary>“换挂”：相邻两个编组之间机车车组完全不同、客车完全相同，且都不含动车组。
+    /// 换的是机车本身，所以同一型号换车号（SS8 0001 → SS8 0002）也算，只要没有一台车
+    /// 两边都在。</summary>
+    private static int LocomotiveChangeCount(string? value)
+    {
+        var formations = TrainModelParser.ParseTrainFormations(value);
+        var count = 0;
+        for (var index = 1; index < formations.Count; index++)
+            if (IsLocomotiveChange(formations[index - 1], formations[index]))
+                count++;
+        return count;
+    }
+
+    private static bool IsLocomotiveChange(
+        IEnumerable<TrainModelParseResult> before,
+        IEnumerable<TrainModelParseResult> after)
+    {
+        if (before.Any(model => model.Category == TrainCategory.EMU) ||
+            after.Any(model => model.Category == TrainCategory.EMU))
+            return false;
+        var beforeLocomotives = LocomotiveIdentities(before);
+        var afterLocomotives = LocomotiveIdentities(after);
+        if (beforeLocomotives.Count == 0 || afterLocomotives.Count == 0) return false;
+        if (beforeLocomotives.Overlaps(afterLocomotives)) return false;
+        var beforeCoaches = CoachIdentities(before);
+        return beforeCoaches.Count > 0 && beforeCoaches.SetEquals(CoachIdentities(after));
+    }
+
+    private static int MaxLocomotiveChangeCount(IEnumerable<PublicTrip> trips) => trips
+        .Select(trip => LocomotiveChangeCount(trip.RollingStock))
+        .DefaultIfEmpty(0)
+        .Max();
+
+    /// <summary>“厄运成双”的换编组：相邻两个含动车组的编组车组号不同即算一次。与
+    /// <see cref="HasCoupledEmu"/> 相反，跨编组的不同车组号正是这里要找的东西。</summary>
+    private static int EmuFormationChangeCount(string? value)
+    {
+        var formations = TrainModelParser.ParseTrainFormations(value)
+            .Select(EmuIdentities)
+            .Where(identities => identities.Count > 0)
+            .ToList();
+        var count = 0;
+        for (var index = 1; index < formations.Count; index++)
+            if (!formations[index - 1].SetEquals(formations[index]))
+                count++;
+        return count;
+    }
+
+    private static int MaxEmuFormationChangeCount(IEnumerable<PublicTrip> trips) => trips
+        .Select(trip => EmuFormationChangeCount(trip.RollingStock))
+        .DefaultIfEmpty(0)
+        .Max();
+
+    private static HashSet<string> LocomotiveIdentities(IEnumerable<TrainModelParseResult> formation) =>
+        formation
+            .Where(model => model.Category == TrainCategory.Locomotive)
+            .SelectMany(RollingStockIdentities)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string> CoachIdentities(IEnumerable<TrainModelParseResult> formation) =>
+        formation
+            .Where(model => model.Category == TrainCategory.Coach)
+            .SelectMany(RollingStockIdentities)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string> EmuIdentities(IEnumerable<TrainModelParseResult> formation) =>
+        formation
+            .Where(model => model.Category == TrainCategory.EMU)
+            .SelectMany(RollingStockIdentities)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>一个车型段的具体身份：有车号就是“型号 车号”，没车号就只是型号。</summary>
+    private static IEnumerable<string> RollingStockIdentities(TrainModelParseResult model)
+    {
+        var code = model.ModelCode.Length > 0 ? model.ModelCode : model.Model;
+        return model.Numbers.Count > 0
+            ? model.Numbers.Select(number => $"{code} {number}")
+            : [code];
+    }
+
+    /// <summary>代用席位：席别里带“代”即可（“硬卧代硬座”“硬座代卧铺”都算）。</summary>
+    private static bool IsSubstituteSeat(string? value) => (value ?? string.Empty).Contains('代');
+
+    /// <summary>棚车代客：席别里出现“棚车”即可。棚车不在席别下拉表里，只能靠导入或
+    /// 手填进来，落库形态不确定（“棚车”“棚车代硬座”都可能），所以按包含判定。</summary>
+    private static bool IsBoxcarSeat(string? value) => (value ?? string.Empty).Contains("棚车");
+
+    /// <summary>加挂车厢：座位号的车厢段写成“加X车”。车厢未知时 App 读写都不保留这个
+    /// 前缀，所以历史数据里残留的“加0车”不算加挂。</summary>
+    private static bool HasExtraCarriage(string? value)
+    {
+        var match = Regex.Match(value ?? string.Empty, @"^\s*加(\d+)车");
+        return match.Success && match.Groups[1].Value.TrimStart('0').Length > 0;
+    }
 
     private static PublicTrip? FirstRepeatedTripCompletion(List<PublicTrip> trips, int target)
     {
@@ -2828,6 +2962,16 @@ public static partial class AchievementEngine
         var digits = Regex.Replace(trip.TrainNumber ?? string.Empty, "[A-Za-z]", string.Empty)
             .Replace(" ", string.Empty);
         return Regex.IsMatch(digits, @"^(\d)\1{2,3}$");
+    }
+
+    /// <summary>特别贺礼：元旦当天乘坐以当年年份命名的列车。</summary>
+    private static bool UnlocksSpecialGift(PublicTrip trip)
+    {
+        var departure = Departure(trip);
+        if (departure.Month != 1 || departure.Day != 1) return false;
+        var digits = Regex.Replace(trip.TrainNumber ?? string.Empty, "[A-Za-z]", string.Empty)
+            .Replace(" ", string.Empty);
+        return digits.Length > 0 && digits == departure.Year.ToString(CultureInfo.InvariantCulture);
     }
 
     private static PublicTrip? FirstThreeTicketSameTrainCompletion(List<PublicTrip> trips)
