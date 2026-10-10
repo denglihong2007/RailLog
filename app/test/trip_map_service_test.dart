@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
+import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/rail_track_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/trip_map_service.dart';
@@ -1087,6 +1088,42 @@ void main() {
       ).firstMatch(html);
       expect(match, isNotNull, reason: '没找到内联的 <script> 块');
       expectBalancedBrackets(match!.group(1)!);
+    });
+
+    // 底图档位是 features 与 showLabel 两个旋钮拼出来的。JSON 是双引号，
+    // 所以断言串里的引号跟着 jsonEncode 走。
+    test('底图档位映射到 features 与 showLabel', () {
+      String htmlFor(MapDetailLevel? level) => buildAmapHtml(
+        const [],
+        darkMode: false,
+        backgroundColor: '#FFFFFF',
+        showStationMarkers: false,
+        detailLevel: level ?? MapDetailLevel.normal,
+      );
+
+      // 不传档位时的默认值必须是一般：升级后未改设置的用户走的就是这条路径。
+      final defaultHtml = buildAmapHtml(
+        const [],
+        darkMode: false,
+        backgroundColor: '#FFFFFF',
+        showStationMarkers: false,
+      );
+      expect(defaultHtml, contains('features: ["bg","point","road"]'));
+      expect(defaultHtml, contains('showLabel: true'));
+
+      // 底图地名/POI 不该有悬停高亮——点了没有任何反应，看着能点是骗人的。
+      expect(defaultHtml, contains('isHotspot: false'));
+
+      expect(htmlFor(MapDetailLevel.detailed), contains('"point"'));
+      expect(htmlFor(MapDetailLevel.detailed), contains('showLabel: true'));
+      expect(htmlFor(MapDetailLevel.detailed), isNot(equals(defaultHtml)));
+
+      expect(
+        htmlFor(MapDetailLevel.simplified),
+        contains('features: ["bg","road"]'),
+      );
+      expect(htmlFor(MapDetailLevel.simplified), contains('showLabel: false'));
+      expect(htmlFor(MapDetailLevel.simplified), isNot(contains('"point"')));
     });
   });
 

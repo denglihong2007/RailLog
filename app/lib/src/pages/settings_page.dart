@@ -9,6 +9,7 @@ import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
+import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
@@ -58,6 +59,8 @@ class SettingsPage extends StatelessWidget {
                       const _SettingsCategoryHeader(title: '个性化'),
                       const SizedBox(height: 8),
                       _appearanceSettings(context),
+                      const SizedBox(height: 12),
+                      const _MapSettingsSection(),
                       const SizedBox(height: 12),
                       const _TripDetailSettingsSection(),
                       const SizedBox(height: 12),
@@ -666,6 +669,49 @@ class _BaiduOcrSettingsSectionState extends State<_BaiduOcrSettingsSection> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _MapSettingsSection extends StatelessWidget {
+  const _MapSettingsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _SettingsCard(
+      title: '地图',
+      icon: Icons.map_outlined,
+      child: AnimatedBuilder(
+        animation: MapSettings.instance,
+        builder: (context, _) {
+          final settings = MapSettings.instance;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('底图显示层级', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              SegmentedButton<MapDetailLevel>(
+                segments: [
+                  for (final level in MapDetailLevel.values)
+                    ButtonSegment(value: level, label: Text(level.label)),
+                ],
+                selected: {settings.detailLevel},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) =>
+                    settings.setDetailLevel(selection.single),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '越简略，底图的道路、兴趣点和文字标注越少，铁路轨迹越突出',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

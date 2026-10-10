@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/main_navigation_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
@@ -22,6 +23,12 @@ void main() async {
     await ThemeSettings.instance.initialize();
   } catch (error) {
     debugPrint('主题偏好读取失败，将使用默认设置：$error');
+  }
+
+  try {
+    await MapSettings.instance.initialize();
+  } catch (error) {
+    debugPrint('地图偏好读取失败，将使用默认设置：$error');
   }
 
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {

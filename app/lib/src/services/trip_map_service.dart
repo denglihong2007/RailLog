@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/api_client.dart';
+import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/rail_track_service.dart';
 
 class StationCoordinate {
@@ -359,8 +360,11 @@ String buildAmapHtml(
   required String backgroundColor,
   required bool showStationMarkers,
   List<TripMapEndpoint> endpoints = const [],
+  MapDetailLevel detailLevel = MapDetailLevel.normal,
 }) {
   final apiBaseUrl = ApiClient.baseUrl.replaceFirst(RegExp(r'/+$'), '');
+  // 要素名全是 ASCII，不必像 routeJson 那样做尖括号转义。
+  final featuresJson = jsonEncode(detailLevel.features);
   final routeJson = jsonEncode(
     routes
         .map(
@@ -430,7 +434,11 @@ String buildAmapHtml(
     const map = new AMap.Map('map', {
       zoom: 4.5,
       center: [104.2, 35.7],
-      showLabel: false,
+      showLabel: ${detailLevel.showLabel},
+      features: $featuresJson,
+      // 底图的地名和 POI 默认在 PC 上会悬停高亮、看着像能点，但点了什么也不会发生
+      // （我们的点击处理全在自绘的折线上）。关掉，免得空欢喜。
+      isHotspot: false,
       viewMode: '3D',
       resizeEnable: true,
       zoomEnable: true,
