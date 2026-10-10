@@ -2,6 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
 
 void main() {
+  test('出行指南排序方式的线上取值与后端约定一致', () {
+    expect(TravelGuideMode.hot.wire, 'hot');
+    expect(TravelGuideMode.related.wire, 'related');
+    expect(TravelGuideMode.hot.label, '全站热门');
+    expect(TravelGuideMode.related.label, '与我相关');
+    // 分页游标按整页推进，页大小变更会影响「是否还有下一页」的判断。
+    expect(EntityReviewService.pageSize, 20);
+  });
+
   test('EntityReview parses associated public trips', () {
     final review = EntityReview.fromJson({
       'id': 1,

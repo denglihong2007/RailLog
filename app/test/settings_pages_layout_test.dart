@@ -5,6 +5,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/profile_edit_page.dart';
 import 'package:raillog/src/pages/settings/settings_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
@@ -47,6 +48,14 @@ void main() {
     await pumpNarrow(tester, const Scaffold(body: SettingsPage()));
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('外观与显示'), findsOneWidget);
+    expect(find.text('我的评价'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('我的评价页在未登录时渲染登录提示', (tester) async {
+    await pumpNarrow(tester, const MyReviewsPage());
+    expect(find.text('我的评价'), findsOneWidget);
+    expect(find.text('登录后可以查看自己发表过的评价。'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 

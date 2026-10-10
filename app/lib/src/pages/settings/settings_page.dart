@@ -7,6 +7,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
 import 'package:raillog/src/pages/settings/ticket_ocr_settings_page.dart';
 import 'package:raillog/src/pages/update_log_page.dart';
@@ -45,6 +46,8 @@ class SettingsPage extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.lg),
                       _AccountHeaderCard(user: user),
+                      const SizedBox(height: AppSpacing.lg),
+                      const SettingsListCard(children: [_MyReviewsEntry()]),
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '个性化'),
                       const SizedBox(height: AppSpacing.sm),
@@ -194,6 +197,18 @@ class _DisplayEntry extends StatelessWidget {
     title: '外观与显示',
     subtitle: '主题、底图显示层级与行程详情',
     onTap: () => _push(context, const DisplaySettingsPage()),
+  );
+}
+
+class _MyReviewsEntry extends StatelessWidget {
+  const _MyReviewsEntry();
+
+  @override
+  Widget build(BuildContext context) => SettingsNavTile(
+    icon: Icons.rate_review_outlined,
+    title: '我的评价',
+    subtitle: '查看并管理自己发表过的评价',
+    onTap: () => _push(context, const MyReviewsPage()),
   );
 }
 

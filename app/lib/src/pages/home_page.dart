@@ -52,9 +52,20 @@ class _HomePageState extends State<HomePage> {
   late Future<TripDashboardStats> _statsFuture;
   late Future<PartnerAdvertisement?> _advertisementFuture;
   Future<List<DashboardAchievement>>? _achievementsFuture;
-  Future<List<EntityReview>>? _travelGuideFuture;
   TripDashboardStats? _lastStats;
   bool _isResetting = false;
+
+  // 「出行指南」的排序方式与分页游标。两类共用一个页码游标，
+  // 切换排序方式时整段重来。
+  TravelGuideMode _travelGuideMode = TravelGuideMode.hot;
+  final List<EntityReview> _travelGuideReviews = [];
+  bool _travelGuideLoading = false;
+  bool _travelGuideLoadingMore = false;
+  bool _travelGuideLoaded = false;
+  bool _travelGuideHasMore = true;
+  Object? _travelGuideError;
+  int _travelGuideOffset = 0;
+  int _travelGuideRequestId = 0;
 
   @override
   void initState() {
@@ -63,7 +74,7 @@ class _HomePageState extends State<HomePage> {
     _advertisementFuture = _loadAdvertisement();
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
-      _travelGuideFuture = EntityReviewService.fetchHomeTravelGuide();
+      _loadTravelGuide();
     }
   }
 
@@ -85,21 +96,114 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 重新取「出行指南」的第一页。切换排序方式、下拉刷新、登录状态变化都走这里。
+  Future<void> _loadTravelGuide() async {
+    final requestId = ++_travelGuideRequestId;
+    if (!SessionService.instance.isSignedIn) {
+      setState(() {
+        _travelGuideReviews.clear();
+        _travelGuideOffset = 0;
+        _travelGuideLoaded = false;
+        _travelGuideLoading = false;
+        _travelGuideError = null;
+      });
+      return;
+    }
+    setState(() {
+      _travelGuideLoading = true;
+      _travelGuideLoaded = false;
+      _travelGuideError = null;
+    });
+    try {
+      final page = await EntityReviewService.fetchTravelGuidePage(
+        mode: _travelGuideMode,
+      );
+      if (!mounted || requestId != _travelGuideRequestId) return;
+      setState(() {
+        _travelGuideReviews
+          ..clear()
+          ..addAll(page);
+        _travelGuideOffset = page.length;
+        _travelGuideHasMore = page.length >= EntityReviewService.pageSize;
+        _travelGuideLoading = false;
+        _travelGuideLoaded = true;
+      });
+    } catch (error) {
+      if (!mounted || requestId != _travelGuideRequestId) return;
+      setState(() {
+        _travelGuideError = error;
+        _travelGuideLoading = false;
+      });
+    }
+  }
+
+  /// 主页滚到底时追加下一页。热门排序按反应数衰减打分，跨请求可能有细微抖动，
+  /// 所以这里按 id 去重，避免同一条被追加两次。
+  Future<void> _loadMoreTravelGuide() async {
+    if (!SessionService.instance.isSignedIn ||
+        _travelGuideLoading ||
+        _travelGuideLoadingMore ||
+        !_travelGuideLoaded ||
+        !_travelGuideHasMore ||
+        _travelGuideError != null) {
+      return;
+    }
+    final requestId = _travelGuideRequestId;
+    setState(() => _travelGuideLoadingMore = true);
+    try {
+      final page = await EntityReviewService.fetchTravelGuidePage(
+        mode: _travelGuideMode,
+        offset: _travelGuideOffset,
+      );
+      if (!mounted || requestId != _travelGuideRequestId) return;
+      final seen = _travelGuideReviews.map((review) => review.id).toSet();
+      setState(() {
+        _travelGuideOffset += page.length;
+        _travelGuideReviews.addAll(
+          page.where((review) => seen.add(review.id)),
+        );
+        _travelGuideHasMore = page.length >= EntityReviewService.pageSize;
+        _travelGuideLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _travelGuideRequestId) return;
+      // 翻页失败不清空已有内容，滚动到底可以再试。
+      setState(() => _travelGuideLoadingMore = false);
+    }
+  }
+
+  void _changeTravelGuideMode(TravelGuideMode mode) {
+    if (mode == _travelGuideMode) return;
+    setState(() {
+      _travelGuideMode = mode;
+      // 两种排序的内容互不相干，换挡时先清掉，免得旧排序的条目留在新排序下面。
+      _travelGuideReviews.clear();
+      _travelGuideOffset = 0;
+      _travelGuideHasMore = true;
+    });
+    _loadTravelGuide();
+  }
+
+  bool _handleDashboardScroll(ScrollNotification notification) {
+    if (notification.metrics.axis == Axis.vertical &&
+        notification.metrics.extentAfter < 320) {
+      _loadMoreTravelGuide();
+    }
+    return false;
+  }
+
   Future<void> _refresh() async {
     final statsFuture = DbHelper.instance.getDashboardStats();
     final advertisementFuture = _loadAdvertisement();
     final achievementsFuture = SessionService.instance.isSignedIn
         ? AchievementService.fetchCurrent()
         : null;
-    final travelGuideFuture = SessionService.instance.isSignedIn
-        ? EntityReviewService.fetchHomeTravelGuide()
-        : null;
     setState(() {
       _statsFuture = statsFuture;
       _advertisementFuture = advertisementFuture;
       _achievementsFuture = achievementsFuture;
-      _travelGuideFuture = travelGuideFuture;
     });
+    final travelGuideFuture = _loadTravelGuide();
     await statsFuture;
     await advertisementFuture;
     if (achievementsFuture != null) {
@@ -109,13 +213,7 @@ class _HomePageState extends State<HomePage> {
         // The achievement section renders its own offline state.
       }
     }
-    if (travelGuideFuture != null) {
-      try {
-        await travelGuideFuture;
-      } catch (_) {
-        // The travel guide section renders its own retry state.
-      }
-    }
+    await travelGuideFuture;
   }
 
   Future<void> _confirmResetDatabase() async {
@@ -222,50 +320,59 @@ class _HomePageState extends State<HomePage> {
         _lastStats = stats;
         return RefreshIndicator(
           onRefresh: _refresh,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final pagePadding = switch (constraints.maxWidth) {
-                < 600 => 16.0,
-                < 840 => 24.0,
-                _ => 32.0,
-              };
-              return _DashboardScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
-                children: [
-                  _PartnerAdvertisementLoader(future: _advertisementFuture),
-                  M3AnimatedVisibility(
-                    visible: !SessionService.instance.isSignedIn,
-                    child: const Padding(
-                      padding: EdgeInsets.only(bottom: 16),
-                      child: M3Reveal(child: _SignInBanner()),
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handleDashboardScroll,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final pagePadding = switch (constraints.maxWidth) {
+                  < 600 => 16.0,
+                  < 840 => 24.0,
+                  _ => 32.0,
+                };
+                return _DashboardScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
+                  children: [
+                    _PartnerAdvertisementLoader(future: _advertisementFuture),
+                    M3AnimatedVisibility(
+                      visible: !SessionService.instance.isSignedIn,
+                      child: const Padding(
+                        padding: EdgeInsets.only(bottom: 16),
+                        child: M3Reveal(child: _SignInBanner()),
+                      ),
                     ),
-                  ),
-                  M3Reveal(
-                    child: _OverviewSection(stats: stats, onChanged: _refresh),
-                  ),
-                  const SizedBox(height: 24),
-                  _StatsGrid(stats: stats, onChanged: _refresh),
-                  const SizedBox(height: 24),
-                  _AchievementsLoader(
-                    future: _achievementsFuture,
-                    signedIn: SessionService.instance.isSignedIn,
-                    onRetry: _refresh,
-                    onChanged: _refresh,
-                  ),
-                  const SizedBox(height: 24),
-                  _HomeTravelGuideLoader(
-                    future: _travelGuideFuture,
-                    signedIn: SessionService.instance.isSignedIn,
-                    onRetry: _refresh,
-                  ),
-                  if (stats.tripCount == 0) ...[
+                    M3Reveal(
+                      child: _OverviewSection(stats: stats, onChanged: _refresh),
+                    ),
                     const SizedBox(height: 24),
-                    const M3Reveal(child: _EmptyStateCard()),
+                    _StatsGrid(stats: stats, onChanged: _refresh),
+                    const SizedBox(height: 24),
+                    _AchievementsLoader(
+                      future: _achievementsFuture,
+                      signedIn: SessionService.instance.isSignedIn,
+                      onRetry: _refresh,
+                      onChanged: _refresh,
+                    ),
+                    const SizedBox(height: 24),
+                    _HomeTravelGuideSection(
+                      signedIn: SessionService.instance.isSignedIn,
+                      mode: _travelGuideMode,
+                      reviews: _travelGuideReviews,
+                      loading: _travelGuideLoading,
+                      loadingMore: _travelGuideLoadingMore,
+                      hasMore: _travelGuideHasMore,
+                      error: _travelGuideError,
+                      onModeChanged: _changeTravelGuideMode,
+                      onRetry: _loadTravelGuide,
+                    ),
+                    if (stats.tripCount == 0) ...[
+                      const SizedBox(height: 24),
+                      const M3Reveal(child: _EmptyStateCard()),
+                    ],
                   ],
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         );
       },
@@ -842,54 +949,159 @@ class _AchievementsSection extends StatelessWidget {
   }
 }
 
-class _HomeTravelGuideLoader extends StatelessWidget {
-  const _HomeTravelGuideLoader({
-    required this.future,
+class _HomeTravelGuideSection extends StatelessWidget {
+  const _HomeTravelGuideSection({
     required this.signedIn,
+    required this.mode,
+    required this.reviews,
+    required this.loading,
+    required this.loadingMore,
+    required this.hasMore,
+    required this.error,
+    required this.onModeChanged,
     required this.onRetry,
   });
 
-  final Future<List<EntityReview>>? future;
   final bool signedIn;
+  final TravelGuideMode mode;
+  final List<EntityReview> reviews;
+  final bool loading;
+  final bool loadingMore;
+  final bool hasMore;
+  final Object? error;
+  final ValueChanged<TravelGuideMode> onModeChanged;
   final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final travelGuideFuture = future;
-    if (!signedIn || travelGuideFuture == null) {
-      return const _HomeTravelGuideStatus(
-        icon: Icons.cloud_off_outlined,
-        message: _cloudSignInMessage,
-      );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _TravelGuideHeader(mode: mode, onModeChanged: onModeChanged),
+        const SizedBox(height: 12),
+        ..._buildBody(context),
+      ],
+    );
+  }
+
+  List<Widget> _buildBody(BuildContext context) {
+    if (!signedIn) {
+      return const [
+        _HomeTravelGuideStatus(
+          icon: Icons.cloud_off_outlined,
+          message: _cloudSignInMessage,
+        ),
+      ];
     }
-    return FutureBuilder<List<EntityReview>>(
-      future: travelGuideFuture,
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          return _HomeTravelGuideSection(
-            reviews: snapshot.data!,
-            onChanged: onRetry,
-          );
-        }
-        if (snapshot.hasError) {
-          return _HomeTravelGuideStatus(
+    // 已经有内容时不因为刷新而清空，重载进度由下拉刷新自己的指示器表达。
+    if (reviews.isEmpty) {
+      if (loading) return const [LinearProgressIndicator()];
+      if (error != null) {
+        return [
+          _HomeTravelGuideStatus(
             message: '当前无法获取出行指南',
             onRetry: onRetry,
-          );
-        }
-        return const Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _SectionHeading(title: '出行指南'),
-            SizedBox(height: 12),
-            LinearProgressIndicator(),
-          ],
-        );
-      },
+          ),
+        ];
+      }
+      return const [_HomeTravelGuideStatus(message: '暂无出行指南')];
+    }
+    return [
+      Column(
+        children: [
+          for (var index = 0; index < reviews.length; index++)
+            EntityReviewCard(
+              review: reviews[index],
+              showTarget: true,
+              showTripLinks: true,
+              showDivider: index < reviews.length - 1,
+              contentPadding: EdgeInsets.fromLTRB(
+                0,
+                index == 0 ? 0 : 12,
+                0,
+                index < reviews.length - 1 ? 14 : 4,
+              ),
+              onChanged: onRetry,
+              onTargetTap: () =>
+                  openEntityReviewTarget(context, reviews[index]),
+              onTripTap: (trip) => _openTrip(context, reviews[index], trip),
+            ),
+        ],
+      ),
+      if (loadingMore)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (!hasMore)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Center(
+            child: Text(
+              '没有更多了',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  void _openTrip(BuildContext context, EntityReview review, TripRecord trip) {
+    Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => TripRecordDetailsPage.public(
+          ticketId: trip.ticketId ?? trip.id,
+          onOwnerTap: () => Navigator.of(context).push(
+            m3PageRoute(builder: (_) => PublicUserPage(userId: review.userId)),
+          ),
+        ),
+      ),
     );
   }
 }
 
+/// 「出行指南」的小标题与排序方式切换，两者并排一行。
+/// 切换器右对齐，窄屏放不下时自己横向滚动，不会顶破标题。
+class _TravelGuideHeader extends StatelessWidget {
+  const _TravelGuideHeader({required this.mode, required this.onModeChanged});
+
+  final TravelGuideMode mode;
+  final ValueChanged<TravelGuideMode> onModeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const _SectionHeading(title: '出行指南'),
+        const SizedBox(width: 12),
+        // 标题按内容宽度，剩下的宽度全给切换器；reverse 让它在放得下时靠右。
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            reverse: true,
+            child: SegmentedButton<TravelGuideMode>(
+              showSelectedIcon: false,
+              segments: [
+                for (final option in TravelGuideMode.values)
+                  ButtonSegment<TravelGuideMode>(
+                    value: option,
+                    label: Text(option.label),
+                  ),
+              ],
+              selected: {mode},
+              onSelectionChanged: (selection) =>
+                  onModeChanged(selection.first),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 出行指南的「没有内容 / 出错 / 未登录」提示条。标题行由 [_TravelGuideHeader] 负责。
 class _HomeTravelGuideStatus extends StatelessWidget {
   const _HomeTravelGuideStatus({
     required this.message,
@@ -903,83 +1115,18 @@ class _HomeTravelGuideStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SectionHeading(title: '出行指南'),
-        const SizedBox(height: 12),
-        AppCard.outlined(
-          padding: EdgeInsets.zero,
-          child: ListTile(
-            leading: Icon(icon),
-            title: Text(message),
-            trailing: onRetry == null
-                ? null
-                : IconButton(
-                    tooltip: '重试',
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh),
-                  ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _HomeTravelGuideSection extends StatelessWidget {
-  const _HomeTravelGuideSection({
-    required this.reviews,
-    required this.onChanged,
-  });
-
-  final List<EntityReview> reviews;
-  final Future<void> Function() onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    if (reviews.isEmpty) {
-      return const _HomeTravelGuideStatus(message: '暂无出行指南');
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SectionHeading(title: '出行指南'),
-        const SizedBox(height: 12),
-        Column(
-          children: [
-            for (var index = 0; index < reviews.length; index++)
-              EntityReviewCard(
-                review: reviews[index],
-                showTarget: true,
-                showTripLinks: true,
-                showDivider: index < reviews.length - 1,
-                contentPadding: EdgeInsets.fromLTRB(
-                  0,
-                  index == 0 ? 0 : 12,
-                  0,
-                  index < reviews.length - 1 ? 14 : 4,
-                ),
-                onChanged: onChanged,
-                onTargetTap: () =>
-                    openEntityReviewTarget(context, reviews[index]),
-                onTripTap: (trip) => _openTrip(context, reviews[index], trip),
+    return AppCard.outlined(
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(message),
+        trailing: onRetry == null
+            ? null
+            : IconButton(
+                tooltip: '重试',
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
               ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  void _openTrip(BuildContext context, EntityReview review, TripRecord trip) {
-    Navigator.of(context).push(
-      m3PageRoute(
-        builder: (_) => TripRecordDetailsPage.public(
-          ticketId: trip.ticketId ?? trip.id,
-          onOwnerTap: () => Navigator.of(context).push(
-            m3PageRoute(builder: (_) => PublicUserPage(userId: review.userId)),
-          ),
-        ),
       ),
     );
   }

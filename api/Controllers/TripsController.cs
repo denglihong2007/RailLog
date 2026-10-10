@@ -40,9 +40,18 @@ public sealed class TripsController(
         return reviews is null ? NotFound() : Ok(reviews);
     }
 
+    /// <summary>
+    /// 首页「出行指南」。不带 mode 时保持旧的「热门 + 相关」混排（老客户端仍在用）；
+    /// 带 mode=hot|related 时按分页返回单一排序方式，供无限滚动取下一页。
+    /// </summary>
     [HttpGet("travel-guide")]
-    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetHomeTravelGuide() =>
-        Ok(await database.GetHomeTravelGuideReviewsAsync(UserId));
+    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetHomeTravelGuide(
+        [FromQuery] string? mode,
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 20) =>
+        string.IsNullOrWhiteSpace(mode)
+            ? Ok(await database.GetHomeTravelGuideReviewsAsync(UserId))
+            : Ok(await database.GetTravelGuideFeedAsync(UserId, mode, offset, limit));
 
     [HttpPost("sync")]
     public async Task<ActionResult<SyncResponse>> Sync(SyncRequest request)

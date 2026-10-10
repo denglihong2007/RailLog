@@ -18,8 +18,19 @@ public sealed class RailLogDatabase
     private const double MaxAverageSpeedKmh = 360;
     private const int HomeTravelGuideLimit = 12;
     private const int HomeTravelGuideHotLimit = 4;
-    // 热门排序的时间衰减：评价每老去这么多天，其反应数的权重减半。
+    private const int TravelGuideMaxPageSize = 50;
+    // 「全站热门」的综合排序 = 时间衰减 × (7 × 回应分 + 3 × 篇幅分) / 10，结果落在 0~1。
+    // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值及以上得满分。
+    //   用对数是因为第一个回应比第十个珍贵得多，而线上回应本来就稀疏（约八成评价为 0）。
+    // 篇幅分：正文字数线性到参考字数为止，超出不再加分，避免长篇与灌水互相抬价。
+    // 权重 7:3：回应仍是主导——2 个回应就压过「零回应但写满字数」；
+    // 但篇幅也不只是微调，写满参考字数能顶掉 1 个多回应的差距。
+    // 三项之外的评分不再参与，评价星级是个人口味而不是热度。
     private const int HomeTravelGuideHotDecayDays = 45;
+    private const int HomeTravelGuideHotReactionRef = 10;
+    private const int HomeTravelGuideHotCharRef = 120;
+    private const int HomeTravelGuideHotReactionWeight = 7;
+    private const int HomeTravelGuideHotCharWeight = 3;
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
@@ -1042,21 +1053,7 @@ public sealed class RailLogDatabase
         var includedIds = result.Select(review => review.Id).ToHashSet();
         if (result.Count >= HomeTravelGuideLimit) return result;
 
-        await using var tripsCommand = connection.CreateCommand();
-        tripsCommand.CommandText = """
-            SELECT Id
-            FROM TripRecords
-            WHERE UserId=$userId AND DeletedAt IS NULL AND IsRailTrip=1
-            ORDER BY COALESCE(DepartureTime, TravelDate) DESC, Id DESC;
-            """;
-        tripsCommand.Parameters.AddWithValue("$userId", currentUserId);
-        var tripIds = new List<long>();
-        await using (var reader = await tripsCommand.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-                tripIds.Add(reader.GetInt64(0));
-        }
-
+        var tripIds = await GetUserTripIdsAsync(connection, currentUserId);
         foreach (var ticketId in tripIds)
         {
             var related = await GetTravelGuideReviewsAsync(ticketId, currentUserId);
@@ -1071,10 +1068,141 @@ public sealed class RailLogDatabase
         return result;
     }
 
+    /// <summary>
+    /// 「出行指南」拆开排序方式后的分页取数：热门按反应数的时间衰减分排序，
+    /// 与我相关按「行程由新到旧、同行程内评价由新到旧」排序（即原来混排里的相关段顺序）。
+    /// 返回条数少于 <paramref name="limit"/> 就表示没有下一页。
+    /// </summary>
+    public async Task<IReadOnlyList<EntityReviewResponse>> GetTravelGuideFeedAsync(
+        string currentUserId,
+        string mode,
+        int offset,
+        int limit)
+    {
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, TravelGuideMaxPageSize);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+
+        if (!string.Equals(mode, "related", StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPopularEntityReviewsAsync(
+                connection,
+                currentUserId,
+                limit,
+                offset);
+        }
+
+        // 相关段的顺序由「行程新鲜度」决定，所以只能沿行程逐条铺开；
+        // 跳过前 offset 条后取满 limit 条即可提前返回，代价与 offset 同阶。
+        var tripIds = await GetUserTripIdsAsync(connection, currentUserId);
+        var seen = new HashSet<long>();
+        var result = new List<EntityReviewResponse>();
+        foreach (var ticketId in tripIds)
+        {
+            var related = await GetTravelGuideReviewsAsync(ticketId, currentUserId);
+            if (related is null) continue;
+            foreach (var review in related)
+            {
+                if (!seen.Add(review.Id)) continue;
+                if (seen.Count <= offset) continue;
+                result.Add(review);
+                if (result.Count >= limit) return result;
+            }
+        }
+        return result;
+    }
+
+    private static async Task<List<long>> GetUserTripIdsAsync(
+        SqliteConnection connection,
+        string currentUserId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id
+            FROM TripRecords
+            WHERE UserId=$userId AND DeletedAt IS NULL AND IsRailTrip=1
+            ORDER BY COALESCE(DepartureTime, TravelDate) DESC, Id DESC;
+            """;
+        command.Parameters.AddWithValue("$userId", currentUserId);
+        var tripIds = new List<long>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            tripIds.Add(reader.GetInt64(0));
+        return tripIds;
+    }
+
+    /// <summary>当前用户自己发表的评价，最新在前。「我的评价」页面的数据源。</summary>
+    public async Task<IReadOnlyList<EntityReviewResponse>> GetUserEntityReviewsAsync(
+        string currentUserId,
+        int offset,
+        int limit)
+    {
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, TravelGuideMaxPageSize);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,
+                   u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,
+                   r.SecondTripId,r.TransferMinutes,r.RouteFromStation,
+                   r.RouteToStation,r.Dish,r.Price,r.CreatedAt,
+                   trip.Id,trip.CreatedAt,trip.TrainNumber,trip.RollingStock,
+                   trip.CompanyName,trip.FromStation,trip.ToStation,
+                   trip.DepartureTime,trip.ArrivalTime,trip.MileageKm,
+                   trip.ViaRoutes,trip.SeatType,trip.SeatNumber,trip.Price,
+                   trip.Notes,trip.IsRailTrip,
+                   secondTrip.Id,secondTrip.CreatedAt,secondTrip.TrainNumber,
+                   secondTrip.RollingStock,secondTrip.CompanyName,
+                   secondTrip.FromStation,secondTrip.ToStation,
+                   secondTrip.DepartureTime,secondTrip.ArrivalTime,
+                   secondTrip.MileageKm,secondTrip.ViaRoutes,
+                   secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
+                   secondTrip.Notes,secondTrip.IsRailTrip,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=r.UserId
+                   ), 0)
+            FROM EntityReviews r
+            JOIN AspNetUsers u ON u.Id=r.UserId
+            LEFT JOIN TripRecords trip ON trip.Id=r.TripId
+                AND trip.UserId=r.UserId AND trip.DeletedAt IS NULL
+            LEFT JOIN TripRecords secondTrip ON secondTrip.Id=r.SecondTripId
+                AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
+            WHERE r.UserId=$currentUserId
+            ORDER BY r.CreatedAt DESC, r.Id DESC
+            LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$currentUserId", currentUserId);
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+        var result = new List<EntityReviewResponse>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                result.Add(ReadEntityReview(reader));
+        }
+        var reactions = await GetReviewReactionSummariesAsync(
+            connection,
+            result.Select(review => review.Id).ToList(),
+            currentUserId);
+        return result
+            .Select(review => review with
+            {
+                Reactions = reactions.GetValueOrDefault(review.Id, []),
+            })
+            .ToList();
+    }
+
     private static async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
         SqliteConnection connection,
         string currentUserId,
-        int limit)
+        int limit,
+        int offset = 0)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -1107,16 +1235,27 @@ public sealed class RailLogDatabase
                 AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
             WHERE r.UserId <> $currentUserId
             ORDER BY (
-                SELECT COUNT(*)
-                FROM EntityReviewReactions reaction
-                WHERE reaction.ReviewId=r.Id
-            ) * 1.0 / (
-                1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
-            ) DESC, r.CreatedAt DESC, r.Id DESC
-            LIMIT $limit;
+                1.0 / (
+                    1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
+                )
+            ) * (
+                {HomeTravelGuideHotReactionWeight} * MIN(1.0,
+                    LN(1 + (
+                        SELECT COUNT(*)
+                        FROM EntityReviewReactions reaction
+                        WHERE reaction.ReviewId=r.Id
+                    )) / LN(1 + {HomeTravelGuideHotReactionRef})
+                )
+                + {HomeTravelGuideHotCharWeight} * MIN(1.0,
+                    LENGTH(TRIM(r.Comment)) * 1.0 / {HomeTravelGuideHotCharRef}
+                )
+            ) / {HomeTravelGuideHotReactionWeight + HomeTravelGuideHotCharWeight}.0
+            DESC, r.CreatedAt DESC, r.Id DESC
+            LIMIT $limit OFFSET $offset;
             """;
         command.Parameters.AddWithValue("$currentUserId", currentUserId);
         command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
         var result = new List<EntityReviewResponse>();
         await using (var reader = await command.ExecuteReaderAsync())
         {
