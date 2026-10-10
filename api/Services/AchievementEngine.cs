@@ -2467,13 +2467,11 @@ public static partial class AchievementEngine
     private static bool HasLonelyCarriage(string? value) =>
         RollingStockMatches(value, new RollingStockTarget("RZ25K", "111111"));
 
-    /// <summary>第二种解锁方式：坐 CR400AF-AS-1111 的 11 车厢。</summary>
+    /// <summary>第二种解锁方式：坐 CR400AF-AS-1111 的 11 车厢。车组号同样按
+    /// RollingStockTarget 判，只有座位号里的车厢段是另一条线（车组号对了还得在 11 车）。</summary>
     private static bool RidesEleventhCarriageOf1111(PublicTrip trip) =>
         CarriageNumber(trip.SeatNumber) == 11 &&
-        TrainModelParser.ParseTrainString(trip.RollingStock).Any(parsed =>
-            parsed.Category == TrainCategory.EMU &&
-            parsed.ModelCode.Equals("CR400AF-AS", StringComparison.OrdinalIgnoreCase) &&
-            parsed.Numbers.Contains("1111", StringComparer.OrdinalIgnoreCase));
+        RollingStockMatches(trip.RollingStock, new RollingStockTarget("CR400AF-AS", "1111"));
 
     /// <summary>座位号里的车厢号（“11车11号”）。加挂车厢单独编号、不属于车组的第 11 车厢，
     /// 所以“加X车”一律不算。</summary>
