@@ -187,6 +187,8 @@ public static partial class AchievementEngine
         new("CRH2A", "4090"),
         new("CRH2E", "2139")
     ];
+    /// <summary>「我全都要」的收集清单。无座不是席别而是入座方式，靠座位号判定（见 IsNoSeat），
+    /// 所以在清单里它是特殊项：站票只点亮它，不再计入票面席别。</summary>
     private static readonly HashSet<string> RegularSeatTypes =
     [
         "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
@@ -468,10 +470,10 @@ public static partial class AchievementEngine
         new("allSeatTypes", RailwayCatalog, "checklist_outlined", "我全都要", "分别乘坐全部常规席别", 40,
             Note: "无座、硬座、软座、二等座、一等座、特等座、优选一等座、商务座、硬卧、软卧、二等卧、一等卧、高级软卧、动卧、高级动卧",
             NarrativeNote: "能看出你很热衷于尝试未体验过的事物",
-            Trigger: i => FirstCollectionCompletion(i.Trips, RegularSeatTypes, trip => SeatTypeMatches(trip.SeatType))),
+            Trigger: i => FirstCollectionCompletion(i.Trips, RegularSeatTypes, SeatTypeMatches)),
         new("noSeat12Hours", ExtremeChallenges, "fitness_center_outlined", "体力非凡", "持无座车票乘坐至少 12 小时", 25,
             NarrativeNote: "还好国铁没有放开自由席",
-            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
+            Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(12))),
         new("sweatLikeRain", ExtremeChallenges, "mode_fan_off", "汗如雨下", "乘坐单程至少 12 小时的非空调列车", 15,
             NarrativeNote: "即使风扇开到最大也是杯水车薪",
@@ -915,7 +917,7 @@ public static partial class AchievementEngine
         new("immovableMountain", ExtremeChallenges, "accessibility_new", "不动如山", "持无座车票乘坐至少 24 小时", 50,
             NarrativeNote: "你站你也麻",
             Hidden: true,
-            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
+            Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24))),
         new("pitchDark", ExtremeChallenges, "inventory_2_outlined", "暗无天日", "乘坐棚车代客的列车", 80,
             Note: "路用列车也可以",
@@ -926,7 +928,7 @@ public static partial class AchievementEngine
             "持无座或硬座车票乘坐单程至少 24 小时的非空调列车", 80,
             NarrativeNote: "老资历我敬你",
             Hidden: true,
-            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) is "无座" or "硬座" &&
+            Trigger: i => First(i.Trips, trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24) &&
                 HasNonAirConditionedCoach(trip.RollingStock))),
         new("richerThanNation", ExtremeChallenges, "diamond_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元", 80,
@@ -1269,10 +1271,10 @@ public static partial class AchievementEngine
         "allEmuSeries" => P(
             CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
             EmuModelFamilies.Count),
-        "allSeatTypes" => P(CollectedCount(trips, trip => SeatTypeMatches(trip.SeatType)), RegularSeatTypes.Count),
-        "noSeat12Hours" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 12),
+        "allSeatTypes" => P(CollectedCount(trips, SeatTypeMatches), RegularSeatTypes.Count),
+        "noSeat12Hours" => P(MaxDurationHours(trips.Where(IsNoSeat)), 12),
         "sweatLikeRain" => P(MaxDurationHours(trips.Where(trip => HasNonAirConditionedCoach(trip.RollingStock))), 12),
-        "immovableMountain" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 24),
+        "immovableMountain" => P(MaxDurationHours(trips.Where(IsNoSeat)), 24),
         "hundredTickets" => P(trips.Count, 100),
         "thousandTickets" => P(trips.Count, 1000),
         "hundredStations" => P(trips.SelectMany(trip => new[] { trip.FromStation.Trim(), trip.ToStation.Trim() }).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).Count(), 100),
@@ -1317,7 +1319,7 @@ public static partial class AchievementEngine
             CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels)),
             DistributedSleeperEmuModels.Count),
         "standingTall" => P(
-            MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) is "无座" or "硬座" &&
+            MaxDurationHours(trips.Where(trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
                 HasNonAirConditionedCoach(trip.RollingStock))),
             24),
         "envoyArrival" => P(ForeignCapitalCount(trips), 3),
@@ -1378,7 +1380,7 @@ public static partial class AchievementEngine
                 "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
                 "硬卧", "软卧", "二等卧", "一等卧", "高级软卧", "动卧", "高级动卧"
             }.Select(seat => (Key: seat, Label: seat)),
-            trip => SeatTypeMatches(trip.SeatType)),
+            SeatTypeMatches),
         "lonelyPlanet" => RouteRequirements(trips, ["若和铁路", "格库线"]),
         "verticalChina" => StationRequirements(trips, ["漠河", "三亚"]),
         "horizontalChina" => StationRequirements(trips, ["阿克陶", "抚远"]),
@@ -2142,11 +2144,19 @@ public static partial class AchievementEngine
         .DefaultIfEmpty(0)
         .Max();
 
-    private static HashSet<string> SeatTypeMatches(string? value)
+    private static HashSet<string> SeatTypeMatches(PublicTrip trip)
     {
-        var normalized = NormalizedSeatType(value);
+        // 无座是入座方式而不是席别，站票只点亮「无座」这一项，不再计入票面席别。
+        if (IsNoSeat(trip)) return new HashSet<string>(StringComparer.Ordinal) { "无座" };
+        var normalized = NormalizedSeatType(trip.SeatType);
         return RegularSeatTypes.Where(seat => seat == normalized).ToHashSet(StringComparer.Ordinal);
     }
+
+    /// <summary>无座：座位号里带“无座”即算（“无座”“2车无座”“99车无座”），与席别无关。
+    /// 旧数据里有把无座写进席别的（“无座”“二等座无座”），一并兼容。</summary>
+    private static bool IsNoSeat(PublicTrip trip) =>
+        (trip.SeatNumber ?? string.Empty).Contains("无座", StringComparison.Ordinal) ||
+        (trip.SeatType ?? string.Empty).Contains("无座", StringComparison.Ordinal);
 
     private static string NormalizedSeatType(string? value)
     {
