@@ -14,6 +14,8 @@ namespace RailLog.API.Services;
 public sealed class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
+    // 均速上限：超过它的行程说明里程或时长填错，不参与速度排行。
+    private const double MaxAverageSpeedKmh = 360;
     private const int HomeTravelGuideLimit = 12;
     private const int HomeTravelGuideHotLimit = 4;
     // 热门排序的时间衰减：评价每老去这么多天，其反应数的权重减半。
@@ -2097,6 +2099,7 @@ public sealed class RailLogDatabase
             .Select(item => (
                 item.Trip,
                 Speed: item.Trip.Trip.MileageKm * 3600 / item.Duration!.Value))
+            .Where(item => item.Speed <= MaxAverageSpeedKmh)
             .ToList();
         var tripBoards = new TripLeaderboards(
             RankTrips(trips.Select(item => (item, item.Trip.Price)), descending: true, currentUserId),
