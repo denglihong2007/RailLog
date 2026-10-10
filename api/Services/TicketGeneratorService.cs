@@ -41,7 +41,10 @@ public sealed partial class TicketGeneratorService(
 
         var ticketNumber = $"A{trip.TicketId.ToString("D6", CultureInfo.InvariantCulture)}";
         var travelDate = trip.DepartureTime ?? trip.CreatedAt;
-        var settlementDate = travelDate.AddDays(1).ToString("MMdd", CultureInfo.InvariantCulture);
+        // 结算日期跟着「打印日期」走，而不是乘车日期。本系统没有单独的出票时间，
+        // 就把行程的录入时间当作打印日期，取它的次日。
+        var settlementDate = trip.CreatedAt.AddDays(1)
+            .ToString("MMdd", CultureInfo.InvariantCulture);
         var fromPinyinTask = stationPinyin.ResolveAsync(trip.FromStation, cancellationToken);
         var toPinyinTask = stationPinyin.ResolveAsync(trip.ToStation, cancellationToken);
         var qrTask = DownloadQrAsync(trip.TicketId, cancellationToken);
