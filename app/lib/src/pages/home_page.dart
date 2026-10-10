@@ -17,6 +17,7 @@ import 'package:raillog/src/pages/partner_applications_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/trip_chart_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
+import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/achievement_service.dart';
 import 'package:raillog/src/services/entity_review_navigation.dart';
@@ -53,6 +54,7 @@ class _HomePageState extends State<HomePage> {
   Future<List<DashboardAchievement>>? _achievementsFuture;
   Future<List<EntityReview>>? _travelGuideFuture;
   TripDashboardStats? _lastStats;
+  bool _isResetting = false;
 
   @override
   void initState() {
@@ -116,6 +118,82 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _confirmResetDatabase() async {
+    final signedIn = SessionService.instance.isSignedIn;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重置本地数据库？'),
+        content: Text(
+          signedIn
+              ? '将删除并重建本机数据库，本机缓存的行程与设置都会被清空。'
+                    '已同步到云端的行程会在重置后自动拉回；'
+                    '标记为仅本地、或从未同步的行程会永久丢失，无法恢复。'
+              : '将删除并重建本机数据库，本机上的全部行程与设置都会被清空，'
+                    '此操作无法撤销。未同步到云端的行程会永久丢失。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('重置'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _resetLocalDatabase();
+  }
+
+  Future<void> _resetLocalDatabase() async {
+    setState(() => _isResetting = true);
+    try {
+      await DbHelper.instance.resetDatabase();
+      // The auth token lives in the same database, so re-seed it before syncing.
+      // Without this the user is signed out, and the trips pulled back down carry
+      // an owner_user_id that `getAllTrips` filters out while signed out.
+      await SessionService.instance.persistCurrentSession();
+      var restored = false;
+      if (SessionService.instance.isSignedIn) {
+        try {
+          await CloudSyncService.instance.sync();
+          restored = true;
+        } on SessionException {
+          // Offline or server-side failure: the trips come back on the next sync.
+        }
+      }
+      if (!mounted) return;
+      _lastStats = null;
+      try {
+        await _refresh();
+      } catch (_) {
+        // Keep the reset result; `_refresh` re-raises its own stats failure.
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            restored ? '本地数据库已重置，已从云端同步' : '本地数据库已重置',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('重置本地数据库失败：$error')));
+    } finally {
+      if (mounted) setState(() => _isResetting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<TripDashboardStats>(
@@ -126,8 +204,14 @@ class _HomePageState extends State<HomePage> {
           return _HomeStatus(
             icon: Icons.error_outline,
             message: '读取行程数据失败',
+            hint: SessionService.instance.isSignedIn
+                ? '本地数据库可能已损坏。行程已同步到云端，重置后会自动拉回。'
+                : '本地数据库可能已损坏。未同步到云端的行程会永久丢失。',
             actionLabel: '重试',
             onAction: _refresh,
+            secondaryActionLabel: '重置本地数据库',
+            onSecondaryAction: _confirmResetDatabase,
+            isBusy: _isResetting,
           );
         }
         if (!snapshot.hasData) {
@@ -1559,6 +1643,10 @@ class _HomeStatus extends StatelessWidget {
     this.isLoading = false,
     this.actionLabel,
     this.onAction,
+    this.hint,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
+    this.isBusy = false,
   });
 
   final String message;
@@ -1566,6 +1654,12 @@ class _HomeStatus extends StatelessWidget {
   final bool isLoading;
   final String? actionLabel;
   final Future<void> Function()? onAction;
+  final String? hint;
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
+
+  /// Disables both actions and turns the secondary one into a progress spinner.
+  final bool isBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -1582,11 +1676,34 @@ class _HomeStatus extends StatelessWidget {
               Icon(icon, size: 32, color: colors.error),
             const SizedBox(height: 16),
             Text(message, textAlign: TextAlign.center),
+            if (hint != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                hint!,
+                textAlign: TextAlign.center,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 16),
               FilledButton.tonal(
-                onPressed: onAction,
+                onPressed: isBusy ? null : onAction,
                 child: Text(actionLabel!),
+              ),
+            ],
+            if (secondaryActionLabel != null && onSecondaryAction != null) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: isBusy ? null : onSecondaryAction,
+                icon: isBusy
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.settings_backup_restore),
+                label: Text(secondaryActionLabel!),
               ),
             ],
           ],

@@ -7,7 +7,10 @@ import 'package:raillog/src/services/database_path_service.dart';
 class DbHelper {
   DbHelper._privateConstructor();
   static final DbHelper instance = DbHelper._privateConstructor();
+  static const _databaseFileName = 'raillog.db';
+  static const _databaseVersion = 7;
   static Database? _database;
+  static String? _databasePath;
   Future<void> Function()? onTripsChanged;
   String? Function()? activeUserId;
   Future<Database> get database async {
@@ -18,26 +21,50 @@ class DbHelper {
 
   Future<Database> _initDatabase() async {
     final path = await DatabasePathService.writablePath(
-      'raillog.db',
+      _databaseFileName,
       migrateLegacyDesktopDatabase: true,
     );
 
-    return await openDatabase(
+    return _open(path);
+  }
+
+  Future<Database> _open(String path) async {
+    final db = await openDatabase(
       path,
-      version: 7,
+      version: _databaseVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
+    _databasePath = path;
+    return db;
   }
 
   Future<void> useInMemoryDatabaseForTesting() async {
     await _database?.close();
-    _database = await openDatabase(
-      inMemoryDatabasePath,
-      version: 7,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    _database = await _open(inMemoryDatabasePath);
+  }
+
+  /// 删除本地数据库并重建一个空库。
+  ///
+  /// 这是给「本地库损坏、读取行程数据失败」兜底用的，会丢掉全部本地行程，
+  /// 包括登录凭证（`auth_token` 也存在这个库里），所以调用方需要在此之后
+  /// 用 `SessionService.persistCurrentSession` 把登录态写回并触发一次云同步。
+  Future<void> resetDatabase() async {
+    try {
+      await _database?.close();
+    } catch (_) {
+      // 库损坏时 close 本身也可能抛，不能因此阻断删除。
+    }
+    _database = null;
+    // _databasePath 为 null 说明上次 openDatabase 就失败了——这正是库损坏最典型
+    // 的表现，同样要把路径推导出来删干净。这里不做遗留库迁移，反正马上要删。
+    final path =
+        _databasePath ??
+        await DatabasePathService.writablePath(_databaseFileName);
+    if (path != inMemoryDatabasePath) {
+      await DatabasePathService.deleteDatabaseFiles(_databaseFileName);
+    }
+    _database = await _open(path);
   }
 
   Future<void> _onCreate(Database db, int version) async {

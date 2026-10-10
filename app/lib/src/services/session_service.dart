@@ -169,6 +169,19 @@ class SessionService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 把内存里的登录态写回本地库，用于重置数据库之后。
+  ///
+  /// 凭证和行程存在同一个库里，重置会把它们一起清掉。若不写回，用户会被登出，
+  /// 而随后从云端拉回的行程都带着 owner_user_id，会在未登录时被 `getAllTrips`
+  /// 过滤掉——行程明明在库里却一条都看不见。
+  Future<void> persistCurrentSession() async {
+    final token = _token;
+    final user = _user;
+    if (token == null || user == null) return;
+    await DbHelper.instance.setSetting(_tokenKey, token);
+    await _persistProfile();
+  }
+
   Future<void> _storeAuth(Map<String, dynamic> json) async {
     _token = json['token'] as String;
     _user = UserProfile.fromJson(json['user'] as Map<String, dynamic>);
