@@ -431,15 +431,33 @@ class CachedWay:
     is_conventional: bool
     coords: List[geo.Coord]
     # OSM 的 way 名（`name`/`name:zh`），绝大多数中国铁路正线都带，且就是客里表里的
-    # 线路名。只用于车站坐标消歧（见 disambiguate_stations），寻路本身不看它。
+    # 线路名。寻路本身不看它，但**普速腿偏好哪条线**要靠它——见 `preferred_for`。
     name: Optional[str] = None
+    # 由 name 归一化出来的线路匹配键（见 [geo.line_match_key]），建网格时算一次。
+    line_key: Optional[str] = field(init=False, default=None)
 
-    def preferred_for(self, profile: str) -> bool:
+    def __post_init__(self) -> None:
+        self.line_key = geo.line_match_key(self.name) if self.name else None
+
+    def preferred_for(self, profile: str, line_key: Optional[str] = None) -> bool:
+        """这条 way 算不算「目标线」。
+
+        高铁侧继续认 OSM 的 `highspeed`/`maxspeed` 标签：那是映射者主动打的，是证据。
+        普速侧**不能**认标签——`_is_conventional_way` 的规则是「没打高铁标签就算普速」，
+        于是站场股道、无名联络线、乃至真正的其他普速线全在同一个默认桶里，那个桶的
+        `preferred_ratio` 说明不了任何事，却拿到最高优先级（实测宁蓉线宁渝段因此被画到
+        并行的宁西线上：沪蓉线里程误差 0.22km、宁西线 0.47km，两条都在宽容带内，普速
+        那一桶的 ratio 1.00 直接翻掉了里程证据）。所以普速侧改认**线路名**：只有名字
+        对得上这条线路的 way 才算数；对不上就是空集，让里程自己说话。
+        """
         if profile == geo.HSR:
             return self.is_hsr
-        if profile == geo.CONVENTIONAL:
-            return self.is_conventional
-        return self.is_hsr or self.is_conventional
+        if profile == geo.ALL:
+            return self.is_hsr or self.is_conventional
+        # 站线（两者皆假）不属于任何线路，名字再像也不算。
+        if not (self.is_hsr or self.is_conventional):
+            return False
+        return line_key is not None and self.line_key == line_key
 
 
 def _tags_to_flags(tags: dict) -> Tuple[bool, bool]:
@@ -456,6 +474,12 @@ def _quantized_bbox(bbox: Tuple[float, float, float, float]) -> Tuple[float, flo
     return tuple(round(value / BBOX_QUANTUM) * BBOX_QUANTUM for value in bbox)  # type: ignore[return-value]
 
 
+# 磁盘缓存的内容版本。tile 文件里存的东西一变就要 +1，并让文件名带上它——这些缓存
+# **没有任何新鲜度检查**（`RailSource.ways` 只看文件在不在），不改名就会静默读到旧
+# 格式的数据。v2 起每条 way 多存一个 name（普速腿的偏好靠它）。
+CACHE_FORMAT_VERSION = 2
+
+
 class RailSource:
     """按 bbox 取数，带磁盘缓存；返回该范围内的全部 railway=rail way。"""
 
@@ -467,7 +491,9 @@ class RailSource:
 
     def ways(self, bbox: Tuple[float, float, float, float]) -> List[CachedWay]:
         bbox = _quantized_bbox(bbox)
-        cache_path = self.cache_dir / self.name / f"{_bbox_cache_key(bbox)}.json.gz"
+        cache_path = self.cache_dir / self.name / (
+            f"{_bbox_cache_key(bbox)}.v{CACHE_FORMAT_VERSION}.json.gz"
+        )
         if cache_path.exists():
             return _read_cache(cache_path)
         ways = self.fetch(bbox)
@@ -482,16 +508,30 @@ class RailSource:
 def _read_cache(path: Path) -> List[CachedWay]:
     with gzip.open(path, "rt", encoding="utf-8") as handle:
         payload = json.load(handle)
-    return [
-        CachedWay(is_hsr=bool(flags & 1), is_conventional=bool(flags & 2), coords=[tuple(c) for c in coords])
-        for flags, coords in payload
-    ]
+    ways: List[CachedWay] = []
+    for entry in payload:
+        # v1 的 tile 只有 (flags, coords)。文件名已经带版本号，正常读不到这种，留着容错。
+        if len(entry) == 2:
+            flags, coords = entry
+            name = None
+        else:
+            flags, name, coords = entry
+        ways.append(
+            CachedWay(
+                is_hsr=bool(flags & 1),
+                is_conventional=bool(flags & 2),
+                coords=[tuple(c) for c in coords],
+                name=name,
+            )
+        )
+    return ways
 
 
 def _write_cache(path: Path, ways: List[CachedWay]) -> None:
     payload = [
         (
             (1 if way.is_hsr else 0) | (2 if way.is_conventional else 0),
+            way.name,
             [[lat, lon] for lat, lon in way.coords],
         )
         for way in ways
@@ -514,7 +554,7 @@ def _parse_overpass(payload: dict) -> List[CachedWay]:
         is_hsr, is_conventional = _tags_to_flags(tags)
         if not (is_hsr or is_conventional) and not geo.is_service_rail(tags):
             continue  # 地铁/电车等非正线，直接丢掉
-        ways.append(CachedWay(is_hsr, is_conventional, coords))
+        ways.append(CachedWay(is_hsr, is_conventional, coords, geo.way_name(tags)))
     return ways
 
 
@@ -534,7 +574,9 @@ def _parse_geojson(payload: dict) -> List[CachedWay]:
         coords = [(lat, lon) for lon, lat in geometry.get("coordinates") or []]
         if len(coords) < 2:
             continue
-        ways.append(CachedWay(is_hsr, is_conventional, coords))
+        ways.append(
+            CachedWay(is_hsr, is_conventional, coords, geo.way_name(properties))
+        )
     return ways
 
 
@@ -1324,8 +1366,16 @@ def rail_data_for_leg(source: RailSource, leg: Leg) -> geo.RailData:
     bbox = geo.bbox_for_corridor(leg.start, leg.end, corridor_km)
     ways = source.ways(bbox)
     lines = [way.coords for way in ways]
-    preferred = [way.preferred_for(leg.profile) for way in ways]
-    return geo.RailData(lines=lines, preferred=preferred)
+    # 普速腿的偏好靠线路名匹配，高铁腿仍然靠标签；见 [CachedWay.preferred_for]。
+    line_key = (
+        geo.line_match_key(leg.route_name) if leg.profile == geo.CONVENTIONAL else None
+    )
+    preferred = [way.preferred_for(leg.profile, line_key) for way in ways]
+    return geo.RailData(
+        lines=lines,
+        preferred=preferred,
+        names=[way.name for way in ways],
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1337,6 +1387,9 @@ def rail_data_for_leg(source: RailSource, leg: Leg) -> geo.RailData:
 class LegResult:
     leg: Leg
     plan: geo.LegPlan
+    # 这一段的偏好集是怎么来的：`tags`（高铁，认 OSM 标签）/ `way-name`（普速，名字
+    # 匹配上了同名正线）/ `none`（普速，名字对不上任何 way，纯按里程判定）。
+    preferred_basis: str = ""
 
 
 def plan_leg_with_source(
@@ -1345,6 +1398,7 @@ def plan_leg_with_source(
     step_m: float,
     max_error_ratio: float,
     detour_ratio: float = geo.DEFAULT_DETOUR_RATIO,
+    jump_radius_km: float = geo.DEFAULT_JUMP_RADIUS_KM,
 ) -> LegResult:
     # 坐标不可信的段在枚举阶段就定好了：取数毫无意义（走廊会覆盖半个国家），直接记失败。
     if leg.suspect_reason is not None:
@@ -1353,6 +1407,12 @@ def plan_leg_with_source(
         rail = rail_data_for_leg(source, leg)
     except Exception as exc:
         return LegResult(leg, geo.LegPlan(ok=False, reason=f"fetch_failed: {exc}"))
+    if leg.profile == geo.HSR:
+        basis = "tags"
+    elif any(rail.preferred):
+        basis = "way-name"
+    else:
+        basis = "none"
     plan = geo.plan_leg(
         leg.start,
         leg.end,
@@ -1362,8 +1422,9 @@ def plan_leg_with_source(
         step_m=step_m,
         max_error_ratio=max_error_ratio,
         detour_ratio=detour_ratio,
+        jump_radius_km=jump_radius_km,
     )
-    return LegResult(leg, plan)
+    return LegResult(leg, plan, basis)
 
 
 # --------------------------------------------------------------------------
@@ -1394,10 +1455,11 @@ WORKER_STEADY_GB = 0.6
 LOAD_MEMORY_BUDGET_RATIO = 0.7
 
 _WORKER_SOURCE: Optional[RailSource] = None
-_WORKER_OPTIONS: Tuple[float, float, float] = (
+_WORKER_OPTIONS: Tuple[float, float, float, float] = (
     400.0,
     0.35,
     geo.DEFAULT_DETOUR_RATIO,
+    geo.DEFAULT_JUMP_RADIUS_KM,
 )
 
 
@@ -1448,6 +1510,7 @@ def _init_worker(
     step_m: float,
     max_error_ratio: float,
     detour_ratio: float,
+    jump_radius_km: float = geo.DEFAULT_JUMP_RADIUS_KM,
     load_slots: Optional[object] = None,
     stations_context: Optional[Tuple[str, str]] = None,
 ) -> None:
@@ -1474,15 +1537,17 @@ def _init_worker(
     finally:
         if load_slots is not None:
             load_slots.release()
-    _WORKER_OPTIONS = (step_m, max_error_ratio, detour_ratio)
+    _WORKER_OPTIONS = (step_m, max_error_ratio, detour_ratio, jump_radius_km)
 
 
 def _plan_leg_in_worker(leg: Leg) -> LegResult:
     source = _WORKER_SOURCE
     if source is None:  # initializer 没跑成，说明进程池配置有问题
         return LegResult(leg, geo.LegPlan(ok=False, reason="worker_not_initialized"))
-    step_m, max_error_ratio, detour_ratio = _WORKER_OPTIONS
-    return plan_leg_with_source(source, leg, step_m, max_error_ratio, detour_ratio)
+    step_m, max_error_ratio, detour_ratio, jump_radius_km = _WORKER_OPTIONS
+    return plan_leg_with_source(
+        source, leg, step_m, max_error_ratio, detour_ratio, jump_radius_km=jump_radius_km
+    )
 
 
 def _worker_initializer_args(args: argparse.Namespace, load_slots: object = None) -> Tuple:
@@ -1495,6 +1560,7 @@ def _worker_initializer_args(args: argparse.Namespace, load_slots: object = None
         args.step_m,
         args.max_error_ratio,
         args.detour_ratio,
+        args.jump_radius_km,
         load_slots,
         (str(context[0]), str(context[1])) if context else None,
     )
@@ -1516,6 +1582,10 @@ def _progress(results: Iterable[LegResult], total: int) -> Iterator[LegResult]:
 # 写库
 # --------------------------------------------------------------------------
 
+# 输出库的 schema 版本，写进 meta 与 PRAGMA user_version。v2 起 tracks 多了四个诊断列、
+# 并新增 track_lines（折线的线路构成）。App 按列名 SELECT，加列加法对它无影响。
+SCHEMA_VERSION = 2
+
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE tracks (
@@ -1523,16 +1593,38 @@ CREATE TABLE tracks (
   from_station    TEXT NOT NULL,
   to_station      TEXT NOT NULL,
   profile         TEXT NOT NULL,
-  -- 上下行分离：'' 表示该区间在 OSM 里只有一条线（或两条贴在一起画成一条）；
-  -- 'up'/'down' 表示上下行画成了两条明显分开的轨道，这两行各是其中一条，
-  -- 按左行规则沿 from→to 走向更靠左的那条为 'up'。App 端据此分画两条。
-  direction       TEXT NOT NULL DEFAULT '',
   polyline        BLOB NOT NULL,   -- gzip(JSON([[lat,lon], ...]))，WGS84
   point_count     INTEGER NOT NULL,
   length_km       REAL NOT NULL,
   mileage_km      REAL,
   mileage_error_km REAL,
-  PRIMARY KEY (route_name, from_station, to_station, direction)
+  -- 贴目标线（高铁：OSM 等级标签；普速：线路名匹配）的里程占比，与选路时用的是同一个数
+  preferred_ratio REAL,
+  -- 折线由几段拼成（= track_lines 的行数）。注意**不是「换了几条线」**：无名 way
+  -- （站场股道、少数没标名字的联络线）也算一段，而 OSM 里正线常被短的无名 way 打断，
+  -- 于是一条线跑到底的段也可能有几十。想数真正的换线次数用
+  -- `SELECT COUNT(DISTINCT line_name) FROM track_lines WHERE line_name <> '未命名'`。
+  line_count      INTEGER,
+  -- 登乘跳：折线首尾「站坐标 → 目标线上车点」那两段直线的合计（km），每段各自不超
+  -- 过 --jump-radius-km，所以这个数最大到 2×半径；0 表示两端都是同分量吸附、没跳
+  board_jump_km   REAL,
+  -- 偏好集怎么来的：tags / way-name / none（见 LegResult.preferred_basis）
+  preferred_basis TEXT,
+  PRIMARY KEY (route_name, from_station, to_station)
+);
+-- 每段折线由哪几条线路拼成、各多少公里，按顺序一行一段。用它可以直接查
+-- 「这段在哪儿换了线」。线路名取 OSM way 的 name；无名段写「未命名」。
+--
+-- 不塞进 tracks 的一列 JSON 里：这张表要看的是「一次查询回答一类问题」
+-- （某条线被走了多少次、哪个枢纽换线最多），JSON 列答不了。
+CREATE TABLE track_lines (
+  route_name   TEXT NOT NULL,
+  from_station TEXT NOT NULL,
+  to_station   TEXT NOT NULL,
+  seq          INTEGER NOT NULL,   -- 从 0 开始的段序
+  line_name    TEXT NOT NULL,
+  length_km    REAL NOT NULL,
+  PRIMARY KEY (route_name, from_station, to_station, seq)
 );
 CREATE TABLE failures (
   route_name    TEXT NOT NULL,
@@ -1615,32 +1707,48 @@ def write_database(
             leg = result.leg
             plan = result.plan
             if plan.ok:
-                if plan.split:
-                    # 上行线是 plan.polyline（见 LegPlan 的字段说明），下行另写一行。
-                    rows = [
-                        ("up", plan.polyline, plan.length_km),
-                        ("down", plan.down_polyline, plan.down_length_km),
-                    ]
-                else:
-                    rows = [("", plan.polyline, plan.length_km)]
-                for direction, points, length_km in rows:
-                    polyline = encode_polyline(points)
-                    total_bytes += len(polyline)
-                    connection.execute(
-                        "INSERT OR REPLACE INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?)",
+                polyline = encode_polyline(plan.polyline)
+                total_bytes += len(polyline)
+                runs = list(plan.line_runs)
+                # 必须写列名：schema 加列后位置式 VALUES 会当场炸
+                connection.execute(
+                    "INSERT OR REPLACE INTO tracks ("
+                    " route_name, from_station, to_station, profile, polyline,"
+                    " point_count, length_km, mileage_km, mileage_error_km,"
+                    " preferred_ratio, line_count, board_jump_km, preferred_basis"
+                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        leg.route_name,
+                        leg.from_station,
+                        leg.to_station,
+                        leg.profile,
+                        polyline,
+                        len(plan.polyline),
+                        plan.length_km,
+                        plan.mileage_km,
+                        plan.mileage_error_km,
+                        plan.preferred_ratio,
+                        len(runs),
+                        plan.board_jump_km,
+                        result.preferred_basis,
+                    ),
+                )
+                connection.executemany(
+                    "INSERT OR REPLACE INTO track_lines ("
+                    " route_name, from_station, to_station, seq, line_name, length_km"
+                    ") VALUES (?,?,?,?,?,?)",
+                    (
                         (
                             leg.route_name,
                             leg.from_station,
                             leg.to_station,
-                            leg.profile,
-                            direction,
-                            polyline,
-                            len(points),
-                            length_km,
-                            plan.mileage_km,
-                            plan.mileage_error_km,
-                        ),
-                    )
+                            seq,
+                            name,
+                            length,
+                        )
+                        for seq, (name, length) in enumerate(runs)
+                    ),
+                )
                 ok_count += 1
             else:
                 connection.execute(
@@ -1663,6 +1771,8 @@ def write_database(
 
         for key, value in meta.items():
             connection.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, str(value)))
+        # 给别的程序（App、排查脚本）一个不用读 meta 就能问的版本号
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         connection.commit()
     finally:
         connection.close()
@@ -1701,6 +1811,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--detour-ratio", type=float, default=geo.DEFAULT_DETOUR_RATIO,
                         help="折线实长相对起终点直线距离的倍率上限，超出则记为失败"
                              "（客里表站坐标失真导致的绕路）")
+    parser.add_argument("--jump-radius-km", type=float, default=geo.DEFAULT_JUMP_RADIUS_KM,
+                        help="站场与目标正线拓扑断开时的「登乘跳」半径（km）；"
+                             "0 关闭跳线、退回只认同连通分量的吸附")
     parser.add_argument("--limit", type=int, help="只处理前 N 段（调试用）")
     parser.add_argument("--apply", action="store_true",
                         help="真正联网取数并写库；缺省只打印计划")
@@ -1816,6 +1929,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             {
                 "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "source": "stub",
+                "schema_version": SCHEMA_VERSION,
                 "legs_total": "0",
                 "legs_ok": "0",
                 "legs_failed": "0",
@@ -1870,11 +1984,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not item.plan.ok:
             reason = item.plan.reason.split(":")[0]
             reasons[reason] = reasons.get(reason, 0) + 1
+    # 普速腿里名字对不上任何 way 的段数：这些段没有偏好信号，只按里程判定。数字一涨，
+    # 说明运价里程表的线路名和 OSM 的 way 名开始分叉（要么补别名，要么查 OSM）。
+    basis_counts: Dict[str, int] = {}
+    for item in finished:
+        basis_counts[item.preferred_basis] = basis_counts.get(item.preferred_basis, 0) + 1
 
     stations_out = station_rows(
         coordinates, legs, [name for name, _prev, _next in discarded]
     )
-    split_count = sum(1 for item in finished if item.plan.ok and item.plan.split)
     meta = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "source": source_name,
@@ -1886,14 +2004,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "legs_total": len(legs),
         "legs_ok": ok_count,
         "legs_failed": len(legs) - ok_count,
-        "split_legs": split_count,
         "routes_total": full.route_count,
         "stations": len(stations_out),
         "coordinate_source": coordinate_source,
         # 影响结果的取数/算法口径，记下来才能分辨两份库是哪一套跑出来的。
         "way_filter": "railway=rail；service=yard/siding 作为非 preferred 连接线保留",
         "snap_fallback": "最近吸附点不通时改试同分量的次近节点",
-        "track_split": "上下行在 OSM 里明显分离（>40m 且同长）时按左行规则分写 up/down 两行",
         "station_disambiguation": (
             f"同名候选按线路 way 就近消歧（半径 {LINE_SNAP_RADIUS_KM:.0f}km），"
             f"修正 {len(fixes)} 个站的坐标"
@@ -1901,6 +2017,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "station_coordinate_discards": (
             f"前后站里程异常时舍去坐标（共 {len(discarded)} 个）；"
             f"它们在 stations 表里写成坐标为 NULL 的行，App 见到即不回退 CSV"
+        ),
+        "schema_version": SCHEMA_VERSION,
+        # 偏好集的依据分两侧：高铁认 OSM 等级标签，普速认线路名。查线位画错时先看这行。
+        "preferred_basis": (
+            "高铁腿 preferred=way.is_hsr（OSM 标签）；"
+            "普速腿 preferred=way 名与 route_name 归一化后同名（line_match_key）；"
+            "名字对不上则偏好集为空、该腿纯按里程与绕行倍率判定"
+        ),
+        "line_aliases": ";".join(f"{alias}->{canonical}" for alias, canonical in geo.LINE_ALIASES),
+        "jump_radius_km": f"{args.jump_radius_km}",
+        "board_jump": (
+            "站场与目标正线拓扑断开时，允许吸附到半径内目标线上的节点"
+            "（跨连通分量），该段直线计入折线；0 表示关闭"
         ),
     }
 
@@ -1911,11 +2040,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print("\n结果")
     print(f"  成功         : {ok_count} / {len(legs)}"
           f"（{ok_count / max(1, len(legs)) * 100:.1f}%）")
-    if split_count:
-        print(f"  上下行分离   : {split_count} 段（各写 up/down 两行）")
     if reasons:
         for reason, count in sorted(reasons.items(), key=lambda item: -item[1]):
             print(f"  失败 {reason:<20}: {count}")
+    if basis_counts:
+        summary = "，".join(
+            f"{name} {basis_counts[name]}" for name in ("tags", "way-name", "none")
+            if name in basis_counts
+        )
+        print(f"  偏好依据     : {summary}")
+    jump_legs = sum(1 for item in finished if item.plan.ok and item.plan.board_jump_km > 0)
+    if jump_legs:
+        print(f"  登乘跳       : {jump_legs} 段（跨连通分量吸附到目标正线）")
     print(f"  折线体积     : {total_bytes / 1024 / 1024:.2f} MB（压缩后）")
     print(f"  输出         : {args.out}")
     print(f"  耗时         : {time.time() - started:.1f}s")

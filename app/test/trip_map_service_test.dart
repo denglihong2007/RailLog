@@ -472,62 +472,16 @@ void main() {
         ],
       });
 
-      expect(tracks.findOriented('京沪高速线', '北京南', '廊坊').single, hasLength(3));
+      expect(tracks.findOriented('京沪高速线', '北京南', '廊坊'), hasLength(3));
       // 反向乘车用反向键命中同一条折线，渲染层负责倒序。
-      expect(tracks.findOriented('京沪高速线', '廊坊', '北京南').single, hasLength(3));
-      expect(tracks.findOriented('宝成线', '北京南', '廊坊').isEmpty, isTrue);
-      expect(tracks.findOriented('京沪高速线', '北京南', '天津南').isEmpty, isTrue);
+      expect(tracks.findOriented('京沪高速线', '廊坊', '北京南'), hasLength(3));
+      expect(tracks.findOriented('宝成线', '北京南', '廊坊'), isNull);
+      expect(tracks.findOriented('京沪高速线', '北京南', '天津南'), isNull);
     });
 
     test('empty index reports no tracks', () {
       final track = const RailTrackIndex.empty().findOriented('京沪高速线', '北京南', '廊坊');
-      expect(track.isEmpty, isTrue);
-      expect(track.isSplit, isFalse);
-    });
-
-    test('reads up/down rows as a split pair', () {
-      final tracks = _indexWith({
-        '阳安线|石泉县|池河': [
-          [33.0, 108.0],
-          [33.05, 108.0],
-          [33.1, 108.0],
-        ],
-      }, split: {
-        '阳安线|石泉县|池河': {
-          'up': [
-            [33.0, 108.0],
-            [33.05, 108.0],
-            [33.1, 108.0],
-          ],
-          'down': [
-            [33.0, 108.0],
-            [33.05, 108.004],
-            [33.1, 108.0],
-          ],
-        },
-      });
-
-      final track = tracks.findOriented('阳安线', '石泉县', '池河');
-      expect(track.isSplit, isTrue);
-      expect(track.up, hasLength(3));
-      expect(track.down, hasLength(3));
-      // 单条折线时用上行线；这里不该再看见中心线。
-      expect(track.single, isNull);
-      expect(track.singleOrUp, same(track.up));
-    });
-
-    test('a lone up row falls back to the single line', () {
-      // 缺一条就不算分离：画出半截上下行比画一条中心线更糟。
-      final tracks = _indexWith(const {}, split: {
-        '阳安线|石泉县|池河': {
-          'up': [
-            [33.0, 108.0],
-            [33.1, 108.0],
-          ],
-        },
-      });
-
-      expect(tracks.findOriented('阳安线', '石泉县', '池河').isEmpty, isTrue);
+      expect(track, isNull);
     });
   });
 
@@ -821,69 +775,6 @@ void main() {
     });
   });
 
-  group('TripMapService up/down separation', () {
-    const splitLines = {
-      '京沪高速线|北京|济南西': {
-        'up': [
-          [39.9022, 116.4211],
-          [38.5, 116.60],
-          [36.67, 116.89],
-        ],
-        'down': [
-          [39.9022, 116.4211],
-          [38.5, 116.70],
-          [36.67, 116.89],
-        ],
-      },
-    };
-
-    TripMapData buildSplit({int id = 46}) {
-      final index = StationCoordinateIndex.fromCsv(csv);
-      final trip = _trip(id: id, date: DateTime(2026, 1, 1));
-      return TripMapService.buildData(
-        [trip],
-        index,
-        journeyStations: {
-          trip.clientId: const JourneyStations(
-            stations: ['北京站', '济南西站'],
-            legRouteNames: ['京沪高速铁路'],
-          ),
-        },
-        tracks: _indexWith(const {}, split: splitLines),
-      );
-    }
-
-    test('carries the down line alongside the up line', () {
-      final route = buildSplit().routes.single;
-
-      // 上行线走 points、下行线走 splitPoints，两条都是「从→到」的走向。
-      expect(route.points[1].longitude, 116.60);
-      expect(route.splitPoints, isNotNull);
-      expect(route.splitPoints![1].longitude, 116.70);
-      expect(route.splitPoints!.first.latitude, route.points.first.latitude);
-      expect(route.splitPoints!.last.latitude, route.points.last.latitude);
-    });
-
-    test('renders the down line reversed, never the same line twice', () {
-      final routes = buildSplit().routes;
-      final down = [
-        for (final point in routes.single.splitPoints!) point.amapPosition,
-      ];
-
-      final html = buildAmapHtml(
-        routes,
-        darkMode: false,
-        backgroundColor: '#FFFFFF',
-        showStationMarkers: false,
-      );
-
-      expect(html, contains('"splitCoordinates"'));
-      expect(html, contains(jsonEncode(down)));
-      // 下行线倒序画：南行列车走的是它，脉冲方向才对得上。
-      expect(html, contains('route.splitCoordinates.slice().reverse()'));
-    });
-  });
-
   group('TripMapService shadowed straight lines', () {
     // 多一个中间站，好让另一趟车展开成一条盖住直线的折线。
     const expandedCsv = '''station_name,latitude,longitude
@@ -1063,10 +954,6 @@ void main() {
           StationCoordinate(latitude: 39.9, longitude: 116.4),
           StationCoordinate(latitude: 31.2, longitude: 121.3),
         ],
-        splitPoints: [
-          StationCoordinate(latitude: 39.85, longitude: 116.4),
-          StationCoordinate(latitude: 31.15, longitude: 121.3),
-        ],
       );
 
       // 带车站标记的那份代码最全（多一段 endpoints/markers）。
@@ -1128,7 +1015,7 @@ void main() {
   });
 
   group('反向查到的折线要掉头', () {
-    // 管线按方向各存一行，一趟车走过的方向不一定有那一行。这时用反向键命中的折线
+    // 管线每段只存一个走向，一趟车走过的方向不一定就是那一行。这时用反向键命中的折线
     // 必须倒过来再交给渲染层，否则它会被当成 from→to 的点列，首尾各被补上一个站坐标，
     // 画成「站间直线 + 倒着走的真轨 + 站间直线」的往返折返。
     final forward = {
@@ -1143,36 +1030,13 @@ void main() {
     test('findOriented 命中反向键时把点序倒过来', () {
       final tracks = _indexWith(forward);
 
-      final direct = tracks.findOriented('京沪高速线', '北京', '济南西').single!;
+      final direct = tracks.findOriented('京沪高速线', '北京', '济南西')!;
       expect(direct.first, [39.9022, 116.4211]);
       expect(direct.last, [36.67, 116.89]);
 
-      final reversed = tracks.findOriented('京沪高速线', '济南西', '北京').single!;
+      final reversed = tracks.findOriented('京沪高速线', '济南西', '北京')!;
       expect(reversed.first, [36.67, 116.89]);
       expect(reversed.last, [39.9022, 116.4211]);
-    });
-
-    test('上下行分离的折线掉头时上下行对调', () {
-      // 「沿 from→to 左手边的是上行」，走向掉个头，原来的下行才是这趟车眼里的上行。
-      final tracks = _indexWith(const {}, split: {
-        '阳安线|石泉县|池河': {
-          'up': [
-            [33.0, 108.0],
-            [33.05, 108.0],
-          ],
-          'down': [
-            [33.0, 108.004],
-            [33.05, 108.004],
-          ],
-        },
-      });
-
-      final track = tracks.findOriented('阳安线', '池河', '石泉县');
-      expect(track.isSplit, isTrue);
-      expect(track.up!.first, [33.05, 108.004]);
-      expect(track.up!.last, [33.0, 108.004]);
-      expect(track.down!.first, [33.05, 108.0]);
-      expect(track.down!.last, [33.0, 108.0]);
     });
 
     test('反向乘车的行程贴着轨道，不来回折返', () {
@@ -1303,31 +1167,16 @@ void expectBalancedBrackets(String source) {
 ///
 /// 键里的名字按 rail_tracks.db 里的原样写（线路名带「线」、站名不带「站」后缀），
 /// 由 RailTrackIndex 自己归一化；polyline 走真实的 gzip(JSON) 编码，与管线一致。
-///
-/// [split] 造上下行分离的两行（`'up'`/`'down'`），与管线的 `direction` 列对应。
-RailTrackIndex _indexWith(
-  Map<String, List<List<double>>> tracks, {
-  Map<String, Map<String, List<List<double>>>> split = const {},
-}) {
+RailTrackIndex _indexWith(Map<String, List<List<double>>> tracks) {
   final rows = <Map<String, Object?>>[];
-  void add(String key, String direction, List<List<double>> points) {
-    final parts = key.split('|');
+  for (final entry in tracks.entries) {
+    final parts = entry.key.split('|');
     rows.add({
       'route_name': parts[0],
       'from_station': parts[1],
       'to_station': parts[2],
-      'direction': direction,
-      'polyline': gzip.encode(utf8.encode(jsonEncode(points))),
+      'polyline': gzip.encode(utf8.encode(jsonEncode(entry.value))),
     });
-  }
-
-  for (final entry in tracks.entries) {
-    add(entry.key, '', entry.value);
-  }
-  for (final entry in split.entries) {
-    for (final line in entry.value.entries) {
-      add(entry.key, line.key, line.value);
-    }
   }
   return RailTrackIndex.fromBatches(rows);
 }

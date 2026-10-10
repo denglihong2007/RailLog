@@ -266,6 +266,41 @@ def route_key(value: str) -> str:
     return (_ROUTE_SUFFIX_RE.sub("", trimmed) or trimmed).lower()
 
 
+# 线路匹配键的别名表：把同一件事的两种拼法归一，但**绝不抹掉速度等级本身**。抹掉
+# 「高速」会让「京广线」和「京广高速线」撞成一个键，京广线的车次就会被拉上高铁正线。
+LINE_ALIASES = (("客运专线", "高速"), ("高铁", "高速"), ("客专", "高速"))
+_SEGMENT_SUFFIX_RE = re.compile(r"段$")
+
+
+def line_match_key(value: str) -> str:
+    """线路匹配键：判断「这段行程该贴哪条 OSM way」。
+
+    与 [route_key] 严格分开——`route_key` 是折线主键（`track_key`）的一部分，动了全体
+    key 都会变，所以这里另起一套。名字先去掉尾部括号注释（OSM 里有「XX线 (上行)」这种
+    写法）、去空白、按 [LINE_ALIASES] 归一「高铁/客专」与「高速」，再取第一个「线」或
+    「铁路」之前的部分：客里表的线路名带区段后缀，OSM 的 way 名不带。
+
+    对不上就返回一个匹配不到任何 way 的键，这是**故意**的：说明这条线路名在 OSM 里没有
+    同名正线，调用方据此拿到空的偏好集、退化成纯里程判定（见 `preferred_for`）。
+    """
+    trimmed = (value or "").strip().replace("（", "(").replace("）", ")")
+    if not trimmed:
+        return ""
+    name = _PAREN_SUFFIX_RE.sub("", trimmed)
+    name = _WHITESPACE_RE.sub("", name)
+    if not name:
+        return ""
+    for alias, canonical in LINE_ALIASES:
+        name = name.replace(alias, canonical)
+    if "线" in name:
+        name = name.split("线", 1)[0]
+    elif "铁路" in name:
+        name = name.split("铁路", 1)[0]
+    else:
+        name = _SEGMENT_SUFFIX_RE.sub("", name)
+    return name.lower() or trimmed.lower()
+
+
 def track_key(route_name: str, from_station: str, to_station: str) -> str:
     return "|".join(
         (route_key(route_name), station_key(from_station), station_key(to_station))
@@ -368,19 +403,30 @@ def way_flags(tags: dict) -> Tuple[bool, bool]:
 class RailData:
     """一次取数范围内的铁路 way。
 
-    lines 是全部 way 的坐标序列；preferred[i] 表示第 i 条 way 是否匹配目标 profile。
+    lines 是全部 way 的坐标序列；preferred[i] 表示第 i 条 way 是否匹配目标 profile；
+    names[i] 是它的线路名（`name`/`name:zh`），只用于把折线拆成「哪几条线拼的」。
     """
 
     lines: List[List[Coord]] = field(default_factory=list)
     preferred: List[bool] = field(default_factory=list)
+    names: List[Optional[str]] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not self.lines
+
+    def names_padded(self) -> List[Optional[str]]:
+        """补到与 lines 等长。
+
+        names 是后加的字段，测试里大量字面构造只给 lines/preferred；补齐比要求每个
+        构造点都跟上一个 None 稳妥。
+        """
+        return [*self.names, *([None] * max(0, len(self.lines) - len(self.names)))]
 
     def merged(self, other: "RailData") -> "RailData":
         return RailData(
             lines=[*self.lines, *other.lines],
             preferred=[*self.preferred, *other.preferred],
+            names=[*self.names_padded(), *other.names_padded()],
         )
 
 
@@ -390,19 +436,32 @@ class RailGraph:
 
     adjacency 的边权是投影空间欧氏距离（km）；preferred_edges 记录该边是否
     至少被一条匹配目标 profile 的 way 覆盖，用于在长度相近的候选之间取舍。
+
+    way_of/way_names 是给「这条折线由哪几条线路拼成」用的侧表：edge → 建图时的 way
+    序号。**不塞进 adjacency 的元组里**——那个元组被 A*/Yen/重采样等一堆地方按
+    `(neighbor, weight)` 解包，动它等于全改一遍。
     """
 
     adjacency: Adjacency = field(default_factory=dict)
     preferred_edges: Set[EdgeKey] = field(default_factory=set)
+    way_of: Dict[EdgeKey, int] = field(default_factory=dict)
+    way_names: List[Optional[str]] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not self.adjacency
 
 
-def build_graph(lines: Iterable[Sequence[Coord]], preferred: Sequence[bool]) -> RailGraph:
+def build_graph(
+    lines: Iterable[Sequence[Coord]],
+    preferred: Sequence[bool],
+    names: Optional[Sequence[Optional[str]]] = None,
+) -> RailGraph:
     graph = RailGraph()
     for index, line in enumerate(lines):
         is_preferred = preferred[index] if index < len(preferred) else True
+        graph.way_names.append(
+            names[index] if names is not None and index < len(names) else None
+        )
         for i in range(len(line) - 1):
             a = quantize(line[i])
             b = quantize(line[i + 1])
@@ -413,8 +472,13 @@ def build_graph(lines: Iterable[Sequence[Coord]], preferred: Sequence[bool]) -> 
             weight = haversine_km(a, b)
             graph.adjacency[a].append((b, weight))
             graph.adjacency[b].append((a, weight))
+            key = edge_key(a, b)
+            # 两条 way 压在同一段边上时（并行 way、正线叠站线），归属记到 preferred 的
+            # 那条：拆段明细要回答的是「走的哪条线」，正线比站线更接近这个答案。
+            if key not in graph.way_of or is_preferred:
+                graph.way_of[key] = index
             if is_preferred:
-                graph.preferred_edges.add(edge_key(a, b))
+                graph.preferred_edges.add(key)
     return graph
 
 
@@ -433,14 +497,16 @@ def corridor_filter(
 
     lines: List[List[Coord]] = []
     preferred: List[bool] = []
-    for line, is_preferred in zip(rail.lines, rail.preferred):
+    names: List[Optional[str]] = []
+    for line, is_preferred, name in zip(rail.lines, rail.preferred, rail.names_padded()):
         for i in range(len(line) - 1):
             _, dist = project_to_segment(line[i], start, end)
             if dist <= corridor_km:
                 lines.append(line)
                 preferred.append(is_preferred)
+                names.append(name)
                 break
-    return RailData(lines=lines, preferred=preferred)
+    return RailData(lines=lines, preferred=preferred, names=names)
 
 
 # --------------------------------------------------------------------------
@@ -595,6 +661,9 @@ class PathCandidate:
     path: List[Coord]
     length_km: float
     preferred_ratio: float
+    # 登乘跳：折线首尾「站坐标 → 目标线上车点」两段直线的合计（km），每段各自不超
+    # 过 jump_radius_km，所以这个数最大到 2×半径。0 表示两端都是同分量吸附、没跳。
+    board_jump_km: float = 0.0
 
 
 @dataclass
@@ -607,12 +676,9 @@ class LegPlan:
     mileage_error_km: Optional[float] = None
     mileage_error_ratio: Optional[float] = None
     preferred_ratio: float = 0.0
-    # 上下行分离：该区间的上下行在 OSM 里画成了明显分开的两条轨道，这时
-    # `polyline`/`length_km` 是**上行线**，`down_polyline`/`down_length_km` 是下行线；
-    # 未分离时 split 为 False，另两个字段为空。只认单条折线的调用方忽略后三者即可。
-    split: bool = False
-    down_polyline: List[Coord] = field(default_factory=list)
-    down_length_km: float = 0.0
+    board_jump_km: float = 0.0
+    # 折线由哪几条线路拼成：[(线路名, km), ...]，相邻同名合并。
+    line_runs: List[Tuple[str, float]] = field(default_factory=list)
 
 
 def _preferred_ratio(path: Sequence[Coord], graph: RailGraph) -> float:
@@ -634,6 +700,34 @@ def _on_preferred_edge(graph: RailGraph, node: Coord) -> bool:
         edge_key(node, neighbor) in graph.preferred_edges
         for neighbor, _ in graph.adjacency.get(node, ())
     )
+
+
+# 没有 name 标签的 way（站场股道、少数没标名字的联络线）在拆段明细里的名字。
+# 用哨兵串而不是 SQL NULL：落库后可以直接 GROUP BY，NOT NULL 约束也不用放宽。
+UNNAMED_LINE = "未命名"
+
+
+def line_runs(path: Sequence[Coord], graph: RailGraph) -> List[Tuple[str, float]]:
+    """把一条已选路径切成 [(线路名, km), ...]，相邻同名合并。
+
+    只合并**相邻**的同名段：同一条线走一段、借道别的线、再回到它，应该留下两段，
+    跨着合并就把「在哪儿换的线」这个信息抹掉了。
+
+    跑在选中的原始 path 上，所以 `sum(km) + board_jump_km ≈ length_km`；`_finalize`
+    会把首尾顶点覆盖成站点坐标、再按 step 重采样，落在折线上的长度会略有出入。
+    """
+    runs: List[Tuple[str, float]] = []
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        index = graph.way_of.get(edge_key(a, b))
+        name = graph.way_names[index] if index is not None and index < len(graph.way_names) else None
+        label = name or UNNAMED_LINE
+        length = haversine_km(a, b)
+        if runs and runs[-1][0] == label:
+            runs[-1] = (label, runs[-1][1] + length)
+        else:
+            runs.append((label, length))
+    return runs
 
 
 def _snap_node(
@@ -674,6 +768,7 @@ def _snap_node(
         return b, dist
 
     was_preferred = edge_key(a, b) in graph.preferred_edges
+    split_way = graph.way_of.pop(edge_key(a, b), None)
     graph.preferred_edges.discard(edge_key(a, b))
     graph.adjacency[a] = [edge for edge in graph.adjacency[a] if edge[0] != b]
     graph.adjacency[b] = [edge for edge in graph.adjacency[b] if edge[0] != a]
@@ -682,6 +777,8 @@ def _snap_node(
         weight = haversine_km(node, endpoint)
         graph.adjacency[node].append((endpoint, weight))
         graph.adjacency[endpoint].append((node, weight))
+        if split_way is not None:
+            graph.way_of[edge_key(node, endpoint)] = split_way
         if was_preferred:
             graph.preferred_edges.add(edge_key(node, endpoint))
     return node, dist
@@ -808,6 +905,30 @@ def _alternative_snaps(
 EXTRA_SNAP_ERROR_RATIO = 0.05
 EXTRA_SNAP_PROFILE_FLOOR = 0.5
 
+# 站坐标所在的分量与目标线不通时，允许「跳」到目标线上的节点上车，这一跳的最大长度。
+#
+# 站场与正线在 OSM 里常常是两套互不共点的几何——并行正线本来就不该共点（实测广州北：
+# 京广线与京广高速线并行 14~24m、无共点，站坐标离京广线 31m、离京广高速线 417m）。
+# 同分量约束下，从普速侧走到正线要绕 40.40km，整段于是被画成 51.71km 的绕行线。
+# 这一跳本来就会以一小段直线出现在折线首尾，与站坐标到锚点的接驳段同性质（见
+# `_finalize`），所以这里只是把「接驳」从「5km 内的任意节点」收紧到「1km 内的**目标线**
+# 节点」。
+DEFAULT_JUMP_RADIUS_KM = 1.0
+# 每端参与配对的、接在目标边上的最近节点数。
+JUMP_SNAP_POOL = 8
+DEFAULT_JUMP_SNAPS = 4
+
+# 现有候选「大半走在目标线上」时就不必跳了——它已经是对的了，再跳只是白花钱。
+#
+# 为什么不用 `EXTRA_SNAP_PROFILE_FLOOR`（0.5）：那个数是给「主对候选可疑不可疑」用的，
+# 分不清「走在目标线上」和「走在另一条同样被偏好命中的线上」。高铁侧尤其糊——preferred
+# 的定义是「带 highspeed/maxspeed 标签」，于是任何一条 200km/h 以上的线都算数。实测
+# 京广高铁 广州北→广州南：站坐标吸附在京广线上（非偏好），两端同分量、走得通，那条
+# 走法借道南广线（250km/h，同样带标签），整段 ratio 0.5004 刚刚压过 0.5 的门槛，于是
+# 登乘跳一次都不触发，这一段就一直画在 51.71km 的绕行线上（里程差 4.71km）。跳上去的
+# 正确解是 46.10km、ratio 1.00、里程差 0.90km——两个指标都更好，只是没机会上场。
+JUMP_PROFILE_FLOOR = 0.9
+
 
 def _plan_attempt(
     graph: RailGraph,
@@ -819,6 +940,7 @@ def _plan_attempt(
     *,
     k: int,
     max_length_km: Optional[float],
+    board_jump: bool = False,
 ) -> List[PathCandidate]:
     """从一个吸附点对出发枚举候选路径，长度里补上两端吸附空隙。"""
     offset = from_dist + to_dist
@@ -831,9 +953,75 @@ def _plan_attempt(
             path=path,
             length_km=path_length_km(path) + offset,
             preferred_ratio=_preferred_ratio(path, graph),
+            board_jump_km=offset if board_jump else 0.0,
         )
         for path, _ in raw_paths
     ]
+
+
+def _jump_snap_candidates(
+    graph: RailGraph,
+    start: Coord,
+    end: Coord,
+    projection: Projection,
+    *,
+    radius_km: float,
+    k: int,
+    max_length_km: Optional[float],
+    jump_snaps: int,
+    seen: Set[Tuple[Coord, Coord]],
+) -> List[PathCandidate]:
+    """跨连通分量跳到目标线上的节点上车。
+
+    与 `_alternative_snaps` 的两点区别，缺一不可：
+
+    1. 池子**先按「接在目标边上的节点」过滤**、再按距离取最近几个。站场咽喉里的股道
+       节点比正线节点近得多，先按距离取池的话正线节点根本进不来——这正是 16 个节点的
+       旧池子（`SNAP_NODE_POOL`）在广州北失效的原因。
+    2. 不要求「两端节点同分量」只作为省钱的剪枝保留（不同分量之间 `_astar` 本来也
+       只会返回空），**不要求与站上最近的节点同分量**——这正是这一跳存在的理由。
+    """
+    if jump_snaps <= 0 or not graph.preferred_edges:
+        return []
+
+    def pool(point: Coord) -> List[Tuple[float, Coord]]:
+        near = [
+            (distance, node)
+            for node in graph.adjacency
+            if (distance := projection.distance_km(point, node)) <= radius_km
+            and _on_preferred_edge(graph, node)
+        ]
+        near.sort(key=lambda item: item[0])
+        return near[:JUMP_SNAP_POOL]
+
+    component = _component_ids(graph)
+    pairs = sorted(
+        (
+            (start_dist + end_dist, start_dist, start_node, end_dist, end_node)
+            for start_dist, start_node in pool(start)
+            for end_dist, end_node in pool(end)
+            if (start_node, end_node) not in seen
+            and component.get(start_node) == component.get(end_node)
+        ),
+        key=lambda item: item[0],
+    )
+
+    candidates: List[PathCandidate] = []
+    for _, from_dist, from_node, to_dist, to_node in pairs[:jump_snaps]:
+        candidates.extend(
+            _plan_attempt(
+                graph,
+                projection,
+                from_node,
+                from_dist,
+                to_node,
+                to_dist,
+                k=k,
+                max_length_km=max_length_km,
+                board_jump=True,
+            )
+        )
+    return candidates
 
 
 def search_paths(
@@ -847,6 +1035,8 @@ def search_paths(
     max_length_km: Optional[float] = None,
     mileage_km: Optional[float] = None,
     extra_snaps: int = 0,
+    jump_radius_km: float = DEFAULT_JUMP_RADIUS_KM,
+    jump_snaps: int = DEFAULT_JUMP_SNAPS,
 ) -> Tuple[List[PathCandidate], Optional[str]]:
     """吸附起终点后枚举候选路径，按长度升序返回。
 
@@ -903,6 +1093,26 @@ def search_paths(
                         skip=(from_node, to_node),
                     )
                 )
+                # 现有候选里连一条「大半走在目标线上」的都没有，才允许跨分量跳上去。
+                # 站上本来就有同分量的目标线节点时，上面的候选里必然有一个 ratio 达标的，
+                # 不会走到这里。
+                if not any(
+                    item.preferred_ratio >= JUMP_PROFILE_FLOOR
+                    for item in candidates
+                ):
+                    candidates.extend(
+                        _jump_snap_candidates(
+                            graph,
+                            start,
+                            end,
+                            projection,
+                            radius_km=jump_radius_km,
+                            k=k,
+                            max_length_km=max_length_km,
+                            jump_snaps=jump_snaps,
+                            seen={(item.path[0], item.path[-1]) for item in candidates},
+                        )
+                    )
             candidates.sort(key=lambda item: item.length_km)
             return candidates, None
         if index == 0:
@@ -917,6 +1127,30 @@ def search_paths(
                     skip=(start_node, end_node),
                 )
             )
+
+    # 同分量的吸附对全试过了还是不通，最后试一把跨分量登乘跳。
+    #
+    # 这一步不能并进上面的 `if candidates:` 里：主吸附对**直接不通**时（站场节点与正线
+    # 分属两个连通分量、又不在彼此的候选池里），`_plan_attempt` 返回 0 个候选，
+    # `_alternative_snaps` 的同分量约束又永远够不着正线，上面那段根本执行不到——而这里
+    # 是此时唯一的出路。
+    #
+    # 「通了但走错线」不走这条路，走上面那个判断：广州北→广州南 的主对就是通的（京广线
+    # 接联络线到南广线，51.71km），是 `JUMP_PROFILE_FLOOR` 那道门槛把跳线放行的。
+    jumped = _jump_snap_candidates(
+        graph,
+        start,
+        end,
+        projection,
+        radius_km=jump_radius_km,
+        k=k,
+        max_length_km=max_length_km,
+        jump_snaps=jump_snaps,
+        seen=set(),
+    )
+    if jumped:
+        jumped.sort(key=lambda item: item.length_km)
+        return jumped, None
     return [], "no_path"
 
 
@@ -940,7 +1174,16 @@ def _extra_snap_candidates(
     """
     if extra_snaps <= 0:
         return []
-    suspicious = (
+    # 一条偏好边都没有（普速腿的线路名对不上任何 OSM way）时，「ratio < 阈值」不再说明
+    # 任何事——它恒成立，所以那一条判据要整个让开，否则每个这样的段都白跑一遍额外枚举。
+    #
+    # 但**只让开 ratio 那条**，里程误差那条必须留着：那才是真正判断「这个吸附对看着就不对」
+    # 的判据，而名字对不上的腿恰恰最需要它。曾把两条一起挡掉（`if not graph.preferred_edges:
+    # return []`），代价是普速 name-miss 段丢掉了备用吸附锚点的兜底——实测 新靖线新海段
+    # 盐城→东台：主线吸附对所在分量里只有一条 82.27km 的绕行路（里程差 19.27km），而备用
+    # 锚点能找到 61.86km 的正路（里程差 1.14km）；护栏一挡，兜底不再执行，这段从「准」变
+    # 成「差 19km」。全国约 30 段因此从误差 <2km 劣化到 >2km。
+    suspicious = bool(graph.preferred_edges) and (
         min(item.preferred_ratio for item in primary) < EXTRA_SNAP_PROFILE_FLOOR
     )
     if not suspicious and mileage_km is not None and mileage_km > 0:
@@ -977,150 +1220,6 @@ def _extra_snap_candidates(
             seen.add(key)
             extra.append(item)
     return extra
-
-
-# --------------------------------------------------------------------------
-# 上下行分离
-# --------------------------------------------------------------------------
-#
-# 部分线路在 OSM 里把上行线与下行线画成两条明显分开的平行 way（实测阳安线
-# 石泉县→池河 分开 71~474m、南昆线 江西村→隆安 约 110m）。此时最短路枚举会给出
-# 两条长度都贴近运价里程、几何上却彼此分开的候选；只挑其中一条画出来，另一条就
-# 丢了，而把两条合成一条中心线又会把「双向」画成同一条轨道。
-#
-# 判据三个条件同时成立（缺一不可）：
-#   * 两条都贴近里程（相对误差不超过 close_error_ratio）——同一区间的上下行里程桩
-#     一致，这是「同一条线路的同一区间」的基本要求；
-#   * 两条长度相差不超过 TRACK_SPLIT_LENGTH_RATIO——上下行是同一走廊的两条轨道，
-#     实长差异极小；并行的另一条线路（新老线、普速与高铁）长度差通常远大于此，
-#     靠这一条把它们挡在外面；
-#   * 横向中位分离落在 [TRACK_SPLIT_MIN_M, TRACK_SPLIT_MAX_KM]——低于下限是画在
-#     一起的同一条线，高于上限则根本是两条不同走向的线路。
-#
-# 左右定号按国铁左行规则：沿 start→end 走向更靠左的那条是上行线（见
-# `_lateral_profile` 的正负号约定）。
-
-TRACK_SPLIT_MIN_M = 40.0
-TRACK_SPLIT_MAX_KM = 2.0
-TRACK_SPLIT_LENGTH_RATIO = 0.05
-TRACK_SPLIT_PROFILE_FLOOR = 0.5
-TRACK_SPLIT_SAMPLES = 21
-
-
-def _median(values: Iterable[float]) -> float:
-    items = sorted(values)
-    if not items:
-        return 0.0
-    mid = len(items) // 2
-    if len(items) % 2:
-        return items[mid]
-    return (items[mid - 1] + items[mid]) / 2.0
-
-
-def _lateral_profile(
-    path: Sequence[Coord],
-    start: Coord,
-    end: Coord,
-    samples: int = TRACK_SPLIT_SAMPLES,
-) -> Optional[List[float]]:
-    """路径相对 start→end 弦线的横向偏移采样（km，正 = 行进方向左侧）。
-
-    把路径上每个点投影到弦线，得到「沿弦线的归一化进度 t ∈ [0,1] → 有符号横向
-    偏移」，再按等间距的 t 采样成分段线性函数。t 越界时钳到端点。
-
-    正负号约定：弦线切向逆时针旋转 90° 得到左法向（东向行进时为北），所以偏移为
-    正表示该点在 start→end 走向的左手边——正是左行规则里上行线该待的那一侧。
-    """
-    if len(path) < 2:
-        return None
-    proj = Projection((start[0] + end[0]) / 2.0)
-    sx, sy = proj.to_xy(start)
-    ex, ey = proj.to_xy(end)
-    dx, dy = ex - sx, ey - sy
-    norm = math.hypot(dx, dy)
-    if norm == 0:
-        return None
-    tx, ty = dx / norm, dy / norm
-    nx, ny = -ty, tx  # 左法向
-
-    progress: List[float] = []
-    lateral: List[float] = []
-    for point in path:
-        px, py = proj.to_xy(point)
-        rx, ry = px - sx, py - sy
-        progress.append((rx * tx + ry * ty) / norm)
-        lateral.append(rx * nx + ry * ny)
-
-    profile: List[float] = []
-    step = 1.0 / (samples - 1) if samples > 1 else 0.0
-    for index in range(samples):
-        profile.append(_interpolate(progress, lateral, index * step))
-    return profile
-
-
-def _interpolate(progress: Sequence[float], values: Sequence[float], t: float) -> float:
-    """在 (progress, values) 上按 t 做分段线性插值（progress 沿路径递增）。"""
-    if t <= progress[0]:
-        return values[0]
-    if t >= progress[-1]:
-        return values[-1]
-    for i in range(len(progress) - 1):
-        if progress[i] <= t <= progress[i + 1]:
-            span = progress[i + 1] - progress[i]
-            if span <= 0:
-                return values[i + 1]
-            return values[i] + (values[i + 1] - values[i]) * (t - progress[i]) / span
-    return values[-1]
-
-
-def _split_pair(
-    candidates: Sequence[PathCandidate],
-    start: Coord,
-    end: Coord,
-    mileage_km: float,
-    close_error_ratio: float,
-) -> Optional[Tuple[PathCandidate, PathCandidate]]:
-    """在贴近里程的候选里找出一对上下行分离的轨道。
-
-    返回 (上行候选, 下行候选)；证据不足时返回 None，调用方按单条折线处理。
-    """
-    close = [
-        item
-        for item in candidates
-        if abs(item.length_km - mileage_km) <= mileage_km * close_error_ratio
-        and item.preferred_ratio >= TRACK_SPLIT_PROFILE_FLOOR
-    ]
-    if len(close) < 2:
-        return None
-
-    measured: List[Tuple[PathCandidate, List[float], float]] = []
-    for item in close:
-        profile = _lateral_profile(item.path, start, end)
-        if profile is None:
-            continue
-        interior = profile[1:-1] or profile
-        measured.append((item, profile, sum(interior) / len(interior)))
-    if len(measured) < 2:
-        return None
-
-    up = max(measured, key=lambda entry: entry[2])
-    down = min(measured, key=lambda entry: entry[2])
-    if up[0] is down[0]:
-        return None
-
-    longer = max(up[0].length_km, down[0].length_km)
-    if abs(up[0].length_km - down[0].length_km) > TRACK_SPLIT_LENGTH_RATIO * longer:
-        return None
-
-    # 端点被吸附到同两个站点上，偏移必然同时收敛到 0，所以只取中间段做判据。
-    inner_up = up[1][1:-1] or up[1]
-    inner_down = down[1][1:-1] or down[1]
-    separation = _median(
-        abs(a - b) for a, b in zip(inner_up, inner_down)
-    )
-    if not TRACK_SPLIT_MIN_M / 1000.0 <= separation <= TRACK_SPLIT_MAX_KM:
-        return None
-    return up[0], down[0]
 
 
 # 绕路护栏：折线实长相对起终点直线距离的倍率上限。
@@ -1174,20 +1273,22 @@ def plan_leg(
     close_error_ratio: float = 0.05,
     detour_ratio: float = DEFAULT_DETOUR_RATIO,
     extra_snaps: int = DEFAULT_EXTRA_SNAPS,
+    jump_radius_km: float = DEFAULT_JUMP_RADIUS_KM,
+    jump_snaps: int = DEFAULT_JUMP_SNAPS,
 ) -> LegPlan:
     """规划一个站间区间的轨道折线。
 
     先用走廊过滤缩小图，再枚举前 k 条最短路；里程已知时选长度最接近里程的那条，
     长度相近时优先贴目标 profile 的（preferred_ratio 高）。并行的高铁与普速在同名
     车站各有节点，站坐标可能离另一条线更近，所以主锚点的候选看着不对时会再算几个
-    「落在目标 profile 边上」的锚点一起评（见 `search_paths`）。
+    「落在目标 profile 边上」的锚点一起评（见 `search_paths`）；连贴线的候选都没有时，
+    还会跨连通分量跳到目标线上车（`_jump_snap_candidates`）。
 
     接受判据是「误差在 [max_error_ratio] 或 [error_slack_km] 之内」，取较宽松的一
     边——见 [DEFAULT_ERROR_SLACK_KM] 里为什么短腿必须有绝对余量。
 
-    通过判据后还有两道收尾：折线实长超过起终点直线距离 [detour_ratio] 倍的段直接
-    舍去（`circuitous`）；区间上下行在 OSM 里明显分离时，额外带出下行线
-    （`split`/`down_polyline`）。
+    通过判据后还有一道收尾：折线实长超过起终点直线距离 [detour_ratio] 倍的段直接
+    舍去（`circuitous`）。
     """
     if rail.is_empty():
         return LegPlan(ok=False, reason="no_rail_data", mileage_km=mileage_km)
@@ -1196,7 +1297,7 @@ def plan_leg(
     if corridor.is_empty():
         return LegPlan(ok=False, reason="no_rail_data", mileage_km=mileage_km)
 
-    graph = build_graph(corridor.lines, corridor.preferred)
+    graph = build_graph(corridor.lines, corridor.preferred, corridor.names_padded())
     if graph.is_empty():
         return LegPlan(ok=False, reason="empty_graph", mileage_km=mileage_km)
 
@@ -1216,6 +1317,8 @@ def plan_leg(
         max_length_km=max_length,
         mileage_km=mileage_km,
         extra_snaps=extra_snaps,
+        jump_radius_km=jump_radius_km,
+        jump_snaps=jump_snaps,
     )
     # 只有 1 个节点的「路径」不是轨道：起终点吸附到同一个节点时 Yen 就是给这个，长度
     # 等于两端吸附空隙之和，几何上却是一个点——`_finalize` 把首尾覆盖成站点坐标后连 2
@@ -1238,7 +1341,6 @@ def plan_leg(
         chosen = min(candidates, key=lambda item: (item.length_km, -item.preferred_ratio))
         error_km = None
         error_ratio = None
-        split = None  # 没有里程就无从判断两条候选是不是同一条线的上下行
     else:
         by_error = sorted(candidates, key=lambda item: abs(item.length_km - mileage_km))
         best_error = abs(by_error[0].length_km - mileage_km)
@@ -1265,14 +1367,8 @@ def plan_leg(
                 mileage_error_km=error_km,
                 mileage_error_ratio=error_ratio,
                 preferred_ratio=chosen.preferred_ratio,
+                board_jump_km=chosen.board_jump_km,
             )
-        # 分离的一对都取自已贴近里程的候选，必然也过得上面这道判据，所以可以直接
-        # 改判给上行线，不必再走一遍接受检查。
-        split = _split_pair(candidates, start, end, mileage_km, close_error_ratio)
-        if split is not None:
-            chosen = split[0]
-            error_km = abs(chosen.length_km - mileage_km)
-            error_ratio = error_km / mileage_km
 
     straight_km = haversine_km(start, end)
     if (
@@ -1297,11 +1393,9 @@ def plan_leg(
         mileage_error_km=error_km,
         mileage_error_ratio=error_ratio,
         preferred_ratio=chosen.preferred_ratio,
-        split=split is not None,
+        board_jump_km=chosen.board_jump_km,
+        line_runs=line_runs(chosen.path, graph),
     )
-    if split is not None:
-        plan.down_polyline = _finalize(split[1].path, start, end, step_m)
-        plan.down_length_km = split[1].length_km
     return plan
 
 
