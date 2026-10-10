@@ -46,8 +46,6 @@ class SettingsPage extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.lg),
                       _AccountHeaderCard(user: user),
-                      const SizedBox(height: AppSpacing.lg),
-                      const SettingsListCard(children: [_MyReviewsEntry()]),
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '个性化'),
                       const SizedBox(height: AppSpacing.sm),
@@ -121,30 +119,50 @@ class _AccountHeaderCard extends StatelessWidget {
 
   final UserProfile? user;
 
+  /// 账户卡与「我的评价」同属一张卡：评价挂在账户名下，拆成两张反而看不出从属关系。
   @override
   Widget build(BuildContext context) {
     final user = this.user;
     if (user == null) {
-      return SettingsCard(
+      return AppCard.filled(
         title: '账户',
         icon: Icons.account_circle_outlined,
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('登录 RailLog', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '登录后可同步行程和个人资料',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.lg,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '登录 RailLog',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '登录后可同步行程和个人资料',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  FilledButton.icon(
+                    onPressed: () => _push(context, const AuthPage()),
+                    icon: const Icon(Icons.login),
+                    label: const Text('登录或注册'),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            FilledButton.icon(
-              onPressed: () => _push(context, const AuthPage()),
-              icon: const Icon(Icons.login),
-              label: const Text('登录或注册'),
-            ),
+            const Divider(height: 1, indent: _accountRowDividerIndent),
+            const _MyReviewsEntry(),
           ],
         ),
       );
@@ -152,41 +170,58 @@ class _AccountHeaderCard extends StatelessWidget {
 
     final colors = Theme.of(context).colorScheme;
     return AppCard.filled(
-      onTap: () => _push(context, const AccountSecurityPage()),
-      child: Row(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          UserAvatar(
-            name: user.displayName,
-            imageUrl: user.avatarUrl,
-            size: 60,
-          ),
-          const SizedBox(width: AppSpacing.lg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  user.email,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: colors.onSurfaceVariant),
-                ),
-              ],
+          // 整卡不再可点，账户行自己是一块点击区，免得和下面那行抢手势。
+          InkWell(
+            onTap: () => _push(context, const AccountSecurityPage()),
+            child: Padding(
+              padding: AppSpacing.card,
+              child: Row(
+                children: [
+                  UserAvatar(
+                    name: user.displayName,
+                    imageUrl: user.avatarUrl,
+                    size: 60,
+                  ),
+                  const SizedBox(width: AppSpacing.lg),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          user.email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
             ),
           ),
-          const Icon(Icons.chevron_right),
+          const Divider(height: 1, indent: _accountRowDividerIndent),
+          const _MyReviewsEntry(),
         ],
       ),
     );
   }
 }
+
+/// 分隔线从列表行的文字处起画：卡片留白 16 + ListTile 的 leading 占位 40。
+const double _accountRowDividerIndent = 56;
 
 class _DisplayEntry extends StatelessWidget {
   const _DisplayEntry();
