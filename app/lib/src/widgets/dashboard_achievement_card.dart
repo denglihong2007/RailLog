@@ -359,6 +359,10 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'sync_alt_outlined' => Icons.sync_alt_outlined,
   'inventory_2_outlined' => Icons.inventory_2_outlined,
   'car_repair_outlined' => Icons.car_repair_outlined,
+  'travel_explore' => Icons.travel_explore,
+  'military_tech' => Icons.military_tech,
+  'numbers' => Icons.numbers,
+  'person_outline' => Icons.person_outline,
   _ => Icons.emoji_events_outlined,
 };
 

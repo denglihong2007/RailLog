@@ -211,6 +211,10 @@ const achievementIconCodepoints: Record<string, number> = {
   sync_alt_outlined: 0xf412,
   inventory_2_outlined: 0xf134,
   car_repair_outlined: 0xef2c,
+  travel_explore: 0xe67c,
+  military_tech: 0xe3e7,
+  numbers: 0xf0542,
+  person_outline: 0xe497,
 }
 
 const userInitial = computed(() => dashboard.value?.user.displayName.trim().charAt(0) || '旅')

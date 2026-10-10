@@ -407,6 +407,145 @@ public static partial class AchievementEngine
         new("阿斯塔纳", "阿斯塔纳（1号站、光明之路站）", ["阿斯塔纳", "光明之路"])
     ];
 
+    // 附表4：内地省会、自治区首府、直辖市与香港的主城区车站，供「纵横九州」
+    // （每座城市任意一站）与「功盖振声」（全部必选站）判定。站名已按 NormalizedStation
+    // 去掉末尾的「站」；Required=false 即附表里带 * 的站。旧站名只收录无歧义的——
+    // 中华门站的旧名「南京南」与现南京南站撞车、长宁站的旧名「上海西」与现上海西站撞车。
+    private static readonly IReadOnlyList<CapitalStation> CapitalStations =
+    [
+        new("北京", "北京", true, []),
+        new("北京", "北京南", true, []),
+        new("北京", "北京西", true, []),
+        new("北京", "北京北", true, []),
+        new("北京", "北京东", true, []),
+        new("北京", "北京丰台", true, ["丰台"]),
+        new("北京", "北京朝阳", true, []),
+        new("北京", "清河", true, []),
+        new("北京", "北京大兴", true, []),
+        new("哈尔滨", "哈尔滨", true, []),
+        new("哈尔滨", "哈尔滨西", true, []),
+        new("哈尔滨", "哈尔滨东", true, []),
+        new("哈尔滨", "哈尔滨北", true, []),
+        new("哈尔滨", "香坊", true, []),
+        new("长春", "长春", true, []),
+        new("长春", "长春西", true, []),
+        new("沈阳", "沈阳", true, []),
+        new("沈阳", "沈阳北", true, []),
+        new("沈阳", "沈阳南", true, []),
+        new("天津", "天津", true, []),
+        new("天津", "天津西", true, []),
+        new("天津", "天津南", true, []),
+        new("天津", "北辰", true, []),
+        new("呼和浩特", "呼和浩特", true, []),
+        new("呼和浩特", "呼和浩特东", true, []),
+        new("乌鲁木齐", "乌鲁木齐", true, []),
+        new("乌鲁木齐", "乌鲁木齐南", true, []),
+        new("银川", "银川", true, []),
+        new("银川", "河东机场", true, []),
+        new("西宁", "西宁", true, []),
+        new("西宁", "西宁西", false, []),
+        new("兰州", "兰州", true, []),
+        new("兰州", "兰州西", true, []),
+        new("兰州", "兰州新区", true, []),
+        new("兰州", "中川机场东", true, []),
+        new("兰州", "福利区", true, []),
+        new("兰州", "秦王川", true, []),
+        new("西安", "西安", true, []),
+        new("西安", "西安北", true, []),
+        new("西安", "西安东", true, []),
+        new("西安", "西安西", true, ["阿房宫"]),
+        new("西安", "引镇", true, ["西安南"]),
+        new("拉萨", "拉萨", true, []),
+        new("成都", "成都", false, []),
+        new("成都", "成都东", true, []),
+        new("成都", "成都南", true, []),
+        new("成都", "成都西", true, []),
+        new("成都", "双流机场", true, []),
+        new("成都", "成都龙泉驿", false, []),
+        new("重庆", "重庆", false, []),
+        new("重庆", "重庆西", true, []),
+        new("重庆", "重庆北", true, []),
+        new("重庆", "重庆东", true, []),
+        new("重庆", "沙坪坝", true, []),
+        new("重庆", "江北机场", true, []),
+        new("贵阳", "贵阳", true, []),
+        new("贵阳", "贵阳北", true, []),
+        new("贵阳", "贵阳东", true, []),
+        new("昆明", "昆明", true, []),
+        new("昆明", "昆明北", false, []),
+        new("昆明", "昆明南", true, []),
+        new("太原", "太原", true, []),
+        new("太原", "太原南", true, []),
+        new("石家庄", "石家庄", true, []),
+        new("石家庄", "石家庄北", true, []),
+        new("济南", "济南", true, []),
+        new("济南", "济南西", true, []),
+        new("济南", "济南东", true, []),
+        new("济南", "大明湖", true, []),
+        new("郑州", "郑州", true, []),
+        new("郑州", "郑州东", true, []),
+        new("郑州", "郑州西", true, []),
+        new("郑州", "南阳寨", true, []),
+        new("郑州", "郑州航空港", true, []),
+        new("郑州", "新郑机场", true, []),
+        new("郑州", "黄河景区", true, []),
+        new("合肥", "合肥", true, []),
+        new("合肥", "合肥南", true, []),
+        new("合肥", "合肥西", true, []),
+        new("合肥", "合肥北城", true, []),
+        new("南京", "南京", true, []),
+        new("南京", "南京西", false, []),
+        new("南京", "南京南", true, []),
+        new("南京", "仙林", true, []),
+        new("南京", "中华门", false, []),
+        new("上海", "上海", true, []),
+        new("上海", "上海南", true, []),
+        new("上海", "上海西", true, ["真如"]),
+        new("上海", "上海虹桥", true, []),
+        new("上海", "上海松江", true, ["松江", "松江南"]),
+        new("上海", "莘庄", true, []),
+        new("上海", "长宁", false, []),
+        new("武汉", "汉口", true, []),
+        new("武汉", "武昌", true, []),
+        new("武汉", "武汉", true, []),
+        new("武汉", "武汉东", true, []),
+        new("武汉", "天河机场", true, []),
+        new("长沙", "长沙", true, []),
+        new("长沙", "长沙南", true, []),
+        new("长沙", "长沙西", false, []),
+        new("南昌", "南昌", true, []),
+        new("南昌", "南昌西", true, []),
+        new("南昌", "南昌南", true, []),
+        new("南昌", "南昌东", true, []),
+        new("杭州", "杭州", true, []),
+        new("杭州", "杭州东", true, []),
+        new("杭州", "杭州南", true, []),
+        new("杭州", "杭州西", true, []),
+        new("福州", "福州", true, []),
+        new("福州", "福州南", true, []),
+        new("福州", "长乐", true, []),
+        new("南宁", "南宁", true, []),
+        new("南宁", "南宁东", true, []),
+        new("南宁", "南宁西", true, []),
+        new("南宁", "南宁北", true, []),
+        new("海口", "海口", true, []),
+        new("海口", "海口东", true, []),
+        new("海口", "美兰", true, []),
+        new("广州", "广州", true, []),
+        new("广州", "广州东", true, []),
+        new("广州", "广州西", false, []),
+        new("广州", "广州南", true, []),
+        new("广州", "广州北", true, []),
+        new("广州", "广州白云", true, []),
+        new("广州", "广州新塘", true, []),
+        new("香港", "香港红磡", false, ["九龙"]),
+        new("香港", "香港西九龙", true, []),
+    ];
+    private static readonly IReadOnlyList<string> CapitalCityNames =
+        CapitalStations.Select(station => station.City).Distinct(StringComparer.Ordinal).ToList();
+    private static readonly int RequiredCapitalStationCount =
+        CapitalStations.Count(station => station.Required);
+
     private sealed record AchievementDefinition(
         string Id,
         string Category,
@@ -499,6 +638,11 @@ public static partial class AchievementEngine
             Note: "每多一站额外获得5点经验，上限为50点",
             NarrativeNote: "一对恋人在虹桥机场分手的故事是虚构的，听听就行了",
             Trigger: i => FirstAirportStationCompletion(i.Trips, 3)),
+        new("acrossTheRealm", Touring, "travel_explore", "纵横九州",
+            "到访内地全部省会、自治区首府、直辖市以及香港的任意一座主城区车站", 30,
+            Note: "不含城际车站与市域铁路车站，详见附表4",
+            NarrativeNote: "就只差一个台湾了",
+            Trigger: i => FirstCapitalCityCompletion(i.Trips, CapitalCityNames.Count)),
         new("railFerry", Touring, "directions_boat_outlined", "长风破浪", "乘坐经由任意轮渡线的列车，或在大连与烟台间完成 24 小时内的跨海接续", 15,
             Note: "粤海铁路轮渡、南京长江铁路轮渡、芜湖长江铁路轮渡、新长铁路轮渡；大连与烟台间接续可替代轮渡线路",
             NarrativeNote: "谁不喜欢看火车上船呢",
@@ -778,6 +922,15 @@ public static partial class AchievementEngine
             Note: "每多一种额外获得10点经验，上限为50点",
             NarrativeNote: "铁路枢纽是方便走邪道的好地方",
             Trigger: i => FirstDifferentRoutesSameDestination(i.Trips)),
+        new("fourOfAKind", FunJourneys, "numbers", "四重存在", "乘坐车组号为四位相同数字的动车组列车", 20,
+            Note: "CRH1A-1111, CR200JC-1111, CR400AF-AS-1111, CRH2A-2222, CR400AF-2222, CRH380BL-5555",
+            NarrativeNote: "如果在车上遇到了一只金发吸血鬼，请告诉我",
+            Trigger: i => First(i.Trips, trip => HasQuadrupleSetNumber(trip.RollingStock))),
+        new("allAlone", FunJourneys, "person_outline", "茕茕孑立", "乘坐一次 RZ25K-111111 车厢或 CR400AF-AS-1111 的 11 车厢", 30,
+            MaxExperience: 50,
+            Note: "以下附加条件每满足一项额外获得10点经验，总上限为50点：(1) 座位号为11，不限后缀；(2) 乘车日期为11月11日",
+            NarrativeNote: "你最好是刻意来完成这个成就的QAQ",
+            Trigger: i => First(i.Trips, UnlocksAllAlone)),
         new("dejaVu", FunJourneys, "replay_outlined", "似曾相识", "至少两次乘坐除日期和车号外均完全一致的行程", 30,
             NarrativeNote: "不知道有多少人忘了填座号",
             Trigger: i => FirstRepeatedTripCompletion(i.Trips, 2)),
@@ -935,6 +1088,12 @@ public static partial class AchievementEngine
             NarrativeNote: "坐一次丝路梦享号的最豪华包间就够了",
             Hidden: true,
             Trigger: i => FirstThirtyDaySpendingCompletion(i.Trips, 50000)),
+        new("crowningGlory", Touring, "military_tech", "功盖振声",
+            "到访内地全部省会、自治区首府、直辖市，以及香港的全部主城区车站", 80,
+            Note: "不含城际车站与市域铁路车站，详见附表4",
+            NarrativeNote: "火车在这些铁路枢纽当中到底有多少种走法",
+            Hidden: true,
+            Trigger: i => FirstCapitalStationCompletion(i.Trips, RequiredCapitalStationCount)),
         new("envoyArrival", Touring, "gps_fixed_outlined", "使者莅临",
             "乘坐直达联运列车到访至少 3 座别国首都车站", 50,
             MaxExperience: 80,
@@ -1227,6 +1386,7 @@ public static partial class AchievementEngine
             "differentRoutesSameDestination" => Math.Max(
                 0,
                 MaxDifferentRoutesSameDestination(trips) - 3) * 10,
+            "allAlone" => AllAloneBonus(trips),
             _ => 0
         };
         experience += bonus;
@@ -1310,6 +1470,8 @@ public static partial class AchievementEngine
         "fourFamousNorths" => P(
             VisitedStationCount(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
             4),
+        "acrossTheRealm" => P(CapitalCityCount(trips), CapitalCityNames.Count),
+        "crowningGlory" => P(CapitalStationCount(trips), RequiredCapitalStationCount),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "goddessYangtzeBridges" => BridgeProgress(trips, YangtzeBridges),
         "muddyWavesSweepSky" => BridgeProgress(trips, YellowRiverBridges),
@@ -1353,6 +1515,8 @@ public static partial class AchievementEngine
         "extraCarriage" => P(trips.Count(trip => HasExtraCarriage(trip.SeatNumber)), 1),
         "specialGift" => P(trips.Count(UnlocksSpecialGift), 1),
         "pitchDark" => P(trips.Count(trip => IsBoxcarSeat(trip.SeatType)), 1),
+        "fourOfAKind" => P(trips.Count(trip => HasQuadrupleSetNumber(trip.RollingStock)), 1),
+        "allAlone" => P(trips.Count(UnlocksAllAlone), 1),
         "misfortuneTwice" => P(MaxEmuFormationChangeCount(trips), 2),
         "roamFreely" => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
         _ => null
@@ -1393,6 +1557,10 @@ public static partial class AchievementEngine
             trips,
             ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
         "eastRedSunRises" => StationRequirements(trips, ["东方红", "太阳升"]),
+        "acrossTheRealm" => CollectionRequirements(
+            trips,
+            CapitalCityNames.Select(city => (Key: city, Label: city)),
+            trip => CapitalCitiesFor(trip)),
         "completeTrainLetters" => CollectionRequirements(
             trips,
         [
@@ -2236,6 +2404,110 @@ public static partial class AchievementEngine
             if (visited.Count >= target) return trip;
         }
         return null;
+    }
+
+    /// <summary>这趟行程到访的附表4 车站（站名与旧站名都按归一化后精确比对）。</summary>
+    private static IEnumerable<CapitalStation> CapitalStationsVisitedBy(PublicTrip trip)
+    {
+        var stations = new[] { NormalizedStation(trip.FromStation), NormalizedStation(trip.ToStation) };
+        return CapitalStations.Where(capital =>
+            stations.Any(station =>
+                station == capital.Station ||
+                capital.Aliases.Contains(station, StringComparer.Ordinal)));
+    }
+
+    private static HashSet<string> CapitalCitiesFor(PublicTrip trip) =>
+        CapitalStationsVisitedBy(trip)
+            .Select(capital => capital.City)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static HashSet<string> RequiredCapitalStationsFor(PublicTrip trip) =>
+        CapitalStationsVisitedBy(trip)
+            .Where(capital => capital.Required)
+            .Select(capital => capital.Station)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static int CapitalCityCount(IEnumerable<PublicTrip> trips) =>
+        trips.SelectMany(CapitalCitiesFor).ToHashSet(StringComparer.Ordinal).Count;
+
+    private static int CapitalStationCount(IEnumerable<PublicTrip> trips) =>
+        trips.SelectMany(RequiredCapitalStationsFor).ToHashSet(StringComparer.Ordinal).Count;
+
+    private static PublicTrip? FirstCapitalCityCompletion(List<PublicTrip> trips, int target) =>
+        FirstCollectedCompletion(trips, CapitalCitiesFor, target);
+
+    private static PublicTrip? FirstCapitalStationCompletion(List<PublicTrip> trips, int target) =>
+        FirstCollectedCompletion(trips, RequiredCapitalStationsFor, target);
+
+    private static PublicTrip? FirstCollectedCompletion(
+        List<PublicTrip> trips,
+        Func<PublicTrip, HashSet<string>> collectedBy,
+        int target)
+    {
+        var collected = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var trip in trips)
+        {
+            collected.UnionWith(collectedBy(trip));
+            if (collected.Count >= target) return trip;
+        }
+        return null;
+    }
+
+    /// <summary>「四重存在」：车组号为四位相同数字（1111、2222、5555…）。</summary>
+    private static bool HasQuadrupleSetNumber(string? value) =>
+        TrainModelParser.ParseTrainString(value).Any(parsed =>
+            parsed.Category == TrainCategory.EMU &&
+            parsed.Numbers.Any(number =>
+                number.Length == 4 && number.All(digit => digit == number[0])));
+
+    private static bool UnlocksAllAlone(PublicTrip trip) =>
+        HasLonelyCarriage(trip.RollingStock) || RidesEleventhCarriageOf1111(trip);
+
+    /// <summary>「茕茕孑立」的第一种解锁方式：坐过车号 111111 的 RZ25K 车厢。车号写成
+    /// “RZ25K 111111”或“RZ25K-111111”是同一回事，但 TrainModelParser 只把空格当客车
+    /// 车号的分隔符，连字符写法会被并进型号（Model=25K-111111、Numbers 为空），
+    /// 所以这里按原串匹配，两种写法都认。</summary>
+    private static bool HasLonelyCarriage(string? value) =>
+        Regex.IsMatch(value ?? string.Empty, @"(?<![A-Za-z0-9])RZ\s*25K[-\s]?111111(?!\d)");
+
+    /// <summary>第二种解锁方式：坐 CR400AF-AS-1111 的 11 车厢。</summary>
+    private static bool RidesEleventhCarriageOf1111(PublicTrip trip) =>
+        CarriageNumber(trip.SeatNumber) == 11 &&
+        TrainModelParser.ParseTrainString(trip.RollingStock).Any(parsed =>
+            parsed.Category == TrainCategory.EMU &&
+            parsed.ModelCode.Equals("CR400AF-AS", StringComparison.OrdinalIgnoreCase) &&
+            parsed.Numbers.Contains("1111", StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>座位号里的车厢号（“11车11号”）。加挂车厢单独编号、不属于车组的第 11 车厢，
+    /// 所以“加X车”一律不算。</summary>
+    private static int? CarriageNumber(string? value)
+    {
+        var match = Regex.Match(value ?? string.Empty, @"^\s*(\d+)\s*车");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var carriage)
+            ? carriage
+            : null;
+    }
+
+    /// <summary>座位号里的座号（“11车11A”取 11，后缀不限）。</summary>
+    private static int? SeatNumberInCarriage(string? value)
+    {
+        var seat = Regex.Replace(value ?? string.Empty, @"^\s*加?\d+\s*车", string.Empty);
+        var match = Regex.Match(seat, @"^\s*(\d+)");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var number)
+            ? number
+            : null;
+    }
+
+    /// <summary>「茕茕孑立」的附加经验：解锁那趟行程的座号是 11，或乘车日期是 11 月 11 日，
+    /// 每满足一项加 10 点（总上限由定义的 MaxExperience 兜底）。</summary>
+    private static int AllAloneBonus(List<PublicTrip> trips)
+    {
+        if (First(trips, UnlocksAllAlone) is not { } trip) return 0;
+        var bonus = 0;
+        if (SeatNumberInCarriage(trip.SeatNumber) == 11) bonus += 10;
+        var departure = Departure(trip);
+        if (departure.Month == 11 && departure.Day == 11) bonus += 10;
+        return bonus;
     }
 
     private static PublicTrip? FirstStationPairWithin(
@@ -3165,6 +3437,15 @@ public static partial class AchievementEngine
     private sealed record ForeignCapitalStation(
         string Key,
         string Label,
+        IReadOnlyList<string> Aliases);
+
+    /// <summary>附表4 里的一座省会/自治区首府/直辖市/香港车站。<paramref name="Required"/> 为 false
+    /// 即附表里带 * 的站，只满足「纵横九州」、不计入「功盖振声」；<paramref name="Aliases"/> 是
+    /// 附注里写到的旧站名（改名前的叫法）。</summary>
+    private sealed record CapitalStation(
+        string City,
+        string Station,
+        bool Required,
         IReadOnlyList<string> Aliases);
 
     [GeneratedRegex(@"\s+")]
