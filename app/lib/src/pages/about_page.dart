@@ -15,6 +15,9 @@ const _financialSponsors = [
   '爱发电用户_vtDT',
   '爱发电用户_9a6ec',
   '爱发电用户_VPwv',
+  '晨晨酱',
+  '爱发电用户_9ec4e',
+  '爱发电用户_9a6ec'
 ];
 
 class AboutPage extends StatefulWidget {

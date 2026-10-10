@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/pages/add_trip_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/search_page.dart';
-import 'package:raillog/src/pages/settings_page.dart';
+import 'package:raillog/src/pages/settings/settings_page.dart';
 import 'package:raillog/src/pages/statistics_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';

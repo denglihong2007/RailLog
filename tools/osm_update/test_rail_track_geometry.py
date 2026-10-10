@@ -61,6 +61,44 @@ class RouteKeyTest(unittest.TestCase):
         )
 
 
+class LineMatchKeyTest(unittest.TestCase):
+    """普速侧拿 route_name 去比 OSM 的 way name，用的就是这把键。
+
+    与 `route_key` 是**两个**函数：`route_key` 是折线主键，动一个字全库 key 全变。
+    """
+
+    def test_strips_the_segment_suffix_after_the_line_name(self) -> None:
+        self.assertEqual(geo.line_match_key("宁蓉线宁渝段"), "宁蓉")
+        self.assertEqual(geo.line_match_key("宁西线西合段"), "宁西")
+        self.assertEqual(geo.line_match_key("成昆铁路元昆段"), "成昆")
+
+    def test_strips_a_trailing_segment_word_when_there_is_no_line_suffix(self) -> None:
+        self.assertEqual(geo.line_match_key("沪宁段"), "沪宁")
+
+    def test_keeps_line_and_railway_names_apart(self) -> None:
+        # 京广线 与 京广高速线 是两条不同的物理线路，绝不能归一成同一个键。
+        self.assertEqual(geo.line_match_key("京广线"), "京广")
+        self.assertEqual(geo.line_match_key("京广高速线"), "京广高速")
+        self.assertNotEqual(geo.line_match_key("京广线"), geo.line_match_key("京广高速线"))
+
+    def test_aliases_map_hsr_spellings_onto_one_key(self) -> None:
+        for name in ("京广高铁", "京广客专", "京广客运专线"):
+            self.assertEqual(geo.line_match_key(name), "京广高速", name)
+
+    def test_route_key_is_untouched_by_the_new_normalization(self) -> None:
+        # 「宁蓉线宁渝段」尾字是「段」，route_key 按设计原样不剥——折线主键依赖它。
+        self.assertEqual(geo.route_key("宁蓉线宁渝段"), "宁蓉线宁渝段")
+        self.assertEqual(geo.route_key("京广高铁"), "京广高铁")
+
+    def test_normalizes_whitespace_and_parenthetical_suffixes(self) -> None:
+        self.assertEqual(geo.line_match_key(" 沪 蓉 线 (上行)"), "沪蓉")
+        self.assertEqual(geo.line_match_key("沪蓉线（上行）"), "沪蓉")
+
+    def test_empty_input(self) -> None:
+        self.assertEqual(geo.line_match_key(""), "")
+        self.assertEqual(geo.line_match_key("   "), "")
+
+
 class ProfileTest(unittest.TestCase):
     def test_infers_hsr_from_route_name(self) -> None:
         for name in ("京沪高速线", "京津城际线", "安六客专线", "包银高铁"):
@@ -425,6 +463,332 @@ class PathSearchTest(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
+# 折线拆段（哪几条线、各多少公里）
+# --------------------------------------------------------------------------
+
+
+class LineRunsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # 一条直线上四个节点，三个 way 首尾相接（共点节点在图上自然连通）。
+        self.c0 = (30.0, 104.0)
+        self.c1 = (30.0, 104.1)
+        self.c2 = (30.0, 104.2)
+        self.c3 = (30.0, 104.3)
+
+    def _graph(self, names: list[str | None]):
+        lines = [
+            [self.c0, self.c1],
+            [self.c1, self.c2],
+            [self.c2, self.c3],
+        ]
+        return geo.build_graph(lines, [True, True, True], names)
+
+    def test_keeps_the_switch_and_does_not_merge_the_two_ends(self) -> None:
+        # 京广→沪蓉→京广：同名的首尾两段隔着别的线，绝不能跨着合并——那会把「在
+        # 哪儿换的线」抹掉，而这正是这张表存在的理由。
+        graph = self._graph(["京广线", "沪蓉线", "京广线"])
+
+        runs = geo.line_runs([self.c0, self.c1, self.c2, self.c3], graph)
+
+        self.assertEqual([name for name, _ in runs], ["京广线", "沪蓉线", "京广线"])
+
+    def test_merges_adjacent_same_named_segments(self) -> None:
+        graph = self._graph(["京广线", "沪蓉线", "沪蓉线"])
+
+        runs = geo.line_runs([self.c0, self.c1, self.c2, self.c3], graph)
+
+        self.assertEqual([name for name, _ in runs], ["京广线", "沪蓉线"])
+        _, second_km = runs[1]
+        self.assertAlmostEqual(
+            second_km, geo.haversine_km(self.c1, self.c3), delta=1e-5
+        )
+
+    def test_unnamed_way_gets_the_sentinel_label(self) -> None:
+        graph = self._graph(["京广线", None, "京广线"])
+
+        runs = geo.line_runs([self.c0, self.c1, self.c2, self.c3], graph)
+
+        self.assertEqual([name for name, _ in runs], ["京广线", geo.UNNAMED_LINE, "京广线"])
+
+    def test_unknown_edges_are_reported_as_unnamed_not_dropped(self) -> None:
+        # 路径上出现图里没有的边（理论上不该有）时宁可记为「未命名」，也别把里程吞掉。
+        graph = self._graph(["京广线", "京广线", "京广线"])
+
+        runs = geo.line_runs([self.c0, (30.05, 104.05), self.c1], graph)
+
+        self.assertEqual([name for name, _ in runs], [geo.UNNAMED_LINE])
+        self.assertAlmostEqual(
+            runs[0][1], geo.path_length_km([self.c0, (30.05, 104.05), self.c1]), places=6
+        )
+
+    def test_split_edge_keeps_its_way_attribution(self) -> None:
+        # 稀疏 way 被站坐标切段接入后，两条新半边必须还认得出原来是哪条线。
+        graph = geo.build_graph([[self.c0, self.c3]], [True], ["京广线"])
+        projection = geo.Projection(30.0)
+        off_line = (30.002, 104.1)  # 离正线约 0.22km，阈值内、投影点落在两节点之间
+
+        node, distance = geo._snap_node(graph, off_line, projection, 0.25)
+
+        self.assertIsNotNone(node)
+        self.assertGreater(distance, 0.0)
+        self.assertNotIn(self.c3, [neighbor for neighbor, _ in graph.adjacency[self.c0]])
+        runs = geo.line_runs([self.c0, node, self.c3], graph)
+        self.assertEqual([name for name, _ in runs], ["京广线"])
+
+    def test_runs_cover_the_whole_path(self) -> None:
+        graph = self._graph(["京广线", "沪蓉线", "京广线"])
+        path = [self.c0, self.c1, self.c2, self.c3]
+
+        runs = geo.line_runs(path, graph)
+
+        self.assertAlmostEqual(
+            sum(km for _, km in runs), geo.path_length_km(path), places=6
+        )
+
+    def test_empty_path(self) -> None:
+        self.assertEqual(geo.line_runs([], self._graph(["京广线"] * 3)), [])
+
+
+# --------------------------------------------------------------------------
+# 名字对不上的普速腿：额外吸附兜底必须还能救场
+# --------------------------------------------------------------------------
+
+
+class ExtraSnapWithoutProfileTest(unittest.TestCase):
+    """偏好集为空的普速腿也必须吃得到额外吸附兜底。
+
+    回归护栏：为省掉「ratio 恒 < 阈值」带来的无谓枚举，曾用
+    `if not graph.preferred_edges: return []` 把整个兜底挡在门外——本意只针对 ratio
+    那条判据，结果把**里程误差**那条判据一起废了。而名字对不上的腿恰恰只剩误差这一条
+    线索（ratio 恒为 0）。实测 新靖线新海段 盐城→东台：主吸附对所在分量里两点之间只有
+    一条 82.27km 的绕行路（运价 63km，误差 19.27），挪几百米换一对锚点就有 61.86km 的
+    正路（误差 1.14）；护栏一挡，这段就从「准」变成「差 19km」，全国约 30 段从误差
+    <2km 劣化到 >2km。
+    """
+
+    def setUp(self) -> None:
+        self.start = (30.0, 104.0)
+        self.end = (30.0, 104.3)
+        self.projection = geo.Projection(30.0)
+        # 三段拼成一个连通图：绕行侧、直行侧、以及在终点附近把两侧接起来的一小截。
+        # 起点站最近的锚点落在绕行侧，稍远 0.44km 处才有直行侧的锚点。
+        self.lines = [
+            [(30.0, 104.0), (29.9, 104.0), (29.9, 104.3), (30.0, 104.3)],
+            [(30.004, 104.0), (30.004, 104.3)],
+            [(30.0, 104.3), (30.004, 104.3)],
+        ]
+        self.preferred = [False, False, False]
+
+    def _graph(self) -> geo.RailGraph:
+        return geo.build_graph(self.lines, self.preferred)
+
+    def test_primary_pair_really_is_the_detour(self) -> None:
+        # 前提校验：主吸附对（最近的两个锚点）之间只有那条绕行路，否则本用例没有意义。
+        graph = self._graph()
+        start_node, start_dist = geo._snap_node(graph, self.start, self.projection, 1.0)
+        end_node, end_dist = geo._snap_node(graph, self.end, self.projection, 1.0)
+        primary = geo._plan_attempt(
+            graph, self.projection, start_node, start_dist, end_node, end_dist,
+            k=5, max_length_km=None,
+        )
+
+        self.assertTrue(primary)
+        self.assertGreater(min(item.length_km for item in primary), 40.0)
+
+    def test_empty_preference_set_still_gets_extra_snaps(self) -> None:
+        graph = self._graph()
+        self.assertFalse(graph.preferred_edges)  # 前提：一条偏好边都没有
+
+        start_node, start_dist = geo._snap_node(graph, self.start, self.projection, 1.0)
+        end_node, end_dist = geo._snap_node(graph, self.end, self.projection, 1.0)
+        primary = geo._plan_attempt(
+            graph, self.projection, start_node, start_dist, end_node, end_dist,
+            k=5, max_length_km=None,
+        )
+        detour_km = min(item.length_km for item in primary)
+
+        extra = geo._extra_snap_candidates(
+            graph,
+            self.start,
+            self.end,
+            self.projection,
+            1.0,
+            primary,
+            k=5,
+            max_length_km=None,
+            mileage_km=63.0,  # 绕行 55.6km 的误差 7.4km 在宽容带内，够触发误差判据
+            extra_snaps=8,
+            skip=(start_node, end_node),
+        )
+
+        self.assertTrue(extra, "偏好集为空时额外吸附不该被整个挡掉")
+        self.assertLess(min(item.length_km for item in extra), detour_km - 1.0)
+
+
+# --------------------------------------------------------------------------
+# 登乘跳：站场与目标正线拓扑断开时的跨分量吸附
+# --------------------------------------------------------------------------
+
+
+def _parallel_named_lines():
+    """站场稠密的普速线 + 0.4km 外并行的目标正线，两套几何互不共点。
+
+    普速线的节点密到 25m 一个，于是「离站最近的 16 个节点」全被它占满、正线节点一个
+    也进不去——这正是广州北的实测情形（121m 半径内全是咽喉股道），也正是旧的
+    `_extra_snap_candidates` 兜底失效的原因。只有登乘跳能救。
+    """
+    lat_offset = 0.0036  # ≈0.4km
+    step = 0.00025  # ≈24m
+    count = int(0.3 / step) + 1
+    conventional = [(30.0, 104.0 + step * i) for i in range(count)]
+    target = [(30.0 + lat_offset, 104.0 + step * i) for i in range(count)]
+    return conventional, target
+
+
+def _half_preferred_detour():
+    """主吸附对走得通、但只有约七成压在偏好线上的「绕行线」。
+
+    对应京广高铁 广州北→广州南 的形态：站坐标吸附在普速站场的线上（非偏好），两端
+    同分量、路是通的，但那条走法借道另一条也带 highspeed 标签的线，整段 ratio 刚过
+    0.5 却远不到 0.9——于是旧的 0.5 门槛被压过去，登乘跳一次都不触发。
+
+    三截首尾共点拼成一条：非偏好段、偏好段、非偏好段。两端锚点都落在非偏好段上，
+    与实测一致（广州北吸附在京广线上，离京广高速线 417m）。
+    """
+    step = 0.00025  # ≈24m
+    count = 1201
+    first, second = 180, 1020  # 偏好段占 (1020-180)/1200 = 70%
+    yard_a = [(30.0, 104.0 + step * i) for i in range(first + 1)]
+    fast_mid = [(30.0, 104.0 + step * i) for i in range(first, second + 1)]
+    yard_b = [(30.0, 104.0 + step * i) for i in range(second, count)]
+    return yard_a, fast_mid, yard_b
+
+
+class JumpSnapTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.start = (30.0, 104.0)
+        self.end = (30.0, 104.3)
+        self.projection = geo.Projection(30.0)
+        self.conventional, self.target = _parallel_named_lines()
+        self.rail = geo.RailData(
+            lines=[self.conventional, self.target],
+            preferred=[False, True],
+            names=["宁西线", "沪蓉线"],
+        )
+
+    def _search(self, rail=None, **kwargs):
+        rail = rail or self.rail
+        graph = geo.build_graph(rail.lines, rail.preferred, rail.names_padded())
+        return geo.search_paths(graph, self.start, self.end, self.projection, **kwargs)
+
+    def _detour_rail(self) -> geo.RailData:
+        """一段能走通、但只有七成压在偏好线上的绕行线 + 0.4km 外的目标正线。"""
+        yard_a, fast_mid, yard_b = _half_preferred_detour()
+        return geo.RailData(
+            lines=[yard_a, fast_mid, yard_b, self.target],
+            preferred=[False, True, False, True],
+            names=["京广线", "南广线", "京广线", "京广高速线"],
+        )
+
+    def test_jumps_onto_the_target_line_when_the_yard_crowds_out_its_nodes(self) -> None:
+        candidates, reason = self._search()
+
+        self.assertIsNone(reason)
+        jumped = [item for item in candidates if item.board_jump_km > 0]
+        self.assertTrue(jumped, "没有产生任何登乘跳候选")
+        self.assertEqual(max(item.preferred_ratio for item in jumped), 1.0)
+
+    def test_plan_lands_on_the_target_line_and_records_the_jump(self) -> None:
+        target_km = geo.path_length_km(self.target)
+
+        plan = geo.plan_leg(
+            self.start,
+            self.end,
+            self.rail,
+            geo.CONVENTIONAL,
+            mileage_km=target_km,
+        )
+
+        self.assertTrue(plan.ok, plan.reason)
+        self.assertEqual(plan.line_runs[0][0], "沪蓉线")
+        # 两端各跳 ~0.4km，折线长度里含这两段直线。
+        self.assertAlmostEqual(plan.board_jump_km, 0.8, delta=0.05)
+        self.assertAlmostEqual(plan.length_km, target_km + plan.board_jump_km, delta=0.05)
+
+    def test_no_jump_without_a_preference_set(self) -> None:
+        # 偏好集为空 = 没有信号可跳，也不能拿 preferred 边去建池子（那正是 D1 之后
+        # 每个 name-miss 的普速腿都会走的路径，不拦住就是全量重算）。
+        rail = geo.RailData(
+            lines=[self.conventional, self.target],
+            preferred=[False, False],
+            names=["宁西线", "沪蓉线"],
+        )
+
+        candidates, reason = self._search(rail)
+
+        self.assertIsNone(reason)
+        self.assertEqual([item for item in candidates if item.board_jump_km > 0], [])
+
+    def test_no_jump_when_the_station_sits_on_the_target_line(self) -> None:
+        # 站上本来就有同分量的目标线节点：主吸附的 ratio 必然达标，不该再跳。
+        rail = geo.RailData(lines=[self.target], preferred=[True], names=["沪蓉线"])
+
+        candidates, reason = self._search(rail)
+
+        self.assertIsNone(reason)
+        self.assertTrue(candidates)
+        self.assertEqual([item for item in candidates if item.board_jump_km > 0], [])
+        self.assertEqual(candidates[0].preferred_ratio, 1.0)
+
+    def test_a_half_preferred_detour_does_not_block_the_jump(self) -> None:
+        # 「通了、但只有七成压在偏好线上」不能当成答对了——那正是京广高铁 广州北→广州南
+        # 被画到绕行线上的原因（ratio 0.5004 压过旧门槛 0.5，跳线永不触发）。
+        rail = self._detour_rail()
+
+        candidates, reason = self._search(rail)
+
+        self.assertIsNone(reason)
+        # 前提：主对确实走得通，且它的 ratio 落在「过半但远不到 0.9」这个区间。
+        best_plain = max(
+            item.preferred_ratio for item in candidates if item.board_jump_km == 0
+        )
+        self.assertGreater(best_plain, geo.EXTRA_SNAP_PROFILE_FLOOR)
+        self.assertLess(best_plain, geo.JUMP_PROFILE_FLOOR)
+        # 结论：跳过那道门槛，登乘跳仍然被放行，并且拿得到贴满目标线的那条。
+        jumped = [item for item in candidates if item.board_jump_km > 0]
+        self.assertTrue(jumped, "过半偏好不该被当成答对了")
+        self.assertEqual(max(item.preferred_ratio for item in jumped), 1.0)
+
+    def test_plan_prefers_the_jumped_target_line_over_the_half_preferred_detour(
+        self,
+    ) -> None:
+        rail = self._detour_rail()
+        target_km = geo.path_length_km(self.target)
+
+        plan = geo.plan_leg(
+            self.start, self.end, rail, geo.CONVENTIONAL, mileage_km=target_km
+        )
+
+        self.assertTrue(plan.ok, plan.reason)
+        self.assertEqual(plan.line_runs[0][0], "京广高速线")
+        self.assertGreater(plan.preferred_ratio, geo.JUMP_PROFILE_FLOOR)
+
+    def test_no_jump_beyond_the_radius(self) -> None:
+        # 目标线在 0.4km 外，半径收到 0.2km 就够不着了。
+        candidates, reason = self._search(jump_radius_km=0.2)
+
+        self.assertIsNone(reason)
+        self.assertEqual([item for item in candidates if item.board_jump_km > 0], [])
+
+    def test_radius_zero_disables_the_jump(self) -> None:
+        # 这是一条回滚杠杆：不动代码、只把这个参数置 0 就能退回老行为。
+        candidates, reason = self._search(jump_radius_km=0.0)
+
+        self.assertIsNone(reason)
+        self.assertEqual([item for item in candidates if item.board_jump_km > 0], [])
+
+
+# --------------------------------------------------------------------------
 # 里程约束消歧：本功能相对 TrainTrack 纯最短路的核心增益
 # --------------------------------------------------------------------------
 
@@ -594,112 +958,6 @@ class ShortLegSlackTest(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# 上下行分离：OSM 里画成两条分开的轨道时，别把上下行画成同一条线
-# --------------------------------------------------------------------------
-
-_SPLIT_LAT0 = 30.0
-_METERS_PER_LON_DEGREE = 111_000.0 * math.cos(math.radians(_SPLIT_LAT0))
-
-
-def _parallel_tracks(separation_m: float) -> list[list[tuple[float, float]]]:
-    """A→B 之间上下行两条平行轨道，两端各有渡线连通（现实里的站端咽喉）。
-
-    行走方向 A→B 朝北，因此按左行规则上行线在西侧（lon 104.0 一侧）、下行线在东侧。
-    """
-    offset = separation_m / _METERS_PER_LON_DEGREE
-    up = [(30.0 + 0.005 * i, 104.0) for i in range(101)]
-    down = [(30.0 + 0.005 * i, 104.0 + offset) for i in range(101)]
-    throat_a = [(30.0, 104.0), (30.0, 104.0 + offset)]
-    throat_b = [(30.5, 104.0 + offset), (30.5, 104.0)]
-    return [up, down, throat_a, throat_b]
-
-
-class TrackSplitTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.start = (30.0, 104.0)
-        self.end = (30.5, 104.0)
-        # 上行线贴着站点走（lon 104.0），全长约 55.6km，就用它当里程。
-        self.mileage = 55.6
-
-    def _plan(
-        self, separation_m: float, mileage_km: float | None = None, **kwargs
-    ) -> geo.LegPlan:
-        lines = _parallel_tracks(separation_m)
-        rail = geo.RailData(lines=lines, preferred=[True] * len(lines))
-        return geo.plan_leg(
-            self.start,
-            self.end,
-            rail,
-            geo.CONVENTIONAL,
-            mileage_km=mileage_km if mileage_km is not None else self.mileage,
-            step_m=0,
-            **kwargs,
-        )
-
-    def test_separated_tracks_produce_both_lines(self) -> None:
-        plan = self._plan(300.0)
-
-        self.assertTrue(plan.ok, plan.reason)
-        self.assertTrue(plan.split)
-        self.assertTrue(plan.down_polyline)
-        # 上行线在行走方向的左手边——A→B 朝北，左手边即西侧，lon 更小。
-        mid = len(plan.polyline) // 2
-        down_mid = len(plan.down_polyline) // 2
-        self.assertLess(plan.polyline[mid][1], plan.down_polyline[down_mid][1])
-        self.assertAlmostEqual(
-            plan.down_polyline[down_mid][1] - plan.polyline[mid][1],
-            300.0 / _METERS_PER_LON_DEGREE,
-            places=5,
-        )
-
-    def test_both_lines_run_from_start_to_end(self) -> None:
-        plan = self._plan(300.0)
-
-        # 两条都要按站点顺序出发、到达，否则 App 侧拼不上相邻区段。
-        for polyline in (plan.polyline, plan.down_polyline):
-            self.assertEqual(polyline[0], (round(self.start[0], 6), 104.0))
-            self.assertEqual(polyline[-1], (round(self.end[0], 6), 104.0))
-
-    def test_tracks_drawn_together_are_not_split(self) -> None:
-        # 20m 间距在 OSM 里就是画在一起的一条线，没有分离可言。
-        plan = self._plan(20.0)
-
-        self.assertTrue(plan.ok, plan.reason)
-        self.assertFalse(plan.split)
-        self.assertEqual(plan.down_polyline, [])
-
-    def test_lines_further_apart_than_the_cap_are_a_different_route(self) -> None:
-        # 3km 之外不是同一走廊的上下行，而是另一条线路，不能当上下行拆开。
-        plan = self._plan(3_000.0)
-
-        self.assertTrue(plan.ok, plan.reason)
-        self.assertFalse(plan.split)
-
-    def test_parallel_route_of_different_length_is_not_split(self) -> None:
-        # 长度差很大的并行线（新老线、普速与高铁）与里程桩只对得上一条，
-        # 不该被当成上下行拆开。
-        lines = [
-            [(30.0 + 0.005 * i, 104.0) for i in range(101)],
-            [(30.0 + 0.005 * i, 104.003) for i in range(101)],  # 约 290m 外的并行线
-        ]
-        rail = geo.RailData(lines=lines, preferred=[True, True])
-
-        plan = geo.plan_leg(
-            self.start, self.end, rail, geo.CONVENTIONAL, mileage_km=70.0, step_m=0
-        )
-
-        self.assertTrue(plan.ok, plan.reason)
-        self.assertFalse(plan.split)
-
-    def test_no_split_without_a_mileage_to_check_against(self) -> None:
-        # 里程 0/缺失时没有「两条都贴近里程」这回事，只能按几何取最短那条。
-        plan = self._plan(300.0, mileage_km=0.0)
-
-        self.assertTrue(plan.ok, plan.reason)
-        self.assertFalse(plan.split)
-
-
-# --------------------------------------------------------------------------
 # 绕路护栏：客里表站坐标失真导致的绕大圈，宁可不画
 # --------------------------------------------------------------------------
 
@@ -741,7 +999,6 @@ class DetourGuardTest(unittest.TestCase):
         )
 
         self.assertTrue(plan.ok, plan.reason)
-        self.assertFalse(plan.split)
 
     def test_a_long_but_real_mountain_route_is_kept(self) -> None:
         # 1.44 倍的绕行是真盘山线路的常态，不该被护栏误伤。

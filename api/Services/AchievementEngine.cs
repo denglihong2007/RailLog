@@ -187,6 +187,8 @@ public static partial class AchievementEngine
         new("CRH2A", "4090"),
         new("CRH2E", "2139")
     ];
+    /// <summary>「我全都要」的收集清单。无座不是席别而是入座方式，靠座位号判定（见 IsNoSeat），
+    /// 所以在清单里它是特殊项：站票只点亮它，不再计入票面席别。</summary>
     private static readonly HashSet<string> RegularSeatTypes =
     [
         "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
@@ -405,6 +407,145 @@ public static partial class AchievementEngine
         new("阿斯塔纳", "阿斯塔纳（1号站、光明之路站）", ["阿斯塔纳", "光明之路"])
     ];
 
+    // 附表4：内地省会、自治区首府、直辖市与香港的主城区车站，供「纵横九州」
+    // （每座城市任意一站）与「功盖振声」（全部必选站）判定。站名已按 NormalizedStation
+    // 去掉末尾的「站」；Required=false 即附表里带 * 的站。旧站名只收录无歧义的——
+    // 中华门站的旧名「南京南」与现南京南站撞车、长宁站的旧名「上海西」与现上海西站撞车。
+    private static readonly IReadOnlyList<CapitalStation> CapitalStations =
+    [
+        new("北京", "北京", true, []),
+        new("北京", "北京南", true, []),
+        new("北京", "北京西", true, []),
+        new("北京", "北京北", true, []),
+        new("北京", "北京东", true, []),
+        new("北京", "北京丰台", true, ["丰台"]),
+        new("北京", "北京朝阳", true, []),
+        new("北京", "清河", true, []),
+        new("北京", "北京大兴", true, []),
+        new("哈尔滨", "哈尔滨", true, []),
+        new("哈尔滨", "哈尔滨西", true, []),
+        new("哈尔滨", "哈尔滨东", true, []),
+        new("哈尔滨", "哈尔滨北", true, []),
+        new("哈尔滨", "香坊", true, []),
+        new("长春", "长春", true, []),
+        new("长春", "长春西", true, []),
+        new("沈阳", "沈阳", true, []),
+        new("沈阳", "沈阳北", true, []),
+        new("沈阳", "沈阳南", true, []),
+        new("天津", "天津", true, []),
+        new("天津", "天津西", true, []),
+        new("天津", "天津南", true, []),
+        new("天津", "北辰", true, []),
+        new("呼和浩特", "呼和浩特", true, []),
+        new("呼和浩特", "呼和浩特东", true, []),
+        new("乌鲁木齐", "乌鲁木齐", true, []),
+        new("乌鲁木齐", "乌鲁木齐南", true, []),
+        new("银川", "银川", true, []),
+        new("银川", "河东机场", true, []),
+        new("西宁", "西宁", true, []),
+        new("西宁", "西宁西", false, []),
+        new("兰州", "兰州", true, []),
+        new("兰州", "兰州西", true, []),
+        new("兰州", "兰州新区", true, []),
+        new("兰州", "中川机场东", true, []),
+        new("兰州", "福利区", true, []),
+        new("兰州", "秦王川", true, []),
+        new("西安", "西安", true, []),
+        new("西安", "西安北", true, []),
+        new("西安", "西安东", true, []),
+        new("西安", "西安西", true, ["阿房宫"]),
+        new("西安", "引镇", true, ["西安南"]),
+        new("拉萨", "拉萨", true, []),
+        new("成都", "成都", false, []),
+        new("成都", "成都东", true, []),
+        new("成都", "成都南", true, []),
+        new("成都", "成都西", true, []),
+        new("成都", "双流机场", true, []),
+        new("成都", "成都龙泉驿", false, []),
+        new("重庆", "重庆", false, []),
+        new("重庆", "重庆西", true, []),
+        new("重庆", "重庆北", true, []),
+        new("重庆", "重庆东", true, []),
+        new("重庆", "沙坪坝", true, []),
+        new("重庆", "江北机场", true, []),
+        new("贵阳", "贵阳", true, []),
+        new("贵阳", "贵阳北", true, []),
+        new("贵阳", "贵阳东", true, []),
+        new("昆明", "昆明", true, []),
+        new("昆明", "昆明北", false, []),
+        new("昆明", "昆明南", true, []),
+        new("太原", "太原", true, []),
+        new("太原", "太原南", true, []),
+        new("石家庄", "石家庄", true, []),
+        new("石家庄", "石家庄北", true, []),
+        new("济南", "济南", true, []),
+        new("济南", "济南西", true, []),
+        new("济南", "济南东", true, []),
+        new("济南", "大明湖", true, []),
+        new("郑州", "郑州", true, []),
+        new("郑州", "郑州东", true, []),
+        new("郑州", "郑州西", true, []),
+        new("郑州", "南阳寨", true, []),
+        new("郑州", "郑州航空港", true, []),
+        new("郑州", "新郑机场", true, []),
+        new("郑州", "黄河景区", true, []),
+        new("合肥", "合肥", true, []),
+        new("合肥", "合肥南", true, []),
+        new("合肥", "合肥西", true, []),
+        new("合肥", "合肥北城", true, []),
+        new("南京", "南京", true, []),
+        new("南京", "南京西", false, []),
+        new("南京", "南京南", true, []),
+        new("南京", "仙林", true, []),
+        new("南京", "中华门", false, []),
+        new("上海", "上海", true, []),
+        new("上海", "上海南", true, []),
+        new("上海", "上海西", true, ["真如"]),
+        new("上海", "上海虹桥", true, []),
+        new("上海", "上海松江", true, ["松江", "松江南"]),
+        new("上海", "莘庄", true, []),
+        new("上海", "长宁", false, []),
+        new("武汉", "汉口", true, []),
+        new("武汉", "武昌", true, []),
+        new("武汉", "武汉", true, []),
+        new("武汉", "武汉东", true, []),
+        new("武汉", "天河机场", true, []),
+        new("长沙", "长沙", true, []),
+        new("长沙", "长沙南", true, []),
+        new("长沙", "长沙西", false, []),
+        new("南昌", "南昌", true, []),
+        new("南昌", "南昌西", true, []),
+        new("南昌", "南昌南", true, []),
+        new("南昌", "南昌东", true, []),
+        new("杭州", "杭州", true, []),
+        new("杭州", "杭州东", true, []),
+        new("杭州", "杭州南", true, []),
+        new("杭州", "杭州西", true, []),
+        new("福州", "福州", true, []),
+        new("福州", "福州南", true, []),
+        new("福州", "长乐", true, []),
+        new("南宁", "南宁", true, []),
+        new("南宁", "南宁东", true, []),
+        new("南宁", "南宁西", true, []),
+        new("南宁", "南宁北", true, []),
+        new("海口", "海口", true, []),
+        new("海口", "海口东", true, []),
+        new("海口", "美兰", true, []),
+        new("广州", "广州", true, []),
+        new("广州", "广州东", true, []),
+        new("广州", "广州西", false, []),
+        new("广州", "广州南", true, []),
+        new("广州", "广州北", true, []),
+        new("广州", "广州白云", true, []),
+        new("广州", "广州新塘", true, []),
+        new("香港", "香港红磡", false, ["九龙"]),
+        new("香港", "香港西九龙", true, []),
+    ];
+    private static readonly IReadOnlyList<string> CapitalCityNames =
+        CapitalStations.Select(station => station.City).Distinct(StringComparer.Ordinal).ToList();
+    private static readonly int RequiredCapitalStationCount =
+        CapitalStations.Count(station => station.Required);
+
     private sealed record AchievementDefinition(
         string Id,
         string Category,
@@ -468,10 +609,10 @@ public static partial class AchievementEngine
         new("allSeatTypes", RailwayCatalog, "checklist_outlined", "我全都要", "分别乘坐全部常规席别", 40,
             Note: "无座、硬座、软座、二等座、一等座、特等座、优选一等座、商务座、硬卧、软卧、二等卧、一等卧、高级软卧、动卧、高级动卧",
             NarrativeNote: "能看出你很热衷于尝试未体验过的事物",
-            Trigger: i => FirstCollectionCompletion(i.Trips, RegularSeatTypes, trip => SeatTypeMatches(trip.SeatType))),
+            Trigger: i => FirstCollectionCompletion(i.Trips, RegularSeatTypes, SeatTypeMatches)),
         new("noSeat12Hours", ExtremeChallenges, "fitness_center_outlined", "体力非凡", "持无座车票乘坐至少 12 小时", 25,
             NarrativeNote: "还好国铁没有放开自由席",
-            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
+            Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(12))),
         new("sweatLikeRain", ExtremeChallenges, "mode_fan_off", "汗如雨下", "乘坐单程至少 12 小时的非空调列车", 15,
             NarrativeNote: "即使风扇开到最大也是杯水车薪",
@@ -497,6 +638,11 @@ public static partial class AchievementEngine
             Note: "每多一站额外获得5点经验，上限为50点",
             NarrativeNote: "一对恋人在虹桥机场分手的故事是虚构的，听听就行了",
             Trigger: i => FirstAirportStationCompletion(i.Trips, 3)),
+        new("acrossTheRealm", Touring, "travel_explore", "纵横九州",
+            "到访内地全部省会、自治区首府、直辖市以及香港的任意一座主城区车站", 30,
+            Note: "不含城际车站与市域铁路车站，详见附表4",
+            NarrativeNote: "就只差一个台湾了",
+            Trigger: i => FirstCapitalCityCompletion(i.Trips, CapitalCityNames.Count)),
         new("railFerry", Touring, "directions_boat_outlined", "长风破浪", "乘坐经由任意轮渡线的列车，或在大连与烟台间完成 24 小时内的跨海接续", 15,
             Note: "粤海铁路轮渡、南京长江铁路轮渡、芜湖长江铁路轮渡、新长铁路轮渡；大连与烟台间接续可替代轮渡线路",
             NarrativeNote: "谁不喜欢看火车上船呢",
@@ -665,6 +811,11 @@ public static partial class AchievementEngine
         new("newYearsEve", FunJourneys, "celebration_outlined", "新年快乐", "在列车上完成跨年", 10,
             NarrativeNote: "这车去年就发车了，现在才到",
             Trigger: i => First(i.Trips, UnlocksNewYearsEve)),
+        new("specialGift", FunJourneys, "card_giftcard_outlined", "特别贺礼",
+            "在 1 月 1 日乘坐数字部分为该年年份的车次", 15,
+            Note: "中途切换车次也可以",
+            NarrativeNote: "即使不打报销凭证也很有纪念意义了",
+            Trigger: i => First(i.Trips, UnlocksSpecialGift)),
         new("monotonousTrainNumber", FunJourneys, "repeat_outlined", "千篇一律", "乘坐数字部分为三或四个相同数字的车次", 25,
             Note: "中途切换车次也可以",
             NarrativeNote: "但是朗朗上口",
@@ -704,6 +855,14 @@ public static partial class AchievementEngine
         new("farsighted", FunJourneys, "view_day_outlined", "高瞻远瞩", "乘坐双层车厢的上层席位", 25,
             NarrativeNote: "再也不怕隔壁列车挡视线了",
             Trigger: i => First(i.Trips, trip => trip.SeatNumber is not null && Regex.IsMatch(trip.SeatNumber, @"上(?!铺)"))),
+        new("extraCarriage", FunJourneys, "rv_hookup", "未雨绸缪", "乘坐一次加车车厢", 15,
+            NarrativeNote: "看准站务指示，加车可以加在任何位置",
+            Trigger: i => First(i.Trips, trip => HasExtraCarriage(trip.SeatNumber))),
+        new("substituteSeats", FunJourneys, "event_seat_outlined", "物尽其用", "至少乘坐三次代用席位", 20,
+            MaxExperience: 50,
+            Note: "每多一次额外获得5点经验，上限为50点",
+            NarrativeNote: "你当然可以躺下……只要旁边人不介意",
+            Trigger: i => FirstCountCompletion(i.Trips, 3, trip => IsSubstituteSeat(trip.SeatType))),
         new("oneYuanJourney", FunJourneys, "currency_yen", "一元旅程", "单次行程票价为 1 元", 20,
             NarrativeNote: "1995年以后就几乎无法通过全价票取得这一成就了",
             Trigger: i => First(i.Trips, trip => trip.Price == 1)),
@@ -763,6 +922,15 @@ public static partial class AchievementEngine
             Note: "每多一种额外获得10点经验，上限为50点",
             NarrativeNote: "铁路枢纽是方便走邪道的好地方",
             Trigger: i => FirstDifferentRoutesSameDestination(i.Trips)),
+        new("fourOfAKind", FunJourneys, "numbers", "四重存在", "乘坐车组号为四位相同数字的动车组列车", 20,
+            Note: "CRH1A-1111, CR200JC-1111, CR400AF-AS-1111, CRH2A-2222, CR400AF-2222, CRH380BL-5555",
+            NarrativeNote: "如果在车上遇到了一只金发吸血鬼，请告诉我",
+            Trigger: i => First(i.Trips, trip => HasQuadrupleSetNumber(trip.RollingStock))),
+        new("allAlone", FunJourneys, "person_outline", "茕茕孑立", "乘坐一次 RZ25K 111111 车厢或 CR400AF-AS-1111 的 11 车厢", 30,
+            MaxExperience: 50,
+            Note: "以下附加条件每满足一项额外获得10点经验，总上限为50点：(1) 座位号为11，不限后缀；(2) 乘车日期为11月11日",
+            NarrativeNote: "你最好是刻意来完成这个成就的QAQ",
+            Trigger: i => First(i.Trips, UnlocksAllAlone)),
         new("dejaVu", FunJourneys, "replay_outlined", "似曾相识", "至少两次乘坐除日期和车号外均完全一致的行程", 30,
             NarrativeNote: "不知道有多少人忘了填座号",
             Trigger: i => FirstRepeatedTripCompletion(i.Trips, 2)),
@@ -823,6 +991,12 @@ public static partial class AchievementEngine
             Note: "每多一台额外获得10点经验，上限为50点",
             NarrativeNote: "沿线车迷注意接车，今天×××次双机",
             Trigger: i => First(i.Trips, trip => LocomotiveCount(trip.RollingStock) >= 2)),
+        new("relayLocomotives", FunJourneys, "sync_alt_outlined", "前赴后继",
+            "乘坐除上下车站外中途至少换挂三次的列车", 25,
+            MaxExperience: 50,
+            Note: "每多一次额外获得10点经验，上限为50点",
+            NarrativeNote: "当心你的泡面或便当",
+            Trigger: i => First(i.Trips, trip => LocomotiveChangeCount(trip.RollingStock) >= 3)),
         new("snowBlockingBlueGate", FunJourneys, "severe_cold_outlined", "雪拥蓝关",
             "在 2008-01-10 至 2008-02-10 之间行经京广线武昌至广州间的任意区间", 30,
             NarrativeNote: "你知道吗？那年甚至调机也上了正线",
@@ -896,19 +1070,30 @@ public static partial class AchievementEngine
         new("immovableMountain", ExtremeChallenges, "accessibility_new", "不动如山", "持无座车票乘坐至少 24 小时", 50,
             NarrativeNote: "你站你也麻",
             Hidden: true,
-            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) == "无座" &&
+            Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24))),
+        new("pitchDark", ExtremeChallenges, "inventory_2_outlined", "暗无天日", "乘坐棚车代客的列车", 80,
+            Note: "路用列车也可以",
+            NarrativeNote: "我是在坐车吗……这分明是在坐牢！",
+            Hidden: true,
+            Trigger: i => First(i.Trips, trip => IsBoxcarSeat(trip.SeatType))),
         new("standingTall", ExtremeChallenges, "directions_railway_outlined", "顶天立地",
             "持无座或硬座车票乘坐单程至少 24 小时的非空调列车", 80,
             NarrativeNote: "老资历我敬你",
             Hidden: true,
-            Trigger: i => First(i.Trips, trip => NormalizedSeatType(trip.SeatType) is "无座" or "硬座" &&
+            Trigger: i => First(i.Trips, trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24) &&
                 HasNonAirConditionedCoach(trip.RollingStock))),
         new("richerThanNation", ExtremeChallenges, "diamond_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元", 80,
             NarrativeNote: "坐一次丝路梦享号的最豪华包间就够了",
             Hidden: true,
             Trigger: i => FirstThirtyDaySpendingCompletion(i.Trips, 50000)),
+        new("crowningGlory", Touring, "military_tech", "功盖振声",
+            "到访内地全部省会、自治区首府、直辖市，以及香港的全部主城区车站", 80,
+            Note: "不含城际车站与市域铁路车站，详见附表4",
+            NarrativeNote: "火车在这些铁路枢纽当中到底有多少种走法",
+            Hidden: true,
+            Trigger: i => FirstCapitalStationCompletion(i.Trips, RequiredCapitalStationCount)),
         new("envoyArrival", Touring, "gps_fixed_outlined", "使者莅临",
             "乘坐直达联运列车到访至少 3 座别国首都车站", 50,
             MaxExperience: 80,
@@ -957,6 +1142,11 @@ public static partial class AchievementEngine
             NarrativeNote: "我太想进步了",
             Hidden: true,
             Trigger: i => FirstLuxuryStreakCompletion(i.Trips, 20)),
+        new("misfortuneTwice", FunJourneys, "car_repair_outlined", "厄运成双",
+            "乘坐单程因故中途更换过两次编组的动车组列车", 80,
+            NarrativeNote: "什么叫机破了之后换的热备车又机破了？你解释一下",
+            Hidden: true,
+            Trigger: i => First(i.Trips, trip => EmuFormationChangeCount(trip.RollingStock) >= 2)),
         new("nonOrdinary", Milestones, "workspace_premium_outlined", "非同凡人", "完成除本成就外其他所有成就（该成就可能随其他成就增补而失去）", 0,
             NarrativeNote: "这个成就你居然达成了？已经没有人类了。必须给你专门颁个奖，毕竟再多的经验如今对你而言也没有什么意义orz",
             Hidden: true),
@@ -1188,10 +1378,15 @@ public static partial class AchievementEngine
             "completeEmuFleet" => Math.Max(0, CompleteEmuFamilyCount(trips) - 1) * 30,
             "envoyArrival" => Math.Max(0, ForeignCapitalCount(trips) - 3) * 10,
             "multipleLocomotives" => Math.Max(0, MaxLocomotiveCount(trips) - 2) * 10,
+            "relayLocomotives" => Math.Max(0, MaxLocomotiveChangeCount(trips) - 3) * 10,
+            "substituteSeats" => Math.Max(
+                0,
+                trips.Count(trip => IsSubstituteSeat(trip.SeatType)) - 3) * 5,
             "unnecessaryExtra" => Math.Max(0, MaxSameTrainTicketChain(trips) - 3) * 10,
             "differentRoutesSameDestination" => Math.Max(
                 0,
                 MaxDifferentRoutesSameDestination(trips) - 3) * 10,
+            "allAlone" => AllAloneBonus(trips),
             _ => 0
         };
         experience += bonus;
@@ -1236,10 +1431,10 @@ public static partial class AchievementEngine
         "allEmuSeries" => P(
             CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
             EmuModelFamilies.Count),
-        "allSeatTypes" => P(CollectedCount(trips, trip => SeatTypeMatches(trip.SeatType)), RegularSeatTypes.Count),
-        "noSeat12Hours" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 12),
+        "allSeatTypes" => P(CollectedCount(trips, SeatTypeMatches), RegularSeatTypes.Count),
+        "noSeat12Hours" => P(MaxDurationHours(trips.Where(IsNoSeat)), 12),
         "sweatLikeRain" => P(MaxDurationHours(trips.Where(trip => HasNonAirConditionedCoach(trip.RollingStock))), 12),
-        "immovableMountain" => P(MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) == "无座")), 24),
+        "immovableMountain" => P(MaxDurationHours(trips.Where(IsNoSeat)), 24),
         "hundredTickets" => P(trips.Count, 100),
         "thousandTickets" => P(trips.Count, 1000),
         "hundredStations" => P(trips.SelectMany(trip => new[] { trip.FromStation.Trim(), trip.ToStation.Trim() }).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).Count(), 100),
@@ -1275,6 +1470,8 @@ public static partial class AchievementEngine
         "fourFamousNorths" => P(
             VisitedStationCount(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
             4),
+        "acrossTheRealm" => P(CapitalCityCount(trips), CapitalCityNames.Count),
+        "crowningGlory" => P(CapitalStationCount(trips), RequiredCapitalStationCount),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
         "goddessYangtzeBridges" => BridgeProgress(trips, YangtzeBridges),
         "muddyWavesSweepSky" => BridgeProgress(trips, YellowRiverBridges),
@@ -1284,7 +1481,7 @@ public static partial class AchievementEngine
             CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels)),
             DistributedSleeperEmuModels.Count),
         "standingTall" => P(
-            MaxDurationHours(trips.Where(trip => NormalizedSeatType(trip.SeatType) is "无座" or "硬座" &&
+            MaxDurationHours(trips.Where(trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
                 HasNonAirConditionedCoach(trip.RollingStock))),
             24),
         "envoyArrival" => P(ForeignCapitalCount(trips), 3),
@@ -1313,6 +1510,14 @@ public static partial class AchievementEngine
         "luxuryStreak2" => P(LuxuryStreakCount(trips), 2),
         "luxuryStreak20" => P(LuxuryStreakCount(trips), 20),
         "multipleLocomotives" => P(MaxLocomotiveCount(trips), 2),
+        "relayLocomotives" => P(MaxLocomotiveChangeCount(trips), 3),
+        "substituteSeats" => P(trips.Count(trip => IsSubstituteSeat(trip.SeatType)), 3),
+        "extraCarriage" => P(trips.Count(trip => HasExtraCarriage(trip.SeatNumber)), 1),
+        "specialGift" => P(trips.Count(UnlocksSpecialGift), 1),
+        "pitchDark" => P(trips.Count(trip => IsBoxcarSeat(trip.SeatType)), 1),
+        "fourOfAKind" => P(trips.Count(trip => HasQuadrupleSetNumber(trip.RollingStock)), 1),
+        "allAlone" => P(trips.Count(UnlocksAllAlone), 1),
+        "misfortuneTwice" => P(MaxEmuFormationChangeCount(trips), 2),
         "roamFreely" => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
         _ => null
     };
@@ -1339,7 +1544,7 @@ public static partial class AchievementEngine
                 "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
                 "硬卧", "软卧", "二等卧", "一等卧", "高级软卧", "动卧", "高级动卧"
             }.Select(seat => (Key: seat, Label: seat)),
-            trip => SeatTypeMatches(trip.SeatType)),
+            SeatTypeMatches),
         "lonelyPlanet" => RouteRequirements(trips, ["若和铁路", "格库线"]),
         "verticalChina" => StationRequirements(trips, ["漠河", "三亚"]),
         "horizontalChina" => StationRequirements(trips, ["阿克陶", "抚远"]),
@@ -1352,6 +1557,10 @@ public static partial class AchievementEngine
             trips,
             ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
         "eastRedSunRises" => StationRequirements(trips, ["东方红", "太阳升"]),
+        "acrossTheRealm" => CollectionRequirements(
+            trips,
+            CapitalCityNames.Select(city => (Key: city, Label: city)),
+            trip => CapitalCitiesFor(trip)),
         "completeTrainLetters" => CollectionRequirements(
             trips,
         [
@@ -1798,6 +2007,101 @@ public static partial class AchievementEngine
             .Any(formation => formation.Any(model =>
                 model.Category == TrainCategory.EMU && model.Numbers.Count > 1));
 
+    /// <summary>“换挂”：相邻两个编组之间机车车组完全不同、客车完全相同，且都不含动车组。
+    /// 换的是机车本身，所以同一型号换车号（SS8 0001 → SS8 0002）也算，只要没有一台车
+    /// 两边都在。</summary>
+    private static int LocomotiveChangeCount(string? value)
+    {
+        var formations = TrainModelParser.ParseTrainFormations(value);
+        var count = 0;
+        for (var index = 1; index < formations.Count; index++)
+            if (IsLocomotiveChange(formations[index - 1], formations[index]))
+                count++;
+        return count;
+    }
+
+    private static bool IsLocomotiveChange(
+        IEnumerable<TrainModelParseResult> before,
+        IEnumerable<TrainModelParseResult> after)
+    {
+        if (before.Any(model => model.Category == TrainCategory.EMU) ||
+            after.Any(model => model.Category == TrainCategory.EMU))
+            return false;
+        var beforeLocomotives = LocomotiveIdentities(before);
+        var afterLocomotives = LocomotiveIdentities(after);
+        if (beforeLocomotives.Count == 0 || afterLocomotives.Count == 0) return false;
+        if (beforeLocomotives.Overlaps(afterLocomotives)) return false;
+        var beforeCoaches = CoachIdentities(before);
+        return beforeCoaches.Count > 0 && beforeCoaches.SetEquals(CoachIdentities(after));
+    }
+
+    private static int MaxLocomotiveChangeCount(IEnumerable<PublicTrip> trips) => trips
+        .Select(trip => LocomotiveChangeCount(trip.RollingStock))
+        .DefaultIfEmpty(0)
+        .Max();
+
+    /// <summary>“厄运成双”的换编组：相邻两个含动车组的编组车组号不同即算一次。与
+    /// <see cref="HasCoupledEmu"/> 相反，跨编组的不同车组号正是这里要找的东西。</summary>
+    private static int EmuFormationChangeCount(string? value)
+    {
+        var formations = TrainModelParser.ParseTrainFormations(value)
+            .Select(EmuIdentities)
+            .Where(identities => identities.Count > 0)
+            .ToList();
+        var count = 0;
+        for (var index = 1; index < formations.Count; index++)
+            if (!formations[index - 1].SetEquals(formations[index]))
+                count++;
+        return count;
+    }
+
+    private static int MaxEmuFormationChangeCount(IEnumerable<PublicTrip> trips) => trips
+        .Select(trip => EmuFormationChangeCount(trip.RollingStock))
+        .DefaultIfEmpty(0)
+        .Max();
+
+    private static HashSet<string> LocomotiveIdentities(IEnumerable<TrainModelParseResult> formation) =>
+        formation
+            .Where(model => model.Category == TrainCategory.Locomotive)
+            .SelectMany(RollingStockIdentities)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string> CoachIdentities(IEnumerable<TrainModelParseResult> formation) =>
+        formation
+            .Where(model => model.Category == TrainCategory.Coach)
+            .SelectMany(RollingStockIdentities)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<string> EmuIdentities(IEnumerable<TrainModelParseResult> formation) =>
+        formation
+            .Where(model => model.Category == TrainCategory.EMU)
+            .SelectMany(RollingStockIdentities)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>一个车型段的具体身份：有车号就是“型号 车号”，没车号就只是型号。</summary>
+    private static IEnumerable<string> RollingStockIdentities(TrainModelParseResult model)
+    {
+        var code = model.ModelCode.Length > 0 ? model.ModelCode : model.Model;
+        return model.Numbers.Count > 0
+            ? model.Numbers.Select(number => $"{code} {number}")
+            : [code];
+    }
+
+    /// <summary>代用席位：席别里带“代”即可（“硬卧代硬座”“硬座代卧铺”都算）。</summary>
+    private static bool IsSubstituteSeat(string? value) => (value ?? string.Empty).Contains('代');
+
+    /// <summary>棚车代客：席别里出现“棚车”即可。棚车不在席别下拉表里，只能靠导入或
+    /// 手填进来，落库形态不确定（“棚车”“棚车代硬座”都可能），所以按包含判定。</summary>
+    private static bool IsBoxcarSeat(string? value) => (value ?? string.Empty).Contains("棚车");
+
+    /// <summary>加挂车厢：座位号的车厢段写成“加X车”。车厢未知时 App 读写都不保留这个
+    /// 前缀，所以历史数据里残留的“加0车”不算加挂。</summary>
+    private static bool HasExtraCarriage(string? value)
+    {
+        var match = Regex.Match(value ?? string.Empty, @"^\s*加(\d+)车");
+        return match.Success && match.Groups[1].Value.TrimStart('0').Length > 0;
+    }
+
     private static PublicTrip? FirstRepeatedTripCompletion(List<PublicTrip> trips, int target)
     {
         var counts = new Dictionary<RepeatedTripKey, int>();
@@ -2008,11 +2312,19 @@ public static partial class AchievementEngine
         .DefaultIfEmpty(0)
         .Max();
 
-    private static HashSet<string> SeatTypeMatches(string? value)
+    private static HashSet<string> SeatTypeMatches(PublicTrip trip)
     {
-        var normalized = NormalizedSeatType(value);
+        // 无座是入座方式而不是席别，站票只点亮「无座」这一项，不再计入票面席别。
+        if (IsNoSeat(trip)) return new HashSet<string>(StringComparer.Ordinal) { "无座" };
+        var normalized = NormalizedSeatType(trip.SeatType);
         return RegularSeatTypes.Where(seat => seat == normalized).ToHashSet(StringComparer.Ordinal);
     }
+
+    /// <summary>无座：座位号里带“无座”即算（“无座”“2车无座”“99车无座”），与席别无关。
+    /// 旧数据里有把无座写进席别的（“无座”“二等座无座”），一并兼容。</summary>
+    private static bool IsNoSeat(PublicTrip trip) =>
+        (trip.SeatNumber ?? string.Empty).Contains("无座", StringComparison.Ordinal) ||
+        (trip.SeatType ?? string.Empty).Contains("无座", StringComparison.Ordinal);
 
     private static string NormalizedSeatType(string? value)
     {
@@ -2092,6 +2404,105 @@ public static partial class AchievementEngine
             if (visited.Count >= target) return trip;
         }
         return null;
+    }
+
+    /// <summary>这趟行程到访的附表4 车站（站名与旧站名都按归一化后精确比对）。</summary>
+    private static IEnumerable<CapitalStation> CapitalStationsVisitedBy(PublicTrip trip)
+    {
+        var stations = new[] { NormalizedStation(trip.FromStation), NormalizedStation(trip.ToStation) };
+        return CapitalStations.Where(capital =>
+            stations.Any(station =>
+                station == capital.Station ||
+                capital.Aliases.Contains(station, StringComparer.Ordinal)));
+    }
+
+    private static HashSet<string> CapitalCitiesFor(PublicTrip trip) =>
+        CapitalStationsVisitedBy(trip)
+            .Select(capital => capital.City)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static HashSet<string> RequiredCapitalStationsFor(PublicTrip trip) =>
+        CapitalStationsVisitedBy(trip)
+            .Where(capital => capital.Required)
+            .Select(capital => capital.Station)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static int CapitalCityCount(IEnumerable<PublicTrip> trips) =>
+        trips.SelectMany(CapitalCitiesFor).ToHashSet(StringComparer.Ordinal).Count;
+
+    private static int CapitalStationCount(IEnumerable<PublicTrip> trips) =>
+        trips.SelectMany(RequiredCapitalStationsFor).ToHashSet(StringComparer.Ordinal).Count;
+
+    private static PublicTrip? FirstCapitalCityCompletion(List<PublicTrip> trips, int target) =>
+        FirstCollectedCompletion(trips, CapitalCitiesFor, target);
+
+    private static PublicTrip? FirstCapitalStationCompletion(List<PublicTrip> trips, int target) =>
+        FirstCollectedCompletion(trips, RequiredCapitalStationsFor, target);
+
+    private static PublicTrip? FirstCollectedCompletion(
+        List<PublicTrip> trips,
+        Func<PublicTrip, HashSet<string>> collectedBy,
+        int target)
+    {
+        var collected = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var trip in trips)
+        {
+            collected.UnionWith(collectedBy(trip));
+            if (collected.Count >= target) return trip;
+        }
+        return null;
+    }
+
+    /// <summary>「四重存在」：车组号为四位相同数字（1111、2222、5555…）。</summary>
+    private static bool HasQuadrupleSetNumber(string? value) =>
+        TrainModelParser.ParseTrainString(value).Any(parsed =>
+            parsed.Category == TrainCategory.EMU &&
+            parsed.Numbers.Any(number =>
+                number.Length == 4 && number.All(digit => digit == number[0])));
+
+    private static bool UnlocksAllAlone(PublicTrip trip) =>
+        HasLonelyCarriage(trip.RollingStock) || RidesEleventhCarriageOf1111(trip);
+
+    /// <summary>「茕茕孑立」的第一种解锁方式：坐过车号 111111 的 RZ25K 车厢。</summary>
+    private static bool HasLonelyCarriage(string? value) =>
+        RollingStockMatches(value, new RollingStockTarget("RZ25K", "111111"));
+
+    /// <summary>第二种解锁方式：坐 CR400AF-AS-1111 的 11 车厢。车组号同样按
+    /// RollingStockTarget 判，只有座位号里的车厢段是另一条线（车组号对了还得在 11 车）。</summary>
+    private static bool RidesEleventhCarriageOf1111(PublicTrip trip) =>
+        CarriageNumber(trip.SeatNumber) == 11 &&
+        RollingStockMatches(trip.RollingStock, new RollingStockTarget("CR400AF-AS", "1111"));
+
+    /// <summary>座位号里的车厢号（“11车11号”）。加挂车厢单独编号、不属于车组的第 11 车厢，
+    /// 所以“加X车”一律不算。</summary>
+    private static int? CarriageNumber(string? value)
+    {
+        var match = Regex.Match(value ?? string.Empty, @"^\s*(\d+)\s*车");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var carriage)
+            ? carriage
+            : null;
+    }
+
+    /// <summary>座位号里的座号（“11车11A”取 11，后缀不限）。</summary>
+    private static int? SeatNumberInCarriage(string? value)
+    {
+        var seat = Regex.Replace(value ?? string.Empty, @"^\s*加?\d+\s*车", string.Empty);
+        var match = Regex.Match(seat, @"^\s*(\d+)");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var number)
+            ? number
+            : null;
+    }
+
+    /// <summary>「茕茕孑立」的附加经验：解锁那趟行程的座号是 11，或乘车日期是 11 月 11 日，
+    /// 每满足一项加 10 点（总上限由定义的 MaxExperience 兜底）。</summary>
+    private static int AllAloneBonus(List<PublicTrip> trips)
+    {
+        if (First(trips, UnlocksAllAlone) is not { } trip) return 0;
+        var bonus = 0;
+        if (SeatNumberInCarriage(trip.SeatNumber) == 11) bonus += 10;
+        var departure = Departure(trip);
+        if (departure.Month == 11 && departure.Day == 11) bonus += 10;
+        return bonus;
     }
 
     private static PublicTrip? FirstStationPairWithin(
@@ -2830,6 +3241,16 @@ public static partial class AchievementEngine
         return Regex.IsMatch(digits, @"^(\d)\1{2,3}$");
     }
 
+    /// <summary>特别贺礼：元旦当天乘坐以当年年份命名的列车。</summary>
+    private static bool UnlocksSpecialGift(PublicTrip trip)
+    {
+        var departure = Departure(trip);
+        if (departure.Month != 1 || departure.Day != 1) return false;
+        var digits = Regex.Replace(trip.TrainNumber ?? string.Empty, "[A-Za-z]", string.Empty)
+            .Replace(" ", string.Empty);
+        return digits.Length > 0 && digits == departure.Year.ToString(CultureInfo.InvariantCulture);
+    }
+
     private static PublicTrip? FirstThreeTicketSameTrainCompletion(List<PublicTrip> trips)
     {
         var chainLengths = Enumerable.Repeat(1, trips.Count).ToArray();
@@ -3011,6 +3432,15 @@ public static partial class AchievementEngine
     private sealed record ForeignCapitalStation(
         string Key,
         string Label,
+        IReadOnlyList<string> Aliases);
+
+    /// <summary>附表4 里的一座省会/自治区首府/直辖市/香港车站。<paramref name="Required"/> 为 false
+    /// 即附表里带 * 的站，只满足「纵横九州」、不计入「功盖振声」；<paramref name="Aliases"/> 是
+    /// 附注里写到的旧站名（改名前的叫法）。</summary>
+    private sealed record CapitalStation(
+        string City,
+        string Station,
+        bool Required,
         IReadOnlyList<string> Aliases);
 
     [GeneratedRegex(@"\s+")]

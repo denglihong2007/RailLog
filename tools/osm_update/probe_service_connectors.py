@@ -47,7 +47,7 @@ def _bbox_hits(
 
 
 def _scan_pbf(pbf: Path, bboxes: list) -> list:
-    """收集与目标 bbox 相交的铁路 way（含 service），返回 [(service, coords)]。
+    """收集与目标 bbox 相交的铁路 way（含 service），返回 [(service, name, flags, coords)]。
 
     两遍，跟生产管线同一个套路：一遍 KeyFilter 收 way 的**节点号**，一遍 IdFilter 取
     这些节点的坐标。第一遍读不了 way 引用节点的坐标（那需要 pyosmium 建位置索引，
@@ -69,6 +69,8 @@ def _scan_pbf(pbf: Path, bboxes: list) -> list:
             raw.append(
                 (
                     str(w.tags.get("service", "")).lower(),
+                    # 普速侧的偏好靠线路名匹配，probe 要复现生产行为就必须带上名字。
+                    geo.way_name(w.tags),
                     is_hsr,
                     is_conventional,
                     node_ids,
@@ -93,13 +95,13 @@ def _scan_pbf(pbf: Path, bboxes: list) -> list:
     )
 
     kept: list = []
-    for service, is_hsr, is_conventional, node_ids in raw:
+    for service, name, is_hsr, is_conventional, node_ids in raw:
         coords = [locations[node_id] for node_id in node_ids if node_id in locations]
         if len(coords) < 2:
             continue
         if not any(_bbox_hits(_way_bbox(coords), target) for target in bboxes):
             continue
-        kept.append((service, is_hsr, is_conventional, coords))
+        kept.append((service, name, is_hsr, is_conventional, coords))
     return kept
 
 
@@ -152,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"抽样 {len(legs)} 段，开始读 PBF……", file=sys.stderr)
     started = time.time()
     resolved = _scan_pbf(args.pbf, bboxes)
-    service_ways = sum(1 for service, _, _, _ in resolved if service in kinds)
+    service_ways = sum(1 for service, *_ in resolved if service in kinds)
     print(
         f"  命中 {len(resolved)} 条 way（其中 service∈{sorted(kinds)} {service_ways} 条、"
         f"正线 {len(resolved) - service_ways} 条），用时 {time.time() - started:.0f}s",
@@ -167,7 +169,14 @@ def main(argv: list[str] | None = None) -> int:
 
         baseline_lines, baseline_preferred = [], []
         service_lines, service_preferred = [], []
-        for service, is_hsr, is_conventional, coords in resolved:
+        # 普速腿的偏好集由线路名决定（见 RailLog 的 preferred_basis）：不传 line_key
+        # 就等于把偏好集关掉，这条 probe 量的就不是生产行为了。
+        line_key = (
+            geo.line_match_key(leg.route_name)
+            if leg.profile == geo.CONVENTIONAL
+            else None
+        )
+        for service, name, is_hsr, is_conventional, coords in resolved:
             if not _bbox_hits(_way_bbox(coords), bbox):
                 continue
             # 基线永远不含任何 service way——不然 --service-kinds 会一并改掉基线，
@@ -180,9 +189,9 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             baseline_lines.append(coords)
             baseline_preferred.append(
-                builder.CachedWay(is_hsr, is_conventional, coords).preferred_for(
-                    leg.profile
-                )
+                builder.CachedWay(
+                    is_hsr, is_conventional, coords, name=name
+                ).preferred_for(leg.profile, line_key)
             )
 
         with_service = geo.RailData(
@@ -190,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
             preferred=[*baseline_preferred, *service_preferred],
         )
         without = geo.RailData(lines=baseline_lines, preferred=baseline_preferred)
+
 
         before = geo.plan_leg(
             leg.start, leg.end, without, leg.profile, mileage_km=leg.mileage_km

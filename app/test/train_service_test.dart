@@ -122,4 +122,61 @@ void main() {
       expect(suggestions.map((result) => result.trainNumber), ['G20']);
     });
   });
+
+  group('TrainService.selectHistoricalTrain', () {
+    TrainSearchResult train(String number) => TrainSearchResult(
+      trainNumber: number,
+      departureStation: '始发站',
+      arrivalStation: '终到站',
+      trainNo: number,
+    );
+
+    test('prefers the exact train number over a prefix match', () {
+      final selected = TrainService.selectHistoricalTrain('G2', [
+        train('G20'),
+        train('G2'),
+        train('G21'),
+      ]);
+
+      expect(selected?.trainNumber, 'G2');
+    });
+
+    test('normalizes spaces and the 次 suffix before matching', () {
+      for (final query in [' d114 ', 'D114次', 'd114']) {
+        expect(
+          TrainService.selectHistoricalTrain(query, [
+            train('D111'),
+            train('D114'),
+          ])?.trainNumber,
+          'D114',
+          reason: query,
+        );
+      }
+    });
+
+    test('returns null when nothing matches and fallback is off', () {
+      expect(
+        TrainService.selectHistoricalTrain(
+          'G2',
+          [train('D20')],
+          fallbackToFirst: false,
+        ),
+        isNull,
+      );
+    });
+
+    test('falls back to the first candidate when nothing matches', () {
+      expect(
+        TrainService.selectHistoricalTrain('G2', [
+          train('D20'),
+          train('D21'),
+        ])?.trainNumber,
+        'D20',
+      );
+    });
+
+    test('returns null for an empty candidate list', () {
+      expect(TrainService.selectHistoricalTrain('G2', const []), isNull);
+    });
+  });
 }

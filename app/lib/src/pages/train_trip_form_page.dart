@@ -24,6 +24,8 @@ class TrainTripFormPage extends StatefulWidget {
     required this.trainNumber,
     required this.scheduleStops,
     this.historicalVersion,
+    this.forceHistoricalJourney,
+    this.keepOnlineLookups,
     required this.departureStopIndex,
     required this.arrivalStopIndex,
     this.initialSeatType,
@@ -39,8 +41,20 @@ class TrainTripFormPage extends StatefulWidget {
   final String trainNumber;
   final List<TrainScheduleStop> scheduleStops;
 
-  /// 时刻表来源版本（`yyyy.MM.dd`）；`null` 表示在线查询。
+  /// 时刻表来源版本（`yyyy.MM.dd`）；`null` 表示站序不是从历史库来的。
   final String? historicalVersion;
+
+  /// 是否按历史站序推算里程与经由线路。`null` 时跟随 [historicalVersion]。
+  ///
+  /// 导入流程恒传 `true`：它们的站序一律取自历史库，推导不出版本时也不该回头
+  /// 走外部的在线里程接口。
+  final bool? forceHistoricalJourney;
+
+  /// 车型/编组、席别票价的在线补全是否照常执行。`null` 时跟随
+  /// [forceHistoricalJourney]（历史行程跳过在线补全）。
+  ///
+  /// 导入流程传 `true`：它们是真实发生过的行程，票面已给席别票价，车型仍需补全。
+  final bool? keepOnlineLookups;
 
   final int departureStopIndex;
   final int arrivalStopIndex;
@@ -101,6 +115,14 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   DateTime get _departureTime => _departureStop.departureDateTime!;
   DateTime get _arrivalTime => _arrivalStop.arrivalDateTime!;
 
+  /// 里程与经由线路是否按历史站序推算。
+  bool get _isHistoricalJourney =>
+      widget.forceHistoricalJourney ?? (widget.historicalVersion != null);
+
+  /// 车型/编组、席别票价的在线补全是否照常执行。
+  bool get _keepOnlineLookups =>
+      widget.keepOnlineLookups ?? !_isHistoricalJourney;
+
   @override
   void initState() {
     super.initState();
@@ -132,7 +154,6 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   }
 
   Future<void> _loadRuntimeInfo() async {
-    final isHistorical = widget.historicalVersion != null;
     final terminalStop = widget.scheduleStops.last;
     final terminalDate =
         terminalStop.arrivalDateTime ??
@@ -140,10 +161,10 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         _arrivalTime;
     final shouldFetchRollingStock =
         TrainService.shouldFetchRollingStock(widget.trainNumber) &&
-        !isHistorical;
+        _keepOnlineLookups;
     // 历史模式的席位取自历史库，本来就没打算查 12306，失败标记也要跟着一起跳过，
     // 否则界面上会挂一句「未获取到当前区间的座位信息」，其实什么都没失败。
-    final shouldFetchTicketSeat = !isHistorical;
+    final shouldFetchTicketSeat = _keepOnlineLookups;
     // 里程改由站序的累计里程算出，但承运单位只有这个外部接口给，所以请求照发，
     // 只是历史模式下不再采信它返回的 distance。
     final results = await Future.wait<dynamic>([
@@ -177,20 +198,18 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     final ticketSeatAvailability = results[3] as TicketSeatAvailability?;
     // 历史模式下区间里程由站序的累计里程相减得到，不采信外部接口的 distance：
     // 它按「现在」的同号车次作答，查一趟老车次时给的可能是另一趟车的里程。
-    final autoMileage = isHistorical
+    final autoMileage = _isHistoricalJourney
         ? historicalJourneyMileage(_departureStop, _arrivalStop)
         : distanceInfo?.distance;
     setState(() {
       if (distanceInfo != null) {
         _companyController.text = distanceInfo.companyName;
       }
-      if (autoMileage != null) {
-        if (_distanceController.text.isEmpty) {
-          _distanceController.text = formatTripNumber(autoMileage);
-        }
-      } else {
-        _distanceLookupFailed = true;
+      if (autoMileage != null && _distanceController.text.isEmpty) {
+        _distanceController.text = formatTripNumber(autoMileage);
       }
+      // 订单自带里程时输入框本来就有值，这时不该再说「未自动获取」。
+      _distanceLookupFailed = _distanceController.text.isEmpty;
       if (rollingStock != null) {
         _rollingStockController.text = rollingStock.rollingStock;
         _usedLatestRollingStock = rollingStock.usedLatestFallback;
@@ -257,22 +276,34 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
 
   Future<RouteResolution?> _resolveRoutes() async {
     try {
-      if (widget.historicalVersion != null) {
+      if (_isHistoricalJourney) {
         final sections = historicalSectionDistances(
           widget.scheduleStops,
           widget.departureStopIndex,
           widget.arrivalStopIndex,
         );
+        // 版本可能回退到「绝对最近」的快照，未必就是行程当时的时刻表，
+        // 所以把它写进日志，用户核对经由线路时有据可查。
+        final version = widget.historicalVersion;
+        final sourceLog = version == null
+            ? '未取到历史时刻表版本'
+            : '历史时刻表版本：$version';
         // 整段都没有里程就不下结论 —— 让推断在图里靠"猜"一条线，不如留空。
         if (sections.every((section) => section.distanceKm == null)) {
-          return const RouteResolution(
-            segments: [],
+          return RouteResolution(
+            segments: const [],
             usedShortestPath: false,
-            unresolvedSections: [],
-            inferenceLog: ['历史时刻表所选区间无有效里程数据，已跳过路径推断'],
+            unresolvedSections: const [],
+            inferenceLog: [sourceLog, '历史时刻表所选区间无有效里程数据，已跳过路径推断'],
           );
         }
-        return RouteService.resolveJourney(sections);
+        final resolved = await RouteService.resolveJourney(sections);
+        return RouteResolution(
+          segments: resolved.segments,
+          usedShortestPath: resolved.usedShortestPath,
+          unresolvedSections: resolved.unresolvedSections,
+          inferenceLog: [sourceLog, ...resolved.inferenceLog],
+        );
       }
       final sections = await TrainService.fetchStationPairDistances(
         widget.trainNumber,

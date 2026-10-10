@@ -39,13 +39,14 @@ DOWNLOAD_SCRIPT = MODULE_DIR / "download.py"
 META_KEYS = (
     "generated_at",
     "source",
+    # 输出库的 schema 版本：只加列/加表时 App 不必跟着改，但它能一眼区分新旧产物。
+    "schema_version",
     "workers",
     "detour_ratio",
+    "jump_radius_km",
     "legs_total",
     "legs_ok",
     "legs_failed",
-    "split_legs",
-    "track_split",
     "stations",
     # 坐标侧的两道处理：同名异地消歧、以及消歧救不回的站按里程舍去。
     # 它们改了哪些站的坐标/有没有坐标，直接决定地图上画在哪。

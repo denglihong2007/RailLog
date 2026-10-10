@@ -355,12 +355,123 @@ class ParseSourceTest(unittest.TestCase):
 
     def test_preferred_for_varies_by_profile(self) -> None:
         hsr = builder.CachedWay(True, False, [(30.0, 104.0)])
-        conventional = builder.CachedWay(False, True, [(30.0, 104.0)])
+        conventional = builder.CachedWay(False, True, [(30.0, 104.0)], name="宁西线")
+        # 名字对不上任何 way 的普速腿：偏好集为空，纯按里程判定。
+        mismatch = builder.CachedWay(False, True, [(30.0, 104.0)], name="沪蓉线")
 
         self.assertTrue(hsr.preferred_for(geo.HSR))
         self.assertFalse(hsr.preferred_for(geo.CONVENTIONAL))
-        self.assertTrue(conventional.preferred_for(geo.CONVENTIONAL))
         self.assertTrue(conventional.preferred_for(geo.ALL))
+        # 普速侧只看线路名：同名才进偏好集（「宁西线西合段」剥掉「段」后就是「宁西线」）。
+        key = geo.line_match_key("宁西线西合段")
+        self.assertTrue(conventional.preferred_for(geo.CONVENTIONAL, key))
+        self.assertFalse(mismatch.preferred_for(geo.CONVENTIONAL, key))
+        # 没给出线路名（或名字对不上）时不能默认进偏好集——那正是老 bug 的成因：
+        # 「没打高铁标签」被当成「就是这条普速线」，于是并行的沪蓉线被压掉。
+        self.assertFalse(conventional.preferred_for(geo.CONVENTIONAL))
+        self.assertFalse(conventional.preferred_for(geo.CONVENTIONAL, ""))
+
+    def test_way_line_key_is_normalized_once(self) -> None:
+        way = builder.CachedWay(False, True, [(30.0, 104.0)], name="京广客运专线")
+
+        self.assertEqual(way.line_key, "京广高速")
+        self.assertEqual(
+            builder.CachedWay(False, True, [(30.0, 104.0)], name=None).line_key, None
+        )
+
+    def test_service_ways_never_enter_any_preference_set(self) -> None:
+        # service=yard/siding：既不是高铁也不是普速，任何 profile 下都不偏好。
+        service = builder.CachedWay(False, False, [(30.0, 104.0)], name="沪蓉线")
+
+        for profile in (geo.HSR, geo.CONVENTIONAL, geo.ALL):
+            self.assertFalse(service.preferred_for(profile, geo.line_match_key("宁蓉线宁渝段")))
+
+    def test_cache_round_trip_keeps_way_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tile.json.gz"
+            ways = [
+                builder.CachedWay(False, True, [(30.0, 104.0)], name="沪蓉线"),
+                builder.CachedWay(False, True, [(31.0, 105.0)]),
+            ]
+
+            builder._write_cache(path, ways)
+            restored = builder._read_cache(path)
+
+        self.assertEqual([w.name for w in restored], ["沪蓉线", None])
+        self.assertEqual(restored[0].line_key, "沪蓉")
+
+    def test_cache_read_accepts_legacy_pairs_without_name(self) -> None:
+        # v2 之前的 tile 只有 (flags, coords)，读到就要当无名处理，不能让整块缓存失败。
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tile.json.gz"
+            payload = [[2, [[30.0, 104.0], [30.1, 104.0]]]]
+            with gzip.open(path, "wt", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+
+            restored = builder._read_cache(path)
+
+        self.assertEqual(len(restored), 1)
+        self.assertTrue(restored[0].is_conventional)
+        self.assertIsNone(restored[0].name)
+        self.assertEqual(restored[0].coords, [(30.0, 104.0), (30.1, 104.0)])
+
+    def test_ways_reads_only_the_versioned_cache_tile(self) -> None:
+        # 格式变了而文件名不变 = 静默读到无名旧数据（tile 没有新鲜度检查），所以只认
+        # 带版本号的那个名字：一份 v1 老文件摆在同一目录里也必须被无视。
+        class _Source(builder.OverpassRailSource):
+            def fetch(self, bbox):
+                raise AssertionError("不该联网：版本化的 tile 已经存在")
+
+        bbox = (30.0, 104.0, 31.0, 105.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _Source(Path(tmp), [])
+            tile_dir = Path(tmp) / source.name
+            tile_dir.mkdir(parents=True)
+            key = builder._bbox_cache_key(builder._quantized_bbox(bbox))
+            with gzip.open(tile_dir / f"{key}.json.gz", "wt", encoding="utf-8") as handle:
+                json.dump([[1, [[30.0, 104.0], [30.1, 104.0]]]], handle)
+            ways = [builder.CachedWay(False, True, [(31.0, 105.0)], name="沪蓉线")]
+            builder._write_cache(
+                tile_dir / f"{key}.v{builder.CACHE_FORMAT_VERSION}.json.gz", ways
+            )
+
+            restored = source.ways(bbox)
+
+        self.assertEqual([way.name for way in restored], ["沪蓉线"])
+
+    def test_parse_overpass_and_geojson_carry_way_names(self) -> None:
+        overpass = builder._parse_overpass(
+            {
+                "elements": [
+                    {
+                        "type": "way",
+                        "id": 1,
+                        "tags": {"railway": "rail", "name": "京广高速线"},
+                        "geometry": [
+                            {"lat": 30.0, "lon": 104.0},
+                            {"lat": 30.1, "lon": 104.0},
+                        ],
+                    }
+                ]
+            }
+        )
+        geojson = builder._parse_geojson(
+            {
+                "features": [
+                    {
+                        "properties": {"railway": "rail", "name": "沪蓉线"},
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [[104.0, 30.0], [104.0, 30.1]],
+                        },
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(overpass[0].name, "京广高速线")
+        self.assertEqual(overpass[0].line_key, "京广高速")
+        self.assertEqual(geojson[0].name, "沪蓉线")
 
     def test_quantized_bbox_snaps_adjacent_legs_to_the_same_cache_key(self) -> None:
         first = builder._quantized_bbox((30.001, 104.001, 31.002, 105.003))
@@ -897,6 +1008,93 @@ class PbfRailSourceTest(unittest.TestCase):
             builder.PbfRailSource(self.cache_dir, self.root / "不存在.osm.pbf")
 
 
+class ConventionalLineNameSource(builder.RailSource):
+    """普速侧的偏好依据：A→B 有两条并行线，直的那条在 OSM 里是高铁等级。
+
+    这就是宁蓉线宁渝段 六安↔长安集 的合成复刻：沪蓉线（OSM 里 maxspeed 300，因此
+    `is_conventional=False`）60.74km 最贴里程；宁西线（真·普速）绕了约 2km。
+    """
+
+    name = "line-name"
+
+    def __init__(self, cache_dir: Path, straight_name: str, detour_name: str) -> None:
+        super().__init__(cache_dir)
+        self.straight_name = straight_name
+        self.detour_name = detour_name
+        self.start = (30.0, 104.0)
+        self.end = (30.0, 104.63)
+        self.straight = [
+            (30.0, 104.0 + (104.63 - 104.0) * i / 100) for i in range(101)
+        ]
+        # 顶点往北抬一点，使 A→M→B 比直线长约 2km。
+        apex = (30.0708, 104.0 + (104.63 - 104.0) / 2)
+        self.detour = [
+            *[(30.0 + (apex[0] - 30.0) * i / 50, 104.0 + (apex[1] - 104.0) * i / 50)
+              for i in range(51)],
+            *[(apex[0] + (30.0 - apex[0]) * i / 50, apex[1] + (104.63 - apex[1]) * i / 50)
+              for i in range(51)],
+        ]
+
+    def ways(self, bbox):  # type: ignore[override]
+        return [
+            # OSM 里这条是高铁等级：普速腿**不该**把它当偏好，但它是合法路径。
+            builder.CachedWay(True, False, self.straight, name=self.straight_name),
+            builder.CachedWay(False, True, self.detour, name=self.detour_name),
+        ]
+
+
+class ConventionalPreferenceTest(unittest.TestCase):
+    """普速腿的偏好集：名字对不上就为空，退回纯里程判定（宁蓉线宁渝段的自愈）。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.cache_dir = Path(self._tmp.name)
+
+    def _plan(self, route_name: str):
+        source = ConventionalLineNameSource(self.cache_dir, "沪蓉线", "宁西线")
+        straight_km = geo.path_length_km(source.straight)
+        detour_km = geo.path_length_km(source.detour)
+        self.assertGreater(detour_km, straight_km + 1.0, "合成数据没造出长度差")
+        leg = builder.Leg(
+            route_name=route_name,
+            from_station="六安",
+            to_station="长安集",
+            start=source.start,
+            end=source.end,
+            # 运价里程贴近直线那条（差 0.3km），离绕行那条差 1.7km。
+            mileage_km=straight_km + 0.3,
+            profile=geo.CONVENTIONAL,
+        )
+        return (
+            builder.plan_leg_with_source(source, leg, 400.0, 0.35),
+            straight_km,
+            detour_km,
+        )
+
+    def test_unmatched_line_name_falls_back_to_pure_mileage(self) -> None:
+        # 「宁蓉线宁渝段」归一化后是「宁蓉」，与 OSM 的「沪蓉线」（沪蓉）对不上：
+        # 偏好集为空，于是里程证据重新说了算 → 选到沪蓉线。
+        result, straight_km, detour_km = self._plan("宁蓉线宁渝段")
+
+        self.assertTrue(result.plan.ok, result.plan.reason)
+        self.assertEqual(result.preferred_basis, "none")
+        self.assertEqual(result.plan.preferred_ratio, 0.0)
+        self.assertAlmostEqual(result.plan.length_km, straight_km, delta=0.5)
+        self.assertLess(result.plan.length_km, detour_km - 1.0)
+        self.assertEqual(result.plan.line_runs[0][0], "沪蓉线")
+
+    def test_matched_line_name_still_beats_mileage(self) -> None:
+        # 反向对照：名字真的对上了（「宁西线西合段」→「宁西线」），名字就该压过里程，
+        # 否则 D1 只是把老 bug 从「一律偏好」翻成「一律不偏好」。
+        result, straight_km, detour_km = self._plan("宁西线西合段")
+
+        self.assertTrue(result.plan.ok, result.plan.reason)
+        self.assertEqual(result.preferred_basis, "way-name")
+        self.assertEqual(result.plan.preferred_ratio, 1.0)
+        self.assertAlmostEqual(result.plan.length_km, detour_km, delta=0.5)
+
+
 class FakeSource(builder.RailSource):
     """内存数据源：两条并行线路，直线是高铁、绕行线是普速。"""
 
@@ -1031,7 +1229,7 @@ class WriteDatabaseTest(unittest.TestCase):
         connection = sqlite3.connect(self.out)
         try:
             row = connection.execute(
-                "SELECT route_name, from_station, profile, direction, polyline,"
+                "SELECT route_name, from_station, profile, polyline,"
                 " point_count FROM tracks"
             ).fetchone()
             failure = connection.execute("SELECT route_name, reason FROM failures").fetchone()
@@ -1039,12 +1237,10 @@ class WriteDatabaseTest(unittest.TestCase):
         finally:
             connection.close()
 
-        (route_name, from_station, profile, direction, polyline, point_count) = row
+        (route_name, from_station, profile, polyline, point_count) = row
         self.assertEqual(route_name, "京沪高速线")
         self.assertEqual(from_station, "北京南站")
         self.assertEqual(profile, geo.HSR)
-        # 未分离的段只有一行，direction 留空。
-        self.assertEqual(direction, "")
         self.assertEqual(point_count, 3)
         self.assertEqual(failure, ("京沪高速线", "snap_failed"))
         self.assertEqual(meta["source"], "fake")
@@ -1053,41 +1249,6 @@ class WriteDatabaseTest(unittest.TestCase):
         points = json.loads(gzip.decompress(polyline).decode("utf-8"))
         self.assertEqual(points[0], [39.865, 116.378])
         self.assertEqual(len(points), 3)
-
-    def test_writes_up_and_down_rows_for_a_split_leg(self) -> None:
-        up = [(39.865, 116.378), (39.7, 116.499), (39.520, 116.700)]
-        down = [(39.865, 116.378), (39.7, 116.506), (39.520, 116.700)]
-        split = builder.LegResult(
-            self._leg(60.0),
-            geo.LegPlan(
-                ok=True,
-                split=True,
-                polyline=up,
-                length_km=58.0,
-                down_polyline=down,
-                down_length_km=58.2,
-                mileage_km=60.0,
-            ),
-        )
-
-        builder.write_database(self.out, [split], {"source": "fake"})
-
-        connection = sqlite3.connect(self.out)
-        try:
-            rows = connection.execute(
-                "SELECT direction, polyline, length_km FROM tracks ORDER BY direction"
-            ).fetchall()
-        finally:
-            connection.close()
-
-        self.assertEqual([row[0] for row in rows], ["down", "up"])
-        by_direction = {row[0]: row for row in rows}
-        self.assertAlmostEqual(by_direction["up"][2], 58.0)
-        self.assertAlmostEqual(by_direction["down"][2], 58.2)
-        # 两条各自独立编码，端点仍是精确的站点坐标。
-        for direction, expected in (("up", up), ("down", down)):
-            points = json.loads(gzip.decompress(by_direction[direction][1]).decode("utf-8"))
-            self.assertEqual(points, [[lat, lon] for lat, lon in expected])
 
     def test_rewrites_existing_database_from_scratch(self) -> None:
         self.out.write_bytes(b"not a database")
@@ -1098,9 +1259,90 @@ class WriteDatabaseTest(unittest.TestCase):
             tables = {row[0] for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )}
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
         finally:
             connection.close()
-        self.assertEqual(tables, {"meta", "tracks", "failures", "stations"})
+        self.assertEqual(tables, {"meta", "tracks", "failures", "stations", "track_lines"})
+        self.assertEqual(version, builder.SCHEMA_VERSION)
+
+    def test_writes_line_runs_and_diagnostics(self) -> None:
+        ok = builder.LegResult(
+            self._leg(60.0),
+            geo.LegPlan(
+                ok=True,
+                polyline=[(39.865, 116.378), (39.7, 116.5), (39.520, 116.700)],
+                length_km=58.0,
+                mileage_km=60.0,
+                mileage_error_km=2.0,
+                preferred_ratio=0.98,
+                board_jump_km=0.43,
+                line_runs=[("京广高速线", 45.67), ("未命名", 0.43), ("花广联络线", 11.9)],
+            ),
+            preferred_basis="way-name",
+        )
+
+        builder.write_database(self.out, [ok], {"source": "fake"})
+
+        connection = sqlite3.connect(self.out)
+        try:
+            track = connection.execute(
+                "SELECT preferred_ratio, line_count, board_jump_km, preferred_basis FROM tracks"
+            ).fetchone()
+            runs = list(connection.execute(
+                "SELECT seq, line_name, length_km FROM track_lines"
+                " WHERE route_name=? AND from_station=? AND to_station=? ORDER BY seq",
+                ("京沪高速线", "北京南站", "廊坊站"),
+            ))
+        finally:
+            connection.close()
+        self.assertEqual(track, (0.98, 3, 0.43, "way-name"))
+        self.assertEqual(
+            runs,
+            [(0, "京广高速线", 45.67), (1, "未命名", 0.43), (2, "花广联络线", 11.9)],
+        )
+
+    def test_failed_legs_get_no_line_runs(self) -> None:
+        failed = builder.LegResult(
+            self._leg(None), geo.LegPlan(ok=False, reason="no_path")
+        )
+
+        builder.write_database(self.out, [failed], {"source": "fake"})
+
+        connection = sqlite3.connect(self.out)
+        try:
+            count = connection.execute("SELECT COUNT(*) FROM track_lines").fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(count, 0)
+
+    def test_tracks_insert_lists_columns_explicitly(self) -> None:
+        # 位置式 INSERT 一旦加列就炸；这条用「少给一列就报错」反过来盯住显式列名。
+        ok = builder.LegResult(
+            self._leg(60.0),
+            geo.LegPlan(
+                ok=True,
+                polyline=[(39.865, 116.378), (39.520, 116.700)],
+                length_km=58.0,
+                mileage_km=60.0,
+                mileage_error_km=2.0,
+            ),
+        )
+
+        builder.write_database(self.out, [ok], {"source": "fake"})
+
+        connection = sqlite3.connect(self.out)
+        try:
+            columns = [row[1] for row in connection.execute("PRAGMA table_info(tracks)")]
+        finally:
+            connection.close()
+        self.assertEqual(
+            columns,
+            [
+                "route_name", "from_station", "to_station", "profile", "polyline",
+                "point_count", "length_km", "mileage_km", "mileage_error_km",
+                "preferred_ratio", "line_count", "board_jump_km", "preferred_basis",
+            ],
+        )
 
     def test_encode_polyline_round_trips_and_rounds_coordinates(self) -> None:
         encoded = builder.encode_polyline([(30.123456789, 104.987654321)])
@@ -1207,6 +1449,45 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertNotIn("已按 --limit 截断", output)
+
+    def test_stub_database_declares_the_schema_version(self) -> None:
+        # --stub 是「还没跑过管线也要能构建 App」的入口，schema 版本必须跟着走，
+        # 否则 App/排查脚本会拿新库当旧库读。它自己建目录，好让库留在磁盘上受检。
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        routes_db = root / "routes.db"
+        _write_routes_db(routes_db)
+        coordinates = root / "coordinates.csv"
+        _write_coordinates(coordinates, [])
+        out = root / "out.db"
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = builder.main(
+                [
+                    "--routes-db", str(routes_db),
+                    "--coordinates", str(coordinates),
+                    "--cache-dir", str(root / "cache"),
+                    "--out", str(out),
+                    "--stub",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        connection = sqlite3.connect(out)
+        try:
+            meta = dict(connection.execute("SELECT key, value FROM meta"))
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(meta["schema_version"], str(builder.SCHEMA_VERSION))
+        self.assertEqual(version, builder.SCHEMA_VERSION)
+
+    def test_jump_radius_zero_is_accepted(self) -> None:
+        # 回滚杠杆：置 0 就退回「只认同连通分量吸附」的老行为。
+        code, _, _ = self._run(["--jump-radius-km", "0"])
+
+        self.assertEqual(code, 0)
 
 
 if __name__ == "__main__":

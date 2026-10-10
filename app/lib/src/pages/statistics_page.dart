@@ -681,6 +681,8 @@ class _RankingRow extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final emphasized = rank <= 3;
     final rankColors = _rankColors(context, rank);
+    // 四位以上位次放不进圆标，统一显示为省略号。
+    final rankLabel = rank > 999 ? '...' : '$rank';
     final content = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
@@ -694,7 +696,7 @@ class _RankingRow extends StatelessWidget {
                 ? rankColors.$2
                 : colors.onSurfaceVariant,
             child: Text(
-              '$rank',
+              rankLabel,
               style: Theme.of(
                 context,
               ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/api_client.dart';
+import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/rail_track_service.dart';
 
 class StationCoordinate {
@@ -47,7 +48,6 @@ class TripMapRoute {
     required this.fromCoordinate,
     required this.toCoordinate,
     required this.points,
-    this.splitPoints,
   });
 
   final String name;
@@ -58,12 +58,6 @@ class TripMapRoute {
   final StationCoordinate? fromCoordinate;
   final StationCoordinate? toCoordinate;
   final List<StationCoordinate> points;
-
-  /// 上下行在 OSM 里明显分离时的下行线（同样是 `from→to` 走向）；未分离为 null。
-  ///
-  /// [points] 此时是上行线。渲染层把这条倒序画（南行列车走的是它），两条各自是真实的
-  /// 一条轨道，而不是把同一条中心线画正反两遍。
-  final List<StationCoordinate>? splitPoints;
 }
 
 class TripMapData {
@@ -359,8 +353,11 @@ String buildAmapHtml(
   required String backgroundColor,
   required bool showStationMarkers,
   List<TripMapEndpoint> endpoints = const [],
+  MapDetailLevel detailLevel = MapDetailLevel.normal,
 }) {
   final apiBaseUrl = ApiClient.baseUrl.replaceFirst(RegExp(r'/+$'), '');
+  // 要素名全是 ASCII，不必像 routeJson 那样做尖括号转义。
+  final featuresJson = jsonEncode(detailLevel.features);
   final routeJson = jsonEncode(
     routes
         .map(
@@ -382,10 +379,6 @@ String buildAmapHtml(
             'toPosition': route.toCoordinate?.amapPosition,
             'coordinates': route.points
                 .map((point) => point.amapPosition)
-                .toList(),
-            // 上下行分离时的第二条（下行线）；未分离为 null。
-            'splitCoordinates': route.splitPoints
-                ?.map((point) => point.amapPosition)
                 .toList(),
           },
         )
@@ -430,7 +423,11 @@ String buildAmapHtml(
     const map = new AMap.Map('map', {
       zoom: 4.5,
       center: [104.2, 35.7],
-      showLabel: false,
+      showLabel: ${detailLevel.showLabel},
+      features: $featuresJson,
+      // 底图的地名和 POI 默认在 PC 上会悬停高亮、看着像能点，但点了什么也不会发生
+      // （我们的点击处理全在自绘的折线上）。关掉，免得空欢喜。
+      isHotspot: false,
       viewMode: '3D',
       resizeEnable: true,
       zoomEnable: true,
@@ -441,19 +438,10 @@ String buildAmapHtml(
     map.addControl(new AMap.Scale());
     map.addControl(new AMap.ToolBar({ position: 'RB' }));
 
-    // 一段路要画几条线、各自什么走向。
-    // 未分离：一条中心线，反向乘车靠倒序；双向就把同一条线画正反两遍。
-    // 上下行分离：上行线（coordinates）画 from→to，下行线（splitCoordinates）倒序画，
-    //   两条各自是真实的一条轨道——南行列车走的正是下行线。
+    // 一段路要画几条线、各自什么走向：单向一条，双向就把同一条中心线画正反两遍。
     const routeLines = (route) => {
       const forward = route.coordinates;
       const back = forward.slice().reverse();
-      if (route.splitCoordinates) {
-        const downBack = route.splitCoordinates.slice().reverse();
-        if (route.direction === 'direction2') return [downBack];
-        if (route.direction === 'bidirectional') return [forward, downBack];
-        return [forward];
-      }
       if (route.direction === 'direction2') return [back];
       if (route.direction === 'bidirectional') return [forward, back];
       return [forward];
@@ -593,8 +581,7 @@ class _TripMapRouteGroup {
   final List<String> _routeNames = [];
   final List<TripMapRouteEntry> _direction1Entries = [];
   final List<TripMapRouteEntry> _direction2Entries = [];
-  ({List<StationCoordinate> points, List<StationCoordinate>? splitPoints})?
-  _geometry;
+  List<StationCoordinate>? _geometry;
 
   void addTrip(
     String trainNumber,
@@ -621,30 +608,20 @@ class _TripMapRouteGroup {
   }
 
   /// 贴轨的点：拿每个候选线路名去查，第一个命中的就用它；都没命中退回站间直线。
-  ({List<StationCoordinate> points, List<StationCoordinate>? splitPoints})
-  get _resolvedGeometry {
+  List<StationCoordinate> get _resolvedGeometry {
     final cached = _geometry;
     if (cached != null) return cached;
     for (final routeName in _routeNames) {
       final track = tracks?.findOriented(routeName, fromStation, toStation);
       if (track == null || track.isEmpty) continue;
-      return _geometry = (
-        points: _trackPoints(track.singleOrUp, fromCoordinate, toCoordinate),
-        splitPoints: track.isSplit
-            ? _trackPoints(track.down, fromCoordinate, toCoordinate)
-            : null,
-      );
+      return _geometry = _trackPoints(track, fromCoordinate, toCoordinate);
     }
-    return _geometry = (
-      points: _trackPoints(null, fromCoordinate, toCoordinate),
-      splitPoints: null,
-    );
+    return _geometry = _trackPoints(null, fromCoordinate, toCoordinate);
   }
 
   TripMapRoute toRoute() {
     final entries = [..._direction1Entries, ..._direction2Entries]
       ..sort((a, b) => b.departureDate.compareTo(a.departureDate));
-    final geometry = _resolvedGeometry;
     return TripMapRoute(
       name: '$fromStation - $toStation',
       entries: entries,
@@ -653,8 +630,7 @@ class _TripMapRouteGroup {
       toStation: toStation,
       fromCoordinate: fromCoordinate,
       toCoordinate: toCoordinate,
-      points: geometry.points,
-      splitPoints: geometry.splitPoints,
+      points: _resolvedGeometry,
     );
   }
 }
@@ -694,10 +670,6 @@ List<TripMapRoute> _mergeAdjacentRoutes(List<TripMapRoute> routes) {
           fromCoordinate: previous.fromCoordinate,
           toCoordinate: route.toCoordinate,
           points: [...previous.points, ...route.points.skip(1)],
-          // 两段都分离才接得成一条下行线；只有一段有时宁可不画，也不要半截。
-          splitPoints: previous.splitPoints == null || route.splitPoints == null
-              ? null
-              : [...previous.splitPoints!, ...route.splitPoints!.skip(1)],
         );
         continue;
       }
@@ -801,7 +773,6 @@ TripMapRoute _withEntries(
     fromCoordinate: route.fromCoordinate,
     toCoordinate: route.toCoordinate,
     points: route.points,
-    splitPoints: route.splitPoints,
   );
 }
 

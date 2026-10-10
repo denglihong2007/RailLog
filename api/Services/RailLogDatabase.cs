@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using RailLog.API.Models;
 
 namespace RailLog.API.Services;
@@ -11,22 +14,63 @@ namespace RailLog.API.Services;
 public sealed class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
+    // 均速上限：超过它的行程说明里程或时长填错，不参与速度排行。
+    private const double MaxAverageSpeedKmh = 360;
     private const int HomeTravelGuideLimit = 12;
     private const int HomeTravelGuideHotLimit = 4;
-    // 热门排序的时间衰减：评价每老去这么多天，其反应数的权重减半。
+    private const int TravelGuideMaxPageSize = 50;
+    // 「全站热门」的综合排序 = 时间衰减 × (7 × 回应分 + 3 × 篇幅分) / 10，结果落在 0~1。
+    // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值及以上得满分。
+    //   用对数是因为第一个回应比第十个珍贵得多，而线上回应本来就稀疏（约八成评价为 0）。
+    // 篇幅分：正文字数线性到参考字数为止，超出不再加分，避免长篇与灌水互相抬价。
+    // 权重 7:3：回应仍是主导——2 个回应就压过「零回应但写满字数」；
+    // 但篇幅也不只是微调，写满参考字数能顶掉 1 个多回应的差距。
+    // 三项之外的评分不再参与，评价星级是个人口味而不是热度。
     private const int HomeTravelGuideHotDecayDays = 45;
+    private const int HomeTravelGuideHotReactionRef = 10;
+    private const int HomeTravelGuideHotCharRef = 120;
+    private const int HomeTravelGuideHotReactionWeight = 7;
+    private const int HomeTravelGuideHotCharWeight = 3;
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly TimeSpan _statisticsCacheLifetime;
 
+    // 可选注入：本机 .tmp harness 用 3 参构造本类型，因此新参数必须可选且位于末尾。
+    private readonly ILogger<RailLogDatabase>? _logger;
+    private readonly int _slowSyncMs;
+    private readonly int _recomputeWaitMs;
+
+    // 成就重算的按用户单飞状态。同一用户任何时刻最多只有一个重算循环在跑；
+    // 循环期间到来的新变更只置 Dirty，由当前循环再跑一轮。
+    private readonly ConcurrentDictionary<string, RecomputeState> _recomputeStates = new();
+
+    // 重算是 CPU 密集的（8 轮引擎评估），必须限制同时在跑的用户数，
+    // 否则一批用户同时同步会开无上限的读连接并把线程池打满。
+    private readonly SemaphoreSlim _recomputeSlots =
+        new(Math.Clamp(Environment.ProcessorCount, 1, 4));
+
+    private sealed class RecomputeState
+    {
+        public readonly object Gate = new();
+        public bool Running;
+        public bool Dirty;
+        public Task Cycle = Task.CompletedTask;
+    }
+
     public RailLogDatabase(
         IConfiguration configuration,
         IWebHostEnvironment environment,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        ILogger<RailLogDatabase>? logger = null)
     {
         _cache = cache;
+        _logger = logger;
+        _slowSyncMs = Math.Max(0, configuration.GetValue<int?>("Telemetry:SyncSlowMs") ?? 300);
+        _recomputeWaitMs = Math.Max(
+            0,
+            configuration.GetValue<int?>("Achievements:RecomputeWaitSeconds") ?? 5) * 1000;
         var cacheMinutes = Math.Max(1, configuration.GetValue<int?>("Statistics:CacheMinutes") ?? 5);
         _statisticsCacheLifetime = TimeSpan.FromMinutes(cacheMinutes);
         var configured = configuration.GetConnectionString("RailLog") ?? "Data Source=raillog.db";
@@ -528,28 +572,75 @@ public sealed class RailLogDatabase
         long? sinceVersion,
         DateTime serverTime)
     {
+        var totalStart = Stopwatch.GetTimestamp();
+        var lockStart = Stopwatch.GetTimestamp();
         await _writeLock.WaitAsync();
+        var lockMs = ElapsedMs(lockStart);
+        long serverVersion;
+        bool hasChanges;
+        SyncPhaseTimings timings;
         try
         {
-            return await SyncTripsCoreAsync(
+            (serverVersion, hasChanges, timings) = await SyncTripsCoreAsync(
                 userId,
                 incoming,
-                since,
-                sinceVersion,
                 serverTime);
         }
         finally
         {
             _writeLock.Release();
         }
+
+        // 响应回读刻意放在锁外：GetTripsAsync 的过滤条件是 "SyncVersion <= $serverVersion"，
+        // 并发同步写入的更高版本会被排除，WAL 快照也不会产生撕裂读。
+        var readStart = Stopwatch.GetTimestamp();
+        await using var readConnection = OpenConnection();
+        await readConnection.OpenAsync();
+        await ExecuteAsync(readConnection, "PRAGMA busy_timeout = 30000;");
+        var trips = await GetTripsAsync(
+            readConnection,
+            userId,
+            since,
+            sinceVersion,
+            serverTime,
+            serverVersion);
+        var readMs = ElapsedMs(readStart);
+
+        if (_logger is not null)
+        {
+            var totalMs = ElapsedMs(totalStart);
+            const string line =
+                "Trip sync user={UserId} trips={TripCount} changed={Changed} lockMs={LockMs:F1} "
+                + "versionMs={VersionMs:F1} upsertMs={UpsertMs:F1} commitMs={CommitMs:F1} "
+                + "readMs={ReadMs:F1} totalMs={TotalMs:F1}";
+            if (totalMs >= _slowSyncMs)
+            {
+                _logger.LogInformation(line, userId, incoming.Count, hasChanges, lockMs,
+                    timings.VersionMs, timings.UpsertMs, timings.CommitMs, readMs, totalMs);
+            }
+            else
+            {
+                _logger.LogDebug(line, userId, incoming.Count, hasChanges, lockMs,
+                    timings.VersionMs, timings.UpsertMs, timings.CommitMs, readMs, totalMs);
+            }
+        }
+
+        return (trips, serverVersion);
     }
 
-    private async Task<(IReadOnlyList<SyncTrip> Trips, long ServerVersion)> SyncTripsCoreAsync(
-        string userId,
-        IReadOnlyList<SyncTrip> incoming,
-        DateTime? since,
-        long? sinceVersion,
-        DateTime serverTime)
+    private readonly record struct SyncPhaseTimings(
+        double VersionMs,
+        double UpsertMs,
+        double CommitMs);
+
+    private static double ElapsedMs(long startTimestamp) =>
+        Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+    private async Task<(long ServerVersion, bool HasChanges, SyncPhaseTimings Timings)>
+        SyncTripsCoreAsync(
+            string userId,
+            IReadOnlyList<SyncTrip> incoming,
+            DateTime serverTime)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
@@ -616,9 +707,14 @@ public sealed class RailLogDatabase
                 !string.IsNullOrWhiteSpace(trip.ClientId) &&
                 trip.ClientId.Length <= 100)
             .ToList();
+        // 版本分配必须留在锁内，否则并发同步会分配到同一个版本号。
+        var versionStart = Stopwatch.GetTimestamp();
         var serverVersion = validIncoming.Count == 0
             ? await GetSyncVersionAsync(connection, userId, (SqliteTransaction)transaction)
             : await AllocateSyncVersionAsync(connection, userId, (SqliteTransaction)transaction);
+        var versionMs = ElapsedMs(versionStart);
+
+        var upsertStart = Stopwatch.GetTimestamp();
         var hasChanges = false;
         foreach (var trip in validIncoming)
         {
@@ -634,20 +730,18 @@ public sealed class RailLogDatabase
             touch.Parameters["$updatedAt"].Value = ToDb(trip.UpdatedAt);
             await touch.ExecuteNonQueryAsync();
         }
+        var upsertMs = ElapsedMs(upsertStart);
+
+        var commitStart = Stopwatch.GetTimestamp();
+        await transaction.CommitAsync();
+        var commitMs = ElapsedMs(commitStart);
         if (hasChanges)
         {
-            await RecalculateAchievementsAsync(
-                connection, userId, (SqliteTransaction)transaction);
+            // 刻意在释放 _writeLock 之前入队：客户端拿到同步响应后会立刻请求成就，
+            // 那一刻待处理任务必须已经可见，否则会读到重算前的旧成就。
+            EnqueueAchievementRecompute(userId);
         }
-        await transaction.CommitAsync();
-        var trips = await GetTripsAsync(
-            connection,
-            userId,
-            since,
-            sinceVersion,
-            serverTime,
-            serverVersion);
-        return (trips, serverVersion);
+        return (serverVersion, hasChanges, new SyncPhaseTimings(versionMs, upsertMs, commitMs));
     }
 
     public async Task<IReadOnlyList<EntityReviewResponse>> GetEntityReviewsAsync(
@@ -959,21 +1053,7 @@ public sealed class RailLogDatabase
         var includedIds = result.Select(review => review.Id).ToHashSet();
         if (result.Count >= HomeTravelGuideLimit) return result;
 
-        await using var tripsCommand = connection.CreateCommand();
-        tripsCommand.CommandText = """
-            SELECT Id
-            FROM TripRecords
-            WHERE UserId=$userId AND DeletedAt IS NULL AND IsRailTrip=1
-            ORDER BY COALESCE(DepartureTime, TravelDate) DESC, Id DESC;
-            """;
-        tripsCommand.Parameters.AddWithValue("$userId", currentUserId);
-        var tripIds = new List<long>();
-        await using (var reader = await tripsCommand.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-                tripIds.Add(reader.GetInt64(0));
-        }
-
+        var tripIds = await GetUserTripIdsAsync(connection, currentUserId);
         foreach (var ticketId in tripIds)
         {
             var related = await GetTravelGuideReviewsAsync(ticketId, currentUserId);
@@ -988,10 +1068,141 @@ public sealed class RailLogDatabase
         return result;
     }
 
+    /// <summary>
+    /// 「出行指南」拆开排序方式后的分页取数：热门按反应数的时间衰减分排序，
+    /// 与我相关按「行程由新到旧、同行程内评价由新到旧」排序（即原来混排里的相关段顺序）。
+    /// 返回条数少于 <paramref name="limit"/> 就表示没有下一页。
+    /// </summary>
+    public async Task<IReadOnlyList<EntityReviewResponse>> GetTravelGuideFeedAsync(
+        string currentUserId,
+        string mode,
+        int offset,
+        int limit)
+    {
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, TravelGuideMaxPageSize);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+
+        if (!string.Equals(mode, "related", StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetPopularEntityReviewsAsync(
+                connection,
+                currentUserId,
+                limit,
+                offset);
+        }
+
+        // 相关段的顺序由「行程新鲜度」决定，所以只能沿行程逐条铺开；
+        // 跳过前 offset 条后取满 limit 条即可提前返回，代价与 offset 同阶。
+        var tripIds = await GetUserTripIdsAsync(connection, currentUserId);
+        var seen = new HashSet<long>();
+        var result = new List<EntityReviewResponse>();
+        foreach (var ticketId in tripIds)
+        {
+            var related = await GetTravelGuideReviewsAsync(ticketId, currentUserId);
+            if (related is null) continue;
+            foreach (var review in related)
+            {
+                if (!seen.Add(review.Id)) continue;
+                if (seen.Count <= offset) continue;
+                result.Add(review);
+                if (result.Count >= limit) return result;
+            }
+        }
+        return result;
+    }
+
+    private static async Task<List<long>> GetUserTripIdsAsync(
+        SqliteConnection connection,
+        string currentUserId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id
+            FROM TripRecords
+            WHERE UserId=$userId AND DeletedAt IS NULL AND IsRailTrip=1
+            ORDER BY COALESCE(DepartureTime, TravelDate) DESC, Id DESC;
+            """;
+        command.Parameters.AddWithValue("$userId", currentUserId);
+        var tripIds = new List<long>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            tripIds.Add(reader.GetInt64(0));
+        return tripIds;
+    }
+
+    /// <summary>当前用户自己发表的评价，最新在前。「我的评价」页面的数据源。</summary>
+    public async Task<IReadOnlyList<EntityReviewResponse>> GetUserEntityReviewsAsync(
+        string currentUserId,
+        int offset,
+        int limit)
+    {
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, TravelGuideMaxPageSize);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT r.Id,r.EntityType,r.EntityKey,r.ReviewType,r.UserId,
+                   u.DisplayName,u.AvatarUrl,r.Rating,r.Comment,r.TripId,
+                   r.SecondTripId,r.TransferMinutes,r.RouteFromStation,
+                   r.RouteToStation,r.Dish,r.Price,r.CreatedAt,
+                   trip.Id,trip.CreatedAt,trip.TrainNumber,trip.RollingStock,
+                   trip.CompanyName,trip.FromStation,trip.ToStation,
+                   trip.DepartureTime,trip.ArrivalTime,trip.MileageKm,
+                   trip.ViaRoutes,trip.SeatType,trip.SeatNumber,trip.Price,
+                   trip.Notes,trip.IsRailTrip,
+                   secondTrip.Id,secondTrip.CreatedAt,secondTrip.TrainNumber,
+                   secondTrip.RollingStock,secondTrip.CompanyName,
+                   secondTrip.FromStation,secondTrip.ToStation,
+                   secondTrip.DepartureTime,secondTrip.ArrivalTime,
+                   secondTrip.MileageKm,secondTrip.ViaRoutes,
+                   secondTrip.SeatType,secondTrip.SeatNumber,secondTrip.Price,
+                   secondTrip.Notes,secondTrip.IsRailTrip,
+                   COALESCE((
+                       SELECT SUM(achievement.Experience)
+                       FROM UserAchievements achievement
+                       WHERE achievement.UserId=r.UserId
+                   ), 0)
+            FROM EntityReviews r
+            JOIN AspNetUsers u ON u.Id=r.UserId
+            LEFT JOIN TripRecords trip ON trip.Id=r.TripId
+                AND trip.UserId=r.UserId AND trip.DeletedAt IS NULL
+            LEFT JOIN TripRecords secondTrip ON secondTrip.Id=r.SecondTripId
+                AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
+            WHERE r.UserId=$currentUserId
+            ORDER BY r.CreatedAt DESC, r.Id DESC
+            LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$currentUserId", currentUserId);
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+        var result = new List<EntityReviewResponse>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                result.Add(ReadEntityReview(reader));
+        }
+        var reactions = await GetReviewReactionSummariesAsync(
+            connection,
+            result.Select(review => review.Id).ToList(),
+            currentUserId);
+        return result
+            .Select(review => review with
+            {
+                Reactions = reactions.GetValueOrDefault(review.Id, []),
+            })
+            .ToList();
+    }
+
     private static async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
         SqliteConnection connection,
         string currentUserId,
-        int limit)
+        int limit,
+        int offset = 0)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -1024,16 +1235,27 @@ public sealed class RailLogDatabase
                 AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
             WHERE r.UserId <> $currentUserId
             ORDER BY (
-                SELECT COUNT(*)
-                FROM EntityReviewReactions reaction
-                WHERE reaction.ReviewId=r.Id
-            ) * 1.0 / (
-                1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
-            ) DESC, r.CreatedAt DESC, r.Id DESC
-            LIMIT $limit;
+                1.0 / (
+                    1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
+                )
+            ) * (
+                {HomeTravelGuideHotReactionWeight} * MIN(1.0,
+                    LN(1 + (
+                        SELECT COUNT(*)
+                        FROM EntityReviewReactions reaction
+                        WHERE reaction.ReviewId=r.Id
+                    )) / LN(1 + {HomeTravelGuideHotReactionRef})
+                )
+                + {HomeTravelGuideHotCharWeight} * MIN(1.0,
+                    LENGTH(TRIM(r.Comment)) * 1.0 / {HomeTravelGuideHotCharRef}
+                )
+            ) / {HomeTravelGuideHotReactionWeight + HomeTravelGuideHotCharWeight}.0
+            DESC, r.CreatedAt DESC, r.Id DESC
+            LIMIT $limit OFFSET $offset;
             """;
         command.Parameters.AddWithValue("$currentUserId", currentUserId);
         command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
         var result = new List<EntityReviewResponse>();
         await using (var reader = await command.ExecuteReaderAsync())
         {
@@ -1510,6 +1732,8 @@ public sealed class RailLogDatabase
         command.CommandText = "INSERT INTO EntityReviews(EntityType,EntityKey,ReviewType,UserId,Rating,Comment,TripId,SecondTripId,TransferMinutes,RouteFromStation,RouteToStation,Dish,Price,CreatedAt) VALUES($type,$key,$review,$user,$rating,$comment,$trip,$second,$minutes,$routeFrom,$routeTo,$dish,$price,$created); SELECT last_insert_rowid();";
         command.Parameters.AddWithValue("$type", request.EntityType); command.Parameters.AddWithValue("$key", request.EntityKey); command.Parameters.AddWithValue("$review", request.ReviewType); command.Parameters.AddWithValue("$user", userId); command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$routeFrom", DbValue(request.RouteFromStation)); command.Parameters.AddWithValue("$routeTo", DbValue(request.RouteToStation)); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$created", DateTime.UtcNow.ToString("O"));
         var id = Convert.ToInt64(await command.ExecuteScalarAsync());
+        // 评价列表是成就的输入之一，发表后要让本人成就跟上（此前只在下次同步才会更新）。
+        EnqueueAchievementRecompute(userId);
         return (await GetEntityReviewsAsync(request.EntityType, request.EntityKey)).First(r => r.Id == id);
     }
 
@@ -1532,6 +1756,8 @@ public sealed class RailLogDatabase
         command.Parameters.AddWithValue("$user", userId);
         var affected = await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
+        // 删评价会连带删掉它收到的 reaction，两者都是成就输入。
+        if (affected > 0) EnqueueAchievementRecompute(userId);
         return affected > 0;
     }
 
@@ -1549,9 +1775,13 @@ public sealed class RailLogDatabase
         if (ownerId is null || ownerId == userId) return false;
 
         await using var command = connection.CreateCommand();
+        // ownerId 是上一步查出来的；若评价在那两步之间被删，裸 INSERT 会撞上
+        // ReviewId 的外键（Microsoft.Data.Sqlite 默认开启外键，实测 PRAGMA foreign_keys = 1）
+        // 直接抛 SqliteException，用户看到 500。WHERE EXISTS 把这条竞态变成干净的「未写入」。
         command.CommandText = """
             INSERT INTO EntityReviewReactions (ReviewId, UserId, Emoji, CreatedAt)
-            VALUES ($reviewId, $userId, $emoji, $createdAt)
+            SELECT $reviewId, $userId, $emoji, $createdAt
+            WHERE EXISTS (SELECT 1 FROM EntityReviews WHERE Id = $reviewId)
             ON CONFLICT (ReviewId, UserId) DO UPDATE SET
                 Emoji=excluded.Emoji,
                 CreatedAt=excluded.CreatedAt;
@@ -1560,7 +1790,10 @@ public sealed class RailLogDatabase
         command.Parameters.AddWithValue("$userId", userId);
         command.Parameters.AddWithValue("$emoji", emoji);
         command.Parameters.AddWithValue("$createdAt", DateTime.UtcNow.ToString("O"));
-        return await command.ExecuteNonQueryAsync() > 0;
+        var affected = await command.ExecuteNonQueryAsync() > 0;
+        // 「收到的 reaction 数」算在评价作者头上，不是回应者头上。
+        if (affected) EnqueueAchievementRecompute(ownerId);
+        return affected;
     }
 
     public async Task<bool> RemoveEntityReviewReactionAsync(
@@ -1569,6 +1802,11 @@ public sealed class RailLogDatabase
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
+        await using var ownerCommand = connection.CreateCommand();
+        ownerCommand.CommandText = "SELECT UserId FROM EntityReviews WHERE Id=$id;";
+        ownerCommand.Parameters.AddWithValue("$id", reviewId);
+        var ownerId = await ownerCommand.ExecuteScalarAsync() as string;
+
         await using var command = connection.CreateCommand();
         command.CommandText = """
             DELETE FROM EntityReviewReactions
@@ -1576,7 +1814,10 @@ public sealed class RailLogDatabase
             """;
         command.Parameters.AddWithValue("$reviewId", reviewId);
         command.Parameters.AddWithValue("$userId", userId);
-        return await command.ExecuteNonQueryAsync() > 0;
+        var affected = await command.ExecuteNonQueryAsync() > 0;
+        // 同 SetEntityReviewReactionAsync：受影响的是评价作者的成就。
+        if (affected && ownerId is not null) EnqueueAchievementRecompute(ownerId);
+        return affected;
     }
 
     public async Task<bool> UpdateEntityReviewAsync(long id, string userId, UpdateEntityReviewRequest request)
@@ -1585,13 +1826,39 @@ public sealed class RailLogDatabase
         await using var command = connection.CreateCommand();
         command.CommandText = "UPDATE EntityReviews SET Rating=$rating,Comment=$comment,TripId=$trip,SecondTripId=$second,TransferMinutes=$minutes,RouteFromStation=$routeFrom,RouteToStation=$routeTo,Dish=$dish,Price=$price WHERE Id=$id AND UserId=$user";
         command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$routeFrom", DbValue(request.RouteFromStation)); command.Parameters.AddWithValue("$routeTo", DbValue(request.RouteToStation)); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$user", userId);
-        return await command.ExecuteNonQueryAsync() > 0;
+        var affected = await command.ExecuteNonQueryAsync() > 0;
+        // 与其它四条评价写路径保持一致：评价是成就输入之一。引擎目前只消费 Reviews.Count，
+        // 而本方法改不动 EntityType/EntityKey，所以今天不会改变成就 —— 留着是为了日后
+        // 成就要用到评分/内容时，这里不会成为静默的漏网之鱼。
+        if (affected) EnqueueAchievementRecompute(userId);
+        return affected;
     }
 
-    public async Task<AchievementsResponse> GetAchievementsAsync(string userId)
+    public async Task<AchievementsResponse> GetAchievementsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
     {
+        // 客户端拿到同步响应后会立刻请求成就，此时重算通常刚入队或正在跑。
+        // 在这里等它收尾（有上限），使「同步后立刻看成就」的可见行为与重算内联时一致。
+        // 刻意放在这个公开包装而非私有重载里：后者被公开用户主页复用，
+        // 别人的主页不该被这个用户的后台任务拖住。
+        if (_recomputeWaitMs > 0)
+        {
+            try
+            {
+                await WaitForAchievementRecomputeAsync(
+                    userId,
+                    cancellationToken,
+                    _recomputeWaitMs);
+            }
+            catch (TimeoutException)
+            {
+                // 超过上限就返回库中现值，不让请求被后台任务无限拖住。
+            }
+        }
+
         await using var connection = OpenConnection();
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         return await GetAchievementsAsync(connection, userId);
     }
 
@@ -1971,6 +2238,7 @@ public sealed class RailLogDatabase
             .Select(item => (
                 item.Trip,
                 Speed: item.Trip.Trip.MileageKm * 3600 / item.Duration!.Value))
+            .Where(item => item.Speed <= MaxAverageSpeedKmh)
             .ToList();
         var tripBoards = new TripLeaderboards(
             RankTrips(trips.Select(item => (item, item.Trip.Price)), descending: true, currentUserId),
@@ -2366,26 +2634,114 @@ public sealed class RailLogDatabase
         return trips;
     }
 
-    private static async Task RecalculateAchievementsAsync(
-        SqliteConnection connection,
-        string userId)
+    /// <summary>
+    /// 标记某个用户的成就待重算。同一用户任何时刻只有一个重算循环在跑；
+    /// 循环期间的重复标记只置 Dirty，由当前循环结束后再补跑一轮。
+    /// </summary>
+    /// <remarks>
+    /// 只做合并是不够的，必须是严格的按用户单飞：否则「算 A 读到 v1 → 算 B 读到 v2 →
+    /// 落库 B 写 v2 → 落库 A 写 v1」会让旧快照覆盖新快照。_writeLock 只序列化写入，
+    /// 保护不了这个顺序。
+    /// </remarks>
+    private void EnqueueAchievementRecompute(string userId)
     {
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
-        await RecalculateAchievementsAsync(connection, userId, transaction);
-        await transaction.CommitAsync();
+        var state = _recomputeStates.GetOrAdd(userId, _ => new RecomputeState());
+        lock (state.Gate)
+        {
+            state.Dirty = true;
+            if (state.Running) return;
+            state.Running = true;
+            // 用 Task.Run 而不是直接调用：确保循环体不会在持有 Gate 时同步执行。
+            try
+            {
+                state.Cycle = Task.Run(() => RunRecomputeLoopAsync(userId, state));
+            }
+            catch (Exception exception)
+            {
+                // 循环没起来时必须回滚 Running，否则它会永久停在 true：
+                // 之后所有入队都只置 Dirty 而不重启循环，该用户的成就再也不会重算。
+                // 也不向上抛 —— 调用点在事务提交之后，抛出去会让客户端误以为同步失败。
+                state.Running = false;
+                _logger?.LogError(
+                    exception,
+                    "Failed to schedule achievement recompute for user {UserId}",
+                    userId);
+            }
+        }
     }
 
-    private static async Task RecalculateAchievementsAsync(
-        SqliteConnection connection,
-        string userId,
-        SqliteTransaction transaction)
+    private async Task RunRecomputeLoopAsync(string userId, RecomputeState state)
     {
+        try
+        {
+            while (true)
+            {
+                lock (state.Gate)
+                {
+                    if (!state.Dirty)
+                    {
+                        state.Running = false;
+                        return;
+                    }
+                    state.Dirty = false;
+                }
+
+                await _recomputeSlots.WaitAsync();
+                try
+                {
+                    var computeStart = Stopwatch.GetTimestamp();
+                    var unlocked = await ComputeAchievementsAsync(userId);
+                    var computeMs = ElapsedMs(computeStart);
+                    await PersistAchievementsAsync(userId, unlocked);
+                    if (_logger is not null && computeMs >= _slowSyncMs)
+                    {
+                        _logger.LogInformation(
+                            "Achievement recompute user={UserId} unlocked={Unlocked} computeMs={ComputeMs:F1}",
+                            userId,
+                            unlocked.Count,
+                            computeMs);
+                    }
+                }
+                finally
+                {
+                    _recomputeSlots.Release();
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            // Cycle 绝不能以失败告终：成就接口会 await 它，
+            // 后台重算失败不该变成用户的请求 500。
+            _logger?.LogError(
+                exception,
+                "Achievement recompute failed for user {UserId}",
+                userId);
+            lock (state.Gate)
+            {
+                state.Running = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 只读计算，不持任何锁。三个输入查询共用同一个读事务，避免并发写落在两次查询
+    /// 之间而产生混合快照。
+    /// </summary>
+    private async Task<IReadOnlyList<AchievementEvaluation>> ComputeAchievementsAsync(
+        string userId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
         var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
         var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
             connection,
             userId,
             transaction);
+        await transaction.CommitAsync();
+
         var unlocked = new List<AchievementEvaluation>();
         var totalExperience = 0;
         for (var pass = 0; pass < 8; pass++)
@@ -2396,30 +2752,94 @@ public sealed class RailLogDatabase
                 .ToList();
             totalExperience = unlocked.Sum(item => item.Experience);
         }
+        return unlocked;
+    }
 
-        await using (var delete = connection.CreateCommand())
+    /// <summary>
+    /// 落库：短写事务，持 _writeLock 以与同步写入串行。
+    /// </summary>
+    private async Task PersistAchievementsAsync(
+        string userId,
+        IReadOnlyList<AchievementEvaluation> unlocked)
+    {
+        await _writeLock.WaitAsync();
+        try
         {
-            delete.Transaction = transaction;
-            delete.CommandText = "DELETE FROM UserAchievements WHERE UserId = $userId;";
-            delete.Parameters.AddWithValue("$userId", userId);
-            await delete.ExecuteNonQueryAsync();
+            await using var connection = OpenConnection();
+            await connection.OpenAsync();
+            await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
+            await using var transaction = await BeginTransactionWithRetryAsync(connection);
+            // 用户可能在计算期间被删除。外键其实是开的，缺了这层判断 INSERT 会抛
+            // SqliteException 把整轮 persist 打挂；显式判断存在性让这条竞态变成干净的跳过。
+            await using (var delete = connection.CreateCommand())
+            {
+                delete.Transaction = (SqliteTransaction)transaction;
+                delete.CommandText = """
+                    DELETE FROM UserAchievements
+                    WHERE UserId = $userId
+                      AND EXISTS (SELECT 1 FROM AspNetUsers WHERE Id = $userId);
+                    """;
+                delete.Parameters.AddWithValue("$userId", userId);
+                await delete.ExecuteNonQueryAsync();
+            }
+
+            foreach (var achievement in unlocked)
+            {
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = (SqliteTransaction)transaction;
+                insert.CommandText = """
+                    INSERT INTO UserAchievements
+                        (UserId, AchievementId, TriggerTripId, Experience, EvaluatedAt)
+                    SELECT $userId, $achievementId, $triggerTripId, $experience, $evaluatedAt
+                    WHERE EXISTS (SELECT 1 FROM AspNetUsers WHERE Id = $userId);
+                    """;
+                insert.Parameters.AddWithValue("$userId", userId);
+                insert.Parameters.AddWithValue("$achievementId", achievement.Id);
+                insert.Parameters.AddWithValue("$triggerTripId", achievement.TriggerTripId!.Value);
+                insert.Parameters.AddWithValue("$experience", achievement.Experience);
+                insert.Parameters.AddWithValue("$evaluatedAt", ToDb(DateTime.Now));
+                await insert.ExecuteNonQueryAsync();
+            }
+            await transaction.CommitAsync();
+        }
+        finally
+        {
+            _writeLock.Release();
         }
 
-        foreach (var achievement in unlocked)
+        // 统计缓存从不主动失效；同步者自己的排行榜没必要等满整个 TTL。
+        _cache.Remove(StatisticsCacheKey(userId));
+    }
+
+    /// <summary>
+    /// 等待该用户当前这一轮重算跑完（含循环期间合并进来的追加轮次）。
+    /// </summary>
+    private async Task WaitForAchievementRecomputeAsync(
+        string userId,
+        CancellationToken cancellationToken,
+        int timeoutMs = Timeout.Infinite)
+    {
+        if (!_recomputeStates.TryGetValue(userId, out var state)) return;
+        var deadline = timeoutMs == Timeout.Infinite
+            ? long.MaxValue
+            : Stopwatch.GetTimestamp() + (long)(timeoutMs * (Stopwatch.Frequency / 1000.0));
+        while (true)
         {
-            await using var insert = connection.CreateCommand();
-            insert.Transaction = transaction;
-            insert.CommandText = """
-                INSERT INTO UserAchievements
-                    (UserId, AchievementId, TriggerTripId, Experience, EvaluatedAt)
-                VALUES ($userId, $achievementId, $triggerTripId, $experience, $evaluatedAt);
-                """;
-            insert.Parameters.AddWithValue("$userId", userId);
-            insert.Parameters.AddWithValue("$achievementId", achievement.Id);
-            insert.Parameters.AddWithValue("$triggerTripId", achievement.TriggerTripId!.Value);
-            insert.Parameters.AddWithValue("$experience", achievement.Experience);
-            insert.Parameters.AddWithValue("$evaluatedAt", ToDb(DateTime.Now));
-            await insert.ExecuteNonQueryAsync();
+            Task cycle;
+            lock (state.Gate)
+            {
+                cycle = state.Cycle;
+            }
+            var remainingMs = deadline == long.MaxValue
+                ? Timeout.Infinite
+                : (int)Math.Max(0, (deadline - Stopwatch.GetTimestamp()) * 1000.0 / Stopwatch.Frequency);
+            await cycle.WaitAsync(TimeSpan.FromMilliseconds(remainingMs), cancellationToken);
+            lock (state.Gate)
+            {
+                // 旧循环刚退出、新任务刚接手时 Cycle 会被换掉。此时若直接返回，
+                // 拿到的就是重算前的旧成就 —— 得接着等新一轮（总预算仍受 deadline 约束）。
+                if (ReferenceEquals(state.Cycle, cycle)) return;
+            }
         }
     }
 
@@ -2438,15 +2858,10 @@ public sealed class RailLogDatabase
         foreach (var userId in userIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _writeLock.WaitAsync(cancellationToken);
-            try
-            {
-                await RecalculateAchievementsAsync(connection, userId);
-            }
-            finally
-            {
-                _writeLock.Release();
-            }
+            // 逐用户串行推进：复用单飞状态避免与实时重算双跑，也不会一次性
+            // 把所有用户塞进队列击穿并发上限。
+            EnqueueAchievementRecompute(userId);
+            await WaitForAchievementRecomputeAsync(userId, cancellationToken);
         }
     }
 

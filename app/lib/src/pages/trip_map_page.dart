@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/rail_track_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/trip_map_service.dart';
@@ -124,6 +125,7 @@ class _TripMapPageState extends State<TripMapPage> {
                         backgroundColor: _cssColor(theme.colorScheme.surface),
                         showStationMarkers: _showStationMarkers,
                         endpoints: data.endpoints,
+                        detailLevel: MapSettings.instance.detailLevel,
                       ),
                     ),
             ),

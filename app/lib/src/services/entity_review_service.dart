@@ -80,7 +80,21 @@ TripRecord? _reviewTrip(Object? value, String userId) {
   return publicTripFromJson(Map<String, dynamic>.from(value), userId);
 }
 
+/// 「出行指南」的排序方式。原来是「热门 + 相关」混排，现在拆成两种可选。
+enum TravelGuideMode {
+  hot('hot', '全站热门'),
+  related('related', '与我相关');
+
+  const TravelGuideMode(this.wire, this.label);
+
+  final String wire;
+  final String label;
+}
+
 class EntityReviewService {
+  /// 出行指南与「我的评价」共用的分页页大小。
+  static const pageSize = 20;
+
   static Future<int> fetchCount(String type, String key) async {
     final response = await ApiClient.instance.dio.get(
       '/api/entities/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}/count',
@@ -122,16 +136,35 @@ class EntityReviewService {
         .toList();
   }
 
-  static Future<List<EntityReview>> fetchHomeTravelGuide() async {
+  /// 首页「出行指南」的某一页。返回条数少于 [limit] 表示已经到底。
+  static Future<List<EntityReview>> fetchTravelGuidePage({
+    required TravelGuideMode mode,
+    int offset = 0,
+    int limit = pageSize,
+  }) async {
     final token = SessionService.instance.token;
     if (token == null) throw StateError('请先登录');
     final response = await ApiClient.instance.dio.get(
       '/api/trips/travel-guide',
+      queryParameters: {'mode': mode.wire, 'offset': offset, 'limit': limit},
       options: ApiClient.instance.authorized(token),
     );
-    return (response.data as List)
-        .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return _parseReviews(response.data);
+  }
+
+  /// 当前用户自己发表的评价，最新在前。设置里「我的评价」的数据源。
+  static Future<List<EntityReview>> fetchMine({
+    int offset = 0,
+    int limit = pageSize,
+  }) async {
+    final token = SessionService.instance.token;
+    if (token == null) throw StateError('请先登录');
+    final response = await ApiClient.instance.dio.get(
+      '/api/entities/reviews/mine',
+      queryParameters: {'offset': offset, 'limit': limit},
+      options: ApiClient.instance.authorized(token),
+    );
+    return _parseReviews(response.data);
   }
 
   static Future<void> submit({
@@ -233,4 +266,8 @@ class EntityReviewService {
       options: ApiClient.instance.authorized(token),
     );
   }
+
+  static List<EntityReview> _parseReviews(Object? data) => (data as List)
+      .map((e) => EntityReview.fromJson(Map<String, dynamic>.from(e as Map)))
+      .toList();
 }

@@ -19,7 +19,7 @@ python tools/osm_update/update.py
 | `update.py` | 一键编排：下载 →（可选）校验 → 重建 → 打结果小结 |
 | `download.py` | 拉 Geofabrik 的 [`china-latest.osm.pbf`](https://download.geofabrik.de/asia/china-latest.html)（约 1.6 GB）到 `tools/.cache/rail_tracks/`，支持断点续传 |
 | `build_rail_tracks.py` | 主生成器：坐标索引 → 线路消歧 → 舍去对不上里程的坐标 → 枚举站间段 → 逐段规划 → 写 `rail_tracks.db` |
-| `rail_track_geometry.py` | 几何与规划算法：构图、Yen k-短路、里程校验、上下行分离判定、绕路护栏、折线编码 |
+| `rail_track_geometry.py` | 几何与规划算法：构图、Yen k-短路、里程校验、绕路护栏、折线编码 |
 
 **排查用的探针**（都是一次性诊断，改口径时用）
 
@@ -28,6 +28,7 @@ python tools/osm_update/update.py
 | `probe_pbf.py` | PBF 里铁路数据的规模：way 数、坐标点数、单遍读取耗时与常驻内存 |
 | `probe_stations.py` | OSM 车站坐标能覆盖 `routes.db` 里多少站（决定坐标主源） |
 | `probe_service_connectors.py` | 车站咽喉的 `service=yard/siding` way 被丢掉是否就是拓扑断裂的成因 |
+| `probe_line_match.py` | 运价表的线路名与 OSM way 名的匹配率；列不出对不上的普速线（这些段只按里程判定） |
 | `probe_lost_legs.py` | 对比两次生成的库，查「原本成功、现在失败」的段为什么失败 |
 | `probe_discards.py` | 核对每个被舍去坐标的站：它到前后站的直线距离 vs 前后站的里程差（判断有没有误舍） |
 | `probe_remaining_suspect.py` | 舍去坐标后仍判「坐标不可信」的段有哪几条 |
@@ -70,6 +71,57 @@ python tools/osm_update/update.py --probe
 
 `update.py` 的 `--workers`（默认 16）直接透传给 `build_rail_tracks.py`。其余参数见各自
 的 `--help`。
+
+## 线位是怎么选出来的
+
+一段轨道往往有并行好几种走法（高铁与普速各一条、外加联络线），挑哪条由两件事定：
+
+1. **偏好依据按线路等级分两侧**。高铁腿认 OSM 的等级标签（`highspeed` / `maxspeed≥200`）；
+   **普速腿认线路名**——把 `routes.db` 的 `route_name` 和 way 的 `name` 各自归一化
+   （`rail_track_geometry.line_match_key`：剥掉「XX线XX段」的后缀、`高铁/客专/客运专线`
+   统一成「高速」）后比同名。
+
+   为什么不能两侧都认标签：`no highspeed 标签` 只是「没标」，不等于「这是普速线」。
+   普速那一侧于是成了默认垃圾桶，并行的高铁正线只要没打标签就永远进不去偏好集，
+   而偏好集在评分里优先级最高——实测宁蓉线宁渝段 六安↔长安集 就是这样被从沪蓉线
+   压到宁西线上的（里程误差 0.22 vs 0.47，本来里程是选对的那一边）。
+
+   名字对不上时偏好集就是空的，该腿退回**纯里程 + 绕行倍率**判定，但**额外吸附兜底
+   仍然留着**：这时候 `ratio < 阈值` 那条可疑判据恒成立、必须整个让开（否则每个这样的
+   段都要白跑一遍枚举），可里程误差那条判据得留着——名字对不上的腿恰恰只剩它这一条
+   线索。实测 新靖线新海段 盐城→东台 就是靠它从 82.27km 的绕行路（误差 19.27km）拉回
+   61.86km 的正路（误差 1.14km）。全国实测：637 条普速线里 119 条对不上
+   （`probe_line_match.py` 有清单）。真名不同（如「宁蓉线」vs「沪蓉线」）只能往
+   `LINE_ALIASES` 补别名，归一化规则救不了。
+
+2. **站场与正线拓扑断开时允许「登乘跳」**。站场节点和正线在 OSM 里常是两套互不共点的
+   几何（并行正线本来就不该共点：广州北的京广线与京广高速线并行 14~24m、无共点），
+   同分量吸附永远够不着正线。于是允许吸附到半径 `--jump-radius-km`（默认 1km）内
+   **目标线上**的节点，哪怕跨连通分量；这一跳以一小段直线出现在折线首尾，与站坐标到
+   锚点的接驳段同性质。置 0 即关闭、退回老行为。
+
+   触发条件很窄：主吸附对不通、或通了但现有候选里**没有一条「大半走在目标线上」的**
+   （门槛 `JUMP_PROFILE_FLOOR`，0.9）。这个门槛不能取低：高铁侧 preferred 的定义是
+   「带 highspeed/maxspeed 标签」，任何 200km/h 以上的线都算数，于是**并行另一条快线
+   能在绕行线上刷出刚过半的 ratio**。实测京广高铁 广州北→广州南 的绕行线借道南广线，
+   ratio 0.5004 压过原来的 0.5，登乘跳一次都不触发，这一段一直画在 51.71km 的绕行线
+   上（里程差 4.71km）；跳上去的正确解是 46.10km、ratio 1.00、里程差 0.90km。
+
+每段折线选了哪几条线，落在 `track_lines` 表（`seq` 有序，无名段记为「未命名」）；
+`tracks` 上另有四个诊断列：`preferred_ratio`（贴目标线的里程占比）、`line_count`、
+`board_jump_km`（首尾两段登乘跳的合计，每段各自不超半径，所以最大到 2×半径）、
+`preferred_basis`（`tags` / `way-name` / `none`，即偏好集怎么来的）。
+`SCHEMA_VERSION` 同时写进 `meta.schema_version` 与 `PRAGMA user_version`。App 侧按列名
+`SELECT`，加列不影响它。
+
+两点查库时的坑：
+
+- **`line_count` 不是「换了几条线」**。无名 way（站场股道、少数没标名字的联络线）也算一段，
+  而 OSM 里正线常被短的无名 way 打断——实测一条跑到底的高铁段也能有几十段。想数真正的
+  换线次数，用 `SELECT COUNT(DISTINCT line_name) FROM track_lines WHERE line_name <> '未命名'`。
+- **加了 `track_lines` 之后库大了约 2MB**（3.49→5.49MB，折线 BLOB 本身没变）。三个文本键
+  在主键索引里又存了一份，19205 行摊下来就是这个量级。这是打包进 App 的资源，嫌大可以
+  换成整数代理键（`tracks` 加一列 `id`，`track_lines` 只存 `track_id + seq`）。
 
 ## 耗时与内存
 

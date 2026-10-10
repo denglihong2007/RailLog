@@ -6,42 +6,6 @@ import 'package:path/path.dart' as path_util;
 import 'package:raillog/src/services/database_path_service.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// 一段站间轨道的折线。
-///
-/// 绝大多数区间在 OSM 里只有一条线，落在 [single]。[up]/[down] 留给上下行画成两条
-/// 明显分开的轨道的情形（管线 `direction` 列），两条各是其中一条：按国铁左行规则，
-/// 沿 `from→to` 走向左手边的那条是 [up]。
-///
-/// 两组字段互斥：要么只有 [single]，要么 [up]/[down] 成对出现。
-class RailTrackPair {
-  const RailTrackPair({this.single, this.up, this.down});
-
-  /// 空：查不到折线，绘制退回站间直线。
-  const RailTrackPair.empty() : single = null, up = null, down = null;
-
-  final List<List<double>>? single;
-  final List<List<double>>? up;
-  final List<List<double>>? down;
-
-  bool get isEmpty => single == null && up == null && down == null;
-
-  /// 上下行在 OSM 里明显分离，画的是两条轨道而不是同一条线。
-  bool get isSplit => up != null && down != null;
-
-  /// 画单向时的那条线：分离时取上行线。
-  List<List<double>>? get singleOrUp => single ?? up;
-
-  /// 掉头：点序倒过来，分离的上下行也对调。
-  ///
-  /// 「沿 from→to 左手边的是上行」——把走向掉个头，左边就成了右边。所以反方向拿到的
-  /// 那一对里，原来的下行才是这趟车眼里的上行。
-  RailTrackPair get flipped => RailTrackPair(
-    single: single?.reversed.toList(),
-    up: down?.reversed.toList(),
-    down: up?.reversed.toList(),
-  );
-}
-
 /// 站间轨道折线的内存索引。
 ///
 /// 键为 `线路名|起点站|终点站`（三段都按 [trackKeyOf] 归一化），值是 WGS84 的
@@ -50,30 +14,29 @@ class RailTrackPair {
 class RailTrackIndex {
   const RailTrackIndex._(this._tracks);
 
-  /// 空索引：查任何段都返回空，绘制退回站间直线。
+  /// 空索引：查任何段都返回 null，绘制退回站间直线。
   const RailTrackIndex.empty() : _tracks = const {};
 
-  final Map<String, RailTrackPair> _tracks;
+  final Map<String, List<List<double>>> _tracks;
 
   int get length => _tracks.length;
 
-  /// 查一段折线，**并把它摆成 `from→to` 走向**；没有对应数据时返回
-  /// [RailTrackPair.empty]，调用方回退为直线。
+  /// 查一段折线，**并把它摆成 `from→to` 走向**；没有对应数据时返回 null，
+  /// 调用方回退为直线。
   ///
-  /// 管线按方向各存一行，但一趟车走过的方向不一定有那一行——这时用反向键再查一次，
-  /// 并把点序倒过来。**不能直接把反向命中的原样交出去**：调用方会把它当成
+  /// 管线只按一个走向存一行，一趟车走过的方向不一定有那一行——这时用反向键再查
+  /// 一次，并把点序倒过来。**不能直接把反向命中的原样交出去**：调用方会把它当成
   /// `from→to` 的点列（首尾各补一个站坐标），于是画成「站间直线 + 倒着走的真轨 +
   /// 站间直线」的往返折返，地图上就是真轨旁边多出一条直线。
-  RailTrackPair findOriented(String routeName, String from, String to) {
+  List<List<double>>? findOriented(String routeName, String from, String to) {
     final forward = _tracks[trackKeyOf(routeName, from, to)];
     if (forward != null) return forward;
     final backward = _tracks[trackKeyOf(routeName, to, from)];
-    return backward?.flipped ?? const RailTrackPair.empty();
+    return backward?.reversed.toList();
   }
 
   static RailTrackIndex fromBatches(List<Map<String, Object?>> rows) {
-    final singles = <String, List<List<double>>>{};
-    final split = <String, Map<String, List<List<double>>>>{};
+    final tracks = <String, List<List<double>>>{};
     for (final row in rows) {
       final routeName = row['route_name']?.toString() ?? '';
       final from = row['from_station']?.toString() ?? '';
@@ -82,32 +45,14 @@ class RailTrackIndex {
       if (routeName.isEmpty || from.isEmpty || to.isEmpty || blob is! List<int>) {
         continue;
       }
-      final direction = row['direction']?.toString() ?? '';
       try {
         final points = _decodePolyline(blob);
         if (points.length < 2) continue;
-        final key = trackKeyOf(routeName, from, to);
-        if (direction == 'up' || direction == 'down') {
-          (split[key] ??= {})[direction] = points;
-        } else {
-          singles[key] = points;
-        }
+        tracks[trackKeyOf(routeName, from, to)] = points;
       } on FormatException {
         continue; // 单条数据损坏不影响其余折线
       } on TypeError {
         continue; // 结构不是 [[lat, lon], ...] 时同样跳过
-      }
-    }
-    final tracks = <String, RailTrackPair>{
-      for (final entry in singles.entries)
-        entry.key: RailTrackPair(single: entry.value),
-    };
-    // 只有上、下两行都齐了才算分离：缺一条就退回单线，别画出半截。
-    for (final entry in split.entries) {
-      final up = entry.value['up'];
-      final down = entry.value['down'];
-      if (up != null && down != null) {
-        tracks[entry.key] = RailTrackPair(up: up, down: down);
       }
     }
     return RailTrackIndex._(tracks);
@@ -237,8 +182,7 @@ class RailTrackService {
     final database = await openDatabase(databasePath, readOnly: true);
     try {
       final rows = await database.rawQuery(
-        'SELECT route_name, from_station, to_station, direction, polyline '
-        'FROM tracks',
+        'SELECT route_name, from_station, to_station, polyline FROM tracks',
       );
       return RailTrackData(
         tracks: RailTrackIndex.fromBatches(rows),

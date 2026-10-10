@@ -27,6 +27,17 @@ public sealed class EntityReviewsController(
             key,
             User.FindFirstValue(ClaimTypes.NameIdentifier)));
 
+    /// <summary>当前用户自己发表过的评价，最新在前，供「我的评价」分页加载。</summary>
+    [HttpGet("reviews/mine")]
+    [Authorize]
+    public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetMine(
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 20) =>
+        Ok(await database.GetUserEntityReviewsAsync(
+            User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+            offset,
+            limit));
+
     [HttpPost("{type}/{key}/reviews")]
     [Authorize]
     public async Task<ActionResult<EntityReviewResponse>> Post(string type, string key, CreateEntityReviewRequest request)

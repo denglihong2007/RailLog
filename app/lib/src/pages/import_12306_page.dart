@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
+import 'package:raillog/src/models/timetable_version.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
@@ -315,12 +316,17 @@ class _Import12306PageState extends State<Import12306Page> {
       _message = null;
     });
 
+    // 版本列表只取一次：service 内部有缓存，但空结果不缓存，
+    // 逐单重复调会在服务端没配时刻表库时白白打一遍网络。
+    final versions = await TrainService.fetchTimetableVersions();
+    if (!mounted) return;
+
     var importedCount = 0;
     for (var index = 0; index < selected.length; index++) {
       if (!mounted) return;
       setState(() => _preparingPosition = index + 1);
       final order = selected[index];
-      final prepared = await _prepareOrder(order);
+      final prepared = await _prepareOrder(order, versions);
       if (!mounted) return;
       setState(() => _preparingPosition = null);
       final saved = await Navigator.of(context).push<bool>(
@@ -328,6 +334,9 @@ class _Import12306PageState extends State<Import12306Page> {
           builder: (context) => TrainTripFormPage(
             trainNumber: order.trainCode,
             scheduleStops: prepared.stops,
+            historicalVersion: prepared.historicalVersion,
+            forceHistoricalJourney: true,
+            keepOnlineLookups: true,
             departureStopIndex: prepared.departureIndex,
             arrivalStopIndex: prepared.arrivalIndex,
             initialSeatType: order.seatType,
@@ -335,6 +344,9 @@ class _Import12306PageState extends State<Import12306Page> {
             initialMileageKm: order.distance,
             initialPrice: order.price,
             initialNotes: order.statusText,
+            initialPrompt: prepared.usedFallback
+                ? '未从历史时刻表取到该车次站序，已按订单始发/终到生成，请核对'
+                : null,
             reviewPosition: index + 1,
             reviewTotal: selected.length,
           ),
@@ -367,22 +379,22 @@ class _Import12306PageState extends State<Import12306Page> {
     });
   }
 
-  Future<_PreparedOrder> _prepareOrder(Ticket12306Order order) async {
-    final searchResults = await TrainService.searchTrains(
-      order.trainCode,
-      order.startTime,
-    );
-    final normalizedTrainNumber = _normalizeTrainNumber(order.trainCode);
-    final matches = searchResults.where(
-      (result) =>
-          _normalizeTrainNumber(result.trainNumber) == normalizedTrainNumber,
-    );
-    final train = matches.firstOrNull ?? searchResults.firstOrNull;
-    if (train != null) {
-      final schedule = await TrainService.fetchTrainSchedule(
-        train.trainNo,
-        train.lookupDate ?? order.startTime,
-      );
+  /// 站序一律取自历史时刻表；取不到就退成订单始发/终到的两站合成站序，
+  /// 不再回退到 12306 的在线查询 —— 在线接口按「现在」的同号车次作答，
+  /// 用在补录的老订单上会串段。
+  Future<_PreparedOrder> _prepareOrder(
+    Ticket12306Order order,
+    List<String> versions,
+  ) async {
+    final version = resolveTimetableVersion(order.startTime, versions);
+    final schedule = version == null
+        ? null
+        : (await TrainService.lookupHistoricalSchedule(
+            trainNumber: order.trainCode,
+            boardingDate: order.startTime,
+            version: version,
+          ))?.stops;
+    if (schedule != null) {
       final departureIndex = schedule.indexWhere(
         (stop) => _sameStation(stop.stationName, order.fromStation),
       );
@@ -410,13 +422,18 @@ class _Import12306PageState extends State<Import12306Page> {
           stops: resolved,
           departureIndex: departureIndex,
           arrivalIndex: arrivalIndex,
+          historicalVersion: version,
+          usedFallback: false,
         );
       }
     }
-    return _fallbackPreparedOrder(order);
+    return _fallbackPreparedOrder(order, historicalVersion: version);
   }
 
-  _PreparedOrder _fallbackPreparedOrder(Ticket12306Order order) {
+  _PreparedOrder _fallbackPreparedOrder(
+    Ticket12306Order order, {
+    String? historicalVersion,
+  }) {
     final arrival = order.arriveTime ?? order.startTime;
     final dayDifference = DateTime(arrival.year, arrival.month, arrival.day)
         .difference(
@@ -454,6 +471,8 @@ class _Import12306PageState extends State<Import12306Page> {
       ],
       departureIndex: 0,
       arrivalIndex: 1,
+      historicalVersion: historicalVersion,
+      usedFallback: true,
     );
   }
 
@@ -1258,11 +1277,19 @@ class _PreparedOrder {
     required this.stops,
     required this.departureIndex,
     required this.arrivalIndex,
+    this.historicalVersion,
+    this.usedFallback = false,
   });
 
   final List<TrainScheduleStop> stops;
   final int departureIndex;
   final int arrivalIndex;
+
+  /// 站序来自哪一版历史时刻表；推导不出版本时为 `null`。
+  final String? historicalVersion;
+
+  /// 是否退成了「订单始发/终到」两站合成站序。
+  final bool usedFallback;
 }
 
 Uint8List _decodeQrImage(String source) {
@@ -1279,9 +1306,6 @@ String _formatDateTime(DateTime value) =>
 String _formatClock(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:'
     '${value.minute.toString().padLeft(2, '0')}';
-
-String _normalizeTrainNumber(String value) =>
-    value.toUpperCase().replaceAll(RegExp(r'[\s次]'), '');
 
 bool _sameStation(String first, String second) =>
     _normalizeStation(first) == _normalizeStation(second);
