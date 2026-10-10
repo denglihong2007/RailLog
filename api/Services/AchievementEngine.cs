@@ -926,7 +926,7 @@ public static partial class AchievementEngine
             Note: "CRH1A-1111, CR200JC-1111, CR400AF-AS-1111, CRH2A-2222, CR400AF-2222, CRH380BL-5555",
             NarrativeNote: "如果在车上遇到了一只金发吸血鬼，请告诉我",
             Trigger: i => First(i.Trips, trip => HasQuadrupleSetNumber(trip.RollingStock))),
-        new("allAlone", FunJourneys, "person_outline", "茕茕孑立", "乘坐一次 RZ25K-111111 车厢或 CR400AF-AS-1111 的 11 车厢", 30,
+        new("allAlone", FunJourneys, "person_outline", "茕茕孑立", "乘坐一次 RZ25K 111111 车厢或 CR400AF-AS-1111 的 11 车厢", 30,
             MaxExperience: 50,
             Note: "以下附加条件每满足一项额外获得10点经验，总上限为50点：(1) 座位号为11，不限后缀；(2) 乘车日期为11月11日",
             NarrativeNote: "你最好是刻意来完成这个成就的QAQ",
@@ -2463,12 +2463,9 @@ public static partial class AchievementEngine
     private static bool UnlocksAllAlone(PublicTrip trip) =>
         HasLonelyCarriage(trip.RollingStock) || RidesEleventhCarriageOf1111(trip);
 
-    /// <summary>「茕茕孑立」的第一种解锁方式：坐过车号 111111 的 RZ25K 车厢。车号写成
-    /// “RZ25K 111111”或“RZ25K-111111”是同一回事，但 TrainModelParser 只把空格当客车
-    /// 车号的分隔符，连字符写法会被并进型号（Model=25K-111111、Numbers 为空），
-    /// 所以这里按原串匹配，两种写法都认。</summary>
+    /// <summary>「茕茕孑立」的第一种解锁方式：坐过车号 111111 的 RZ25K 车厢。</summary>
     private static bool HasLonelyCarriage(string? value) =>
-        Regex.IsMatch(value ?? string.Empty, @"(?<![A-Za-z0-9])RZ\s*25K[-\s]?111111(?!\d)");
+        RollingStockMatches(value, new RollingStockTarget("RZ25K", "111111"));
 
     /// <summary>第二种解锁方式：坐 CR400AF-AS-1111 的 11 车厢。</summary>
     private static bool RidesEleventhCarriageOf1111(PublicTrip trip) =>
