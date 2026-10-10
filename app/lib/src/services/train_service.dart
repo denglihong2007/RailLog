@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:raillog/src/models/historical_schedule_lookup.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/rolling_stock_record.dart';
 import 'package:raillog/src/models/station_pair_distance.dart';
@@ -556,6 +557,45 @@ class TrainService {
     } on DioException catch (_) {
       return const [];
     }
+  }
+
+  /// 按乘车日期从历史时刻表取整趟站序。
+  ///
+  /// [version] 由调用方先用 [resolveTimetableVersion] 算好传进来：批量导入时版本
+  /// 只需按各自的乘车日期算一次，降级分支也能复用同一个版本号。
+  /// 检索不到车次或站序为空都返回 `null`，由调用方决定怎么降级。
+  static Future<HistoricalScheduleLookup?> lookupHistoricalSchedule({
+    required String trainNumber,
+    required DateTime boardingDate,
+    required String version,
+  }) async {
+    final candidates = await searchHistoricalTrains(trainNumber, version);
+    final train = selectHistoricalTrain(trainNumber, candidates);
+    if (train == null) return null;
+    final stops = await fetchTrainSchedule(
+      train.trainNo,
+      boardingDate,
+      historicalVersion: version,
+    );
+    if (stops.isEmpty) return null;
+    return HistoricalScheduleLookup(
+      version: version,
+      trainNumber: train.trainNumber,
+      stops: stops,
+    );
+  }
+
+  /// 从检索结果里挑出与 [query] 同号的车次；无精确命中时按 [fallbackToFirst] 取首个。
+  static TrainSearchResult? selectHistoricalTrain(
+    String query,
+    List<TrainSearchResult> candidates, {
+    bool fallbackToFirst = true,
+  }) {
+    for (final candidate in candidates) {
+      if (_matchesTrainNumber(candidate.trainNumber, query)) return candidate;
+    }
+    if (fallbackToFirst && candidates.isNotEmpty) return candidates.first;
+    return null;
   }
 
   static Future<List<String>> fetchHistoricalStations(String version) async {

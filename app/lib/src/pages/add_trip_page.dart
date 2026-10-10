@@ -327,31 +327,26 @@ class _AddTripPageState extends State<AddTripPage> {
         bytes,
         credentials,
       );
-      // 车票日期决定用哪个历史版本；票面日期没有对应版本时退回在线查询。
-      final version = _timetableSource.isOnline
-          ? null
-          : resolveTimetableVersion(ticket.departureTime, _timetableVersions);
-      final candidates = version == null
-          ? await TrainService.searchTrains(
-              ticket.trainNumber,
-              ticket.departureTime,
-            )
-          : await TrainService.searchHistoricalTrains(
-              ticket.trainNumber,
-              version,
-            );
-      final train = candidates.cast<TrainSearchResult?>().firstWhere(
-        (candidate) =>
-            candidate!.trainNumber.replaceFirst(' 次', '').toUpperCase() ==
-            ticket.trainNumber.toUpperCase(),
-        orElse: () => candidates.isEmpty ? null : candidates.first,
-      );
-      if (train == null) throw const BaiduOcrException('无法匹配识别到的车次时刻表');
-      final stops = await TrainService.fetchTrainSchedule(
-        train.trainNo,
+      // 车票识别一律按票面日期走历史时刻表：经由线路与里程都由它推得。
+      // 这里的「在线/历史」开关只管快捷添加那条路，不影响车票识别。
+      if (_timetableVersions.isEmpty) await _loadTimetableVersions();
+      if (!mounted) return;
+      final version = resolveTimetableVersion(
         ticket.departureTime,
-        historicalVersion: version,
+        _timetableVersions,
       );
+      if (version == null) {
+        throw const BaiduOcrException('没有可用的历史时刻表版本');
+      }
+      final lookup = await TrainService.lookupHistoricalSchedule(
+        trainNumber: ticket.trainNumber,
+        boardingDate: ticket.departureTime,
+        version: version,
+      );
+      if (lookup == null) {
+        throw const BaiduOcrException('历史时刻表里没有识别到的车次');
+      }
+      final stops = lookup.stops;
       final departureIndex = _findStopIndex(stops, ticket.fromStation);
       final arrivalIndex = _findStopIndex(
         stops,
@@ -370,8 +365,10 @@ class _AddTripPageState extends State<AddTripPage> {
       final saved = await Navigator.of(context).push<bool>(
         m3PageRoute(
           builder: (context) => TrainTripFormPage(
-            trainNumber: train.trainNumber.replaceFirst(' 次', ''),
+            trainNumber: lookup.trainNumber.replaceFirst(' 次', ''),
             historicalVersion: version,
+            forceHistoricalJourney: true,
+            keepOnlineLookups: true,
             scheduleStops: resolvedStops,
             departureStopIndex: departureIndex,
             arrivalStopIndex: arrivalIndex,
@@ -628,7 +625,9 @@ class _AddTripPageState extends State<AddTripPage> {
           title: '车票识别',
           description: _isRecognizingTicket
               ? '正在识别车票...'
-              : '拍摄纸质车票或选择车票图片，自动补全信息',
+              // 车票识别不看上面的「在线/历史」开关，一律按票面日期查历史时刻表，
+              // 所以这里点明数据来源，免得用户以为切到「在线」就会走上在线接口。
+              : '拍摄纸质车票或选择车票图片，按历史时刻表补全信息',
           onTap: _openTicketImport,
         ),
       ],
