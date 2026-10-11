@@ -236,10 +236,7 @@ class _SearchPageState extends State<SearchPage> {
                     onSearch: _search,
                   ),
                   const SizedBox(height: 24),
-                  AnimatedSize(
-                    duration: m3MotionDurationShort,
-                    curve: Easing.standard,
-                    alignment: Alignment.topCenter,
+                  M3AnimatedSizeSwitcher(
                     child: M3FadeThroughSwitcher(
                       alignment: Alignment.topCenter,
                       child: KeyedSubtree(

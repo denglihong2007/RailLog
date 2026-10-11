@@ -170,3 +170,33 @@ class M3AnimatedVisibility extends StatelessWidget {
     );
   }
 }
+
+class M3AnimatedSizeSwitcher extends StatelessWidget {
+  const M3AnimatedSizeSwitcher({
+    super.key,
+    required this.child,
+    this.duration = m3MotionDurationShort,
+    this.alignment = Alignment.topCenter,
+  });
+
+  final Widget child;
+  final Duration duration;
+  final AlignmentGeometry alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final disableAnimations =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disableAnimations) return child;
+    return AnimatedSize(
+      duration: duration,
+      curve: Easing.standard,
+      alignment: alignment,
+      child: M3FadeThroughSwitcher(
+        duration: duration,
+        alignment: alignment,
+        child: child,
+      ),
+    );
+  }
+}

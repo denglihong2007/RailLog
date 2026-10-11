@@ -158,18 +158,14 @@ class QuickAddCard extends StatelessWidget {
                 border: OutlineInputBorder(),
               ),
             ),
-            AnimatedSize(
-              duration: m3MotionDuration,
-              curve: Easing.standard,
+            M3AnimatedSizeSwitcher(
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.topCenter,
                 child: _buildSearchState(context),
               ),
             ),
           ],
-          AnimatedSize(
-            duration: m3MotionDuration,
-            curve: Easing.standard,
+          M3AnimatedSizeSwitcher(
             child: M3FadeThroughSwitcher(
               alignment: Alignment.topCenter,
               child: _buildTrainSelection(context, colors),
@@ -330,17 +326,14 @@ class QuickAddCard extends StatelessWidget {
               ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
-            AnimatedSize(
-              duration: m3MotionDuration,
-              curve: Easing.standard,
+            M3AnimatedSizeSwitcher(
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.topCenter,
                 child: _buildScheduleState(),
               ),
             ),
-            AnimatedSize(
-              duration: m3MotionDurationShort,
-              curve: Easing.standard,
+            M3AnimatedSizeSwitcher(
+              alignment: Alignment.centerRight,
               child: M3FadeThroughSwitcher(
                 alignment: Alignment.centerRight,
                 child: departureStopIndex != null && arrivalStopIndex != null

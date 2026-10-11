@@ -970,10 +970,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
           ? BorderRadius.circular(AppRadius.card)
           : BorderRadius.zero,
       clipBehavior: Clip.antiAlias,
-      child: AnimatedSize(
-        duration: m3MotionDurationShort,
-        curve: Easing.standard,
-        alignment: Alignment.topCenter,
+      child: M3AnimatedSizeSwitcher(
         child: M3FadeThroughSwitcher(
           alignment: Alignment.topCenter,
           child: KeyedSubtree(key: ValueKey(imageState), child: image),
