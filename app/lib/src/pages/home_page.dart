@@ -900,6 +900,7 @@ class _AchievementsSection extends StatelessWidget {
                 delay: m3RevealDelay(index),
                 distance: 8,
                 child: DashboardAchievementCard(
+                  key: ValueKey(achievements[index].id),
                   achievement: achievements[index],
                   onTap: achievements[index].unlockedBy == null
                       ? null

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/widgets/app_card.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class DashboardAchievementCard extends StatelessWidget {
   const DashboardAchievementCard({
@@ -104,10 +105,23 @@ class DashboardAchievementCard extends StatelessWidget {
                 ),
               ],
               const SizedBox(width: 8),
-              Icon(
-                unlocked ? Icons.verified_outlined : Icons.lock_outline,
-                size: 20,
-                color: unlocked ? colors.primary : colors.onSurfaceVariant,
+              AnimatedSwitcher(
+                duration: m3MotionDurationShort,
+                switchInCurve: Easing.emphasizedDecelerate,
+                switchOutCurve: Easing.standardAccelerate,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
+                    child: child,
+                  ),
+                ),
+                child: Icon(
+                  unlocked ? Icons.verified_outlined : Icons.lock_outline,
+                  key: ValueKey(unlocked),
+                  size: 20,
+                  color: unlocked ? colors.primary : colors.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -197,11 +211,21 @@ class DashboardAchievementCard extends StatelessWidget {
           ),
       ],
     );
-    return AppCard.filled(
-      padding: EdgeInsets.zero,
-      color: unlocked ? colors.tertiaryContainer : null,
-      onTap: onTap,
-      child: cardContent,
+    final fill = unlocked ? colors.tertiaryContainer : null;
+    // begin 与 end 取同一个值是有意的：冷启动、以及列表重排造成的重新挂载，
+    // 都不会播放动画。TweenAnimationBuilder 只在 tween.end 变化时才补间，
+    // 而且那时它会自行以「当前显示的颜色」作为起点 —— 所以这里给的 begin
+    // 不会削弱「锁定 -> 解锁」那一次的补间。
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(begin: fill, end: fill),
+      duration: m3MotionDurationShort,
+      curve: Easing.standardDecelerate,
+      builder: (context, color, _) => AppCard.filled(
+        padding: EdgeInsets.zero,
+        color: color,
+        onTap: onTap,
+        child: cardContent,
+      ),
     );
   }
 }

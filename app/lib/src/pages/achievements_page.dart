@@ -1,7 +1,9 @@
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/achievement_requirements_page.dart';
+import 'package:raillog/src/services/achievement_unlock_notifier.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
@@ -60,6 +62,9 @@ class AchievementsPage extends StatelessWidget {
               ],
             ),
             _AchievementPromptTrigger(unlockedCount: unlocked),
+            Positioned.fill(
+              child: IgnorePointer(child: _AchievementConfetti()),
+            ),
           ],
         ),
       ),
@@ -178,6 +183,7 @@ class _AchievementCategoryView extends StatelessWidget {
                       delegate: SliverChildBuilderDelegate((context, index) {
                         final achievement = achievements[index];
                         return DashboardAchievementCard(
+                          key: ValueKey(achievement.id),
                           achievement: achievement,
                           onTap: achievement.unlockedBy == null
                               ? null
@@ -421,3 +427,76 @@ class _AchievementPromptTriggerState extends State<_AchievementPromptTrigger> {
 }
 
 double mathMin(double a, double b) => a < b ? a : b;
+
+/// 解锁彩带：进入成就页时，若本次会话里有刚解锁的成就，就在页面上方爆一次。
+///
+/// 只在挂载时判断一次 —— 成就页拿到的列表在页面存活期间不会变，所以不必监听。
+class _AchievementConfetti extends StatefulWidget {
+  const _AchievementConfetti();
+
+  @override
+  State<_AchievementConfetti> createState() => _AchievementConfettiState();
+}
+
+class _AchievementConfettiState extends State<_AchievementConfetti> {
+  /// 只决定「发射」的窗口长度；粒子离开发射窗口后由重力接管，飘完自行结束。
+  static const _emissionWindow = Duration(milliseconds: 200);
+
+  final ConfettiController _controller = ConfettiController(
+    duration: _emissionWindow,
+  );
+
+  /// 待庆祝的解锁在 [initState] 里取走，但那时还读不到 MediaQuery，
+  /// 所以播放推迟到 [didChangeDependencies]。
+  bool _pendingCelebration = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final notifier = AchievementUnlockNotifier.instance;
+    if (notifier.pending.isEmpty) return;
+    notifier.clearPending();
+    _pendingCelebration = true;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_pendingCelebration) return;
+    _pendingCelebration = false;
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return;
+    // 必须赶在 ConfettiWidget 挂载前 play：它在自己的 post-frame 回调里检查
+    // 控制器是否已处于 playing，据此决定要不要开始发射，晚一步就永远不会发射。
+    _controller.play();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Align(
+      // ConfettiWidget 把发射点钉在自己盒子的左上角，所以用一个 1×1 的盒子
+      // 把它锚到页面横向中央、纵向约 1/5 处，向上炸开才有空间。
+      alignment: const Alignment(0, -0.6),
+      child: SizedBox.square(
+        dimension: 1,
+        child: ConfettiWidget(
+          confettiController: _controller,
+          blastDirectionality: BlastDirectionality.explosive,
+          emissionFrequency: 1,
+          numberOfParticles: 10,
+          gravity: 0.2,
+          minimumSize: const Size(8, 4),
+          maximumSize: const Size(14, 8),
+          shouldLoop: false,
+          colors: [colors.primary, colors.secondary, colors.tertiary],
+        ),
+      ),
+    );
+  }
+}
