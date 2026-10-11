@@ -10,19 +10,119 @@ import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
 
-class AchievementsPage extends StatelessWidget {
+class AchievementsPage extends StatefulWidget {
   const AchievementsPage({super.key, required this.achievements});
 
   final List<DashboardAchievement> achievements;
 
   @override
+  State<AchievementsPage> createState() => _AchievementsPageState();
+}
+
+class _AchievementsPageState extends State<AchievementsPage> {
+  /// 页面主体的 Stack，用来把卡片的全局坐标换算成发射点的局部坐标。
+  final GlobalKey _bodyKey = GlobalKey();
+
+  /// 挂在被定位的那张卡片上。网格是懒加载的，只有它被真正构建出来之后才拿得到坐标。
+  final GlobalKey _targetCardKey = GlobalKey();
+
+  final ScrollController _scrollController = ScrollController();
+
+  /// 网格在布局期算出的目标偏移，见 [_GridTargetOffset]。
+  final _GridTargetOffset _gridTargetOffset = _GridTargetOffset();
+
+  /// 本次进入页面要定位并庆祝的成就；null 表示本次没有。
+  DashboardAchievement? _target;
+
+  /// 彩带的发射点（主体 Stack 的局部坐标）。null 表示没能定位到卡片，走兜底位置。
+  Offset? _celebrationAnchor;
+
+  /// 彩带要不要上场。定位是异步的（等布局、等滚动落位），所以单独占一个状态。
+  bool _celebrating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final notifier = AchievementUnlockNotifier.instance;
+    final pending = notifier.pending;
+    if (pending.isEmpty) return;
+    // 取走就不再放回：离开成就页再进来不该重放一次。
+    notifier.clearPending();
+    final pendingIds = {for (final item in pending) item.id};
+    // 一次解锁多个时只处理列表里最靠前的那一个，不排队逐个播。
+    for (final achievement in widget.achievements) {
+      if (pendingIds.contains(achievement.id)) {
+        _target = achievement;
+        break;
+      }
+    }
+    if (_target == null) return;
+    // 目标在滚动视图里的位置要等这一帧布局完才知道，所以定位推迟到帧后。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _locateTarget());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 把目标卡片滚进视野，然后在它身上放彩带。
+  Future<void> _locateTarget() async {
+    if (!mounted) return;
+    final targetOffset = _gridTargetOffset.value;
+    if (targetOffset != null &&
+        targetOffset.isFinite &&
+        _scrollController.hasClients) {
+      final position = _scrollController.position;
+      // 让卡片落在视口偏上的位置：彩带要向上炸开才有空间。
+      final destination = (targetOffset - position.viewportDimension * 0.3)
+          .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if (destination > position.pixels + 1) {
+        await _scrollController.animateTo(
+          destination,
+          duration: m3MotionDuration,
+          curve: Easing.emphasizedDecelerate,
+        );
+        if (!mounted) return;
+      }
+    }
+    // 再等一帧：卡片的 render box 要等滚动落位、它被网格真正构建出来之后才拿得到。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _celebrationAnchor = _targetCardCenter();
+        _celebrating = true;
+      });
+    });
+  }
+
+  /// 目标卡片的中心点，换算成主体 Stack 的局部坐标；拿不到就返回 null。
+  Offset? _targetCardCenter() {
+    final cardBox =
+        _targetCardKey.currentContext?.findRenderObject() as RenderBox?;
+    final bodyBox = _bodyKey.currentContext?.findRenderObject() as RenderBox?;
+    if (cardBox == null || bodyBox == null || !cardBox.hasSize) return null;
+    return bodyBox.globalToLocal(
+      cardBox.localToGlobal(cardBox.size.center(Offset.zero)),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final achievements = widget.achievements;
     final unlocked = achievements.where((item) => item.isUnlocked).length;
     final totalExperience = achievements
         .where((item) => item.isUnlocked)
         .fold(0, (total, item) => total + item.experience);
+    final target = _target;
     return DefaultTabController(
       length: AchievementCategory.values.length,
+      // 直接开在目标分类上。TabBarView 只构建当前页，先开在默认页再切过去的话，
+      // 既多一次换页动画，目标页也要晚一帧才布局。
+      initialIndex: target == null
+          ? 0
+          : AchievementCategory.values.indexOf(target.category),
       child: Scaffold(
         appBar: AppBar(
           title: const Text('成就'),
@@ -44,30 +144,54 @@ class AchievementsPage extends StatelessWidget {
           ),
         ),
         body: Stack(
+          key: _bodyKey,
           children: [
             TabBarView(
               children: [
                 for (final category in AchievementCategory.values)
-                  _AchievementCategoryView(
+                  _categoryView(
                     category: category,
-                    achievements: achievements
-                        .where((item) => item.category == category)
-                        .toList(growable: false),
-                    totalUnlocked: unlocked,
-                    totalAchievements: achievements.length,
+                    unlocked: unlocked,
                     totalExperience: totalExperience,
-                    openAchievement: _openAchievement,
-                    openRequirements: _openRequirements,
                   ),
               ],
             ),
             _AchievementPromptTrigger(unlockedCount: unlocked),
-            Positioned.fill(
-              child: IgnorePointer(child: _AchievementConfetti()),
-            ),
+            if (_celebrating) _AchievementConfetti(anchor: _celebrationAnchor),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _categoryView({
+    required AchievementCategory category,
+    required int unlocked,
+    required int totalExperience,
+  }) {
+    final achievements = widget.achievements
+        .where((item) => item.category == category)
+        .toList(growable: false);
+    final target = _target;
+    final targetIndex = target == null || target.category != category
+        ? -1
+        : achievements.indexWhere((item) => item.id == target.id);
+    return _AchievementCategoryView(
+      category: category,
+      achievements: achievements,
+      totalUnlocked: unlocked,
+      totalAchievements: widget.achievements.length,
+      totalExperience: totalExperience,
+      openAchievement: _openAchievement,
+      openRequirements: _openRequirements,
+      locate: targetIndex < 0
+          ? null
+          : _LocateRequest(
+              index: targetIndex,
+              cardKey: _targetCardKey,
+              scrollController: _scrollController,
+              offsetSink: _gridTargetOffset,
+            ),
     );
   }
 
@@ -97,6 +221,29 @@ class AchievementsPage extends StatelessWidget {
   }
 }
 
+/// 目标卡片在滚动视图里的绝对偏移。网格在**布局期**写入、页面在帧后读取。
+///
+/// 用普通字段而不是 `ValueNotifier`：布局期写它会通知监听者 `setState`，而布局中
+/// 改状态是框架禁止的。
+class _GridTargetOffset {
+  double? value;
+}
+
+/// 页面交给某个分类视图的定位任务：把第 [index] 项滚进视野，并挂在 [cardKey] 上。
+class _LocateRequest {
+  const _LocateRequest({
+    required this.index,
+    required this.cardKey,
+    required this.scrollController,
+    required this.offsetSink,
+  });
+
+  final int index;
+  final GlobalKey cardKey;
+  final ScrollController scrollController;
+  final _GridTargetOffset offsetSink;
+}
+
 class _AchievementCategoryView extends StatelessWidget {
   const _AchievementCategoryView({
     required this.category,
@@ -106,6 +253,7 @@ class _AchievementCategoryView extends StatelessWidget {
     required this.totalExperience,
     required this.openAchievement,
     required this.openRequirements,
+    this.locate,
   });
 
   final AchievementCategory category;
@@ -117,6 +265,9 @@ class _AchievementCategoryView extends StatelessWidget {
   openAchievement;
   final Future<void> Function(BuildContext, DashboardAchievement)
   openRequirements;
+
+  /// 非 null 时，本分类里有本次要定位并庆祝的那张卡片。
+  final _LocateRequest? locate;
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +283,7 @@ class _AchievementCategoryView extends StatelessWidget {
         final horizontalPadding = constraints.maxWidth < 600 ? 16.0 : 24.0;
         return CustomScrollView(
           key: PageStorageKey(category.apiKey),
+          controller: locate?.scrollController,
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
@@ -171,19 +323,41 @@ class _AchievementCategoryView extends StatelessWidget {
                   );
                   final sideInset =
                       (sliverConstraints.crossAxisExtent - width) / 2;
-                  return SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: sideInset),
-                    sliver: SliverGrid(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  final gridDelegate =
+                      SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: columns,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
                         mainAxisExtent: 120,
-                      ),
+                      );
+                  final locate = this.locate;
+                  final preceding = sliverConstraints.precedingScrollExtent;
+                  if (locate != null && preceding.isFinite) {
+                    // precedingScrollExtent 是表头（前面那些 sliver）已经吃掉的高度，
+                    // geometry.scrollOffset 是目标行在网格内部的偏移，两者相加就是
+                    // 它在整个滚动视图里的绝对位置。从 delegate 取而不是手算
+                    // 「行号 ×（高度 + 间距）」：后者会把栏数、行高抄成第二份事实。
+                    // 布局期只写一个普通字段，不当场 setState。
+                    locate.offsetSink.value =
+                        preceding +
+                        gridDelegate
+                            .getLayout(sliverConstraints)
+                            .getGeometryForChildIndex(locate.index)
+                            .scrollOffset;
+                  }
+                  return SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: sideInset),
+                    sliver: SliverGrid(
+                      gridDelegate: gridDelegate,
                       delegate: SliverChildBuilderDelegate((context, index) {
                         final achievement = achievements[index];
+                        final isTarget =
+                            locate != null && locate.index == index;
                         return DashboardAchievementCard(
-                          key: ValueKey(achievement.id),
+                          key: isTarget
+                              ? locate.cardKey
+                              : ValueKey(achievement.id),
+                          justUnlocked: isTarget,
                           achievement: achievement,
                           onTap: achievement.unlockedBy == null
                               ? null
@@ -428,11 +602,16 @@ class _AchievementPromptTriggerState extends State<_AchievementPromptTrigger> {
 
 double mathMin(double a, double b) => a < b ? a : b;
 
-/// 解锁彩带：进入成就页时，若本次会话里有刚解锁的成就，就在页面上方爆一次。
+/// 解锁彩带：进入成就页时，若本次会话里有刚解锁的成就，页面会先滚动定位到那张
+/// 卡片，然后在这里围绕它爆一次。
 ///
-/// 只在挂载时判断一次 —— 成就页拿到的列表在页面存活期间不会变，所以不必监听。
+/// 只在被插进树时播放一次 —— 页面只在定位成功后才构建它。
 class _AchievementConfetti extends StatefulWidget {
-  const _AchievementConfetti();
+  const _AchievementConfetti({required this.anchor});
+
+  /// 发射点（主体 Stack 的局部坐标）。null 表示没能定位到卡片 —— 例如网格还没
+  /// 报出目标偏移 —— 此时退回页面顶部中央。
+  final Offset? anchor;
 
   @override
   State<_AchievementConfetti> createState() => _AchievementConfettiState();
@@ -446,27 +625,17 @@ class _AchievementConfettiState extends State<_AchievementConfetti> {
     duration: _emissionWindow,
   );
 
-  /// 待庆祝的解锁在 [initState] 里取走，但那时还读不到 MediaQuery，
-  /// 所以播放推迟到 [didChangeDependencies]。
-  bool _pendingCelebration = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final notifier = AchievementUnlockNotifier.instance;
-    if (notifier.pending.isEmpty) return;
-    notifier.clearPending();
-    _pendingCelebration = true;
-  }
+  bool _pendingPlay = true;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_pendingCelebration) return;
-    _pendingCelebration = false;
+    if (!_pendingPlay) return;
+    _pendingPlay = false;
+    // 减弱动效下整段跳过，与 M3Reveal / M3AnimatedSizeSwitcher 的处置一致。
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) return;
-    // 必须赶在 ConfettiWidget 挂载前 play：它在自己的 post-frame 回调里检查
-    // 控制器是否已处于 playing，据此决定要不要开始发射，晚一步就永远不会发射。
+    // 这里还在 ConfettiWidget 挂载之前，但那没关系：它在 initState 里给控制器挂了
+    // 监听，而且自己的 post-frame 回调还会补查一次状态，两条路都能开始发射。
     _controller.play();
   }
 
@@ -479,22 +648,33 @@ class _AchievementConfettiState extends State<_AchievementConfetti> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Align(
-      // ConfettiWidget 把发射点钉在自己盒子的左上角，所以用一个 1×1 的盒子
-      // 把它锚到页面横向中央、纵向约 1/5 处，向上炸开才有空间。
-      alignment: const Alignment(0, -0.6),
-      child: SizedBox.square(
-        dimension: 1,
-        child: ConfettiWidget(
-          confettiController: _controller,
-          blastDirectionality: BlastDirectionality.explosive,
-          emissionFrequency: 1,
-          numberOfParticles: 10,
-          gravity: 0.2,
-          minimumSize: const Size(8, 4),
-          maximumSize: const Size(14, 8),
-          shouldLoop: false,
-          colors: [colors.primary, colors.secondary, colors.tertiary],
+    // ConfettiWidget 把发射点钉在自己盒子的左上角，所以用一个 1×1 的盒子来锚定位置。
+    final emitter = SizedBox.square(
+      dimension: 1,
+      child: ConfettiWidget(
+        confettiController: _controller,
+        blastDirectionality: BlastDirectionality.explosive,
+        emissionFrequency: 1,
+        numberOfParticles: 10,
+        gravity: 0.2,
+        minimumSize: const Size(8, 4),
+        maximumSize: const Size(14, 8),
+        shouldLoop: false,
+        colors: [colors.primary, colors.secondary, colors.tertiary],
+      ),
+    );
+    final anchor = widget.anchor;
+    return Positioned.fill(
+      // 彩带永远不该挡住卡片。confetti 走的是 foregroundPainter，当前其实不吃点击，
+      // 这一层是保证。
+      child: IgnorePointer(
+        child: Stack(
+          children: [
+            if (anchor == null)
+              Align(alignment: const Alignment(0, -0.6), child: emitter)
+            else
+              Positioned(left: anchor.dx, top: anchor.dy, child: emitter),
+          ],
         ),
       ),
     );

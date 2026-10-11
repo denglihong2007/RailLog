@@ -191,6 +191,72 @@ void main() {
     expect(find.text('尚未解锁 · 1/2'), findsOneWidget);
   });
 
+  testWidgets('just unlocked card lights up on mount', (tester) async {
+    // 成就页定位到刚解锁的那张卡片时传 justUnlocked，它要在挂载时把底色从默认色
+    // 补间到解锁色 —— 这是「就是它」的那一下强调。
+    final theme = AppTheme.build(
+      ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+    );
+    final colors = theme.colorScheme;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 420,
+              height: 120,
+              child: DashboardAchievementCard(
+                achievement: _unlockedAchievement(),
+                justUnlocked: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 起点仍是「未解锁」时的默认底色：观感上就是刚刚还没亮。
+    expect(_fillOf(tester), colors.surfaceContainerLow.toARGB32());
+
+    await tester.pump(const Duration(milliseconds: 100));
+    final mid = _fillOf(tester);
+    expect(mid, isNot(colors.surfaceContainerLow.toARGB32()));
+    expect(mid, isNot(colors.tertiaryContainer.toARGB32()));
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_fillOf(tester), colors.tertiaryContainer.toARGB32());
+  });
+
+  testWidgets('plain unlocked card is already lit on mount', (tester) async {
+    // 对照组：不传 justUnlocked 时不该有这次补间 —— 冷启动与列表重排都不该重放，
+    // 全页只剩「刚解锁的那一张」会亮，否则这个强调就不成其为强调。
+    final theme = AppTheme.build(
+      ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+    );
+    final colors = theme.colorScheme;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 420,
+              height: 120,
+              child: DashboardAchievementCard(
+                achievement: _unlockedAchievement(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(_fillOf(tester), colors.tertiaryContainer.toARGB32());
+  });
+
   testWidgets('completed requirements are displayed before incomplete ones', (
     tester,
   ) async {
@@ -238,3 +304,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+/// 卡片当前渲染出来的填充色。
+int _fillOf(WidgetTester tester) =>
+    tester.widget<Card>(find.byType(Card)).color!.toARGB32();
+
+DashboardAchievement _unlockedAchievement() => DashboardAchievement(
+  id: 'allSeatTypes',
+  category: AchievementCategory.railwayCatalog,
+  iconKey: 'checklist_outlined',
+  title: '我全都要',
+  requirement: '分别乘坐全部常规席别',
+  unlocked: true,
+  triggerTripId: 42,
+  unlockedUserCount: 12,
+  totalUserCount: 100,
+  experience: 40,
+  hidden: false,
+  note: null,
+  narrativeNote: null,
+  progressCurrent: 1,
+  progressTarget: 2,
+);

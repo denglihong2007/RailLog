@@ -9,11 +9,16 @@ class DashboardAchievementCard extends StatelessWidget {
     required this.achievement,
     this.onTap,
     this.onRequirementsTap,
+    this.justUnlocked = false,
   });
 
   final DashboardAchievement achievement;
   final VoidCallback? onTap;
   final VoidCallback? onRequirementsTap;
+
+  /// 本次会话里刚解锁的那一张。它挂载时会把底色从默认色补间到解锁色，
+  /// 作为成就页「定位到该成就」的那一下强调；别处不传。
+  final bool justUnlocked;
 
   @override
   Widget build(BuildContext context) {
@@ -219,12 +224,13 @@ class DashboardAchievementCard extends StatelessWidget {
     final fill = unlocked
         ? colors.tertiaryContainer
         : colors.surfaceContainerLow;
-    // begin 与 end 取同一个值是有意的：冷启动、以及列表重排造成的重新挂载，
-    // 都不会播放动画。TweenAnimationBuilder 只在 tween.end 变化时才补间，
-    // 而且那时它会自行以「当前显示的颜色」作为起点 —— 所以这里给的 begin
-    // 不会削弱「锁定 -> 解锁」那一次的补间。
+    // 刚解锁的那张从默认色起步，于是在挂载时亮一次；其余卡片 begin 与 end 取同一个
+    // 值，冷启动与列表重排都不会播放动画。TweenAnimationBuilder 只在 begin != end 时
+    // 于挂载时补间，之后也只在 tween.end 变化时才补间 —— 两种情况互不干扰，所以
+    // 「锁定 -> 解锁」那一次的补间不受影响。
+    final from = justUnlocked ? colors.surfaceContainerLow : fill;
     return TweenAnimationBuilder<Color?>(
-      tween: ColorTween(begin: fill, end: fill),
+      tween: ColorTween(begin: from, end: fill),
       duration: m3MotionDurationShort,
       curve: Easing.standardDecelerate,
       builder: (context, color, _) => AppCard.filled(
