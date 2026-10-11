@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/theme/app_theme.dart';
+import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 
 void main() {
@@ -126,6 +127,68 @@ void main() {
     expect(cardTaps, 1);
     expect(requirementTaps, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('locked achievement card uses the default fill, never null', (
+    tester,
+  ) async {
+    // 未解锁卡片走的是「沿用 AppCard 默认填充色」的分支，这里必须落成一个具体颜色：
+    // TweenAnimationBuilder 断言 tween.end 非空，而卡片是在 SliverGrid 的 layout
+    // 回调里构建的 —— 把 null 交给它会在构建期抛异常、中断整个网格的布局，并且每帧
+    // 重来一次，成就页因此直接卡死（列表里绝大多数卡片都是未解锁的）。
+    final achievement = DashboardAchievement(
+      id: 'allSeatTypes',
+      category: AchievementCategory.railwayCatalog,
+      iconKey: 'checklist_outlined',
+      title: '我全都要',
+      requirement: '分别乘坐全部常规席别',
+      unlocked: false,
+      triggerTripId: null,
+      unlockedUserCount: 12,
+      totalUserCount: 100,
+      experience: 40,
+      hidden: false,
+      note: null,
+      narrativeNote: null,
+      progressCurrent: 1,
+      progressTarget: 2,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.build(
+          ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+        ),
+        home: Scaffold(
+          body: Column(
+            children: [
+              SizedBox(
+                width: 420,
+                height: 120,
+                child: DashboardAchievementCard(achievement: achievement),
+              ),
+              // 对照组：不传 color 的 AppCard.filled。显式给默认色只是为了让
+              // TweenAnimationBuilder 拿到非空 end，外观不该有任何变化。
+              const SizedBox(
+                width: 420,
+                height: 120,
+                child: AppCard.filled(child: SizedBox.expand()),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    final fills = tester
+        .widgetList<Card>(find.byType(Card))
+        .map((card) => card.color)
+        .toList();
+    expect(fills, hasLength(2));
+    expect(fills.first, isNotNull);
+    expect(fills.first, fills.last);
+    expect(find.text('尚未解锁 · 1/2'), findsOneWidget);
   });
 
   testWidgets('completed requirements are displayed before incomplete ones', (

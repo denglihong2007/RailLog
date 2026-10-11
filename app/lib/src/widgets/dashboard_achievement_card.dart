@@ -211,7 +211,14 @@ class DashboardAchievementCard extends StatelessWidget {
           ),
       ],
     );
-    final fill = unlocked ? colors.tertiaryContainer : null;
+    // 未解锁时不能沿用原来的 `null`（交给 AppCard 取默认色）：TweenAnimationBuilder
+    // 断言 tween.end 非空，null 会在构建期抛异常，而卡片是在 SliverGrid 的
+    // layout 回调里构建的 —— 异常会中断整个网格的布局，页面上几乎全是未解锁卡片，
+    // 于是每帧重试、每帧再抛，界面直接卡死。这里显式取 AppCard.filled 的默认色
+    // （见 app_card.dart 的 `color ?? colors.surfaceContainerLow`）。
+    final fill = unlocked
+        ? colors.tertiaryContainer
+        : colors.surfaceContainerLow;
     // begin 与 end 取同一个值是有意的：冷启动、以及列表重排造成的重新挂载，
     // 都不会播放动画。TweenAnimationBuilder 只在 tween.end 变化时才补间，
     // 而且那时它会自行以「当前显示的颜色」作为起点 —— 所以这里给的 begin
