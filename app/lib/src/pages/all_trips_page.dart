@@ -880,9 +880,8 @@ class _ResponsiveTripsList extends StatelessWidget {
 
   Widget _buildCard(int index) {
     if (index >= trips.length) return const SizedBox.shrink();
-    final animationStep = index > 8 ? 8 : index;
     return M3Reveal(
-      duration: Duration(milliseconds: 220 + animationStep * 30),
+      delay: m3RevealDelay(index),
       distance: 6,
       child: TripTicketCard(
         trip: trips[index],

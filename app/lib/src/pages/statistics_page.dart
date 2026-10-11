@@ -243,7 +243,7 @@ class _SiteStatisticsView extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       return M3Reveal(
-                        duration: Duration(milliseconds: 240 + index * 50),
+                        delay: m3RevealDelay(index),
                         distance: 8,
                         child: _SiteMetricCard(
                           label: item.$1,

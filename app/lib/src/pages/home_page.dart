@@ -897,7 +897,7 @@ class _AchievementsSection extends StatelessWidget {
                   ? _dashboardPreviewLimit
                   : achievements.length,
               itemBuilder: (context, index) => M3Reveal(
-                duration: Duration(milliseconds: 620 + index * 45),
+                delay: m3RevealDelay(index),
                 distance: 8,
                 child: DashboardAchievementCard(
                   achievement: achievements[index],
@@ -1673,7 +1673,7 @@ class _MetricGrid extends StatelessWidget {
           itemCount: cards.length,
           itemBuilder: (context, index) {
             return M3Reveal(
-              duration: Duration(milliseconds: 260 + index * 45),
+              delay: m3RevealDelay(index),
               distance: 8,
               child: _MetricCard(metric: cards[index]),
             );

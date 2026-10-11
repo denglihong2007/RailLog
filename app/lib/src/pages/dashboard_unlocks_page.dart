@@ -222,9 +222,8 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
                 }
 
                 final entry = entries[index - 1];
-                final animationStep = index > 8 ? 8 : index;
                 return M3Reveal(
-                  duration: Duration(milliseconds: 220 + animationStep * 30),
+                  delay: m3RevealDelay(index),
                   distance: 6,
                   child: ListTile(
                     onTap: () => _openMatchingTrips(entry),
