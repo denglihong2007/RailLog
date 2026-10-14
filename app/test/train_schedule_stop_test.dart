@@ -109,4 +109,168 @@ void main() {
       expect(historicalSectionDistances(stops, 0, stops.length), isEmpty);
     });
   });
+
+  group('historicalSectionDistancesFromReference', () {
+    test('折返处同名站出现两次，两段各取自己那一次的里程', () {
+      // 西安换向：列车在 灞桥→西安→灞桥→田王 里把灞桥走了两遍，
+      // 历史站序的累计里程一路递增（100 / 110 / 120 / 130）。
+      final stops = _stops([
+        ('灞桥', null),
+        ('西安', null),
+        ('灞桥', null),
+        ('田王', null),
+      ]);
+      final reference = _stops([
+        ('灞桥', 100),
+        ('西安', 110),
+        ('灞桥', 120),
+        ('田王', 130),
+      ]);
+
+      final sections = historicalSectionDistancesFromReference(
+        stops,
+        reference,
+        0,
+        3,
+      );
+
+      // 查表（站名 → 里程）只能取到去程的 100，回程那一段会算成 |130 - 100| = 30；
+      // 单调游标才会落到回程的 120，两段都是 10。
+      expect(sections.map((section) => section.distanceKm), [10.0, 10.0, 10.0]);
+    });
+
+    test('参照缺一个中间站时游标不推进，后面的站照常对齐', () {
+      final stops = _stops([
+        ('北京南', null),
+        ('沧州西', null),
+        ('德州东', null),
+        ('曲阜东', null),
+      ]);
+      // 历史站序里没有沧州西。
+      final reference = _stops([('北京南', 0), ('德州东', 315), ('曲阜东', 537)]);
+
+      final sections = historicalSectionDistancesFromReference(
+        stops,
+        reference,
+        0,
+        3,
+      );
+
+      // 关键是最后一段仍在：对齐失败时若把游标推到末尾，德州东/曲阜东会一起报废。
+      expect(sections.map((section) => section.distanceKm), [null, null, 222.0]);
+    });
+
+    test('在线站序多出一站时只拖垮挨着它的两段', () {
+      final stops = _stops([
+        ('北京南', null),
+        ('廊坊', null),
+        ('天津南', null),
+        ('济南西', null),
+      ]);
+      // 历史站序里没有廊坊。
+      final reference = _stops([('北京南', 0), ('天津南', 120), ('济南西', 400)]);
+
+      final sections = historicalSectionDistancesFromReference(
+        stops,
+        reference,
+        0,
+        3,
+      );
+
+      expect(sections.map((section) => section.distanceKm), [null, null, 280.0]);
+      expect(sections.map((section) => section.toStation), [
+        '廊坊',
+        '天津南',
+        '济南西',
+      ]);
+    });
+
+    test('参照里 0.0 的里程按缺失处理，不当作「从 0 起算」', () {
+      final stops = _stops([
+        ('北京南', null),
+        ('沧州西', null),
+        ('德州东', null),
+        ('曲阜东', null),
+      ]);
+      // 建库时缺失里程落成 0.0（不是 NULL），始发站的 0 才是真的 0。
+      final reference = _stops([
+        ('北京南', 0),
+        ('沧州西', 0),
+        ('德州东', 315),
+        ('曲阜东', 537),
+      ]);
+
+      final sections = historicalSectionDistancesFromReference(
+        stops,
+        reference,
+        0,
+        3,
+      );
+
+      // 挨着沧州西的两段都得留空 —— 不能拿 |315 - 0| 冒充沧州西→德州东。
+      expect(sections.map((section) => section.distanceKm), [null, null, 222.0]);
+    });
+
+    test('参照压根不是同一趟车时整段留空', () {
+      final stops = _stops([('北京南', null), ('济南西', null)]);
+      final reference = _stops([('成都东', 0), ('重庆北', 300)]);
+
+      final sections = historicalSectionDistancesFromReference(
+        stops,
+        reference,
+        0,
+        1,
+      );
+
+      expect(sections, hasLength(1));
+      expect(sections.single.distanceKm, isNull);
+    });
+
+    test('站名差一个「站」字也能对上，且段里保留在线站序的站名', () {
+      final stops = _stops([('北京南站', null), ('济南西', null)]);
+      final reference = _stops([('北京南', 0), ('济南西站', 400)]);
+
+      final sections = historicalSectionDistancesFromReference(
+        stops,
+        reference,
+        0,
+        1,
+      );
+
+      expect(sections.single.distanceKm, 400.0);
+      expect(sections.single.fromStation, '北京南站');
+      expect(sections.single.toStation, '济南西');
+    });
+
+    test('站数不足或下标越界时返回空表', () {
+      final stops = _stops([('北京南', null), ('济南西', null)]);
+
+      expect(
+        historicalSectionDistancesFromReference(const [], const [], 0, 1),
+        isEmpty,
+      );
+      expect(
+        historicalSectionDistancesFromReference(stops, stops, 2, 2),
+        isEmpty,
+      );
+      expect(
+        historicalSectionDistancesFromReference(stops, stops, 0, stops.length),
+        isEmpty,
+      );
+      expect(
+        historicalSectionDistancesFromReference(stops, const [], 0, 1).single
+            .distanceKm,
+        isNull,
+      );
+    });
+  });
+
+  group('normalizeStationName', () {
+    test('去掉首尾空白与结尾的「站」', () {
+      expect(normalizeStationName(' 北京南站 '), '北京南');
+      expect(normalizeStationName('北京南'), '北京南');
+      // 只去结尾那一个，站名中间的原样保留。
+      expect(normalizeStationName('上海虹桥站'), '上海虹桥');
+    });
+  });
 }

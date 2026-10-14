@@ -1308,10 +1308,7 @@ String _formatClock(DateTime value) =>
     '${value.minute.toString().padLeft(2, '0')}';
 
 bool _sameStation(String first, String second) =>
-    _normalizeStation(first) == _normalizeStation(second);
-
-String _normalizeStation(String value) =>
-    value.trim().replaceFirst(RegExp(r'站$'), '');
+    normalizeStationName(first) == normalizeStationName(second);
 
 String _formatNumber(double value) => value == value.roundToDouble()
     ? value.toInt().toString()

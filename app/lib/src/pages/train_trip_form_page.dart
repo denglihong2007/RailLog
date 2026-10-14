@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/seat_selection.dart';
+import 'package:raillog/src/models/station_pair_distance.dart';
+import 'package:raillog/src/models/timetable_version.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
@@ -277,45 +279,85 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
   Future<RouteResolution?> _resolveRoutes() async {
     try {
       if (_isHistoricalJourney) {
-        final sections = historicalSectionDistances(
-          widget.scheduleStops,
-          widget.departureStopIndex,
-          widget.arrivalStopIndex,
-        );
-        // 版本可能回退到「绝对最近」的快照，未必就是行程当时的时刻表，
-        // 所以把它写进日志，用户核对经由线路时有据可查。
-        final version = widget.historicalVersion;
-        final sourceLog = version == null
-            ? '未取到历史时刻表版本'
-            : '历史时刻表版本：$version';
-        // 整段都没有里程就不下结论 —— 让推断在图里靠"猜"一条线，不如留空。
-        if (sections.every((section) => section.distanceKm == null)) {
-          return RouteResolution(
-            segments: const [],
-            usedShortestPath: false,
-            unresolvedSections: const [],
-            inferenceLog: [sourceLog, '历史时刻表所选区间无有效里程数据，已跳过路径推断'],
-          );
-        }
-        final resolved = await RouteService.resolveJourney(sections);
-        return RouteResolution(
-          segments: resolved.segments,
-          usedShortestPath: resolved.usedShortestPath,
-          unresolvedSections: resolved.unresolvedSections,
-          inferenceLog: [sourceLog, ...resolved.inferenceLog],
+        // 站序本来就是历史库来的，自带累计里程。
+        return _inferJourney(
+          historicalSectionDistances(
+            widget.scheduleStops,
+            widget.departureStopIndex,
+            widget.arrivalStopIndex,
+          ),
+          widget.historicalVersion,
         );
       }
-      final sections = await TrainService.fetchStationPairDistances(
-        widget.trainNumber,
-        widget.scheduleStops,
-        widget.departureStopIndex,
-        widget.arrivalStopIndex,
+      // 在线站序（12306）不带累计里程。经由推断一律以历史时刻表为源：按车次 + 乘车日期
+      // 查同一趟车的历史站序，按站名把里程对齐过来 —— 站序本身仍是在线那一份。
+      // 不再逐段打外部的里程接口：它按「现在」的同号车次作答，补录老车次会串段。
+      final versions = await TrainService.fetchTimetableVersions();
+      final version = resolveTimetableVersion(_departureTime, versions);
+      if (version == null) {
+        return _skippedInference('没有可用的历史时刻表版本，已跳过经由推断');
+      }
+      // 只认同号车次：检索是前缀匹配，退而取其次会把别的车的里程对齐上来，而同一走廊的
+      // 站名高度重合，算出来的经由看着合理其实是错的。
+      final lookup = await TrainService.lookupHistoricalSchedule(
+        trainNumber: widget.trainNumber,
+        boardingDate: _departureTime,
+        version: version,
+        fallbackToFirst: false,
       );
-      return RouteService.resolveJourney(sections);
+      if (lookup == null) {
+        return _skippedInference(
+          '历史时刻表 $version 里没有 ${widget.trainNumber}，已跳过经由推断',
+        );
+      }
+      return _inferJourney(
+        historicalSectionDistancesFromReference(
+          widget.scheduleStops,
+          lookup.stops,
+          widget.departureStopIndex,
+          widget.arrivalStopIndex,
+        ),
+        version,
+      );
     } catch (_) {
       return null;
     }
   }
+
+  /// 拿区间里程去线路图上推经由线路。[version] 只进推断日志：版本可能回退到「绝对最近」
+  /// 的快照，未必就是行程当时的时刻表，写出来用户核对经由线路时才有据可查。
+  Future<RouteResolution> _inferJourney(
+    List<StationPairDistance> sections,
+    String? version,
+  ) async {
+    final sourceLog = version == null
+        ? '未取到历史时刻表版本'
+        : '历史时刻表版本：$version';
+    // 整段都没有里程就不下结论 —— 让推断在图里靠"猜"一条线，不如留空。
+    if (sections.every((section) => section.distanceKm == null)) {
+      return RouteResolution(
+        segments: const [],
+        usedShortestPath: false,
+        unresolvedSections: const [],
+        inferenceLog: [sourceLog, '历史时刻表所选区间无有效里程数据，已跳过路径推断'],
+      );
+    }
+    final resolved = await RouteService.resolveJourney(sections);
+    return RouteResolution(
+      segments: resolved.segments,
+      usedShortestPath: resolved.usedShortestPath,
+      unresolvedSections: resolved.unresolvedSections,
+      inferenceLog: [sourceLog, ...resolved.inferenceLog],
+    );
+  }
+
+  /// 没推成：经由留空，原因写进推断日志（页面上要点「推断日志」才看得到）。
+  RouteResolution _skippedInference(String reason) => RouteResolution(
+    segments: const [],
+    usedShortestPath: false,
+    unresolvedSections: const [],
+    inferenceLog: [reason],
+  );
 
   Future<void> _loadRouteCatalog() async {
     try {
