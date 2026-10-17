@@ -2458,6 +2458,24 @@ public sealed class RailLogDatabase
         }
     }
 
+    // 使用 SQLite 在线备份 API：WAL 模式下也能拿到一致快照，并且不阻塞正常读写。
+    public async Task BackupToAsync(
+        string destinationPath, CancellationToken cancellationToken = default)
+    {
+        await using var source = OpenConnection();
+        await source.OpenAsync(cancellationToken);
+        var destinationBuilder = new SqliteConnectionStringBuilder
+        {
+            DataSource = destinationPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            // 连接池会一直持有文件句柄，备份完成后文件还需要改名。
+            Pooling = false,
+        };
+        await using var destination = new SqliteConnection(destinationBuilder.ToString());
+        await destination.OpenAsync(cancellationToken);
+        source.BackupDatabase(destination);
+    }
+
     private SqliteConnection OpenConnection() => new(_connectionString);
     private static bool IsValidEmail(string value) =>
         value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');

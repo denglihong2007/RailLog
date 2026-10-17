@@ -22,6 +22,24 @@ dotnet run --project api\RailLog.API.csproj --launch-profile http
 Legacy `AspNetUsers` and `TripRecords` tables are migrated in place on startup.
 Back up a production database before its first migration.
 
+While the API is running it backs up the database every other day via the
+SQLite online backup API. Backups are written to `api\backups` by default and
+the newest seven are kept. Configure the behavior in `appsettings.json`:
+
+```json
+"DatabaseBackup": {
+  "Enabled": true,
+  "Directory": "backups",
+  "IntervalDays": 2,
+  "KeepCount": 7
+}
+```
+
+`Directory` may be absolute. The interval is measured from the newest existing
+backup, so restarting the process does not create a duplicate, and a missed
+window is caught up on the next hourly check. The external timetable database
+is static build output and is not included.
+
 The Flutter map loads AMap through API proxy endpoints. Configure the AMap key
 only on the API host; do not place it in the Flutter client:
 

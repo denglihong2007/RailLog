@@ -100,6 +100,7 @@ StyleCopReport.xml
 raillog.db
 raillog.db-wal
 raillog.db-shm
+backups/
 
 # Chutzpah Test files
 _Chutzpah*
