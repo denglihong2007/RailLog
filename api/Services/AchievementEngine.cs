@@ -1707,17 +1707,17 @@ public static partial class AchievementEngine
         List<PublicTrip> trips,
         IReadOnlyList<RailwayBridge> availableBridges)
     {
-        var bridges = availableBridges
-            .GroupBy(bridge => bridge.Name, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .ToList();
+        // 同名桥可能有多条走法（天兴洲：京广高铁 / 滠武线；大胜关：京沪高速线 / 宁蓉线……）。
+        // 去重只用于展示，判定必须遍历全部走法，否则只认表里排在前面的那一条。
         return CollectionRequirements(
             trips,
-            bridges.Select(bridge => (Key: bridge.Name, Label: bridge.Name)),
+            availableBridges
+                .GroupBy(bridge => bridge.Name, StringComparer.Ordinal)
+                .Select(group => (Key: group.Key, Label: group.Key)),
             trip =>
             {
                 var segments = RouteSegments(trip);
-                return bridges
+                return availableBridges
                     .Where(bridge => segments.Any(segment => CoversRouteSection(
                         segment,
                         bridge.RouteName,
