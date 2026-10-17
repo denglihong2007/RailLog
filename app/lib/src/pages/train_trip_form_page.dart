@@ -28,6 +28,7 @@ class TrainTripFormPage extends StatefulWidget {
     this.historicalVersion,
     this.forceHistoricalJourney,
     this.keepOnlineLookups,
+    this.keepTicketSeatLookup,
     required this.departureStopIndex,
     required this.arrivalStopIndex,
     this.initialSeatType,
@@ -57,6 +58,11 @@ class TrainTripFormPage extends StatefulWidget {
   ///
   /// 导入流程传 `true`：它们是真实发生过的行程，票面已给席别票价，车型仍需补全。
   final bool? keepOnlineLookups;
+
+  /// 席别/票价的在线补全是否照常执行。`null` 时跟随 [keepOnlineLookups]。
+  ///
+  /// 拍照识别传 `false`：票面已经给出席别与票价，不必再向 12306 查一遍。
+  final bool? keepTicketSeatLookup;
 
   final int departureStopIndex;
   final int arrivalStopIndex;
@@ -166,7 +172,8 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         _keepOnlineLookups;
     // 历史模式的席位取自历史库，本来就没打算查 12306，失败标记也要跟着一起跳过，
     // 否则界面上会挂一句「未获取到当前区间的座位信息」，其实什么都没失败。
-    final shouldFetchTicketSeat = _keepOnlineLookups;
+    final shouldFetchTicketSeat =
+        widget.keepTicketSeatLookup ?? _keepOnlineLookups;
     // 里程改由站序的累计里程算出，但承运单位只有这个外部接口给，所以请求照发，
     // 只是历史模式下不再采信它返回的 distance。
     final results = await Future.wait<dynamic>([

@@ -368,6 +368,8 @@ class _AddTripPageState extends State<AddTripPage> {
             historicalVersion: version,
             forceHistoricalJourney: true,
             keepOnlineLookups: true,
+            // 车票识别已经拿到票面席别与票价，不必再向 12306 查一遍。
+            keepTicketSeatLookup: false,
             scheduleStops: resolvedStops,
             departureStopIndex: departureIndex,
             arrivalStopIndex: arrivalIndex,
