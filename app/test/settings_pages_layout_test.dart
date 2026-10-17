@@ -5,6 +5,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/profile_edit_page.dart';
 import 'package:raillog/src/pages/settings/settings_page.dart';
@@ -48,6 +49,7 @@ void main() {
     await pumpNarrow(tester, const Scaffold(body: SettingsPage()));
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('外观与显示'), findsOneWidget);
+    expect(find.text('行程手账'), findsOneWidget);
     expect(find.text('我的评价'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
@@ -94,6 +96,17 @@ void main() {
   testWidgets('社群与支持页渲染无异常', (tester) async {
     await pumpNarrow(tester, const CommunityPage());
     expect(find.text('QQ 交流群'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  // 只渲染不点击：点「导出空白模板」会走 DbHelper→sqflite，在 widget 测试里
+  // 是静默挂死，不是失败。
+  testWidgets('行程手账页渲染无异常', (tester) async {
+    await pumpNarrow(tester, const JournalSettingsPage());
+    expect(find.text('手账版式'), findsOneWidget);
+    expect(find.text('复古车票簿'), findsNWidgets(2)); // 分段按钮 + 预览标签
+    expect(find.text('简约方格本'), findsNWidgets(2));
+    expect(find.text('导出空白手账模板'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 
