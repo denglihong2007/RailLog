@@ -1202,6 +1202,10 @@ public sealed class RailLogDatabase
             .ToList();
     }
 
+    /// <summary>
+    /// 「全站热门」排序的取数。这里不排除当前用户自己的评价——首页也要能看到自己
+    /// 被推到前面的条目；<paramref name="currentUserId"/> 只用于给反应数标注「我点过」。
+    /// </summary>
     private static async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
         SqliteConnection connection,
         string currentUserId,
@@ -1237,7 +1241,6 @@ public sealed class RailLogDatabase
                 AND trip.UserId=r.UserId AND trip.DeletedAt IS NULL
             LEFT JOIN TripRecords secondTrip ON secondTrip.Id=r.SecondTripId
                 AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
-            WHERE r.UserId <> $currentUserId
             ORDER BY (
                 1.0 / (
                     1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
@@ -1257,7 +1260,6 @@ public sealed class RailLogDatabase
             DESC, r.CreatedAt DESC, r.Id DESC
             LIMIT $limit OFFSET $offset;
             """;
-        command.Parameters.AddWithValue("$currentUserId", currentUserId);
         command.Parameters.AddWithValue("$limit", limit);
         command.Parameters.AddWithValue("$offset", offset);
         var result = new List<EntityReviewResponse>();
