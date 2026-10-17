@@ -7,6 +7,8 @@ import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/trip_excel_export_service.dart';
 
+typedef _ParsedWorkbook = ({List<TripRecord> trips, bool hasGroupColumn});
+
 class TripExcelImportResult {
   const TripExcelImportResult({required this.imported, required this.skipped});
 
@@ -28,11 +30,11 @@ abstract final class TripExcelImportService {
   static const supportedHeaders = TripExcelExportService.headers;
 
   static Future<TripExcelImportResult> importBytes(Uint8List bytes) async {
-    final parsed = parseWorkbook(bytes);
+    final parsed = _parseWorkbook(bytes);
     final existing = await DbHelper.instance.getAllTrips();
     final existingById = {for (final trip in existing) trip.id: trip};
     var imported = 0;
-    for (final trip in parsed) {
+    for (final trip in parsed.trips) {
       final current = trip.id > 0 ? existingById[trip.id] : null;
       if (current == null) {
         await DbHelper.instance.insertTrip(trip);
@@ -61,6 +63,10 @@ abstract final class TripExcelImportService {
             isRailTrip: trip.isRailTrip,
             isLocalOnly: current.isLocalOnly,
             notes: trip.notes,
+            // 旧版导出文件没有「分组」列；这种情况下不要把已有分组清空。
+            groupName: parsed.hasGroupColumn
+                ? trip.groupName
+                : current.groupName,
           ),
         );
       }
@@ -69,7 +75,10 @@ abstract final class TripExcelImportService {
     return TripExcelImportResult(imported: imported, skipped: 0);
   }
 
-  static List<TripRecord> parseWorkbook(Uint8List bytes) {
+  static List<TripRecord> parseWorkbook(Uint8List bytes) =>
+      _parseWorkbook(bytes).trips;
+
+  static _ParsedWorkbook _parseWorkbook(Uint8List bytes) {
     late final Excel workbook;
     try {
       workbook = Excel.decodeBytes(bytes);
@@ -93,6 +102,7 @@ abstract final class TripExcelImportService {
     if (missing.isNotEmpty) {
       throw TripExcelImportException('缺少必填列：${missing.join('、')}');
     }
+    final hasGroupColumn = headers.containsKey('分组');
 
     final trips = <TripRecord>[];
     final errors = <String>[];
@@ -100,7 +110,7 @@ abstract final class TripExcelImportService {
       final row = sheet.rows[index];
       if (row.every((cell) => _cellText(cell).trim().isEmpty)) continue;
       try {
-        trips.add(_parseRow(row, headers, index + 1));
+        trips.add(_parseRow(row, headers, index + 1, hasGroupColumn));
       } on TripExcelImportException catch (error) {
         errors.add(error.message);
         if (errors.length == 5) break;
@@ -113,13 +123,14 @@ abstract final class TripExcelImportService {
     if (trips.isEmpty) {
       throw const TripExcelImportException('工作表中没有可导入的行程');
     }
-    return trips;
+    return (trips: trips, hasGroupColumn: hasGroupColumn);
   }
 
   static TripRecord _parseRow(
     List<Data?> row,
     Map<String, int> headers,
     int rowNumber,
+    bool hasGroupColumn,
   ) {
     String text(String header) => _cellText(_cell(row, headers[header])).trim();
     CellValue? value(String header) => _cell(row, headers[header])?.value;
@@ -168,6 +179,7 @@ abstract final class TripExcelImportService {
       price: price,
       isRailTrip: _railTrip(text('行程类型'), rowNumber),
       notes: _optional(text('备注')),
+      groupName: hasGroupColumn ? _optional(text('分组')) : null,
     );
   }
 }

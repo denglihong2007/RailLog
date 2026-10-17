@@ -19,18 +19,21 @@ public sealed class RailLogDatabase
     private const int HomeTravelGuideLimit = 12;
     private const int HomeTravelGuideHotLimit = 4;
     private const int TravelGuideMaxPageSize = 50;
-    // 「全站热门」的综合排序 = 时间衰减 × (7 × 回应分 + 3 × 篇幅分) / 10，结果落在 0~1。
-    // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值及以上得满分。
+    // 「全站热门」的综合排序 = 时间衰减 × (8 × 回应分 + 2 × 篇幅分) / 10。
+    // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值（10 人）为 1 分。
     //   用对数是因为第一个回应比第十个珍贵得多，而线上回应本来就稀疏（约八成评价为 0）。
+    //   不设上限：10 人以上继续按对数增长，避免「10 人封顶」后多出来的反应完全不影响排序。
     // 篇幅分：正文字数线性到参考字数为止，超出不再加分，避免长篇与灌水互相抬价。
-    // 权重 7:3：回应仍是主导——2 个回应就压过「零回应但写满字数」；
-    // 但篇幅也不只是微调，写满参考字数能顶掉 1 个多回应的差距。
+    // 权重 8:2：回应是主导信号——1 个回应（0.231）就已超过写满参考字数（0.2）；
+    // 篇幅只作为弱信号，给还没收到回应的长文一点曝光。
     // 三项之外的评分不再参与，评价星级是个人口味而不是热度。
     private const int HomeTravelGuideHotDecayDays = 45;
     private const int HomeTravelGuideHotReactionRef = 10;
     private const int HomeTravelGuideHotCharRef = 120;
-    private const int HomeTravelGuideHotReactionWeight = 7;
-    private const int HomeTravelGuideHotCharWeight = 3;
+    private const int HomeTravelGuideHotReactionWeight = 8;
+    private const int HomeTravelGuideHotCharWeight = 2;
+    // 热门列表全站同序，缓存几十秒；反应标注是取回后按用户现查的，不受缓存影响。
+    private const int HomeTravelGuideHotCacheSeconds = 60;
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
@@ -138,6 +141,7 @@ public sealed class RailLogDatabase
                 SeatNumber TEXT NULL,
                 Price REAL NOT NULL,
                 Notes TEXT NULL,
+                GroupName TEXT NULL,
                 IsRailTrip INTEGER NOT NULL DEFAULT 1,
                 UpdatedAt TEXT NOT NULL,
                 DeletedAt TEXT NULL,
@@ -209,6 +213,7 @@ public sealed class RailLogDatabase
         await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "ServerUpdatedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "SyncVersion", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "TripRecords", "GroupName", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "SecondTripId", "INTEGER NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteFromStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteToStation", "TEXT NULL");
@@ -663,6 +668,7 @@ public sealed class RailLogDatabase
                 ArrivalTime=$arrivalTime, MileageKm=$mileage,
                 ViaRoutes=$routes, SeatType=$seatType,
                 SeatNumber=$seatNumber, Price=$price, Notes=$notes,
+                GroupName=$groupName,
                 IsRailTrip=$isRail, UpdatedAt=$updatedAt, DeletedAt=$deletedAt,
                 ServerUpdatedAt=$serverUpdatedAt, SyncVersion=$syncVersion
             WHERE UserId=$userId AND ClientId=$clientId
@@ -672,13 +678,14 @@ public sealed class RailLogDatabase
                 (UserId, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock,
                  CompanyName, FromStation, ToStation, DepartureTime, ArrivalTime,
                  MileageKm, ViaRoutes, SeatType, SeatNumber, Price, Notes,
-                 IsRailTrip, UpdatedAt, DeletedAt, ServerUpdatedAt, SyncVersion)
+                 GroupName, IsRailTrip, UpdatedAt, DeletedAt, ServerUpdatedAt,
+                 SyncVersion)
             SELECT
                  $userId, $clientId, $createdAt, $trainNumber, $travelDate,
                  $rollingStock, $companyName, $fromStation, $toStation,
                  $departureTime, $arrivalTime, $mileage, $routes, $seatType,
-                 $seatNumber, $price, $notes, $isRail, $updatedAt, $deletedAt,
-                 $serverUpdatedAt, $syncVersion
+                 $seatNumber, $price, $notes, $groupName, $isRail, $updatedAt,
+                 $deletedAt, $serverUpdatedAt, $syncVersion
             WHERE NOT EXISTS (
                 SELECT 1 FROM TripRecords
                 WHERE UserId=$userId AND ClientId=$clientId
@@ -1198,11 +1205,40 @@ public sealed class RailLogDatabase
             .ToList();
     }
 
-    private static async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
+    /// <summary>
+    /// 「全站热门」排序的取数。这里不排除当前用户自己的评价——首页也要能看到自己
+    /// 被推到前面的条目；<paramref name="currentUserId"/> 只用于给反应数标注「我点过」。
+    /// 排序结果与当前用户无关，因此按 (limit, offset) 做短时缓存；反应标注每次现查。
+    /// </summary>
+    private async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
         SqliteConnection connection,
         string currentUserId,
         int limit,
         int offset = 0)
+    {
+        var cacheKey = $"travel-guide-hot:{limit}:{offset}";
+        if (!_cache.TryGetValue(cacheKey, out List<EntityReviewResponse>? result) || result is null)
+        {
+            result = await QueryPopularEntityReviewsAsync(connection, limit, offset);
+            _cache.Set(cacheKey, result, TimeSpan.FromSeconds(HomeTravelGuideHotCacheSeconds));
+        }
+        var reactions = await GetReviewReactionSummariesAsync(
+            connection,
+            result.Select(review => review.Id).ToList(),
+            currentUserId);
+        // 缓存里的记录不能直接改，也不能把同一个 List 交给调用方；每次复制一份。
+        return result
+            .Select(review => review with
+            {
+                Reactions = reactions.GetValueOrDefault(review.Id, []),
+            })
+            .ToList();
+    }
+
+    private static async Task<List<EntityReviewResponse>> QueryPopularEntityReviewsAsync(
+        SqliteConnection connection,
+        int limit,
+        int offset)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -1233,13 +1269,12 @@ public sealed class RailLogDatabase
                 AND trip.UserId=r.UserId AND trip.DeletedAt IS NULL
             LEFT JOIN TripRecords secondTrip ON secondTrip.Id=r.SecondTripId
                 AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
-            WHERE r.UserId <> $currentUserId
             ORDER BY (
                 1.0 / (
                     1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
                 )
             ) * (
-                {HomeTravelGuideHotReactionWeight} * MIN(1.0,
+                {HomeTravelGuideHotReactionWeight} * (
                     LN(1 + (
                         SELECT COUNT(*)
                         FROM EntityReviewReactions reaction
@@ -1253,7 +1288,6 @@ public sealed class RailLogDatabase
             DESC, r.CreatedAt DESC, r.Id DESC
             LIMIT $limit OFFSET $offset;
             """;
-        command.Parameters.AddWithValue("$currentUserId", currentUserId);
         command.Parameters.AddWithValue("$limit", limit);
         command.Parameters.AddWithValue("$offset", offset);
         var result = new List<EntityReviewResponse>();
@@ -1262,16 +1296,7 @@ public sealed class RailLogDatabase
             while (await reader.ReadAsync())
                 result.Add(ReadEntityReview(reader));
         }
-        var reactions = await GetReviewReactionSummariesAsync(
-            connection,
-            result.Select(review => review.Id).ToList(),
-            currentUserId);
-        return result
-            .Select(review => review with
-            {
-                Reactions = reactions.GetValueOrDefault(review.Id, []),
-            })
-            .ToList();
+        return result;
     }
 
     private static EntityReviewResponse ReadEntityReview(SqliteDataReader reader) => new(
@@ -2300,7 +2325,8 @@ public sealed class RailLogDatabase
         command.CommandText = $"""
             SELECT Id, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock, CompanyName,
                    FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm, ViaRoutes,
-                   SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt
+                   SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt,
+                   GroupName
             FROM TripRecords
             WHERE UserId = $userId
               {filter}
@@ -2327,7 +2353,8 @@ public sealed class RailLogDatabase
                 reader.GetString(7), reader.GetString(8), NullableDate(reader, 9), NullableDate(reader, 10),
                 reader.GetDouble(11), reader.GetString(12), NullableString(reader, 13),
                 NullableString(reader, 14), reader.GetDouble(15), NullableString(reader, 16),
-                reader.GetInt32(17) == 1, FromDb(reader.GetString(18)), NullableDate(reader, 19)));
+                reader.GetInt32(17) == 1, FromDb(reader.GetString(18)), NullableDate(reader, 19),
+                NullableString(reader, 20)));
         }
         return trips;
     }
@@ -2340,7 +2367,7 @@ public sealed class RailLogDatabase
                      "$travelDate", "$rollingStock", "$companyName",
                      "$fromStation", "$toStation", "$departureTime",
                      "$arrivalTime", "$mileage", "$routes", "$seatType",
-                     "$seatNumber", "$price", "$notes", "$isRail",
+                     "$seatNumber", "$price", "$notes", "$groupName", "$isRail",
                      "$updatedAt", "$deletedAt",
                  })
         {
@@ -2372,6 +2399,7 @@ public sealed class RailLogDatabase
         command.Parameters["$seatNumber"].Value = DbValue(trip.SeatNumber);
         command.Parameters["$price"].Value = trip.Price;
         command.Parameters["$notes"].Value = DbValue(trip.Notes);
+        command.Parameters["$groupName"].Value = DbValue(trip.GroupName);
         command.Parameters["$isRail"].Value = trip.IsRailTrip ? 1 : 0;
         command.Parameters["$updatedAt"].Value = ToDb(trip.UpdatedAt);
         command.Parameters["$deletedAt"].Value = DbValue(trip.DeletedAt);
@@ -2447,6 +2475,24 @@ public sealed class RailLogDatabase
                 delay *= 2;
             }
         }
+    }
+
+    // 使用 SQLite 在线备份 API：WAL 模式下也能拿到一致快照，并且不阻塞正常读写。
+    public async Task BackupToAsync(
+        string destinationPath, CancellationToken cancellationToken = default)
+    {
+        await using var source = OpenConnection();
+        await source.OpenAsync(cancellationToken);
+        var destinationBuilder = new SqliteConnectionStringBuilder
+        {
+            DataSource = destinationPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            // 连接池会一直持有文件句柄，备份完成后文件还需要改名。
+            Pooling = false,
+        };
+        await using var destination = new SqliteConnection(destinationBuilder.ToString());
+        await destination.OpenAsync(cancellationToken);
+        source.BackupDatabase(destination);
     }
 
     private SqliteConnection OpenConnection() => new(_connectionString);

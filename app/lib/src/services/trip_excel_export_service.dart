@@ -48,6 +48,7 @@ abstract final class TripExcelExportService {
     '票价(元)',
     '经由线路(JSON)',
     '备注',
+    '分组',
   ];
 
   static Future<TripExcelExportResult> exportVisibleTrips() async {
@@ -130,6 +131,7 @@ abstract final class TripExcelExportService {
       ),
     ),
     TextCellValue(trip.notes ?? ''),
+    TextCellValue(trip.groupName ?? ''),
   ];
 
   static const _columnWidths = <double>[
@@ -151,6 +153,7 @@ abstract final class TripExcelExportService {
     12,
     50,
     28,
+    18,
   ];
 }
 

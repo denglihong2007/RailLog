@@ -193,6 +193,7 @@ class CloudSyncService extends ChangeNotifier {
     'seatNumber': trip.seatNumber,
     'price': trip.price,
     'notes': trip.notes,
+    'groupName': trip.groupName,
     'isRailTrip': trip.isRailTrip,
     'updatedAt': trip.updatedAt.toIso8601String(),
     'deletedAt': trip.deletedAt?.toIso8601String(),
@@ -221,6 +222,7 @@ class CloudSyncService extends ChangeNotifier {
       'price': row['price'],
       'is_rail_trip': row['isRailTrip'] == true ? 1 : 0,
       'notes': row['notes'],
+      'group_name': row['groupName'],
     });
   }
 }

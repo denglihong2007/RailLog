@@ -105,7 +105,10 @@ class AchievementTripRow extends StatelessWidget {
         leading: _AchievementTripAvatar(trip: trip, highlight: highlight),
         title: Text(trip.displayName),
         subtitle: Text(
-          '${_date(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}',
+          '${_date(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}'
+          ' · ${trip.fromStation} → ${trip.toStation}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push(

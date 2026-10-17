@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:raillog/src/models/user_profile.dart';
+import 'package:raillog/src/services/achievement_unlock_notifier.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/db_helper.dart';
 
@@ -194,6 +195,9 @@ class SessionService extends ChangeNotifier {
       DbHelper.instance.setSetting(_profileKey, jsonEncode(_user!.toJson()));
 
   Future<void> _clearLocal() async {
+    // 解锁基线是按会话算的：换了账号就得重新建立，否则会把新账号的历史解锁
+    // 当成「刚刚解锁」庆祝一遍。
+    AchievementUnlockNotifier.instance.reset();
     _token = null;
     _user = null;
     await DbHelper.instance.setSetting(_tokenKey, null);

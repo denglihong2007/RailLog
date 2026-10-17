@@ -42,7 +42,8 @@ internal sealed class TicketVectorPdfRenderer : ITicketDrawingBackend, IDisposab
                     using var background = SKBitmap.Decode(_assets.BackgroundPath(TicketStyle.Blue))
                         ?? throw new TicketAssetException("无法读取蓝票底纹");
                     Canvas.DrawBitmap(background, new SKRect(
-                        0, 0, TicketLayout.CanvasWidth, TicketLayout.CanvasHeight));
+                        0, 0, TicketLayout.CanvasWidth, TicketLayout.CanvasHeight),
+                        SKSamplingOptions.Default, null);
                 }
                 if (ticket.Style == TicketStyle.Red)
                 {
@@ -83,7 +84,7 @@ internal sealed class TicketVectorPdfRenderer : ITicketDrawingBackend, IDisposab
         Canvas.Save();
         Canvas.Translate(x, y);
         Canvas.Scale(scaleX, scaleY);
-        Canvas.DrawText(text, 0, Scaled(spec.Size), font, paint);
+        Canvas.DrawText(text, 0, Scaled(spec.Size), SKTextAlign.Left, font, paint);
         Canvas.Restore();
     }
 
@@ -153,7 +154,8 @@ internal sealed class TicketVectorPdfRenderer : ITicketDrawingBackend, IDisposab
             TicketFontFamily.Arial => _arial,
             _ => _song
         };
-        return selected.ContainsGlyphs(text) ? selected : _song;
+        using var probe = new SKFont(selected);
+        return probe.ContainsGlyphs(text) ? selected : _song;
     }
 
     private static bool IsDark(SKColor pixel) =>
@@ -168,7 +170,11 @@ internal sealed class TicketVectorPdfRenderer : ITicketDrawingBackend, IDisposab
     private static SKTypeface SystemTypeface(string family, char sample, SKFontStyle style)
     {
         var preferred = SKFontManager.Default.MatchFamily(family, style);
-        if (preferred is not null && preferred.ContainsGlyph(sample)) return preferred;
+        if (preferred is not null)
+        {
+            using var probe = new SKFont(preferred);
+            if (probe.ContainsGlyph(sample)) return preferred;
+        }
         preferred?.Dispose();
         return SKFontManager.Default.MatchCharacter(family, style, ["zh-CN", "zh-Hans"], sample)
             ?? throw new TicketAssetException($"服务器缺少字体 {family}");

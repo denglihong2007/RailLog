@@ -3,6 +3,19 @@ import 'package:flutter/material.dart';
 const m3MotionDuration = Duration(milliseconds: 300);
 const m3MotionDurationShort = Duration(milliseconds: 200);
 
+/// 列表/网格入场时，相邻两项之间的错开步长。
+const m3RevealStaggerStep = Duration(milliseconds: 40);
+
+/// stagger 的索引封顶。超过它的项与它同时开始，
+/// 以免长列表把最后一项的入场推得过晚。
+const m3RevealStaggerMaxIndex = 8;
+
+/// 返回列表中第 [index] 项应当使用的错开延迟。
+Duration m3RevealDelay(int index) {
+  final capped = index.clamp(0, m3RevealStaggerMaxIndex);
+  return m3RevealStaggerStep * capped;
+}
+
 class M3FadeThroughSwitcher extends StatelessWidget {
   const M3FadeThroughSwitcher({
     super.key,
@@ -56,22 +69,28 @@ class M3Reveal extends StatelessWidget {
     super.key,
     required this.child,
     this.distance = 12,
-    this.duration = m3MotionDuration,
+    this.duration = m3MotionDurationShort,
+    this.delay = Duration.zero,
   });
 
   final Widget child;
   final double distance;
   final Duration duration;
+  final Duration delay;
 
   @override
   Widget build(BuildContext context) {
     final disableAnimations =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     if (disableAnimations) return child;
+    final total = delay + duration;
+    final delayFraction = total.inMicroseconds == 0
+        ? 0.0
+        : delay.inMicroseconds / total.inMicroseconds;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: duration,
-      curve: Easing.standardDecelerate,
+      duration: total,
+      curve: Interval(delayFraction, 1, curve: Easing.standardDecelerate),
       child: child,
       builder: (context, value, child) {
         return Opacity(
@@ -147,6 +166,36 @@ class M3AnimatedVisibility extends StatelessWidget {
         child: visible
             ? KeyedSubtree(key: const ValueKey(true), child: child)
             : const SizedBox.shrink(key: ValueKey(false)),
+      ),
+    );
+  }
+}
+
+class M3AnimatedSizeSwitcher extends StatelessWidget {
+  const M3AnimatedSizeSwitcher({
+    super.key,
+    required this.child,
+    this.duration = m3MotionDurationShort,
+    this.alignment = Alignment.topCenter,
+  });
+
+  final Widget child;
+  final Duration duration;
+  final AlignmentGeometry alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final disableAnimations =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disableAnimations) return child;
+    return AnimatedSize(
+      duration: duration,
+      curve: Easing.standard,
+      alignment: alignment,
+      child: M3FadeThroughSwitcher(
+        duration: duration,
+        alignment: alignment,
+        child: child,
       ),
     );
   }

@@ -98,9 +98,7 @@ class SeatEditor extends StatelessWidget {
           },
         ),
         const SizedBox(height: 16),
-        AnimatedSize(
-          duration: m3MotionDuration,
-          curve: Easing.standard,
+        M3AnimatedSizeSwitcher(
           child: M3FadeThroughSwitcher(
             alignment: Alignment.topCenter,
             child: _buildSeatDetails(),

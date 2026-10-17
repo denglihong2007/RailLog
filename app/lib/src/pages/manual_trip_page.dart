@@ -245,6 +245,8 @@ class _ManualTripPageState extends State<ManualTripPage> {
       isRailTrip: _isRailTrip,
       isLocalOnly: _isLocalOnly,
       notes: nullableTripText(_notesController.text),
+      // 手工表单不编辑分组，但 updateTrip 会写全部字段，漏掉就会把分组清空。
+      groupName: existingTrip?.groupName,
     );
 
     try {

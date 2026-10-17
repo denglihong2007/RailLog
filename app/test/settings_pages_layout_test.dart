@@ -5,6 +5,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/profile_edit_page.dart';
 import 'package:raillog/src/pages/settings/settings_page.dart';
@@ -48,6 +49,7 @@ void main() {
     await pumpNarrow(tester, const Scaffold(body: SettingsPage()));
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('外观与显示'), findsOneWidget);
+    expect(find.text('行程手账'), findsOneWidget);
     expect(find.text('我的评价'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
@@ -97,6 +99,17 @@ void main() {
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 
+  // 只渲染不点击：点「导出空白模板」会走 DbHelper→sqflite，在 widget 测试里
+  // 是静默挂死，不是失败。
+  testWidgets('行程手账页渲染无异常', (tester) async {
+    await pumpNarrow(tester, const JournalSettingsPage());
+    expect(find.text('手账版式'), findsOneWidget);
+    expect(find.text('复古车票簿'), findsNWidgets(2)); // 分段按钮 + 预览标签
+    expect(find.text('简约方格本'), findsNWidgets(2));
+    expect(find.text('导出空白手账模板'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
   testWidgets('个人资料页渲染无异常', (tester) async {
     await pumpNarrow(tester, const ProfileEditPage(user: _user));
     expect(find.text('昵称'), findsOneWidget);
@@ -122,5 +135,25 @@ void main() {
     await tester.tap(find.byType(TextFormField).last);
     await tester.pump();
     expect(preferences.getString('baidu_ocr_api_key'), 'renamed');
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('车票识别可切换到阿里云并保存密钥', (tester) async {
+    await pumpNarrow(tester, const TicketOcrSettingsPage());
+    expect(find.text('识别服务商'), findsOneWidget);
+    expect(find.text('阿里云车票识别'), findsNothing);
+
+    await tester.tap(find.text('阿里云'));
+    await tester.pump();
+    expect(find.text('阿里云车票识别'), findsOneWidget);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('ticket_ocr_provider'), 'aliyun');
+
+    await tester.enterText(find.byType(TextFormField).first, 'aliyun-id');
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(preferences.getString('aliyun_ocr_access_key_id'), 'aliyun-id');
+
+    // 重新进入页面时仍停留在阿里云。
+    await pumpNarrow(tester, const TicketOcrSettingsPage());
+    expect(find.text('阿里云车票识别'), findsOneWidget);
   }, timeout: const Timeout(Duration(seconds: 30)));
 }

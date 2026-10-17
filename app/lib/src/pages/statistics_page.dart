@@ -4,6 +4,7 @@ import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
+import 'package:raillog/src/pages/search_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/statistics_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
@@ -80,18 +81,40 @@ class _StatisticsPageState extends State<StatisticsPage> {
     return FutureBuilder<GlobalStatistics>(
       future: statisticsFuture,
       builder: (context, snapshot) {
+        final statistics = snapshot.data;
+        final Widget body;
         if (snapshot.hasError) {
-          return _StatisticsStatus(
+          body = _StatisticsStatus(
             icon: Icons.error_outline,
             message: '读取全站统计失败',
             detail: '${snapshot.error}',
             onRetry: _refresh,
           );
+        } else if (statistics == null) {
+          body = const _StatisticsStatus(isLoading: true, message: '正在汇总全站数据');
+        } else {
+          body = TabBarView(
+            children: [
+              _SiteStatisticsView(
+                statistics: statistics.site,
+                onRefresh: _refresh,
+              ),
+              _UserLeaderboardView(
+                leaderboards: statistics.users,
+                onRefresh: _refresh,
+              ),
+              _TripLeaderboardView(
+                leaderboards: statistics.trips,
+                onRefresh: _refresh,
+              ),
+              _ElementLeaderboardView(
+                leaderboards: statistics.elements,
+                onRefresh: _refresh,
+              ),
+            ],
+          );
         }
-        if (!snapshot.hasData) {
-          return const _StatisticsStatus(isLoading: true, message: '正在汇总全站数据');
-        }
-        final statistics = snapshot.data!;
+
         return DefaultTabController(
           length: 4,
           child: ColoredBox(
@@ -110,60 +133,62 @@ class _StatisticsPageState extends State<StatisticsPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                            child: Text(
-                              '统计',
-                              style: Theme.of(context).textTheme.headlineSmall,
+                            padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '统计',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.headlineSmall,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: '搜索',
+                                  onPressed: _openSearch,
+                                  icon: const Icon(Icons.search),
+                                ),
+                              ],
                             ),
                           ),
-                          const TabBar(
-                            dividerHeight: 0,
-                            tabs: [
-                              Tab(icon: Icon(Icons.public), text: '全站'),
-                              Tab(icon: Icon(Icons.people_outline), text: '用户'),
-                              Tab(
-                                icon: Icon(Icons.confirmation_number_outlined),
-                                text: '行程',
-                              ),
-                              Tab(
-                                icon: Icon(Icons.category_outlined),
-                                text: '要素',
-                              ),
-                            ],
-                          ),
+                          if (statistics != null)
+                            const TabBar(
+                              dividerHeight: 0,
+                              tabs: [
+                                Tab(icon: Icon(Icons.public), text: '全站'),
+                                Tab(
+                                  icon: Icon(Icons.people_outline),
+                                  text: '用户',
+                                ),
+                                Tab(
+                                  icon: Icon(
+                                    Icons.confirmation_number_outlined,
+                                  ),
+                                  text: '行程',
+                                ),
+                                Tab(
+                                  icon: Icon(Icons.category_outlined),
+                                  text: '要素',
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),
                   ),
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _SiteStatisticsView(
-                        statistics: statistics.site,
-                        onRefresh: _refresh,
-                      ),
-                      _UserLeaderboardView(
-                        leaderboards: statistics.users,
-                        onRefresh: _refresh,
-                      ),
-                      _TripLeaderboardView(
-                        leaderboards: statistics.trips,
-                        onRefresh: _refresh,
-                      ),
-                      _ElementLeaderboardView(
-                        leaderboards: statistics.elements,
-                        onRefresh: _refresh,
-                      ),
-                    ],
-                  ),
-                ),
+                Expanded(child: body),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  void _openSearch() {
+    Navigator.of(context).push(m3PageRoute(builder: (_) => const SearchPage()));
   }
 
   void _loadAfterSignIn() {
@@ -243,7 +268,7 @@ class _SiteStatisticsView extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final item = items[index];
                       return M3Reveal(
-                        duration: Duration(milliseconds: 240 + index * 50),
+                        delay: m3RevealDelay(index),
                         distance: 8,
                         child: _SiteMetricCard(
                           label: item.$1,

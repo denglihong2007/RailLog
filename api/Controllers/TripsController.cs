@@ -58,7 +58,9 @@ public sealed class TripsController(
     {
         if (request.Trips.Count > 10_000)
             return BadRequest(new MessageResponse("单次同步的行程数量过多"));
-        if (request.Trips.Any(trip => sensitiveWords.ContainsSensitiveWord(trip.Notes)))
+        if (request.Trips.Any(trip =>
+                sensitiveWords.ContainsSensitiveWord(trip.Notes) ||
+                sensitiveWords.ContainsSensitiveWord(trip.GroupName)))
             return BadRequest(new MessageResponse("内容不合法"));
         var serverTime = DateTime.UtcNow;
         try

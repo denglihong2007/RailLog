@@ -118,7 +118,8 @@ public sealed record SyncTrip(
     string? Notes,
     bool IsRailTrip,
     DateTime UpdatedAt,
-    DateTime? DeletedAt);
+    DateTime? DeletedAt,
+    string? GroupName = null);
 
 public sealed record SyncRequest(
     IReadOnlyList<SyncTrip> Trips,

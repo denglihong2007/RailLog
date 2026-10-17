@@ -891,21 +891,22 @@ class _AchievementsSection extends StatelessWidget {
                 crossAxisCount: columns,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                mainAxisExtent: 120,
+                mainAxisExtent: 132,
               ),
               itemCount: achievements.length > _dashboardPreviewLimit
                   ? _dashboardPreviewLimit
                   : achievements.length,
               itemBuilder: (context, index) => M3Reveal(
-                duration: Duration(milliseconds: 620 + index * 45),
+                delay: m3RevealDelay(index),
                 distance: 8,
                 child: DashboardAchievementCard(
+                  key: ValueKey(achievements[index].id),
                   achievement: achievements[index],
-                  onTap: achievements[index].unlockedBy == null
-                      ? null
-                      : () => _openAchievement(context, achievements[index]),
-                  onRequirementsTap: achievements[index].hasRequirements
+                  // 与成就页保持一致：有子项先看达成要求，其余已解锁的进解锁行程。
+                  onTap: achievements[index].hasRequirements
                       ? () => _openRequirements(context, achievements[index])
+                      : achievements[index].unlockedBy != null
+                      ? () => _openAchievement(context, achievements[index])
                       : null,
                 ),
               ),
@@ -1192,6 +1193,7 @@ class _OverviewSection extends StatelessWidget {
             trips: stats.allTrips,
             openTrip: openTrip,
             enableSelection: enableTripManagement,
+            enableGrouping: enableTripManagement,
           ),
         ),
       );
@@ -1673,7 +1675,7 @@ class _MetricGrid extends StatelessWidget {
           itemCount: cards.length,
           itemBuilder: (context, index) {
             return M3Reveal(
-              duration: Duration(milliseconds: 260 + index * 45),
+              delay: m3RevealDelay(index),
               distance: 8,
               child: _MetricCard(metric: cards[index]),
             );

@@ -970,10 +970,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
           ? BorderRadius.circular(AppRadius.card)
           : BorderRadius.zero,
       clipBehavior: Clip.antiAlias,
-      child: AnimatedSize(
-        duration: m3MotionDurationShort,
-        curve: Easing.standard,
-        alignment: Alignment.topCenter,
+      child: M3AnimatedSizeSwitcher(
         child: M3FadeThroughSwitcher(
           alignment: Alignment.topCenter,
           child: KeyedSubtree(key: ValueKey(imageState), child: image),
@@ -1589,6 +1586,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     final routeSectionIds = <int>[];
     final expandableRouteSectionIds = <int>{};
     final stations = <String>[widget.trip.fromStation];
+    final stationReversals = <bool>[false];
     final cumulativeMileage = <double>[0];
     String? previousRoute;
     var routeSectionId = 0;
@@ -1596,6 +1594,12 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
       final route = _routeLabel(segment.routeName);
+      final departsReversal = _isReversalDeparture(index);
+      if (departsReversal &&
+          stationReversals.isNotEmpty &&
+          _sameStation(stations.last, segment.fromStation)) {
+        stationReversals[stationReversals.length - 1] = true;
+      }
       if (index == 0 || route != previousRoute) {
         routeSectionId = index;
         collapsedMileage = 0;
@@ -1611,9 +1615,13 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         final nextRoute = index + 1 < segments.length
             ? _routeLabel(segments[index + 1].routeName)
             : null;
-        if (nextRoute == route) continue;
+        // 折返站即使在收起状态也要露出来，否则圆圈和折返图标会一起消失。
+        final endsAtReversal =
+            index + 1 < segments.length && _isReversalDeparture(index + 1);
+        if (nextRoute == route && !endsAtReversal) continue;
         _appendStation(
           stations,
+          stationReversals,
           cumulativeMileage,
           segment.toStation,
           collapsedMileage,
@@ -1624,11 +1632,13 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           route,
           routeSectionId,
         );
+        if (endsAtReversal) collapsedMileage = 0;
         continue;
       }
       if (routeStations == null) {
         _appendStation(
           stations,
+          stationReversals,
           cumulativeMileage,
           segment.toStation,
           segment.mileageKm,
@@ -1660,6 +1670,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         final stationMileage = station.mileage;
         _appendStation(
           stations,
+          stationReversals,
           cumulativeMileage,
           station.name,
           (stationMileage - previousMileage).abs() * mileageScale,
@@ -1719,6 +1730,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       index: index,
                       station: stations[index],
                       mileage: cumulativeMileage[index],
+                      isReversal: stationReversals[index],
                       leftColor: _stationSideColor(
                         index,
                         left: true,
@@ -1884,6 +1896,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
 
   void _appendStation(
     List<String> stations,
+    List<bool> stationReversals,
     List<double> cumulativeMileage,
     String station,
     double mileage,
@@ -1897,10 +1910,41 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     final normalized = station.trim();
     if (normalized.isEmpty || _sameStation(stations.last, normalized)) return;
     stations.add(normalized);
+    stationReversals.add(false);
     cumulativeMileage.add(cumulativeMileage.last + (mileage > 0 ? mileage : 0));
     segmentColors.add(color);
     routeNames.add(route);
     routeSectionIds.add(routeSectionId);
+  }
+
+  /// 第 [index] 段是否从上一段的终点原路折返（换向）。
+  ///
+  /// 折返不一定退回到上一段的起点，所以不能只看「首尾同名」：判据是折返后的
+  /// 第一站此前已经走过。数据库给了站序时按站序确认；查不到站序（手动线路或
+  /// 读库失败）时退回「线路名相同 + 首尾相接」——推断式合并只会在折返处把
+  /// 同一条线拆成两段。
+  bool _isReversalDeparture(int index) {
+    final segments = widget.trip.viaRouteSegments;
+    if (index <= 0 || index >= segments.length) return false;
+    final previous = segments[index - 1];
+    final current = segments[index];
+    final sameRoute =
+        _routeLabel(previous.routeName) == _routeLabel(current.routeName);
+    if (!_sameStation(previous.toStation, current.fromStation)) return false;
+
+    final previousStations = _routeStations[index - 1];
+    final currentStations = _routeStations[index];
+    if (previousStations != null &&
+        previousStations.length >= 2 &&
+        currentStations != null &&
+        currentStations.length >= 2) {
+      // 折返后的第一站就是上一段来时的前一站：原路退回，必然重复最近一跳。
+      return _sameStation(
+        previousStations[previousStations.length - 2].name,
+        currentStations[1].name,
+      );
+    }
+    return sameRoute && current.routeName.trim().isNotEmpty;
   }
 
   bool _sameStation(String first, String second) {
@@ -1916,6 +1960,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required int index,
     required String station,
     required double mileage,
+    required bool isReversal,
     required Color leftColor,
     required Color rightColor,
     required double width,
@@ -1935,7 +1980,11 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         children: [
           Positioned(
             left: x - _ViaStationDot.size / 2,
-            child: _ViaStationDot(leftColor: leftColor, rightColor: rightColor),
+            child: _ViaStationDot(
+              leftColor: leftColor,
+              rightColor: rightColor,
+              isReversal: isReversal,
+            ),
           ),
           Positioned(
             top: _ViaStationDot.size + 2,
@@ -2306,21 +2355,28 @@ class _ViaStationLabel extends StatelessWidget {
 }
 
 class _ViaStationDot extends StatelessWidget {
-  const _ViaStationDot({required this.leftColor, required this.rightColor});
+  const _ViaStationDot({
+    required this.leftColor,
+    required this.rightColor,
+    this.isReversal = false,
+  });
 
   static const size = 18.0;
 
   final Color leftColor;
   final Color rightColor;
+  final bool isReversal;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Container(
+    // 折返站用实心圆承载图标：10px 的空心圆里描边箭头会糊成一团。
+    final solid = isReversal && leftColor == rightColor;
+    final dot = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: colors.surfaceContainerLowest,
+        color: solid ? leftColor : colors.surfaceContainerLowest,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -2330,13 +2386,29 @@ class _ViaStationDot extends StatelessWidget {
           ),
         ],
       ),
-      child: CustomPaint(
-        painter: _ViaStationDotPainter(
-          leftColor: leftColor,
-          rightColor: rightColor,
-        ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _ViaStationDotPainter(
+                leftColor: leftColor,
+                rightColor: rightColor,
+              ),
+            ),
+          ),
+          if (isReversal)
+            Icon(
+              Icons.u_turn_left_rounded,
+              size: 12,
+              color: solid
+                  ? colors.surfaceContainerLowest
+                  : colors.onSurfaceVariant,
+            ),
+        ],
       ),
     );
+    return isReversal ? Tooltip(message: '折返（换向）站', child: dot) : dot;
   }
 }
 

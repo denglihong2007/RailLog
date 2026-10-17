@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/services/achievement_unlock_notifier.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/db_helper.dart';
@@ -23,10 +24,12 @@ class AchievementService {
         '/api/achievements',
         options: ApiClient.instance.authorized(token),
       );
-      return dashboardAchievementsFromJson(
+      final achievements = dashboardAchievementsFromJson(
         response.data!,
         localTrips.map(DashboardTripEntry.fromTrip),
       );
+      AchievementUnlockNotifier.instance.ingest(achievements);
+      return achievements;
     } on DioException catch (error) {
       throw AchievementException(apiErrorMessage(error));
     } on AchievementException {

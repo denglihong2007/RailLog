@@ -120,6 +120,11 @@ class RouteService {
     final unresolved = <String>[];
     final inferenceLog = <String>[];
     var usedShortestPath = false;
+    // 上一段落在哪条线上。区段是逐个独立搜的，而两条并行线路的里程桩可能一模一样
+    // （胶济客专线与胶济线就是这样），此时只看里程分不出该走哪条，很容易一段挑一条、
+    // 拼起来就成了在两条线之间反复横跳。把上一段的线路名交给下一段，等于让它接着走，
+    // 交界处就不会无故换名。
+    String? continuationRouteName;
 
     for (var index = 0; index < sections.length; index++) {
       final section = sections[index];
@@ -135,6 +140,7 @@ class RouteService {
         section.fromStation,
         section.toStation,
         targetDistance: section.distanceKm,
+        initialRouteName: continuationRouteName,
       );
       if (result == null) {
         unresolved.add('${section.fromStation}-${section.toStation}');
@@ -144,6 +150,9 @@ class RouteService {
       inferenceLog.addAll(result.inferenceLog);
       allEdges.addAll(result.edges);
       usedShortestPath = usedShortestPath || result.usedShortestPath;
+      if (result.edges.isNotEmpty) {
+        continuationRouteName = result.edges.last.routeName;
+      }
     }
 
     return RouteResolution(
@@ -183,43 +192,15 @@ class RouteService {
     }
   }
 
-  static List<ViaRouteSegment> _mergeEdges(List<_RouteEdge> edges) {
-    if (edges.isEmpty) return const [];
-    final segments = <ViaRouteSegment>[];
-    var routeName = edges.first.routeName;
-    var fromStation = edges.first.fromStation;
-    var toStation = edges.first.toStation;
-    var mileage = edges.first.distanceKm;
-
-    for (final edge in edges.skip(1)) {
-      if (edge.routeName == routeName && edge.fromStation == toStation) {
-        toStation = edge.toStation;
-        mileage += edge.distanceKm;
-        continue;
-      }
-      segments.add(
-        ViaRouteSegment(
-          routeName: routeName,
-          fromStation: fromStation,
-          toStation: toStation,
-          mileageKm: mileage,
-        ),
-      );
-      routeName = edge.routeName;
-      fromStation = edge.fromStation;
-      toStation = edge.toStation;
-      mileage = edge.distanceKm;
-    }
-    segments.add(
+  static List<ViaRouteSegment> _mergeEdges(List<_RouteEdge> edges) => [
+    for (final section in _mergeSections(edges))
       ViaRouteSegment(
-        routeName: routeName,
-        fromStation: fromStation,
-        toStation: toStation,
-        mileageKm: mileage,
+        routeName: section.routeName,
+        fromStation: section.fromStation,
+        toStation: section.toStation,
+        mileageKm: section.mileageKm,
       ),
-    );
-    return segments;
-  }
+  ];
 }
 
 class _RouteGraph {
@@ -391,6 +372,7 @@ class _RouteGraph {
     String fromStation,
     String toStation, {
     required double? targetDistance,
+    String? initialRouteName,
   }) {
     final start = _resolveStationName(fromStation);
     final end = _resolveStationName(toStation);
@@ -403,7 +385,11 @@ class _RouteGraph {
       );
     }
 
-    final shortest = _shortestPath(start, end);
+    final shortest = _shortestPath(
+      start,
+      end,
+      initialRouteName: initialRouteName,
+    );
     if (shortest == null) return null;
     if (targetDistance == null) {
       return _PathResult(
@@ -420,7 +406,13 @@ class _RouteGraph {
       end,
       targetDistance,
       shortest,
+      initialRouteName: initialRouteName,
     );
+    final resultLine = search.matchedTolerance
+        ? '结果：找到容差内匹配路径'
+        : search.error <= _matchTolerance(search.edges.length)
+        ? '结果：里程与目标并列，取用到线路名更少的走法'
+        : '结果：未找到容差内路径，采用里程最接近路径';
     return _PathResult(
       edges: search.edges,
       usedShortestPath: identical(search.edges, shortest),
@@ -428,7 +420,7 @@ class _RouteGraph {
         '最短路径里程：${_formatDistance(_edgeDistance(shortest))} km',
         ...search.steps,
         '搜索状态数：${search.exploredStates}',
-        search.matchedTolerance ? '结果：找到容差内匹配路径' : '结果：未找到容差内路径，采用里程最接近路径',
+        resultLine,
         '选定里程：${_formatDistance(search.distance)} km，误差 ${_formatDistance(search.error)} km',
         '线路：${_describeEdges(search.edges)}',
       ],
@@ -508,46 +500,81 @@ class _RouteGraph {
     return position < 0 ? null : position;
   }
 
+  /// 里程最短的走法；里程并列时取**换线最少**的一条。
+  ///
+  /// 状态是「站 + 到达它时走的线路名」，代价按 `[里程, 换线次数]` 字典序比较。两条
+  /// 并行线路的里程桩可能完全相同（胶济客专线与胶济线就是这样），只按站做 Dijkstra
+  /// 时并列由松弛顺序决定，于是一段路会在两条线之间换名——UI 上就是「经由线路」凭空
+  /// 多出几段、地图在两条并行走廊之间来回跳。把换线次数当次级代价，里程并列时就只会
+  /// 留在同一条线上。
+  ///
+  /// [initialRouteName] 是上一段的线路名：从它接着走不算换线，相邻区间于是不会在
+  /// 交界处换名。
   List<_RouteEdge>? _shortestPath(
     String start,
     String end, {
     String? routeName,
+    String? initialRouteName,
   }) {
-    final queue = _MinHeap<_SearchNode>();
-    final distances = <String, double>{start: 0};
-    final previous = <String, _PreviousStep>{};
-    queue.add(_SearchNode(station: start, distance: 0), 0);
+    final startState = _RouteState(
+      station: start,
+      routeName: initialRouteName,
+      cost: const [0, 0],
+    );
+    final costs = <String, List<double>>{startState.key: startState.cost};
+    final previous = <String, _RouteStateStep>{};
+    final queue = _MinHeap<_RouteState>();
+    queue.add(startState, startState.cost);
 
     while (queue.isNotEmpty) {
       final current = queue.removeFirst();
-      if (current.distance > (distances[current.station] ?? double.infinity)) {
-        continue;
+      if (_comparePriority(current.cost, costs[current.key]!) > 0) {
+        continue; // 堆里剩下的旧标签，已经被更优的取代
       }
-      if (current.station == end) return _reconstruct(previous, start, end);
+      if (current.station == end) {
+        return _reconstructStates(previous, startState.key, current.key);
+      }
 
       for (final edge in adjacency[current.station] ?? const []) {
         if (routeName != null && edge.routeName != routeName) continue;
-        final nextDistance = current.distance + edge.distanceKm;
-        if (nextDistance >= (distances[edge.toStation] ?? double.infinity)) {
+        final switched =
+            current.routeName != null && edge.routeName != current.routeName;
+        final nextStateKey = _routeStateKey(edge.toStation, edge.routeName);
+        final nextCost = <double>[
+          current.cost[0] + edge.distanceKm,
+          current.cost[1] + (switched ? 1 : 0),
+        ];
+        final known = costs[nextStateKey];
+        if (known != null && _comparePriority(nextCost, known) >= 0) {
           continue;
         }
-        distances[edge.toStation] = nextDistance;
-        previous[edge.toStation] = _PreviousStep(current.station, edge);
+        costs[nextStateKey] = nextCost;
+        previous[nextStateKey] = _RouteStateStep(current.key, edge);
         queue.add(
-          _SearchNode(station: edge.toStation, distance: nextDistance),
-          nextDistance,
+          _RouteState(
+            station: edge.toStation,
+            routeName: edge.routeName,
+            cost: nextCost,
+          ),
+          nextCost,
         );
       }
     }
     return null;
   }
 
+  /// 搜一条里程贴着 [targetDistance] 的走法，误差落在它自己的刻度差允许量内
+  /// （[_matchTolerance]，见 [_mileageDriftPerHop]）就算命中；命中里取用到的线路名
+  /// 最少的那条，都不命中时退回里程最接近的一条。[initialRouteName] 是上一段落在的
+  /// 那条线，算作已经用上，这样两条线里程一模一样时（沪宁段的 京沪线 与 沪宁高速线
+  /// 就是）能接着上一段走。
   _DistanceSearchResult _distanceMatchingOrClosestPath(
     String start,
     String end,
     double targetDistance,
-    List<_RouteEdge> shortest,
-  ) {
+    List<_RouteEdge> shortest, {
+    String? initialRouteName,
+  }) {
     final lowerBounds = _shortestDistancesFrom(end);
     final startLowerBound = lowerBounds[start];
     if (startLowerBound == null) {
@@ -584,33 +611,56 @@ class _RouteGraph {
       distance: 0,
       previous: null,
       incomingEdge: null,
-      usedRouteNames: const {},
+      usedRouteNames: initialRouteName == null ? const {} : {initialRouteName},
+      hopCount: 0,
     );
-    final routePriorityBand = targetDistance + _distanceTolerance + 1;
-    queue.add(startNode, startLowerBound);
+    // 优先级按 [用到的线路名数, 离目标里程的误差下界, 潜力里程] 字典序比较：先要线路名少，
+    // 其次要贴目标，最后才看走得短不短。先出队的就是「线路名最少的贴目标走法」，所以
+    // 一旦它落在自己的刻度差允许量内就可以直接返回。「里程并列取线路名少」正是靠这个
+    // 次序——线路名少一个的走法哪怕误差大一点，也排在前面。
+    queue.add(startNode, [
+      startNode.usedRouteNames.length.toDouble(),
+      _errorLowerBound(0, startLowerBound, targetDistance),
+      startLowerBound,
+    ]);
     final visited = <String>{startNode.stateKey};
     var exploredStates = 0;
+    // 已经收下的候选。终点节点先出队，不代表它就是这一「线路名数」里最贴目标的那个：
+    // 优先级里只有终点节点用真误差，中转节点用的都是误差下界，两条走法可以在同一个中转站
+    // 上打平——新丰镇→西安 有 陇海线 27+10 与 宁西线西合段 35 两条等长走法，前者合 328
+    // （时刻表就是这个数）、后者合 326，谁先弹出全看堆的内部次序。所以收下之后还要接着把
+    // 「线路名数不比它多、误差下界还比它小」的节点走完，从中挑最贴目标的那个。
+    List<_RouteEdge>? accepted;
+    var acceptedNames = 0;
+    var acceptedError = 0.0;
 
     while (queue.isNotEmpty && exploredStates < _maxExactSearchStates) {
+      if (accepted != null) {
+        final front = queue.peekPriority;
+        if (front == null || front[0] > acceptedNames) break;
+        if (front[0] == acceptedNames && front[1] >= acceptedError) break;
+      }
       final current = queue.removeFirst();
       exploredStates++;
       if (current.station == end) {
         final error = (current.distance - targetDistance).abs();
-        if (error <= _distanceTolerance) {
+        final tieBand = _mileageTieBand(current.hopCount);
+        if (error <= _distanceTolerance + tieBand) {
+          final exact = error <= _distanceTolerance;
           _addSearchStep(
             steps,
-            '容差内候选：${_formatDistance(current.distance)} km，误差 ${_formatDistance(error)} km',
+            exact
+                ? '容差内候选：${_formatDistance(current.distance)} km，误差 ${_formatDistance(error)} km'
+                : '里程并列候选：${_formatDistance(current.distance)} km，误差 ${_formatDistance(error)} km'
+                      '（经过 ${current.hopCount} 站，刻度差允许 ${_formatDistance(tieBand)} km，'
+                      '取用到线路名更少的走法）',
           );
-          return _DistanceSearchResult(
-            edges: current.edges,
-            distance: current.distance,
-            error: error,
-            matchedTolerance: true,
-            exploredStates: exploredStates,
-            steps: steps,
-          );
-        }
-        if (error < closestError) {
+          if (accepted == null || error < acceptedError) {
+            accepted = current.edges;
+            acceptedNames = current.usedRouteNames.length;
+            acceptedError = error;
+          }
+        } else if (error < closestError) {
           closest = current.edges;
           closestError = error;
           _addSearchStep(
@@ -621,13 +671,22 @@ class _RouteGraph {
         continue;
       }
 
+      // 剪枝窗口：误差超过刻度差允许量的走法不会被选中，所以窗口至少留这么宽（按再走一站
+      // 算，子节点只会更宽），再随已经弹出的更近候选收紧——收下的候选更贴目标，比它更贴的
+      // 走法更不该被剪掉。
+      var minWindow =
+          _distanceTolerance + _mileageTieBand(current.hopCount + 1);
+      if (accepted != null && acceptedError > minWindow) {
+        minWindow = acceptedError;
+      }
+      final pruneWindow = closestError > minWindow ? closestError : minWindow;
       for (final edge in adjacency[current.station] ?? const []) {
         if (current.containsStation(edge.toStation)) continue;
         final nextDistance = current.distance + edge.distanceKm;
         final lowerBound = lowerBounds[edge.toStation];
         if (lowerBound == null ||
-            nextDistance > targetDistance + closestError ||
-            nextDistance + lowerBound > targetDistance + closestError) {
+            nextDistance > targetDistance + pruneWindow ||
+            nextDistance + lowerBound > targetDistance + pruneWindow) {
           continue;
         }
         final next = _ExactSearchNode(
@@ -636,15 +695,34 @@ class _RouteGraph {
           previous: current,
           incomingEdge: edge,
           usedRouteNames: {...current.usedRouteNames, edge.routeName},
+          hopCount: current.hopCount + 1,
         );
         if (!visited.add(next.stateKey)) continue;
-        queue.add(
-          next,
-          next.usedRouteNames.length * routePriorityBand +
-              nextDistance +
-              lowerBound,
-        );
+        // 出队次序的第二个判据是「离目标里程至少还差多少」，而不是潜力里程（走到这儿的累计
+        // 里程 + 到终点的最短距离）。潜力里程小只说明走得短，不代表贴目标：D966 的
+        // 西安北→石家庄 目标 807，一条绕 徐兰高速线+大西临潼东联络线、在太原枢纽反复
+        // 换线的走法潜力 806、误差 1，比真正落在 807 上、太原枢纽全程走大西高铁的走法
+        // 出队更早；按误差排就不会——误差 0 先于误差 1，并列带只用来放宽「先用线路名少的」。
+        final errorLowerBound = edge.toStation == end
+            ? (nextDistance - targetDistance).abs()
+            : _errorLowerBound(nextDistance, lowerBound, targetDistance);
+        queue.add(next, [
+          next.usedRouteNames.length.toDouble(),
+          errorLowerBound,
+          nextDistance + lowerBound,
+        ]);
       }
+    }
+    final acceptedEdges = accepted;
+    if (acceptedEdges != null) {
+      return _DistanceSearchResult(
+        edges: acceptedEdges,
+        distance: _edgeDistance(acceptedEdges),
+        error: acceptedError,
+        matchedTolerance: acceptedError <= _distanceTolerance,
+        exploredStates: exploredStates,
+        steps: steps,
+      );
     }
     final closestDistance = _edgeDistance(closest);
     return _DistanceSearchResult(
@@ -660,7 +738,7 @@ class _RouteGraph {
   Map<String, double> _shortestDistancesFrom(String start) {
     final queue = _MinHeap<_SearchNode>();
     final distances = <String, double>{start: 0};
-    queue.add(_SearchNode(station: start, distance: 0), 0);
+    queue.add(_SearchNode(station: start, distance: 0), const [0]);
     while (queue.isNotEmpty) {
       final current = queue.removeFirst();
       if (current.distance > (distances[current.station] ?? double.infinity)) {
@@ -674,25 +752,25 @@ class _RouteGraph {
         distances[edge.toStation] = nextDistance;
         queue.add(
           _SearchNode(station: edge.toStation, distance: nextDistance),
-          nextDistance,
+          [nextDistance],
         );
       }
     }
     return distances;
   }
 
-  List<_RouteEdge> _reconstruct(
-    Map<String, _PreviousStep> previous,
-    String start,
-    String end,
+  List<_RouteEdge> _reconstructStates(
+    Map<String, _RouteStateStep> previous,
+    String startKey,
+    String endKey,
   ) {
     final edges = <_RouteEdge>[];
-    var current = end;
-    while (current != start) {
-      final step = previous[current];
+    var key = endKey;
+    while (key != startKey) {
+      final step = previous[key];
       if (step == null) return const [];
       edges.add(step.edge);
-      current = step.station;
+      key = step.previousKey;
     }
     return edges.reversed.toList();
   }
@@ -729,6 +807,21 @@ class _RouteEdge {
     routeName: routeName,
     distanceKm: distanceKm,
   );
+}
+
+/// 把逐条边并成段的结果：一段同线路名、首尾相接、中途没有折返的走法。
+class _MergedSection {
+  const _MergedSection({
+    required this.routeName,
+    required this.fromStation,
+    required this.toStation,
+    required this.mileageKm,
+  });
+
+  final String routeName;
+  final String fromStation;
+  final String toStation;
+  final double mileageKm;
 }
 
 class _PathResult {
@@ -768,12 +861,32 @@ class _SearchNode {
   final double distance;
 }
 
-class _PreviousStep {
-  const _PreviousStep(this.station, this.edge);
+/// 搜索状态：走到 [station] 时最后一次用的是哪条线（起点为 null），以及到达它的
+/// `[里程, 换线次数]` 代价。
+class _RouteState {
+  const _RouteState({
+    required this.station,
+    required this.routeName,
+    required this.cost,
+  });
 
   final String station;
+  final String? routeName;
+  final List<double> cost;
+
+  String get key => _routeStateKey(station, routeName);
+}
+
+/// 状态的前驱：上一个状态 + 走过来的那条边。
+class _RouteStateStep {
+  const _RouteStateStep(this.previousKey, this.edge);
+
+  final String previousKey;
   final _RouteEdge edge;
 }
+
+String _routeStateKey(String station, String? routeName) =>
+    '$station\u0000${routeName ?? ''}';
 
 class _ExactSearchNode {
   const _ExactSearchNode({
@@ -782,6 +895,7 @@ class _ExactSearchNode {
     required this.previous,
     required this.incomingEdge,
     required this.usedRouteNames,
+    required this.hopCount,
   });
 
   final String station;
@@ -789,6 +903,9 @@ class _ExactSearchNode {
   final _ExactSearchNode? previous;
   final _RouteEdge? incomingEdge;
   final Set<String> usedRouteNames;
+
+  /// 走到这儿经过了多少站（几条边）。里程容差按它放宽，见 [_mileageDriftPerHop]。
+  final int hopCount;
 
   bool containsStation(String value) {
     _ExactSearchNode? node = this;
@@ -826,7 +943,9 @@ class _HeapEntry<T> {
   const _HeapEntry(this.value, this.priority);
 
   final T value;
-  final double priority;
+
+  /// 按字典序比较：先比第一位，相同再比第二位……位数不同时短的算小。
+  final List<double> priority;
 }
 
 class _MinHeap<T> {
@@ -834,12 +953,16 @@ class _MinHeap<T> {
 
   bool get isNotEmpty => _items.isNotEmpty;
 
-  void add(T value, double priority) {
+  /// 队首的优先级，不看值本身。用来判断「剩下的节点里还有没有可能更优的走法」。
+  List<double>? get peekPriority =>
+      _items.isEmpty ? null : _items.first.priority;
+
+  void add(T value, List<double> priority) {
     _items.add(_HeapEntry(value, priority));
     var index = _items.length - 1;
     while (index > 0) {
       final parent = (index - 1) ~/ 2;
-      if (_items[parent].priority <= priority) break;
+      if (_comparePriority(_items[parent].priority, priority) <= 0) break;
       _items[index] = _items[parent];
       index = parent;
     }
@@ -858,10 +981,10 @@ class _MinHeap<T> {
       final right = left + 1;
       var child = left;
       if (right < _items.length &&
-          _items[right].priority < _items[left].priority) {
+          _comparePriority(_items[right].priority, _items[left].priority) < 0) {
         child = right;
       }
-      if (_items[child].priority >= last.priority) break;
+      if (_comparePriority(_items[child].priority, last.priority) >= 0) break;
       _items[index] = _items[child];
       index = child;
     }
@@ -870,31 +993,115 @@ class _MinHeap<T> {
   }
 }
 
+int _comparePriority(List<double> first, List<double> second) {
+  final length = first.length < second.length ? first.length : second.length;
+  for (var index = 0; index < length; index++) {
+    final comparison = first[index].compareTo(second[index]);
+    if (comparison != 0) return comparison;
+  }
+  return first.length.compareTo(second.length);
+}
+
+/// 精确命中：目标里程与选定走法的里程差在这个范围内，就认定是这条走法。
 const _distanceTolerance = 0.55;
+
+/// 里程并列带的下限。目标里程和 routes.db 的里程桩不是同一套刻度（1461/1462 的时刻表在
+/// 沪宁段每过一个站就比里程桩多 1 km），这类差不足以说明走法不同：宁可要「误差再大一点
+/// 但始终待在同一条线上」的走法，也不要「误差小一点却要借道一条平行线」的走法。误差落在
+/// 这个带内算里程并列，并列时取用到的线路名最少的走法（与 `_shortestPath` 的次级判据一致）。
+const _distanceTieBand = 1.0;
+
+/// 每多经过一站允许的额外误差。刻度差是**逐站累积**的，走法越长差得越多，所以并列带不
+/// 能是个固定值：包西线 新丰镇→延安 要经过 10 个站，D16 的这段里程 333 km 比时刻表多 5 km，
+/// 而少走 6 km 的那种「借道包西高铁延西段」的走法误差只有 1 km——固定 1 km 的带子会把后者
+/// 当成更贴目标，于是在 甘泉北 换到平行线上。按每站 0.5 km 放宽后，5 km 落在 14 个站的
+/// 刻度差允许量（7 km）里，线路名少（3 个）的那条才对。
+const _mileageDriftPerHop = 0.5;
+
 const _maxExactSearchStates = 150000;
 const _maxInferenceLogSteps = 200;
+
+/// 把逐条边并成段：线路名相同、上一条的终点就是下一条的起点，就并进同一段。
+///
+/// 折返（换向）处断开——车会在同一条线上原路退回去，必然重复经过本段已经走过的某一站。
+/// 例如 T7 在 西安 换向，陇海线 新丰镇→…→灞桥→西安 之后接着 西安→灞桥→田王：合起来会得到
+/// 一段自相重叠的走法（首尾同名只是其中最极端的一种）。展开站表和贴轨都只能按
+/// 「线路名 + 首尾站」查，重叠的那一段会被抹掉，换向站本身也会整站丢掉。断开后记成
+/// 新丰镇→西安、西安→灞桥 两段，折返那一段在两边各出现一次，里程也一样对得上。
+List<_MergedSection> _mergeSections(List<_RouteEdge> edges) {
+  if (edges.isEmpty) return const [];
+  final sections = <_MergedSection>[];
+  var routeName = edges.first.routeName;
+  var fromStation = edges.first.fromStation;
+  var toStation = edges.first.toStation;
+  var mileage = edges.first.distanceKm;
+  // 本段已经走过的站。新的一段从当前边的起点算起，不带上一段的历史。
+  var runStations = <String>{fromStation, toStation};
+
+  for (final edge in edges.skip(1)) {
+    final isReversal = runStations.contains(edge.toStation);
+    if (edge.routeName == routeName &&
+        edge.fromStation == toStation &&
+        !isReversal) {
+      toStation = edge.toStation;
+      mileage += edge.distanceKm;
+      runStations.add(edge.toStation);
+      continue;
+    }
+    sections.add(
+      _MergedSection(
+        routeName: routeName,
+        fromStation: fromStation,
+        toStation: toStation,
+        mileageKm: mileage,
+      ),
+    );
+    routeName = edge.routeName;
+    fromStation = edge.fromStation;
+    toStation = edge.toStation;
+    mileage = edge.distanceKm;
+    runStations = {fromStation, toStation};
+  }
+  sections.add(
+    _MergedSection(
+      routeName: routeName,
+      fromStation: fromStation,
+      toStation: toStation,
+      mileageKm: mileage,
+    ),
+  );
+  return sections;
+}
 
 double _edgeDistance(List<_RouteEdge> edges) =>
     edges.fold(0, (sum, edge) => sum + edge.distanceKm);
 
+/// 一条经过 [hops] 站的走法允许差多少里程：刻度差逐站累积（见 [_mileageDriftPerHop]），
+/// 短走法至少留 [_distanceTieBand]。
+double _mileageTieBand(int hops) {
+  final drifted = _mileageDriftPerHop * hops;
+  return drifted > _distanceTieBand ? drifted : _distanceTieBand;
+}
+
+/// 一条经过 [hops] 站的走法的接受门槛：精确容差 + 它自己的刻度差允许量。
+double _matchTolerance(int hops) => _distanceTolerance + _mileageTieBand(hops);
+
+/// 走到 [distance] 时，最终里程与 [target] 至少还差多少（[lowerBound] 是当前位置到终点的
+/// 最短距离）。已经越过目标时误差不可能再缩小，就是超出的部分；还没到的时候可能正好命中，
+/// 下界是 0。
+double _errorLowerBound(double distance, double lowerBound, double target) {
+  final potential = distance + lowerBound;
+  return potential > target ? potential - target : 0;
+}
+
 String _describeEdges(List<_RouteEdge> edges) {
   if (edges.isEmpty) return '无';
-  final sections = <String>[];
-  var routeName = edges.first.routeName;
-  var fromStation = edges.first.fromStation;
-  var toStation = edges.first.toStation;
-  for (final edge in edges.skip(1)) {
-    if (edge.routeName == routeName && edge.fromStation == toStation) {
-      toStation = edge.toStation;
-      continue;
-    }
-    sections.add('$routeName（$fromStation → $toStation）');
-    routeName = edge.routeName;
-    fromStation = edge.fromStation;
-    toStation = edge.toStation;
-  }
-  sections.add('$routeName（$fromStation → $toStation）');
-  return sections.join('；');
+  return _mergeSections(edges)
+      .map(
+        (section) =>
+            '${section.routeName}（${section.fromStation} → ${section.toStation}）',
+      )
+      .join('；');
 }
 
 String _formatDistance(double value) {

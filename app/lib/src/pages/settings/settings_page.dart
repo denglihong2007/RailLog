@@ -7,6 +7,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
 import 'package:raillog/src/pages/settings/ticket_ocr_settings_page.dart';
@@ -49,7 +50,9 @@ class SettingsPage extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '个性化'),
                       const SizedBox(height: AppSpacing.sm),
-                      const SettingsListCard(children: [_DisplayEntry()]),
+                      const SettingsListCard(
+                        children: [_DisplayEntry(), _JournalEntry()],
+                      ),
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '车票'),
                       const SizedBox(height: AppSpacing.sm),
@@ -235,6 +238,18 @@ class _DisplayEntry extends StatelessWidget {
   );
 }
 
+class _JournalEntry extends StatelessWidget {
+  const _JournalEntry();
+
+  @override
+  Widget build(BuildContext context) => SettingsNavTile(
+    icon: Icons.menu_book_outlined,
+    title: '行程手账',
+    subtitle: '手账版式与空白模板导出',
+    onTap: () => _push(context, const JournalSettingsPage()),
+  );
+}
+
 class _MyReviewsEntry extends StatelessWidget {
   const _MyReviewsEntry();
 
@@ -266,7 +281,7 @@ class _TicketOcrEntry extends StatelessWidget {
   Widget build(BuildContext context) => SettingsNavTile(
     icon: Icons.document_scanner_outlined,
     title: '车票识别',
-    subtitle: '配置百度智能云密钥，自动识别车票信息',
+    subtitle: '配置百度智能云或阿里云密钥，自动识别车票信息',
     onTap: () => _push(context, const TicketOcrSettingsPage()),
   );
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/pages/add_trip_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
-import 'package:raillog/src/pages/search_page.dart';
 import 'package:raillog/src/pages/settings/settings_page.dart';
 import 'package:raillog/src/pages/statistics_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
@@ -22,11 +21,6 @@ const _mainDestinations = [
     icon: Icon(Icons.add_circle_outline),
     selectedIcon: Icon(Icons.add_circle),
     label: '录入',
-  ),
-  NavigationDestination(
-    icon: Icon(Icons.search_outlined),
-    selectedIcon: Icon(Icons.search),
-    label: '搜索',
   ),
   NavigationDestination(
     icon: Icon(Icons.bar_chart_outlined),
@@ -58,7 +52,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _pages = [
       const HomePage(),
       AddTripPage(onTripSaved: _showHomeAfterSave),
-      const SearchPage(),
       const StatisticsPage(),
       const SettingsPage(),
     ];
@@ -83,7 +76,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       // it to refresh. Replacing it with a UniqueKey causes a second full
       // loading screen during the startup cloud sync.
       _pages[0] = HomePage(refreshToken: ++_homeRefreshToken);
-      _pages[3] = StatisticsPage(key: UniqueKey());
+      _pages[2] = StatisticsPage(key: UniqueKey());
     });
   }
 

@@ -25,6 +25,7 @@ class TripRecord {
   final bool isRailTrip;
   final bool isLocalOnly;
   final String? notes;
+  final String? groupName;
 
   String get ticketLabel => ticketId == null ? '本地 #$id' : '#$ticketId';
 
@@ -64,6 +65,7 @@ class TripRecord {
     this.isRailTrip = true,
     this.isLocalOnly = false,
     this.notes,
+    this.groupName,
   }) : clientId = clientId ?? _newClientId(),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
@@ -94,6 +96,7 @@ class TripRecord {
       'is_rail_trip': isRailTrip ? 1 : 0,
       'is_local_only': isLocalOnly ? 1 : 0,
       'notes': notes,
+      'group_name': groupName,
     };
   }
 
@@ -134,6 +137,7 @@ class TripRecord {
       isRailTrip: (map['is_rail_trip'] as int) == 1,
       isLocalOnly: (map['is_local_only'] as num?)?.toInt() == 1,
       notes: map['notes'] as String?,
+      groupName: map['group_name'] as String?,
     );
   }
 

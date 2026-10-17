@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:raillog/src/models/historical_schedule_lookup.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/rolling_stock_record.dart';
-import 'package:raillog/src/models/station_pair_distance.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
 import 'package:raillog/src/models/train_distance_info.dart';
 import 'package:raillog/src/models/train_model_parser.dart';
@@ -564,13 +563,24 @@ class TrainService {
   /// [version] 由调用方先用 [resolveTimetableVersion] 算好传进来：批量导入时版本
   /// 只需按各自的乘车日期算一次，降级分支也能复用同一个版本号。
   /// 检索不到车次或站序为空都返回 `null`，由调用方决定怎么降级。
+  ///
+  /// [fallbackToFirst] 只在「查不到同号车次」时起作用，见 [selectHistoricalTrain]。
+  /// 检索接口是**前缀**匹配，查 `G1` 会连着返回 `G10`/`G100`，退而取其次等于把别的车
+  /// 当成这趟车。导入路径有票面始发/终到站兜底、认错了会被站名匹配挡下来，所以保留
+  /// 默认的宽松；拿历史时刻表当**参照**的路径（只借它的里程、站序另有来源）没有这层
+  /// 保护，必须传 `false`。
   static Future<HistoricalScheduleLookup?> lookupHistoricalSchedule({
     required String trainNumber,
     required DateTime boardingDate,
     required String version,
+    bool fallbackToFirst = true,
   }) async {
     final candidates = await searchHistoricalTrains(trainNumber, version);
-    final train = selectHistoricalTrain(trainNumber, candidates);
+    final train = selectHistoricalTrain(
+      trainNumber,
+      candidates,
+      fallbackToFirst: fallbackToFirst,
+    );
     if (train == null) return null;
     final stops = await fetchTrainSchedule(
       train.trainNo,
@@ -826,41 +836,6 @@ class TrainService {
       return null;
     }
     return null;
-  }
-
-  static Future<List<StationPairDistance>> fetchStationPairDistances(
-    String trainNumber,
-    List<TrainScheduleStop> stops,
-    int departureStopIndex,
-    int arrivalStopIndex,
-  ) async {
-    final sectionCount = arrivalStopIndex - departureStopIndex;
-    if (sectionCount <= 0) return const [];
-    final results = List<StationPairDistance?>.filled(sectionCount, null);
-    var nextSection = 0;
-
-    Future<void> worker() async {
-      while (true) {
-        final sectionOffset = nextSection++;
-        if (sectionOffset >= sectionCount) return;
-        final fromStop = stops[departureStopIndex + sectionOffset];
-        final toStop = stops[departureStopIndex + sectionOffset + 1];
-        final distanceInfo = await fetchDistanceInfo(
-          trainNumber: trainNumber,
-          startStation: fromStop.stationName,
-          endStation: toStop.stationName,
-        );
-        results[sectionOffset] = StationPairDistance(
-          fromStation: fromStop.stationName,
-          toStation: toStop.stationName,
-          distanceKm: distanceInfo?.distance,
-        );
-      }
-    }
-
-    final workerCount = sectionCount.clamp(1, 4);
-    await Future.wait(List.generate(workerCount, (_) => worker()));
-    return results.whereType<StationPairDistance>().toList(growable: false);
   }
 
   static Future<RollingStockLookupResult?> fetchRollingStock({

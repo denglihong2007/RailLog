@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:raillog/src/services/db_helper.dart';
+import 'package:raillog/src/services/journal_settings.dart';
 import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/main_navigation_page.dart';
@@ -40,6 +41,7 @@ void main() async {
     await DbHelper.instance.database;
     await TicketGeneratorSettings.instance.initialize();
     await TripDetailSettings.instance.initialize();
+    await JournalSettings.instance.initialize();
     await TrainService.initializeStationCodes();
     await SessionService.instance.initialize();
     await CloudSyncService.instance.initialize();

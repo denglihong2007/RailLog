@@ -8,6 +8,9 @@ builder.Configuration
     .AddEnvironmentVariables();
 
 builder.Services.AddSingleton<RailLogDatabase>();
+builder.Services.Configure<DatabaseBackupOptions>(
+    builder.Configuration.GetSection("DatabaseBackup"));
+builder.Services.AddHostedService<DatabaseBackupService>();
 builder.Services.AddHostedService<AchievementBackfillService>();
 builder.Services.Configure<TrainTimetablesOptions>(
     builder.Configuration.GetSection("TrainTimetables"));
