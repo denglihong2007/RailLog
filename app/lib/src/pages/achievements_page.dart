@@ -491,7 +491,7 @@ class _AchievementCategoryView extends StatelessWidget {
                         crossAxisCount: columns,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
-                        mainAxisExtent: 120,
+                        mainAxisExtent: 132,
                       );
                   final locate = this.locate;
                   final preceding = sliverConstraints.precedingScrollExtent;
@@ -524,11 +524,12 @@ class _AchievementCategoryView extends StatelessWidget {
                               : ValueKey(achievement.id),
                           justUnlocked: isTarget,
                           achievement: achievement,
-                          onTap: achievement.unlockedBy == null
-                              ? null
-                              : () => openAchievement(context, achievement),
-                          onRequirementsTap: achievement.hasRequirements
+                          // 有子项就先看子项（达成要求页右上角可进解锁行程）；
+                          // 没有子项的已解锁成就才直接进解锁行程。
+                          onTap: achievement.hasRequirements
                               ? () => openRequirements(context, achievement)
+                              : achievement.unlockedBy != null
+                              ? () => openAchievement(context, achievement)
                               : null,
                         );
                       }, childCount: achievements.length),

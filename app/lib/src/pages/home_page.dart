@@ -891,7 +891,7 @@ class _AchievementsSection extends StatelessWidget {
                 crossAxisCount: columns,
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                mainAxisExtent: 120,
+                mainAxisExtent: 132,
               ),
               itemCount: achievements.length > _dashboardPreviewLimit
                   ? _dashboardPreviewLimit
@@ -902,11 +902,11 @@ class _AchievementsSection extends StatelessWidget {
                 child: DashboardAchievementCard(
                   key: ValueKey(achievements[index].id),
                   achievement: achievements[index],
-                  onTap: achievements[index].unlockedBy == null
-                      ? null
-                      : () => _openAchievement(context, achievements[index]),
-                  onRequirementsTap: achievements[index].hasRequirements
+                  // 与成就页保持一致：有子项先看达成要求，其余已解锁的进解锁行程。
+                  onTap: achievements[index].hasRequirements
                       ? () => _openRequirements(context, achievements[index])
+                      : achievements[index].unlockedBy != null
+                      ? () => _openAchievement(context, achievements[index])
                       : null,
                 ),
               ),

@@ -8,13 +8,13 @@ class DashboardAchievementCard extends StatelessWidget {
     super.key,
     required this.achievement,
     this.onTap,
-    this.onRequirementsTap,
     this.justUnlocked = false,
   });
 
   final DashboardAchievement achievement;
+
+  /// 整卡只有一个点击目标：有明细的先进达成要求，其余已解锁的进解锁行程。
   final VoidCallback? onTap;
-  final VoidCallback? onRequirementsTap;
 
   /// 本次会话里刚解锁的那一张。它挂载时会把底色从默认色补间到解锁色，
   /// 作为成就页「定位到该成就」的那一下强调；别处不传。
@@ -22,198 +22,103 @@ class DashboardAchievementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final unlocked = achievement.isUnlocked;
-    final entry = achievement.unlockedBy;
-    final hasNarrative =
-        unlocked && (achievement.narrativeNote?.trim().isNotEmpty ?? false);
-    final content = Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        onRequirementsTap == null ? 16 : 11,
-        16,
-        onRequirementsTap == null ? 16 : 11,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                dashboardAchievementIconKey(achievement.iconKey),
-                color: unlocked ? colors.primary : colors.onSurfaceVariant,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  achievement.title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (achievement.note?.trim().isNotEmpty ?? false) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Semantics(
-                  label: '注释：${achievement.note!.trim()}',
-                  child: Tooltip(
-                    message: achievement.note!.trim(),
-                    triggerMode: TooltipTriggerMode.tap,
-                    child: Icon(
-                      Icons.info_outline,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-              if (onRequirementsTap != null) ...[
-                const SizedBox(width: AppSpacing.xs),
-                IconButton(
-                  tooltip: '达成要求',
-                  onPressed: onRequirementsTap,
-                  iconSize: 18,
-                  color: colors.onSurfaceVariant,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 24,
-                    height: 24,
-                  ),
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.checklist_outlined),
-                ),
-              ],
-              if (achievement.experience > 0) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: unlocked
-                        ? colors.primaryContainer
-                        : colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(AppRadius.small),
-                  ),
-                  child: Text(
-                    '${achievement.experience} XP',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: unlocked
-                          ? colors.onPrimaryContainer
-                          : colors.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 8),
-              AnimatedSwitcher(
-                duration: m3MotionDurationShort,
-                switchInCurve: Easing.emphasizedDecelerate,
-                switchOutCurve: Easing.standardAccelerate,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
-                    child: child,
-                  ),
-                ),
-                child: Icon(
-                  unlocked ? Icons.verified_outlined : Icons.lock_outline,
-                  key: ValueKey(unlocked),
-                  size: 20,
-                  color: unlocked ? colors.primary : colors.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: onRequirementsTap == null ? 8 : 6),
-          Text(
-            achievement.requirement,
-            maxLines: hasNarrative ? 1 : 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (hasNarrative) ...[
-            SizedBox(height: onRequirementsTap == null ? 4 : 2),
-            Tooltip(
-              message: achievement.narrativeNote!.trim(),
-              triggerMode: TooltipTriggerMode.tap,
-              child: Text(
-                achievement.narrativeNote!.trim(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
-          ],
-          const Spacer(),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  !unlocked
-                      ? achievement.hasProgress
-                            ? '尚未解锁 · ${_formatProgress(achievement.progressCurrent!)}/${_formatProgress(achievement.progressTarget!)}'
-                            : '尚未解锁'
-                      : entry == null
-                      ? '已解锁'
-                      : '${_formatDate(entry.departureTime)} 乘坐 ${_trainLabel(entry.trainNumber)} 解锁',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: unlocked ? colors.primary : colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (achievement.hidden)
-                Text(
-                  '隐藏成就',
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                )
-              else
-                Text(
-                  '${achievement.unlockedUserCount} 位用户 · '
-                  '${_formatPercentage(achievement.unlockedPercentage)}',
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-    final cardContent = Stack(
-      fit: StackFit.expand,
+    final narrative = achievement.narrativeNote?.trim();
+    final hasNarrative = unlocked && (narrative?.isNotEmpty ?? false);
+    final note = achievement.note?.trim();
+    final hasNote = note?.isNotEmpty ?? false;
+    final secondaryColor = unlocked
+        ? colors.onTertiaryContainer.withValues(alpha: 0.76)
+        : colors.onSurfaceVariant;
+
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        content,
-        if (!unlocked && achievement.hasProgress)
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Semantics(
-              label: '${achievement.title}进度',
-              value:
-                  '${_formatProgress(achievement.progressCurrent!)}/${_formatProgress(achievement.progressTarget!)}',
-              child: LinearProgressIndicator(
-                value: achievement.progressValue,
-                minHeight: 4,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 圆形徽章把「成就」这一身份和进度合在一起：外圈就是进度环，
+              // 解锁后环走满并挂上对勾，不再额外占一条横向进度条。
+              _AchievementMedallion(
+                icon: dashboardAchievementIconKey(achievement.iconKey),
+                unlocked: unlocked,
+                progress: achievement.hasProgress
+                    ? achievement.progressValue
+                    : null,
               ),
-            ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            achievement.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (hasNote) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          _AchievementNoteIcon(
+                            note: note!,
+                            color: secondaryColor,
+                          ),
+                        ],
+                        if (achievement.experience > 0) ...[
+                          const SizedBox(width: AppSpacing.sm),
+                          _AchievementExperienceChip(
+                            experience: achievement.experience,
+                            unlocked: unlocked,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    // 达成条件始终可见，解锁与否都回答「这条成就要求什么」。
+                    Text(
+                      achievement.requirement,
+                      maxLines: hasNarrative ? 1 : 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: secondaryColor,
+                      ),
+                    ),
+                    if (hasNarrative) ...[
+                      const SizedBox(height: 2),
+                      // 解锁后多出的那一行才是「奖励」：叙述性说明。
+                      Text(
+                        narrative!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.labelSmall?.copyWith(
+                          color: secondaryColor,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
+        ),
+        const Spacer(),
+        _AchievementFooter(
+          achievement: achievement,
+          secondaryColor: secondaryColor,
+          tappable: onTap != null,
+        ),
       ],
     );
     // 未解锁时不能沿用原来的 `null`（交给 AppCard 取默认色）：TweenAnimationBuilder
@@ -237,7 +142,260 @@ class DashboardAchievementCard extends StatelessWidget {
         padding: EdgeInsets.zero,
         color: color,
         onTap: onTap,
-        child: cardContent,
+        child: content,
+      ),
+    );
+  }
+}
+
+/// 左侧圆形徽章：图标坐在内圆里，外圈是进度环。
+///
+/// 进度环是这张卡片唯一的「图形化进度」，所以底部那条状态行不必再画一遍进度条；
+/// 未解锁且没有进度数据时环是空的，也仍然比一个锁角标更像一枚成就徽章。
+class _AchievementMedallion extends StatelessWidget {
+  const _AchievementMedallion({
+    required this.icon,
+    required this.unlocked,
+    required this.progress,
+  });
+
+  final IconData icon;
+  final bool unlocked;
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final value = unlocked ? 1.0 : (progress?.clamp(0.0, 1.0) ?? 0.0);
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          SizedBox.expand(
+            child: CircularProgressIndicator(
+              value: value,
+              strokeWidth: 3,
+              strokeCap: StrokeCap.round,
+              color: colors.primary,
+              backgroundColor: colors.primary.withValues(alpha: 0.14),
+              semanticsLabel: '成就进度',
+              semanticsValue: '${(value * 100).round()}%',
+            ),
+          ),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: unlocked
+                  ? colors.surface.withValues(alpha: 0.6)
+                  : colors.surfaceContainerHighest,
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: unlocked
+                  ? colors.onTertiaryContainer
+                  : colors.onSurfaceVariant,
+            ),
+          ),
+          if (unlocked)
+            Positioned(
+              right: -1,
+              bottom: -1,
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: colors.primary,
+                  shape: BoxShape.circle,
+                  // 与卡片的解锁底色隔开，徽章压在进度环上也不会糊成一团。
+                  border: Border.all(color: colors.tertiaryContainer, width: 2),
+                ),
+                child: Icon(Icons.check, size: 9, color: colors.onPrimary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 经验值做成一个小胶囊：它是卡片里唯一带「奖励」意味的数字，值得有自己的形状。
+class _AchievementExperienceChip extends StatelessWidget {
+  const _AchievementExperienceChip({
+    required this.experience,
+    required this.unlocked,
+  });
+
+  final int experience;
+  final bool unlocked;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: unlocked
+            ? colors.surface.withValues(alpha: 0.55)
+            : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(
+        '$experience XP',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: unlocked ? colors.onTertiaryContainer : colors.secondary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// 技术性说明（如席别清单、时段范围）只在存在时出现，点一下看全文。
+class _AchievementNoteIcon extends StatelessWidget {
+  const _AchievementNoteIcon({required this.note, required this.color});
+
+  final String note;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '技术说明：$note',
+      child: Tooltip(
+        message: note,
+        triggerMode: TooltipTriggerMode.tap,
+        child: Icon(Icons.info_outline, size: 15, color: color),
+      ),
+    );
+  }
+}
+
+/// 卡片底部的整条信息带：用一层比卡片略亮的底色把它和正文分开。
+///
+/// 只留一行「状态 + 稀有度」，右侧一个箭头表示整卡可点；达成要求入口并进了整卡
+/// 点击，不再单独放一颗按钮 —— 这正是之前最显乱的一处。
+class _AchievementFooter extends StatelessWidget {
+  const _AchievementFooter({
+    required this.achievement,
+    required this.secondaryColor,
+    required this.tappable,
+  });
+
+  final DashboardAchievement achievement;
+  final Color secondaryColor;
+  final bool tappable;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final unlocked = achievement.isUnlocked;
+    final entry = achievement.unlockedBy;
+    final foreground = unlocked
+        ? colors.onTertiaryContainer.withValues(alpha: 0.86)
+        : secondaryColor;
+
+    final String status;
+    if (!unlocked && achievement.hasProgress) {
+      status =
+          '已达成 ${_formatProgress(achievement.progressCurrent!)}/'
+          '${_formatProgress(achievement.progressTarget!)}';
+    } else if (unlocked) {
+      status = entry == null
+          ? '已解锁'
+          : '${_formatDate(entry.departureTime)} · '
+                '${_trainLabel(entry.trainNumber)} 解锁';
+    } else {
+      status = '尚未解锁';
+    }
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 30),
+      color: colors.surface.withValues(alpha: 0.5),
+      padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (achievement.hidden) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              '隐藏成就',
+              maxLines: 1,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: secondaryColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ] else if (achievement.totalUserCount > 0) ...[
+            const SizedBox(width: AppSpacing.sm),
+            _AchievementRarity(
+              unlockedUserCount: achievement.unlockedUserCount,
+              percentage: achievement.unlockedPercentage,
+              color: secondaryColor,
+            ),
+          ],
+          if (tappable) ...[
+            const SizedBox(width: AppSpacing.xxs),
+            Icon(Icons.chevron_right, size: 16, color: secondaryColor),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AchievementRarity extends StatelessWidget {
+  const _AchievementRarity({
+    required this.unlockedUserCount,
+    required this.percentage,
+    required this.color,
+  });
+
+  final int unlockedUserCount;
+  final double percentage;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    // _formatPercentage 已经带 %，别再拼一个。
+    final label = _formatPercentage(percentage);
+    return Tooltip(
+      message: '$unlockedUserCount 位用户已解锁',
+      child: Semantics(
+        label: '$unlockedUserCount 位用户已解锁，占 $label',
+        excludeSemantics: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.people_outline, size: 13, color: color),
+            const SizedBox(width: 2),
+            Text(
+              label,
+              maxLines: 1,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
