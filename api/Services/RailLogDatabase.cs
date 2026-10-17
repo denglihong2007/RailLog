@@ -19,18 +19,21 @@ public sealed class RailLogDatabase
     private const int HomeTravelGuideLimit = 12;
     private const int HomeTravelGuideHotLimit = 4;
     private const int TravelGuideMaxPageSize = 50;
-    // 「全站热门」的综合排序 = 时间衰减 × (7 × 回应分 + 3 × 篇幅分) / 10，结果落在 0~1。
-    // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值及以上得满分。
+    // 「全站热门」的综合排序 = 时间衰减 × (8 × 回应分 + 2 × 篇幅分) / 10。
+    // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值（10 人）为 1 分。
     //   用对数是因为第一个回应比第十个珍贵得多，而线上回应本来就稀疏（约八成评价为 0）。
+    //   不设上限：10 人以上继续按对数增长，避免「10 人封顶」后多出来的反应完全不影响排序。
     // 篇幅分：正文字数线性到参考字数为止，超出不再加分，避免长篇与灌水互相抬价。
-    // 权重 7:3：回应仍是主导——2 个回应就压过「零回应但写满字数」；
-    // 但篇幅也不只是微调，写满参考字数能顶掉 1 个多回应的差距。
+    // 权重 8:2：回应是主导信号——1 个回应（0.231）就已超过写满参考字数（0.2）；
+    // 篇幅只作为弱信号，给还没收到回应的长文一点曝光。
     // 三项之外的评分不再参与，评价星级是个人口味而不是热度。
     private const int HomeTravelGuideHotDecayDays = 45;
     private const int HomeTravelGuideHotReactionRef = 10;
     private const int HomeTravelGuideHotCharRef = 120;
-    private const int HomeTravelGuideHotReactionWeight = 7;
-    private const int HomeTravelGuideHotCharWeight = 3;
+    private const int HomeTravelGuideHotReactionWeight = 8;
+    private const int HomeTravelGuideHotCharWeight = 2;
+    // 热门列表全站同序，缓存几十秒；反应标注是取回后按用户现查的，不受缓存影响。
+    private const int HomeTravelGuideHotCacheSeconds = 60;
     private readonly string _connectionString;
     private readonly IMemoryCache _cache;
     private readonly SemaphoreSlim _statisticsLock = new(1, 1);
@@ -1205,12 +1208,37 @@ public sealed class RailLogDatabase
     /// <summary>
     /// 「全站热门」排序的取数。这里不排除当前用户自己的评价——首页也要能看到自己
     /// 被推到前面的条目；<paramref name="currentUserId"/> 只用于给反应数标注「我点过」。
+    /// 排序结果与当前用户无关，因此按 (limit, offset) 做短时缓存；反应标注每次现查。
     /// </summary>
-    private static async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
+    private async Task<IReadOnlyList<EntityReviewResponse>> GetPopularEntityReviewsAsync(
         SqliteConnection connection,
         string currentUserId,
         int limit,
         int offset = 0)
+    {
+        var cacheKey = $"travel-guide-hot:{limit}:{offset}";
+        if (!_cache.TryGetValue(cacheKey, out List<EntityReviewResponse>? result) || result is null)
+        {
+            result = await QueryPopularEntityReviewsAsync(connection, limit, offset);
+            _cache.Set(cacheKey, result, TimeSpan.FromSeconds(HomeTravelGuideHotCacheSeconds));
+        }
+        var reactions = await GetReviewReactionSummariesAsync(
+            connection,
+            result.Select(review => review.Id).ToList(),
+            currentUserId);
+        // 缓存里的记录不能直接改，也不能把同一个 List 交给调用方；每次复制一份。
+        return result
+            .Select(review => review with
+            {
+                Reactions = reactions.GetValueOrDefault(review.Id, []),
+            })
+            .ToList();
+    }
+
+    private static async Task<List<EntityReviewResponse>> QueryPopularEntityReviewsAsync(
+        SqliteConnection connection,
+        int limit,
+        int offset)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -1246,7 +1274,7 @@ public sealed class RailLogDatabase
                     1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
                 )
             ) * (
-                {HomeTravelGuideHotReactionWeight} * MIN(1.0,
+                {HomeTravelGuideHotReactionWeight} * (
                     LN(1 + (
                         SELECT COUNT(*)
                         FROM EntityReviewReactions reaction
@@ -1268,16 +1296,7 @@ public sealed class RailLogDatabase
             while (await reader.ReadAsync())
                 result.Add(ReadEntityReview(reader));
         }
-        var reactions = await GetReviewReactionSummariesAsync(
-            connection,
-            result.Select(review => review.Id).ToList(),
-            currentUserId);
-        return result
-            .Select(review => review with
-            {
-                Reactions = reactions.GetValueOrDefault(review.Id, []),
-            })
-            .ToList();
+        return result;
     }
 
     private static EntityReviewResponse ReadEntityReview(SqliteDataReader reader) => new(
