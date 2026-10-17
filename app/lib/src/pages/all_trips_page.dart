@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/models/trip_group_summary.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
@@ -20,8 +21,56 @@ enum _TripSortField { departureTime, mileage, duration, price }
 
 enum _TripKindFilter { all, rail, nonRail }
 
+enum _GroupAction { apply, clear }
+
 typedef TripEntryOpener =
     Future<bool?> Function(BuildContext context, DashboardTripEntry trip);
+
+/// 列表里的一行：单趟行程，或合并后的分组。
+sealed class _TripListEntry {
+  const _TripListEntry();
+
+  DateTime get departureTime;
+  Duration? get duration;
+  double get mileageKm;
+  double get price;
+}
+
+class _SingleTripEntry extends _TripListEntry {
+  const _SingleTripEntry(this.trip);
+
+  final DashboardTripEntry trip;
+
+  @override
+  DateTime get departureTime => trip.departureTime;
+
+  @override
+  Duration? get duration => trip.duration;
+
+  @override
+  double get mileageKm => trip.mileageKm;
+
+  @override
+  double get price => trip.price;
+}
+
+class _GroupTripEntry extends _TripListEntry {
+  const _GroupTripEntry(this.group);
+
+  final TripGroupSummary group;
+
+  @override
+  DateTime get departureTime => group.earliestDeparture;
+
+  @override
+  Duration? get duration => group.totalDuration;
+
+  @override
+  double get mileageKm => group.totalMileageKm;
+
+  @override
+  double get price => group.totalPrice;
+}
 
 class AllTripsPage extends StatefulWidget {
   const AllTripsPage({
@@ -31,6 +80,7 @@ class AllTripsPage extends StatefulWidget {
     this.showTripKindFilter = true,
     this.openTrip,
     this.enableSelection = false,
+    this.enableGrouping = false,
   });
 
   final List<DashboardTripEntry> trips;
@@ -38,6 +88,10 @@ class AllTripsPage extends StatefulWidget {
   final bool showTripKindFilter;
   final TripEntryOpener? openTrip;
   final bool enableSelection;
+
+  /// 只对「完整行程列表」开启：按 `groupName` 合并成卡片。
+  /// 已按条件筛过的子集（实体详情、图表、成就解锁）保持关闭。
+  final bool enableGrouping;
 
   @override
   State<AllTripsPage> createState() => _AllTripsPageState();
@@ -52,14 +106,25 @@ class _AllTripsPageState extends State<AllTripsPage> {
   String _searchQuery = '';
   final Set<int> _selectedTripIds = {};
   final Set<int> _removedTripIds = {};
+  final Set<String> _expandedGroupNames = {};
+
+  /// `containsKey` 用来区分「没改过」与「取消分组（值为 null）」。
+  final Map<int, String?> _groupNameOverrides = {};
   bool _isSelecting = false;
   String? _busyLabel;
   bool _changed = false;
 
   bool get _selectionMode => _isSelecting;
 
-  List<DashboardTripEntry> get _selectedTrips =>
-      widget.trips.where((trip) => _selectedTripIds.contains(trip.id)).toList();
+  DashboardTripEntry _withOverride(DashboardTripEntry trip) =>
+      _groupNameOverrides.containsKey(trip.id)
+      ? trip.withGroupName(_groupNameOverrides[trip.id])
+      : trip;
+
+  List<DashboardTripEntry> get _selectedTrips => widget.trips
+      .where((trip) => _selectedTripIds.contains(trip.id))
+      .map(_withOverride)
+      .toList();
 
   bool get _selectedTripsCanGenerate =>
       _selectedTrips.isNotEmpty &&
@@ -75,8 +140,9 @@ class _AllTripsPageState extends State<AllTripsPage> {
       _dateRange != null ||
       (widget.showTripKindFilter && _kindFilter != _TripKindFilter.all);
 
+  /// 过滤后的单条行程，未排序。多选与「全选」都以它为准。
   List<DashboardTripEntry> get _visibleTrips {
-    final trips = widget.trips.where((trip) {
+    return widget.trips.map(_withOverride).where((trip) {
       if (_removedTripIds.contains(trip.id)) return false;
       if (!trip.matchesSearch(_searchQuery)) return false;
       if (_kindFilter == _TripKindFilter.rail && !trip.isRailTrip) {
@@ -91,8 +157,35 @@ class _AllTripsPageState extends State<AllTripsPage> {
       return !departureDate.isBefore(range.start) &&
           !departureDate.isAfter(range.end);
     }).toList();
-    trips.sort(_compareTrips);
-    return trips;
+  }
+
+  /// 列表实际渲染的条目：多选或未启用分组时逐条，否则同名行程合并成组。
+  ///
+  /// 归并对象是过滤后的可见成员，所以搜索/筛选生效时卡片聚合值只反映
+  /// 命中成员；即使某组只剩一条可见成员也仍按分组卡片渲染。
+  List<_TripListEntry> get _displayEntries {
+    final visible = _visibleTrips;
+    if (_selectionMode || !widget.enableGrouping) {
+      return [for (final trip in visible) _SingleTripEntry(trip)];
+    }
+
+    final grouped = <String, List<DashboardTripEntry>>{};
+    final entries = <_TripListEntry>[];
+    for (final trip in visible) {
+      final name = trip.groupName?.trim();
+      if (name == null || name.isEmpty) {
+        entries.add(_SingleTripEntry(trip));
+      } else {
+        (grouped[name] ??= []).add(trip);
+      }
+    }
+    for (final group in grouped.entries) {
+      entries.add(
+        _GroupTripEntry(TripGroupSummary.fromTrips(group.key, group.value)),
+      );
+    }
+    entries.sort(_compareEntries);
+    return entries;
   }
 
   void _toggleSelection(DashboardTripEntry trip) {
@@ -135,6 +228,115 @@ class _AllTripsPageState extends State<AllTripsPage> {
         _selectedTripIds.addAll(visibleIds);
       }
     });
+  }
+
+  void _selectGroupMembers(List<DashboardTripEntry> members) {
+    if (!widget.enableSelection || _busyLabel != null) return;
+    setState(() {
+      _isSelecting = true;
+      _selectedTripIds.addAll(members.map((trip) => trip.id));
+    });
+  }
+
+  void _toggleGroup(String name) {
+    setState(() {
+      if (!_expandedGroupNames.add(name)) {
+        _expandedGroupNames.remove(name);
+      }
+    });
+  }
+
+  Future<void> _groupSelectedTrips() async {
+    final selected = _selectedTrips;
+    if (selected.isEmpty || _busyLabel != null) return;
+
+    final existingNames = selected
+        .map((trip) => trip.groupName?.trim())
+        .whereType<String>()
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final commonName = existingNames.length == 1 ? existingNames.first : null;
+    var input = commonName ?? '';
+    final formKey = GlobalKey<FormState>();
+    final action = await showDialog<_GroupAction>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.workspaces_outline),
+        title: const Text('设置分组'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            initialValue: input,
+            autofocus: true,
+            maxLength: 30,
+            onChanged: (value) => input = value,
+            decoration: const InputDecoration(
+              labelText: '分组名称',
+              hintText: '例如：京沪往返',
+            ),
+            validator: (value) =>
+                (value ?? '').trim().isEmpty ? '请输入分组名称' : null,
+            onFieldSubmitted: (_) {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(dialogContext).pop(_GroupAction.apply);
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          if (existingNames.isNotEmpty)
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_GroupAction.clear),
+              child: const Text('取消分组'),
+            ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(dialogContext).pop(_GroupAction.apply);
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    final groupName = action == _GroupAction.clear ? null : input.trim();
+    if (groupName != null && groupName.isEmpty) return;
+    final ids = selected.map((trip) => trip.id).toList();
+    setState(() => _busyLabel = '正在保存分组');
+    try {
+      final affected = await DbHelper.instance.updateTripGroups(ids, groupName);
+      if (!mounted) return;
+      setState(() {
+        for (final id in ids) {
+          _groupNameOverrides[id] = groupName;
+        }
+        _expandedGroupNames.removeAll(existingNames);
+        _isSelecting = false;
+        _selectedTripIds.clear();
+        _busyLabel = null;
+        _changed = affected > 0 || _changed;
+      });
+      final message = groupName == null
+          ? '已取消分组'
+          : '已将 ${ids.length} 趟行程归入「$groupName」';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busyLabel = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('设置分组失败：$error')));
+    }
   }
 
   Future<void> _deleteSelectedTrips() async {
@@ -305,7 +507,8 @@ class _AllTripsPageState extends State<AllTripsPage> {
     }
   }
 
-  Future<void> _orderSelectedTickets() async {    final selectedTrips = _selectedTrips;
+  Future<void> _orderSelectedTickets() async {
+    final selectedTrips = _selectedTrips;
     if (!_selectedTripsCanGenerate || _busyLabel != null) return;
     setState(() => _busyLabel = '正在创建 Key');
     try {
@@ -423,7 +626,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
     }
   }
 
-  int _compareTrips(DashboardTripEntry a, DashboardTripEntry b) {
+  int _compareEntries(_TripListEntry a, _TripListEntry b) {
     if (_sortField == _TripSortField.duration) {
       final aDuration = a.duration;
       final bDuration = b.duration;
@@ -624,6 +827,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
   @override
   Widget build(BuildContext context) {
     final trips = _visibleTrips;
+    final entries = _displayEntries;
     return PopScope<bool>(
       canPop: !_selectionMode && !_changed,
       onPopInvokedWithResult: (didPop, result) {
@@ -690,6 +894,7 @@ class _AllTripsPageState extends State<AllTripsPage> {
                 busy: _busyLabel != null,
                 hasSelection: _selectedTripIds.isNotEmpty,
                 canGenerate: _selectedTripsCanGenerate,
+                onGroup: _groupSelectedTrips,
                 onDelete: _deleteSelectedTrips,
                 onDownload: _downloadSelectedImages,
                 onExportJournal: _exportSelectedJournal,
@@ -787,14 +992,18 @@ class _AllTripsPageState extends State<AllTripsPage> {
                     ),
                   ),
                   Expanded(
-                    child: trips.isEmpty
+                    child: entries.isEmpty
                         ? const _NoTripsFound()
                         : _ResponsiveTripsList(
-                            trips: trips,
+                            entries: entries,
                             openTrip: widget.openTrip,
                             selectionMode: _selectionMode,
                             selectedTripIds: _selectedTripIds,
                             onToggleSelection: _toggleSelection,
+                            enableSelection: widget.enableSelection,
+                            expandedGroupNames: _expandedGroupNames,
+                            onToggleGroup: _toggleGroup,
+                            onSelectGroupMembers: _selectGroupMembers,
                           ),
                   ),
                 ],
@@ -809,31 +1018,43 @@ class _AllTripsPageState extends State<AllTripsPage> {
 
 class _ResponsiveTripsList extends StatelessWidget {
   const _ResponsiveTripsList({
-    required this.trips,
+    required this.entries,
     required this.selectionMode,
     required this.selectedTripIds,
     required this.onToggleSelection,
+    required this.enableSelection,
+    required this.expandedGroupNames,
+    required this.onToggleGroup,
+    required this.onSelectGroupMembers,
     this.openTrip,
   });
 
-  final List<DashboardTripEntry> trips;
+  final List<_TripListEntry> entries;
   final TripEntryOpener? openTrip;
   final bool selectionMode;
   final Set<int> selectedTripIds;
   final ValueChanged<DashboardTripEntry> onToggleSelection;
+  final bool enableSelection;
+  final Set<String> expandedGroupNames;
+  final ValueChanged<String> onToggleGroup;
+  final ValueChanged<List<DashboardTripEntry>> onSelectGroupMembers;
 
   @override
   Widget build(BuildContext context) {
     const horizontalPadding = 16.0;
     const gap = 12.0;
     const minCardWidth = 300.0;
+    final colors = Theme.of(context).colorScheme;
+    final cards = _flattenEntries(colors);
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth - horizontalPadding * 2;
         final calculatedColumns =
             ((availableWidth + gap) / (minCardWidth + gap)).floor();
-        final columns = calculatedColumns.clamp(1, trips.length).toInt();
-        final rowCount = (trips.length + columns - 1) ~/ columns;
+        final columns = cards.isEmpty
+            ? 1
+            : calculatedColumns.clamp(1, cards.length).toInt();
+        final rowCount = (cards.length + columns - 1) ~/ columns;
 
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(
@@ -854,7 +1075,9 @@ class _ResponsiveTripsList extends StatelessWidget {
                   columnIndex++
                 ) ...[
                   if (columnIndex > 0) const SizedBox(width: gap),
-                  Expanded(child: _buildCard(rowIndex * columns + columnIndex)),
+                  Expanded(
+                    child: _buildCard(cards, rowIndex * columns + columnIndex),
+                  ),
                 ],
               ],
             );
@@ -864,20 +1087,78 @@ class _ResponsiveTripsList extends StatelessWidget {
     );
   }
 
-  Widget _buildCard(int index) {
-    if (index >= trips.length) return const SizedBox.shrink();
+  /// 展开的分组把成员卡片按原样紧跟在分组卡片后面，参与正常的网格排布。
+  List<Widget> _flattenEntries(ColorScheme colors) {
+    final cards = <Widget>[];
+    for (final entry in entries) {
+      switch (entry) {
+        case _SingleTripEntry(:final trip):
+          cards.add(_tripCard(trip, colors));
+        case _GroupTripEntry(:final group):
+          cards.add(_groupCard(group, colors));
+          if (expandedGroupNames.contains(group.name)) {
+            for (final trip in group.trips) {
+              cards.add(_tripCard(trip, colors));
+            }
+          }
+      }
+    }
+    return cards;
+  }
+
+  Widget _buildCard(List<Widget> cards, int index) {
+    if (index >= cards.length) return const SizedBox.shrink();
     return M3Reveal(
       delay: m3RevealDelay(index),
       distance: 6,
-      child: TripTicketCard(
-        trip: trips[index],
-        openTrip: openTrip,
-        selectionMode: selectionMode,
-        selected: selectedTripIds.contains(trips[index].id),
-        onToggleSelection: onToggleSelection,
-      ),
+      child: cards[index],
     );
   }
+
+  Widget _tripCard(DashboardTripEntry trip, ColorScheme colors) {
+    final groupName = trip.groupName?.trim() ?? '';
+    return TripTicketCard(
+      key: ValueKey('trip:${trip.id}'),
+      trip: trip,
+      openTrip: openTrip,
+      selectionMode: selectionMode,
+      selected: selectedTripIds.contains(trip.id),
+      onToggleSelection: onToggleSelection,
+      headerColor: groupName.isEmpty
+          ? null
+          : _groupHeaderColor(colors, groupName),
+    );
+  }
+
+  Widget _groupCard(TripGroupSummary group, ColorScheme colors) =>
+      _TripGroupCard(
+        key: ValueKey('group:${group.name}'),
+        group: group,
+        headerColor: _groupHeaderColor(colors, group.name),
+        expanded: expandedGroupNames.contains(group.name),
+        onToggle: () => onToggleGroup(group.name),
+        enableSelection: enableSelection,
+        onSelectMembers: () => onSelectGroupMembers(group.trips),
+      );
+}
+
+/// 分组标题底色按分组名稳定轮换：同一分组始终同色，不同分组尽量错开。
+Color _groupHeaderColor(ColorScheme colors, String name) {
+  final base = HSLColor.fromColor(colors.tertiaryContainer);
+  final hue = (base.hue + _groupColorIndex(name) * 55) % 360;
+  final tint = base.withHue(hue).toColor();
+  // 与 surface 混合，保持浅色/深色主题下文字都有足够对比度。
+  return Color.alphaBlend(tint.withValues(alpha: 0.72), colors.surface);
+}
+
+const _groupColorCount = 6;
+
+int _groupColorIndex(String name) {
+  var hash = 0;
+  for (final codeUnit in name.codeUnits) {
+    hash = (hash * 31 + codeUnit) & 0x7fffffff;
+  }
+  return hash % _groupColorCount;
 }
 
 class TripTicketCard extends StatelessWidget {
@@ -888,6 +1169,7 @@ class TripTicketCard extends StatelessWidget {
     required this.selected,
     required this.onToggleSelection,
     this.openTrip,
+    this.headerColor,
   });
 
   final DashboardTripEntry trip;
@@ -895,6 +1177,9 @@ class TripTicketCard extends StatelessWidget {
   final bool selectionMode;
   final bool selected;
   final ValueChanged<DashboardTripEntry> onToggleSelection;
+
+  /// 属于某个分组时传入该分组的标题底色，与独立行程区分。
+  final Color? headerColor;
 
   @override
   Widget build(BuildContext context) {
@@ -912,9 +1197,11 @@ class TripTicketCard extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            color: trip.isRailTrip
-                ? colors.primaryContainer
-                : colors.secondaryContainer,
+            color:
+                headerColor ??
+                (trip.isRailTrip
+                    ? colors.primaryContainer
+                    : colors.secondaryContainer),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg,
               vertical: AppSpacing.md,
@@ -1030,17 +1317,175 @@ class TripTicketCard extends StatelessWidget {
     );
   }
 
-  Future<void> _openDetails(BuildContext context) async {
-    final changed = openTrip == null
-        ? await Navigator.of(context).push<bool>(
-            m3PageRoute(
-              builder: (context) => TripRecordDetailsPage(tripId: trip.id),
+  Future<void> _openDetails(BuildContext context) =>
+      _openTripDetails(context, trip, openTrip);
+}
+
+/// 打开行程详情；详情里改过数据时把「全部行程」也标记为需要刷新。
+Future<void> _openTripDetails(
+  BuildContext context,
+  DashboardTripEntry trip,
+  TripEntryOpener? openTrip,
+) async {
+  final changed = openTrip == null
+      ? await Navigator.of(context).push<bool>(
+          m3PageRoute(
+            builder: (context) => TripRecordDetailsPage(tripId: trip.id),
+          ),
+        )
+      : await openTrip(context, trip);
+  if (changed == true && context.mounted) {
+    Navigator.of(context).pop(true);
+  }
+}
+
+class _TripGroupCard extends StatelessWidget {
+  const _TripGroupCard({
+    super.key,
+    required this.group,
+    required this.headerColor,
+    required this.expanded,
+    required this.onToggle,
+    required this.enableSelection,
+    required this.onSelectMembers,
+  });
+
+  final TripGroupSummary group;
+  final Color headerColor;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final bool enableSelection;
+  final VoidCallback onSelectMembers;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final duration = group.totalDuration;
+    return Semantics(
+      button: true,
+      expanded: expanded,
+      label: '分组 ${group.name}，共 ${group.count} 趟',
+      child: AppCard.outlined(
+        color: colors.surface,
+        borderColor: colors.outlineVariant,
+        onTap: onToggle,
+        onLongPress: enableSelection ? onSelectMembers : null,
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            Container(
+              color: headerColor,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.workspaces_outline, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      group.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${group.count} 趟',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                      Text(_formatDate(group.earliestDeparture)),
+                    ],
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                ],
+              ),
             ),
-          )
-        : await openTrip!(context, trip);
-    if (changed == true && context.mounted) {
-      Navigator.of(context).pop(true);
-    }
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _StationTime(
+                          station: group.fromStation,
+                          dateTime: group.earliestDeparture,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Column(
+                          children: [
+                            Icon(
+                              group.isRoundTrip
+                                  ? Icons.swap_horiz
+                                  : Icons.arrow_forward,
+                              size: 20,
+                            ),
+                            if (duration != null) ...[
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                _formatDuration(duration),
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: _StationTime(
+                          station: group.toStation,
+                          dateTime: group.latestArrival,
+                          alignEnd: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Divider(height: 1, color: colors.outlineVariant),
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          spacing: 14,
+                          runSpacing: 4,
+                          children: [
+                            if (group.seatSummary != null)
+                              _TicketDetail(
+                                icon: Icons.event_seat_outlined,
+                                text: group.seatSummary!,
+                              ),
+                            if (group.totalMileageKm > 0)
+                              _TicketDetail(
+                                icon: Icons.straighten_outlined,
+                                text: '${group.totalMileageKm.round()} km',
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '¥${group.totalPrice.toStringAsFixed(2)}',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: colors.primary),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

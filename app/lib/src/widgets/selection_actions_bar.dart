@@ -2,19 +2,19 @@ import 'package:flutter/material.dart';
 
 /// 多选状态下贴着底部的一条动作栏。
 ///
-/// 四个动作要挤进 360dp 屏（BottomAppBar 左右各留 12，可分量 336）：
-/// 均分后每个 84dp。带图标的 M3 TextButton 在 2 字标签下约 68dp，
-/// 4 字标签（原来的「下载图片」「订购车票」）约 116dp——三个就已经贴着临界，
-/// 所以标签一律压到 2 字，完整语义交给 [Tooltip]。
+/// 多选期间的操作都集中在这里（分组、下载、手账、订票、删除）：
+/// 图标在上、两字标签在下，单个动作只占标签宽度，360dp 屏分出 5 份也很宽裕；
+/// 「删除」放在最右并用错误色，与其他动作拉开距离。
 ///
-/// 再窄就整体退化成纯图标：图标有 [Tooltip] 兜着，缩到两个字也读不出来时
-/// 就没必要硬留文字。
+/// 屏宽窄到每个动作不足 [_labelledMinWidth] 时退化成纯图标，
+/// 完整语义交给 [Tooltip]。
 class SelectionActionsBar extends StatelessWidget {
   const SelectionActionsBar({
     super.key,
     required this.busy,
     required this.hasSelection,
     required this.canGenerate,
+    required this.onGroup,
     required this.onDelete,
     required this.onDownload,
     required this.onExportJournal,
@@ -24,7 +24,7 @@ class SelectionActionsBar extends StatelessWidget {
   /// 有动作在跑：所有按钮置灰，避免并发。
   final bool busy;
 
-  /// 至少选了一项。删除与导出手账只要求这个。
+  /// 至少选了一项。删除、分组与导出手账只要求这个。
   final bool hasSelection;
 
   /// 选中的行程都有 ticketId。下载车票图片与订购车票要求这个——
@@ -32,13 +32,14 @@ class SelectionActionsBar extends StatelessWidget {
   /// 它正是为这些行程准备的。
   final bool canGenerate;
 
+  final VoidCallback onGroup;
   final VoidCallback onDelete;
   final VoidCallback onDownload;
   final VoidCallback onExportJournal;
   final VoidCallback onOrder;
 
   /// 标签能放下就带文字的分界宽度。低于它退化成纯图标。
-  static const double _labelledMinWidth = 76;
+  static const double _labelledMinWidth = 52;
 
   @override
   Widget build(BuildContext context) {
@@ -49,11 +50,10 @@ class SelectionActionsBar extends StatelessWidget {
         builder: (context, constraints) {
           final actions = <_SelectionActionSpec>[
             _SelectionActionSpec(
-              icon: Icons.delete_outline,
-              label: '删除',
-              tooltip: '删除所选行程',
-              onPressed: busy || !hasSelection ? null : onDelete,
-              color: Theme.of(context).colorScheme.error,
+              icon: Icons.workspaces_outline,
+              label: '分组',
+              tooltip: '设置分组',
+              onPressed: busy || !hasSelection ? null : onGroup,
             ),
             _SelectionActionSpec(
               icon: Icons.download_outlined,
@@ -72,6 +72,13 @@ class SelectionActionsBar extends StatelessWidget {
               label: '订票',
               tooltip: '订购车票',
               onPressed: busy || !canGenerate ? null : onOrder,
+            ),
+            _SelectionActionSpec(
+              icon: Icons.delete_outline,
+              label: '删除',
+              tooltip: '删除所选行程',
+              onPressed: busy || !hasSelection ? null : onDelete,
+              color: Theme.of(context).colorScheme.error,
             ),
           ];
 
@@ -109,6 +116,7 @@ class _SelectionActionSpec {
   final Color? color;
 }
 
+/// 图标在上、标签在下，单个动作的宽度只要放得下两字标签。
 class _LabelledAction extends StatelessWidget {
   const _LabelledAction({required this.action});
 
@@ -120,20 +128,27 @@ class _LabelledAction extends StatelessWidget {
     final color = enabled ? action.color : null;
     return Tooltip(
       message: action.tooltip,
-      child: TextButton.icon(
+      child: TextButton(
         onPressed: action.onPressed,
-        // 不压内边距的话 M3 默认会在两侧各吃掉 16dp，文字就被挤成省略号了。
         style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          minimumSize: const Size(0, 56),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        icon: Icon(action.icon, color: color),
-        label: Text(
-          action.label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: color == null ? null : TextStyle(color: color),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(action.icon, size: 22, color: color),
+            const SizedBox(height: 2),
+            Text(
+              action.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: color),
+            ),
+          ],
         ),
       ),
     );

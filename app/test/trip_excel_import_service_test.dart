@@ -33,6 +33,7 @@ void main() {
         seatNumber: '01车 01A',
         price: 662,
         notes: '测试记录',
+        groupName: '京沪往返',
       );
 
       final bytes = TripExcelExportService.buildWorkbook([source]);
@@ -50,6 +51,26 @@ void main() {
       expect(imported.price, 662);
       expect(imported.viaRouteSegments.single.routeName, '京沪高速铁路');
       expect(imported.notes, '测试记录');
+      expect(imported.groupName, '京沪往返');
+    });
+
+    test('leaves groupName null when the workbook has no 分组 column', () {
+      final workbook = Excel.createExcel();
+      final sheet = workbook['行程'];
+      sheet.appendRow(
+        TripExcelImportService.requiredHeaders.map(TextCellValue.new).toList(),
+      );
+      sheet.appendRow([
+        TextCellValue('7'),
+        TextCellValue('G101'),
+        TextCellValue('北京南'),
+        TextCellValue('上海虹桥'),
+        TextCellValue('2025-01-02 08:15:00'),
+      ]);
+
+      final trips = TripExcelImportService.parseWorkbook(_save(workbook));
+
+      expect(trips.single.groupName, isNull);
     });
 
     test('accepts reordered required columns and Excel date cells', () {

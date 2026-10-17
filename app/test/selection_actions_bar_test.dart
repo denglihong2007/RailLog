@@ -21,6 +21,7 @@ Future<void> _pump(
           busy: busy,
           hasSelection: hasSelection,
           canGenerate: canGenerate,
+          onGroup: () {},
           onDelete: () {},
           onDownload: () {},
           onExportJournal: () {},
@@ -31,13 +32,29 @@ Future<void> _pump(
   );
 }
 
+const _labels = ['分组', '下载', '手账', '订票', '删除'];
+const _icons = [
+  Icons.workspaces_outline,
+  Icons.download_outlined,
+  Icons.menu_book_outlined,
+  Icons.shopping_bag_outlined,
+  Icons.delete_outline,
+];
+
 void main() {
-  testWidgets('360dp 下四个动作都带标签且不溢出', (tester) async {
+  testWidgets('360dp 下五个动作都带标签且不溢出', (tester) async {
     await _pump(tester, width: 360);
 
     expect(tester.takeException(), isNull);
-    for (final label in ['删除', '下载', '手账', '订票']) {
+    for (final label in _labels) {
       expect(find.text(label), findsOneWidget);
+    }
+    // 图标在上、标签在下，五个动作横向均分。
+    final centers = [
+      for (final icon in _icons) tester.getCenter(find.byIcon(icon)),
+    ];
+    for (var index = 1; index < centers.length; index++) {
+      expect(centers[index].dx, greaterThan(centers[index - 1].dx));
     }
   });
 
@@ -45,16 +62,11 @@ void main() {
     await _pump(tester, width: 280);
 
     expect(tester.takeException(), isNull);
-    // 退化后文字不再渲染，四个动作只剩图标。
-    for (final label in ['删除', '下载', '手账', '订票']) {
+    // 退化后文字不再渲染，五个动作只剩图标。
+    for (final label in _labels) {
       expect(find.text(label), findsNothing);
     }
-    for (final icon in [
-      Icons.delete_outline,
-      Icons.download_outlined,
-      Icons.menu_book_outlined,
-      Icons.shopping_bag_outlined,
-    ]) {
+    for (final icon in _icons) {
       expect(find.byIcon(icon), findsOneWidget);
     }
   });
@@ -67,9 +79,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: const TextScaler.linear(1.3),
-          ),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.3)),
           child: child!,
         ),
         home: Scaffold(
@@ -77,6 +89,7 @@ void main() {
             busy: false,
             hasSelection: true,
             canGenerate: true,
+            onGroup: () {},
             onDelete: () {},
             onDownload: () {},
             onExportJournal: () {},
@@ -95,26 +108,20 @@ void main() {
     await _pump(tester, width: 360, canGenerate: false);
 
     final journal = tester.widget<TextButton>(
-      find.ancestor(
-        of: find.text('手账'),
-        matching: find.byType(TextButton),
-      ),
+      find.ancestor(of: find.text('手账'), matching: find.byType(TextButton)),
     );
     expect(journal.onPressed, isNotNull);
 
     final download = tester.widget<TextButton>(
-      find.ancestor(
-        of: find.text('下载'),
-        matching: find.byType(TextButton),
-      ),
+      find.ancestor(of: find.text('下载'), matching: find.byType(TextButton)),
     );
     expect(download.onPressed, isNull);
   });
 
-  testWidgets('一个都没选时手账与删除都不可点', (tester) async {
+  testWidgets('一个都没选时分组、手账、删除都不可点', (tester) async {
     await _pump(tester, width: 360, hasSelection: false);
 
-    for (final label in ['删除', '手账']) {
+    for (final label in ['分组', '手账', '删除']) {
       final button = tester.widget<TextButton>(
         find.ancestor(of: find.text(label), matching: find.byType(TextButton)),
       );
@@ -122,10 +129,10 @@ void main() {
     }
   });
 
-  testWidgets('busy 时四个动作全部置灰', (tester) async {
+  testWidgets('busy 时五个动作全部置灰', (tester) async {
     await _pump(tester, width: 360, busy: true);
 
-    for (final label in ['删除', '下载', '手账', '订票']) {
+    for (final label in _labels) {
       final button = tester.widget<TextButton>(
         find.ancestor(of: find.text(label), matching: find.byType(TextButton)),
       );

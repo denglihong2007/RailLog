@@ -1193,6 +1193,7 @@ class _OverviewSection extends StatelessWidget {
             trips: stats.allTrips,
             openTrip: openTrip,
             enableSelection: enableTripManagement,
+            enableGrouping: enableTripManagement,
           ),
         ),
       );

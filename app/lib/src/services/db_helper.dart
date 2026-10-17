@@ -8,7 +8,7 @@ class DbHelper {
   DbHelper._privateConstructor();
   static final DbHelper instance = DbHelper._privateConstructor();
   static const _databaseFileName = 'raillog.db';
-  static const _databaseVersion = 7;
+  static const _databaseVersion = 8;
   static Database? _database;
   static String? _databasePath;
   Future<void> Function()? onTripsChanged;
@@ -92,7 +92,8 @@ class DbHelper {
         is_rail_trip INTEGER NOT NULL,
         is_local_only INTEGER NOT NULL DEFAULT 0,
         sync_dirty INTEGER NOT NULL DEFAULT 1,
-        notes TEXT
+        notes TEXT,
+        group_name TEXT
       )
     ''');
     await db.execute(
@@ -152,6 +153,9 @@ class DbHelper {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS ix_trip_records_sync_queue ON trip_records(owner_user_id, sync_dirty, updated_at)',
       );
+    }
+    if (oldVersion < 8) {
+      await db.execute('ALTER TABLE trip_records ADD COLUMN group_name TEXT');
     }
   }
 
@@ -260,6 +264,39 @@ class DbHelper {
         whereArgs: [trip.id],
       );
     });
+    _notifyTripsChanged();
+    return result;
+  }
+
+  /// 批量设置/取消分组。空白名称视为取消分组。
+  ///
+  /// 必须用 [Database.rawUpdate]：sqflite 的 update 会把值当参数绑定，
+  /// `sync_dirty = CASE ...` 会被当成字符串写进去。
+  Future<int> updateTripGroups(Iterable<int> ids, String? groupName) async {
+    final uniqueIds = ids.toSet();
+    if (uniqueIds.isEmpty) return 0;
+    final normalized = groupName?.trim();
+    final value = (normalized == null || normalized.isEmpty)
+        ? null
+        : normalized;
+    final db = await database;
+    final userId = activeUserId?.call();
+    final now = DateTime.now().toIso8601String();
+    final placeholders = List.filled(uniqueIds.length, '?').join(', ');
+    final ownership = userId == null
+        ? 'owner_user_id IS NULL'
+        : '(owner_user_id IS NULL OR owner_user_id = ?)';
+    final result = await db.rawUpdate(
+      '''
+      UPDATE trip_records
+      SET group_name = ?, updated_at = ?,
+          sync_dirty = CASE WHEN is_local_only = 1 THEN 0 ELSE 1 END
+      WHERE id IN ($placeholders)
+        AND deleted_at IS NULL
+        AND $ownership
+      ''',
+      [value, now, ...uniqueIds, ?userId],
+    );
     _notifyTripsChanged();
     return result;
   }

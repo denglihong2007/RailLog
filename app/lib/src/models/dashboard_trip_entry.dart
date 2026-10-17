@@ -15,6 +15,7 @@ class DashboardTripEntry {
     required this.seatNumber,
     required this.price,
     required this.isRailTrip,
+    this.groupName,
   });
 
   factory DashboardTripEntry.fromTrip(TripRecord trip) {
@@ -32,6 +33,7 @@ class DashboardTripEntry {
       seatNumber: trip.seatNumber,
       price: trip.price,
       isRailTrip: trip.isRailTrip,
+      groupName: trip.groupName,
     );
   }
 
@@ -48,6 +50,24 @@ class DashboardTripEntry {
   final String? seatNumber;
   final double price;
   final bool isRailTrip;
+  final String? groupName;
+
+  DashboardTripEntry withGroupName(String? value) => DashboardTripEntry(
+    id: id,
+    ticketId: ticketId,
+    trainNumber: trainNumber,
+    fromStation: fromStation,
+    toStation: toStation,
+    departureTime: departureTime,
+    arrivalTime: arrivalTime,
+    mileageKm: mileageKm,
+    rollingStock: rollingStock,
+    seatType: seatType,
+    seatNumber: seatNumber,
+    price: price,
+    isRailTrip: isRailTrip,
+    groupName: value,
+  );
 
   String get ticketLabel => ticketId == null ? '本地 #$id' : '#$ticketId';
 
@@ -66,6 +86,7 @@ class DashboardTripEntry {
       toStation,
       seatType ?? '',
       rollingStock ?? '',
+      groupName ?? '',
     ].any((value) => value.toLowerCase().contains(normalizedQuery));
   }
 }

@@ -117,7 +117,10 @@ class ExcelImportGuide extends StatelessWidget {
         const _ImportGuideItem(
           icon: Icons.tune_outlined,
           title: '其他字段',
-          detail: '可使用导出文件中的其他列；行程编号和乘坐时长会忽略，经由线路应保留 JSON 格式。',
+          detail:
+              '可使用导出文件中的其他列；行程编号和乘坐时长会忽略，经由线路应保留 JSON 格式。'
+              '「分组」列填写相同名称的行程会合并成一张卡片，留空则取消分组；'
+              '不含该列的旧文件在更新行程时会保留原分组。',
         ),
         const SizedBox(height: AppSpacing.lg),
         Container(

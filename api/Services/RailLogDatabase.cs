@@ -138,6 +138,7 @@ public sealed class RailLogDatabase
                 SeatNumber TEXT NULL,
                 Price REAL NOT NULL,
                 Notes TEXT NULL,
+                GroupName TEXT NULL,
                 IsRailTrip INTEGER NOT NULL DEFAULT 1,
                 UpdatedAt TEXT NOT NULL,
                 DeletedAt TEXT NULL,
@@ -209,6 +210,7 @@ public sealed class RailLogDatabase
         await EnsureColumnAsync(connection, "TripRecords", "DeletedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "ServerUpdatedAt", "TEXT NULL");
         await EnsureColumnAsync(connection, "TripRecords", "SyncVersion", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "TripRecords", "GroupName", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "SecondTripId", "INTEGER NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteFromStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteToStation", "TEXT NULL");
@@ -663,6 +665,7 @@ public sealed class RailLogDatabase
                 ArrivalTime=$arrivalTime, MileageKm=$mileage,
                 ViaRoutes=$routes, SeatType=$seatType,
                 SeatNumber=$seatNumber, Price=$price, Notes=$notes,
+                GroupName=$groupName,
                 IsRailTrip=$isRail, UpdatedAt=$updatedAt, DeletedAt=$deletedAt,
                 ServerUpdatedAt=$serverUpdatedAt, SyncVersion=$syncVersion
             WHERE UserId=$userId AND ClientId=$clientId
@@ -672,13 +675,14 @@ public sealed class RailLogDatabase
                 (UserId, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock,
                  CompanyName, FromStation, ToStation, DepartureTime, ArrivalTime,
                  MileageKm, ViaRoutes, SeatType, SeatNumber, Price, Notes,
-                 IsRailTrip, UpdatedAt, DeletedAt, ServerUpdatedAt, SyncVersion)
+                 GroupName, IsRailTrip, UpdatedAt, DeletedAt, ServerUpdatedAt,
+                 SyncVersion)
             SELECT
                  $userId, $clientId, $createdAt, $trainNumber, $travelDate,
                  $rollingStock, $companyName, $fromStation, $toStation,
                  $departureTime, $arrivalTime, $mileage, $routes, $seatType,
-                 $seatNumber, $price, $notes, $isRail, $updatedAt, $deletedAt,
-                 $serverUpdatedAt, $syncVersion
+                 $seatNumber, $price, $notes, $groupName, $isRail, $updatedAt,
+                 $deletedAt, $serverUpdatedAt, $syncVersion
             WHERE NOT EXISTS (
                 SELECT 1 FROM TripRecords
                 WHERE UserId=$userId AND ClientId=$clientId
@@ -2300,7 +2304,8 @@ public sealed class RailLogDatabase
         command.CommandText = $"""
             SELECT Id, ClientId, CreatedAt, TrainNumber, TravelDate, RollingStock, CompanyName,
                    FromStation, ToStation, DepartureTime, ArrivalTime, MileageKm, ViaRoutes,
-                   SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt
+                   SeatType, SeatNumber, Price, Notes, IsRailTrip, UpdatedAt, DeletedAt,
+                   GroupName
             FROM TripRecords
             WHERE UserId = $userId
               {filter}
@@ -2327,7 +2332,8 @@ public sealed class RailLogDatabase
                 reader.GetString(7), reader.GetString(8), NullableDate(reader, 9), NullableDate(reader, 10),
                 reader.GetDouble(11), reader.GetString(12), NullableString(reader, 13),
                 NullableString(reader, 14), reader.GetDouble(15), NullableString(reader, 16),
-                reader.GetInt32(17) == 1, FromDb(reader.GetString(18)), NullableDate(reader, 19)));
+                reader.GetInt32(17) == 1, FromDb(reader.GetString(18)), NullableDate(reader, 19),
+                NullableString(reader, 20)));
         }
         return trips;
     }
@@ -2340,7 +2346,7 @@ public sealed class RailLogDatabase
                      "$travelDate", "$rollingStock", "$companyName",
                      "$fromStation", "$toStation", "$departureTime",
                      "$arrivalTime", "$mileage", "$routes", "$seatType",
-                     "$seatNumber", "$price", "$notes", "$isRail",
+                     "$seatNumber", "$price", "$notes", "$groupName", "$isRail",
                      "$updatedAt", "$deletedAt",
                  })
         {
@@ -2372,6 +2378,7 @@ public sealed class RailLogDatabase
         command.Parameters["$seatNumber"].Value = DbValue(trip.SeatNumber);
         command.Parameters["$price"].Value = trip.Price;
         command.Parameters["$notes"].Value = DbValue(trip.Notes);
+        command.Parameters["$groupName"].Value = DbValue(trip.GroupName);
         command.Parameters["$isRail"].Value = trip.IsRailTrip ? 1 : 0;
         command.Parameters["$updatedAt"].Value = ToDb(trip.UpdatedAt);
         command.Parameters["$deletedAt"].Value = DbValue(trip.DeletedAt);
