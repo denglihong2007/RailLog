@@ -6,6 +6,7 @@ enum EngagementPromptEvent {
   tripSaved,
   ticketImageSaved,
   excelExported,
+  journalExported,
   achievementMilestoneViewed,
 }
 
@@ -28,6 +29,9 @@ class EngagementPromptService {
       'engagement_prompt_ticket_image_prompted';
   static const _excelExportPromptedKey =
       'engagement_prompt_excel_export_prompted';
+  // 单独一个 latch：复用 excelExported 的话，两个导出会互相顶掉提示机会。
+  static const _journalExportPromptedKey =
+      'engagement_prompt_journal_export_prompted';
   static const _achievementPromptedKey =
       'engagement_prompt_achievement_prompted';
 
@@ -77,6 +81,10 @@ class EngagementPromptService {
         preferences.getBool(_excelExportPromptedKey) ?? false
             ? null
             : EngagementPromptKind.donate,
+      EngagementPromptEvent.journalExported =>
+        preferences.getBool(_journalExportPromptedKey) ?? false
+            ? null
+            : EngagementPromptKind.donate,
       EngagementPromptEvent.achievementMilestoneViewed =>
         preferences.getBool(_achievementPromptedKey) ?? false
             ? null
@@ -107,6 +115,8 @@ class EngagementPromptService {
       await preferences.setBool(_ticketImagePromptedKey, true);
     } else if (event == EngagementPromptEvent.excelExported) {
       await preferences.setBool(_excelExportPromptedKey, true);
+    } else if (event == EngagementPromptEvent.journalExported) {
+      await preferences.setBool(_journalExportPromptedKey, true);
     } else if (event == EngagementPromptEvent.achievementMilestoneViewed) {
       await preferences.setBool(_achievementPromptedKey, true);
     }

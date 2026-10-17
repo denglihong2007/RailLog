@@ -3,13 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
+import 'package:raillog/src/services/journal_export_service.dart';
+import 'package:raillog/src/services/journal_settings.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/selection_actions_bar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 enum _TripSortField { departureTime, mileage, duration, price }
@@ -237,8 +241,71 @@ class _AllTripsPageState extends State<AllTripsPage> {
     }
   }
 
-  Future<void> _orderSelectedTickets() async {
-    final selectedTrips = _selectedTrips;
+  /// 把手账 PDF 存到系统下载目录。
+  ///
+  /// 启用条件只要求「选了东西」，绝不能用 [_selectedTripsCanGenerate]——
+  /// 那个条件要求有 ticketId，而本地未同步的行程恰恰没有 ticketId，
+  /// 它们正是选客户端本地生成要照顾到的人群。
+  Future<void> _exportSelectedJournal() async {
+    if (_selectedTripIds.isEmpty || _busyLabel != null) return;
+    setState(() => _busyLabel = '正在读取行程');
+    try {
+      // 多选持有的是 DashboardTripEntry，只有字段子集：缺 notes /
+      // companyName / viaRouteSegments / createdAt。按 id 回查完整 TripRecord。
+      // getTripById 对「已删除 / 归属不符」返回 null，直接跳过。
+      final trips = <TripRecord>[];
+      for (final id in _selectedTripIds) {
+        final trip = await DbHelper.instance.getTripById(id);
+        if (trip != null) trips.add(trip);
+      }
+      if (trips.isEmpty) {
+        throw const JournalExportException('所选行程已不存在，无法导出手账');
+      }
+      // 手账是从头往后翻的，与列表的倒序相反。
+      trips.sort((a, b) => a.departureTime.compareTo(b.departureTime));
+
+      if (!mounted) return;
+      setState(() => _busyLabel = '正在生成手账');
+      final result = await JournalExportService.exportTrips(
+        trips: trips,
+        style: JournalSettings.instance.style,
+      );
+      if (!mounted) return;
+
+      // 成功即退出多选；失败留在原地，用户可以换风格或去掉几趟再试。
+      setState(() {
+        _isSelecting = false;
+        _selectedTripIds.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '已导出手账 ${result.tripCount} 趟行程（${result.pageCount} 页）\n'
+            '保存位置：${result.savedPath}',
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      await maybeShowEngagementPrompt(
+        context,
+        EngagementPromptEvent.journalExported,
+      );
+    } on JournalExportException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导出手账失败：$error')));
+    } finally {
+      if (mounted) setState(() => _busyLabel = null);
+    }
+  }
+
+  Future<void> _orderSelectedTickets() async {    final selectedTrips = _selectedTrips;
     if (!_selectedTripsCanGenerate || _busyLabel != null) return;
     setState(() => _busyLabel = '正在创建 Key');
     try {
@@ -619,12 +686,13 @@ class _AllTripsPageState extends State<AllTripsPage> {
                 ],
         ),
         bottomNavigationBar: _selectionMode
-            ? _SelectionActionsBar(
+            ? SelectionActionsBar(
                 busy: _busyLabel != null,
                 hasSelection: _selectedTripIds.isNotEmpty,
                 canGenerate: _selectedTripsCanGenerate,
                 onDelete: _deleteSelectedTrips,
                 onDownload: _downloadSelectedImages,
+                onExportJournal: _exportSelectedJournal,
                 onOrder: _orderSelectedTickets,
               )
             : null,
@@ -734,88 +802,6 @@ class _AllTripsPageState extends State<AllTripsPage> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SelectionActionsBar extends StatelessWidget {
-  const _SelectionActionsBar({
-    required this.busy,
-    required this.hasSelection,
-    required this.canGenerate,
-    required this.onDelete,
-    required this.onDownload,
-    required this.onOrder,
-  });
-
-  final bool busy;
-  final bool hasSelection;
-  final bool canGenerate;
-  final VoidCallback onDelete;
-  final VoidCallback onDownload;
-  final VoidCallback onOrder;
-
-  @override
-  Widget build(BuildContext context) {
-    return BottomAppBar(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: _SelectionAction(
-              icon: Icons.delete_outline,
-              label: '删除',
-              onPressed: busy || !hasSelection ? null : onDelete,
-              color: Theme.of(context).colorScheme.error,
-            ),
-          ),
-          Expanded(
-            child: _SelectionAction(
-              icon: Icons.download_outlined,
-              label: '下载图片',
-              onPressed: busy || !canGenerate ? null : onDownload,
-            ),
-          ),
-          Expanded(
-            child: _SelectionAction(
-              icon: Icons.shopping_bag_outlined,
-              label: '订购车票',
-              onPressed: busy || !canGenerate ? null : onOrder,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectionAction extends StatelessWidget {
-  const _SelectionAction({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-    this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onPressed;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, color: onPressed == null ? null : color),
-      label: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: color == null || onPressed == null
-            ? null
-            : TextStyle(color: color),
       ),
     );
   }
