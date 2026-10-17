@@ -54,6 +54,9 @@ dependencies:
   fl_chart: ^1.1.1
   cached_network_image: ^3.4.1
   excel: ^4.0.6
+  # 手账 PDF 在客户端本地排版。不能用 pdf 3.13：它要求 xml >=7.0.1，
+  # 而 excel 4.0.6 要求 xml >=5.0.0 <7.0.0，两者区间无交集。
+  pdf: ^3.12.0
   file_selector: ^1.0.4
   file_saver: ^0.4.0
   webview_flutter: ^4.14.1
@@ -85,6 +88,11 @@ flutter:
     - assets/db/rail_tracks.db
     - assets/icon/icon.png
     - assets/level/
+    # 手账字体只声明这两个子集文件，不要写 assets/fonts/ 目录：
+    # HVCB.TTF 已由下方 fonts: 段声明，目录写法会让它被打包两次。
+    # 重新生成用 tools/build_journal_fonts.py。
+    - assets/fonts/journal_kai.ttf
+    - assets/fonts/journal_hei.ttf
   fonts:
     - family: HVCB
       fonts:
