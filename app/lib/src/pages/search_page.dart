@@ -194,6 +194,13 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('搜索')),
+      body: _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     if (!SessionService.instance.isSignedIn) {
       return LoginRequiredView(
         message: '登录后使用搜索',
@@ -224,8 +231,6 @@ class _SearchPageState extends State<SearchPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('搜索', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 16),
                   _SearchConditionsCard(
                     scope: _scope,
                     controller: _controller,
