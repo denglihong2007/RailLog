@@ -281,7 +281,7 @@ class _TicketOcrEntry extends StatelessWidget {
   Widget build(BuildContext context) => SettingsNavTile(
     icon: Icons.document_scanner_outlined,
     title: '车票识别',
-    subtitle: '配置百度智能云密钥，自动识别车票信息',
+    subtitle: '配置百度智能云或阿里云密钥，自动识别车票信息',
     onTap: () => _push(context, const TicketOcrSettingsPage()),
   );
 }

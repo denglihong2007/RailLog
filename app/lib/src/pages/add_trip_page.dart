@@ -12,7 +12,8 @@ import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/train_service.dart';
-import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
+import 'package:raillog/src/services/train_ticket_ocr_models.dart';
+import 'package:raillog/src/services/train_ticket_ocr_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/add_trip/entry_method_card.dart';
 import 'package:raillog/src/widgets/add_trip/quick_add_card.dart';
@@ -265,14 +266,12 @@ class _AddTripPageState extends State<AddTripPage> {
 
   Future<void> _openTicketImport() async {
     if (_isRecognizingTicket) return;
-    final credentials = await BaiduOcrSettings.load();
+    final config = await TicketOcrSettings.loadConfig();
     if (!mounted) return;
-    if (!credentials.isComplete) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先在设置中填写百度 OCR API Key 和 Secret Key')),
-        );
-      }
+    if (!config.isComplete) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(config.missingCredentialsMessage)));
       return;
     }
     final source = await showModalBottomSheet<ImageSource>(
@@ -323,9 +322,9 @@ class _AddTripPageState extends State<AddTripPage> {
     setState(() => _isRecognizingTicket = true);
     try {
       final bytes = await image.readAsBytes();
-      final ticket = recognized = await BaiduTrainTicketOcrService().recognize(
+      final ticket = recognized = await TrainTicketOcrService().recognize(
         bytes,
-        credentials,
+        config,
       );
       // 车票识别一律按票面日期走历史时刻表：经由线路与里程都由它推得。
       // 这里的「在线/历史」开关只管快捷添加那条路，不影响车票识别。
@@ -336,7 +335,7 @@ class _AddTripPageState extends State<AddTripPage> {
         _timetableVersions,
       );
       if (version == null) {
-        throw const BaiduOcrException('没有可用的历史时刻表版本');
+        throw const TrainTicketOcrException('没有可用的历史时刻表版本');
       }
       final lookup = await TrainService.lookupHistoricalSchedule(
         trainNumber: ticket.trainNumber,
@@ -344,7 +343,7 @@ class _AddTripPageState extends State<AddTripPage> {
         version: version,
       );
       if (lookup == null) {
-        throw const BaiduOcrException('历史时刻表里没有识别到的车次');
+        throw const TrainTicketOcrException('历史时刻表里没有识别到的车次');
       }
       final stops = lookup.stops;
       final departureIndex = _findStopIndex(stops, ticket.fromStation);
@@ -354,7 +353,7 @@ class _AddTripPageState extends State<AddTripPage> {
         startAfter: departureIndex,
       );
       if (departureIndex == null || arrivalIndex == null) {
-        throw const BaiduOcrException('识别到的车站无法匹配车次时刻表');
+        throw const TrainTicketOcrException('识别到的车站无法匹配车次时刻表');
       }
       final resolvedStops = TrainService.resolveScheduleDateTimes(
         stops,
@@ -375,7 +374,7 @@ class _AddTripPageState extends State<AddTripPage> {
             initialSeatType: ticket.seatType,
             initialSeatNumber: ticket.seatNumber,
             initialPrice: ticket.price,
-            initialPrompt: '车票信息已由百度 OCR 识别，请核对票面信息',
+            initialPrompt: '车票信息已由${config.provider.label}识别，请核对票面信息',
           ),
         ),
       );

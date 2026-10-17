@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'train_ticket_ocr_models.dart';
+
 class BaiduOcrCredentials {
   const BaiduOcrCredentials({required this.apiKey, required this.secretKey});
 
@@ -36,26 +38,6 @@ abstract final class BaiduOcrSettings {
   }
 }
 
-class TrainTicketOcrResult {
-  const TrainTicketOcrResult({
-    required this.trainNumber,
-    required this.fromStation,
-    required this.toStation,
-    required this.departureTime,
-    required this.seatType,
-    required this.seatNumber,
-    required this.price,
-  });
-
-  final String trainNumber;
-  final String fromStation;
-  final String toStation;
-  final DateTime departureTime;
-  final String? seatType;
-  final String? seatNumber;
-  final double? price;
-}
-
 class BaiduTrainTicketOcrService {
   BaiduTrainTicketOcrService({Dio? dio}) : _dio = dio ?? Dio();
 
@@ -66,7 +48,9 @@ class BaiduTrainTicketOcrService {
     BaiduOcrCredentials credentials,
   ) async {
     if (!credentials.isComplete) {
-      throw const BaiduOcrException('请先在设置中填写百度 OCR API Key 和 Secret Key');
+      throw const TrainTicketOcrException(
+        '请先在设置中填写百度 OCR API Key 和 Secret Key',
+      );
     }
     final tokenResponse = await _dio.post<Map<String, dynamic>>(
       'https://aip.baidubce.com/oauth/2.0/token',
@@ -78,7 +62,7 @@ class BaiduTrainTicketOcrService {
     );
     final accessToken = tokenResponse.data?['access_token']?.toString();
     if (accessToken == null || accessToken.isEmpty) {
-      throw BaiduOcrException(
+      throw TrainTicketOcrException(
         tokenResponse.data?['error_description']?.toString() ?? '百度 OCR 鉴权失败',
       );
     }
@@ -91,10 +75,12 @@ class BaiduTrainTicketOcrService {
     );
     final data = response.data ?? const <String, dynamic>{};
     if (data['error_code'] != null) {
-      throw BaiduOcrException(data['error_msg']?.toString() ?? '火车票识别失败');
+      throw TrainTicketOcrException(data['error_msg']?.toString() ?? '火车票识别失败');
     }
     final words = data['words_result'];
-    if (words is! Map) throw const BaiduOcrException('未识别到火车票信息');
+    if (words is! Map) {
+      throw const TrainTicketOcrException('未识别到火车票信息');
+    }
     final values = Map<String, dynamic>.from(words);
     final trainNumber = _word(values, const [
       'train_num',
@@ -113,18 +99,18 @@ class BaiduTrainTicketOcrService {
         fromStation.isEmpty ||
         toStation.isEmpty ||
         date.isEmpty) {
-      throw const BaiduOcrException('车次、始发站、终到站或乘车日期识别不完整，请重新拍摄');
+      throw const TrainTicketOcrException('车次、始发站、终到站或乘车日期识别不完整，请重新拍摄');
     }
     return TrainTicketOcrResult(
       trainNumber: trainNumber,
       fromStation: fromStation,
       toStation: toStation,
-      departureTime: _parseDateTime(date),
-      seatType: _normalizeSeatType(
+      departureTime: TrainTicketOcrParsing.dateTime(date),
+      seatType: TrainTicketOcrParsing.seatType(
         _nullableWord(values, const ['seat_category', 'seat_type']),
       ),
       seatNumber: _nullableWord(values, const ['seat_num', 'seat_number']),
-      price: _parsePrice(
+      price: TrainTicketOcrParsing.price(
         _word(values, const ['ticket_rates', 'ticket_price', 'price']),
       ),
     );
@@ -148,34 +134,4 @@ class BaiduTrainTicketOcrService {
     final value = _word(words, keys);
     return value.isEmpty ? null : value;
   }
-
-  static String? _normalizeSeatType(String? value) {
-    final normalized = value?.replaceAll('新空调', '').trim() ?? '';
-    return normalized.isEmpty ? null : normalized;
-  }
-
-  static DateTime _parseDateTime(String value) {
-    final match = RegExp(
-      r'(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})[:：](\d{1,2}))?',
-    ).firstMatch(value);
-    if (match == null) throw const BaiduOcrException('无法解析乘车日期');
-    return DateTime(
-      int.parse(match.group(1)!),
-      int.parse(match.group(2)!),
-      int.parse(match.group(3)!),
-      int.tryParse(match.group(4) ?? '') ?? 0,
-      int.tryParse(match.group(5) ?? '') ?? 0,
-    );
-  }
-
-  static double? _parsePrice(String value) {
-    return double.tryParse(value.replaceAll(RegExp(r'[^\d.]'), ''));
-  }
-}
-
-class BaiduOcrException implements Exception {
-  const BaiduOcrException(this.message);
-  final String message;
-  @override
-  String toString() => message;
 }

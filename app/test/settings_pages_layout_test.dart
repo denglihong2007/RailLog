@@ -136,4 +136,24 @@ void main() {
     await tester.pump();
     expect(preferences.getString('baidu_ocr_api_key'), 'renamed');
   }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('车票识别可切换到阿里云并保存密钥', (tester) async {
+    await pumpNarrow(tester, const TicketOcrSettingsPage());
+    expect(find.text('识别服务商'), findsOneWidget);
+    expect(find.text('阿里云车票识别'), findsNothing);
+
+    await tester.tap(find.text('阿里云'));
+    await tester.pump();
+    expect(find.text('阿里云车票识别'), findsOneWidget);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('ticket_ocr_provider'), 'aliyun');
+
+    await tester.enterText(find.byType(TextFormField).first, 'aliyun-id');
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(preferences.getString('aliyun_ocr_access_key_id'), 'aliyun-id');
+
+    // 重新进入页面时仍停留在阿里云。
+    await pumpNarrow(tester, const TicketOcrSettingsPage());
+    expect(find.text('阿里云车票识别'), findsOneWidget);
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }
