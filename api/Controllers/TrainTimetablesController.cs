@@ -113,8 +113,8 @@ public sealed class TrainTimetablesController(TrainTimetableService service) : C
 }
 
 /// <summary>
-/// 单车次站序。<c>trainNumber</c> 复述请求里的号（这趟车可能挂好几个号），
-/// <c>train_codes</c> 才是展示用的号对 <c>D111/D114</c>。
+/// 单车次站序。<c>trainNumber</c> 复述请求里的号（单号或带 "/" 的号对）；
+/// <c>train_codes</c> 是实际命中的号对 <c>D111/D114</c>（单号车次与输入相同）。
 /// </summary>
 public sealed record TrainTimetableResponse(
     [property: JsonPropertyName("trainNumber")]
