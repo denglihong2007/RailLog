@@ -428,81 +428,87 @@ class _PartnerAdvertisementBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final isAnnouncement = advertisement.isAnnouncement;
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colors.secondaryContainer,
+              borderRadius: BorderRadius.circular(AppRadius.small),
+            ),
+            child: Icon(
+              isAnnouncement ? Icons.campaign_outlined : Icons.apps_outlined,
+              size: 20,
+              color: colors.onSecondaryContainer,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isAnnouncement ? '系统公告' : '合作应用',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  advertisement.text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!isAnnouncement) ...[
+            const SizedBox(width: 6),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: colors.onSurfaceVariant,
+            ),
+          ],
+        ],
+      ),
+    );
     return AppCard.filled(
       color: colors.surfaceContainer,
       padding: EdgeInsets.zero,
       child: Row(
         children: [
           Expanded(
-            child: InkWell(
-              onTap: () => Navigator.of(context).push(
-                m3PageRoute(builder: (_) => const PartnerApplicationsPage()),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: colors.secondaryContainer,
-                        borderRadius: BorderRadius.circular(AppRadius.small),
-                      ),
-                      child: Icon(
-                        Icons.campaign_outlined,
-                        size: 20,
-                        color: colors.onSecondaryContainer,
+            child: isAnnouncement
+                ? content
+                : InkWell(
+                    onTap: () => Navigator.of(context).push(
+                      m3PageRoute(
+                        builder: (_) => const PartnerApplicationsPage(),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '合作应用',
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: colors.primary,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0,
-                                ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            advertisement.text,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: colors.onSurfaceVariant,
-                                  letterSpacing: 0,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                    child: content,
+                  ),
           ),
           IconButton(
             onPressed: onClose,
-            tooltip: '关闭广告',
+            tooltip: isAnnouncement ? '关闭公告' : '关闭广告',
             icon: const Icon(Icons.close),
             iconSize: 18,
             style: IconButton.styleFrom(

@@ -1,21 +1,20 @@
-"""查清 `mileage_mismatch` 的失败段到底是「里程不对」还是「OSM 拓扑断裂」。
+"""查清失败段是「OSM 拓扑断裂 / 吸附不到」还是「被绕路护栏否掉」。
 
-`plan_leg` 把两种完全不同的情况归成同一个 reason：
+选路已经不看里程（见 `rail_track_geometry.plan_leg`），失败只剩这几种：
 
-  1. 找到路了，但长度超过里程的 1.35 倍        → 多半是选错了平行线路或里程有误；
-  2. 在里程给的预算内**根本没找到路**          → 多半是 OSM 里两条 way 看着相接、
-     其实没共用节点（拓扑断裂），跟里程无关。
+  1. 走廊里没有轨道数据、图是空的（`no_rail_data`、`empty_graph`）；
+  2. 起终点没吸附到图上、或吸附上去以后搜不到路（`snap_failed`、`no_path`）；
+  3. 找到路了，但折线超过起终点直线距离的绕行倍率（`circuitous`）——这是站坐标
+     落到同名异地时的兜底。
 
-两者的修法完全不同，所以这里对每个失败段问三个问题：
+前两种多半是 OSM 拓扑问题，所以这里对每个失败段问三个问题：
 
-  * 把长度上限拿掉后能不能找到路？（能 → 是里程/预算的问题，拓扑是通的）
   * 起点和终点各吸附到哪个连通分量？（不同分量 → 拓扑断裂）
   * 两个分量之间最近差多远？（几十米 → 端点没接上，值得加桥接）
+  * 最近那对节点是不是并行线路的界面？（是 → 桥接会把两条线焊死，不能修）
 
-**里程是客运运价里程，不是轨道实长**，所以「长度超里程」这一桶内部还要再分一次：
-记下「最短路径长度 / 里程」的比值，看它是刚过阈值（1.35–1.6，多半是运价里程与
-实长的正常出入、阈值定紧了）还是成倍（>1.6，多半是走廊里缺了那条更直的线，被迫
-绕行）。两者一个调阈值、一个补数据，混在一起看不出该动哪个。
+同时把「无障碍搜索能走通多长 / 运价里程」的比值打印出来做参考：里程只是运价里程，
+与轨道实长本来就有出入，它**不参与**选路，也不构成失败原因。
 
     python tools/osm_update/diagnose_failures.py [--db tools/.test_out/tracks.db]
 
@@ -166,13 +165,10 @@ def main(argv: list[str] | None = None) -> int:
     source = builder.PbfRailSource(args.cache_dir, args.pbf)
 
     print(f"失败段 {len(failures)} 个，开始逐个诊断\n")
-    reachable_without_budget = 0
-    split_components = 0
 
     gaps: list[float] = []
     ratios: list[float] = []
-    slack_cases: list[tuple[float, float]] = []
-    counts = {"budget": 0, "snap": 0, "split": 0, "same_component": 0, "missing": 0}
+    counts = {"detour": 0, "snap": 0, "split": 0, "same_component": 0, "missing": 0}
     kinds: dict = {}
 
     for index, (route_name, from_station, to_station, reason) in enumerate(failures):
@@ -194,21 +190,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  走廊 way {len(corridor.lines)}、"
                   f"图 {len(geo.build_graph(corridor.lines, corridor.preferred).adjacency)} 节点")
 
-        # 关键一问：拿掉里程预算后还找不到路吗？
+        # 关键一问：不设任何长度上限时，这段路在图上走得通吗？
         graph = geo.build_graph(corridor.lines, corridor.preferred)
         unbounded, unbounded_reason = geo.search_paths(
             graph, leg.start, leg.end, projection, k=1
         )
         if unbounded:
-            counts["budget"] += 1
+            counts["detour"] += 1
             if leg.mileage_km and leg.mileage_km > 0:
                 ratios.append(unbounded[0].length_km / leg.mileage_km)
-                slack_cases.append((leg.mileage_km, unbounded[0].length_km))
             if verbose:
-                print(f"  去掉里程预算后找到了路：{unbounded[0].length_km:.1f} km"
+                print(f"  无障碍搜索能找到路：{unbounded[0].length_km:.1f} km"
                       f"（里程 {leg.mileage_km:.1f} km，"
                       f"{unbounded[0].length_km / leg.mileage_km:.2f} 倍）")
-                print("  → 拓扑是通的，问题在里程或选线\n")
+                print("  → 拓扑是通的，失败出在绕路护栏或候选评分\n")
             continue
 
         # _snap_node 会把命中的边拆开插点，所以必须在**新的**图上做，
@@ -246,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
 
     total = len(failures)
     print(f"=== 汇总（共 {total} 个失败段）===")
-    print(f"  里程/选线问题（去掉预算就能找到路）: {counts['budget']}")
+    print(f"  有路但没被采纳（绕路护栏/候选评分）: {counts['detour']}")
     print(f"  拓扑断裂（起终点不在同一连通分量）: {counts['split']}")
     print(f"  同分量但搜不到路                  : {counts['same_component']}")
     print(f"  端点吸附失败                      : {counts['snap']}")
@@ -289,11 +284,11 @@ def main(argv: list[str] | None = None) -> int:
         import statistics
 
         ratios.sort()
-        print(f"\n=== 「最短路径 / 运价里程」比值分布（n={len(ratios)}）===")
+        print(f"\n=== 「无障碍最短路径 / 运价里程」比值分布（n={len(ratios)}）===")
         for high, label in (
             (1.0, "<1.00  "),
             (1.35, "1.0–1.35"),
-            (1.6, "1.35–1.6（阈值刚过）"),
+            (1.6, "1.35–1.6"),
             (2.5, "1.6–2.5 "),
             (float("inf"), ">2.5   "),
         ):
@@ -304,23 +299,8 @@ def main(argv: list[str] | None = None) -> int:
               f"；运价里程短于实长（比值>1）的占"
               f" {100 * sum(1 for r in ratios if r > 1.0) / len(ratios):.1f}%")
         near = sum(1 for r in ratios if r <= 1.6)
-        print(f"  比值 ≤1.6（放宽 max_error_ratio 就能救回）: {near}"
-              f"  = 全部失败段的 {100 * near / total:.1f}%")
-
-    if slack_cases:
-        # plan_leg 的长度上限给了 mileage*1.35 + 5km 的绝对余量，接受判据却只有
-        # 35% 的相对余量——短段因此特别容易栽：2km 的段偏 1km 就是 1.5 倍，可这
-        # 1km 里既有运价里程取整的成分，也有站址偏差。这一栏量一下把判据补成
-        # max(35%, 绝对余量) 能救回多少。
-        print("\n=== 给接受判据加绝对余量能救回多少（当前只有 35% 相对余量）===")
-        for slack in (0.0, 1.0, 2.0, 3.0, 5.0):
-            rescued = sum(
-                1
-                for mileage, length in slack_cases
-                if abs(length - mileage) <= max(mileage * 0.35, slack)
-            )
-            print(f"  绝对余量 {slack:.0f}km: 接受 {rescued:5d}"
-                  f"  = 全部失败段的 {100 * rescued / total:.1f}%")
+        print(f"  比值 ≤1.6（几何与运价里程基本对得上）: {near}"
+              f"  = 有路失败段的 {100 * near / len(ratios):.1f}%")
     return 0
 
 

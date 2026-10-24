@@ -27,6 +27,7 @@ builder.Services.AddResponseCompression(options =>
     options.EnableForHttps = true;
 });
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Updates"));
+builder.Services.Configure<AnnouncementOptions>(builder.Configuration.GetSection("Announcements"));
 builder.Services.Configure<TicketAssetsOptions>(builder.Configuration.GetSection("TicketAssets"));
 builder.Services.Configure<TicketPdfOptions>(builder.Configuration.GetSection("TicketPdf"));
 builder.Services.Configure<AmapOptions>(builder.Configuration.GetSection("Amap"));

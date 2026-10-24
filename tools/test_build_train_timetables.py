@@ -243,5 +243,25 @@ class VersionDiscoveryTest(unittest.TestCase):
         self.assertEqual(builder.quote("timetable_2003.11.25"), '"timetable_2003.11.25"')
 
 
+class ChunkVersionsTest(unittest.TestCase):
+    def test_bucket_count_respects_platform_worker_limit(self) -> None:
+        # Windows 的 ProcessPoolExecutor 最多 61 个 worker，--jobs 传大了也不能超。
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            versions: list[tuple[str, Path]] = []
+            for index in range(builder.MAX_POOL_WORKERS + 5):
+                path = directory / f"part-{index}.csv"
+                path.write_text("x", encoding="utf-8")
+                versions.append((f"v{index:03d}", path))
+
+            buckets = builder.chunk_versions(versions, 10_000)
+
+            self.assertLessEqual(len(buckets), builder.MAX_POOL_WORKERS)
+            scheduled = [
+                version for bucket in buckets for version, _path, _size in bucket
+            ]
+            self.assertCountEqual(scheduled, [version for version, _ in versions])
+
+
 if __name__ == "__main__":
     unittest.main()

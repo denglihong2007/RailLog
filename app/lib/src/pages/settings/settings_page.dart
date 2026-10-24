@@ -11,6 +11,7 @@ import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
 import 'package:raillog/src/pages/settings/ticket_ocr_settings_page.dart';
+import 'package:raillog/src/pages/settings/timetable_rebuild_page.dart';
 import 'package:raillog/src/pages/update_log_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
@@ -65,7 +66,9 @@ class SettingsPage extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '数据'),
                       const SizedBox(height: AppSpacing.sm),
-                      const SettingsListCard(children: [_DataSyncEntry()]),
+                      const SettingsListCard(
+                        children: [_DataSyncEntry(), _TimetableRebuildEntry()],
+                      ),
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '应用'),
                       const SizedBox(height: AppSpacing.sm),
@@ -295,5 +298,17 @@ class _DataSyncEntry extends StatelessWidget {
     title: '数据与同步',
     subtitle: '云同步开关与 Excel 导入导出',
     onTap: () => _push(context, const DataSyncSettingsPage()),
+  );
+}
+
+class _TimetableRebuildEntry extends StatelessWidget {
+  const _TimetableRebuildEntry();
+
+  @override
+  Widget build(BuildContext context) => SettingsNavTile(
+    icon: Icons.auto_fix_high_outlined,
+    title: '历史时刻表重建',
+    subtitle: '按历史时刻表批量重建所选车票的到点与经由线路',
+    onTap: () => _push(context, const TimetableRebuildPage()),
   );
 }

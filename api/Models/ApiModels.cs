@@ -68,9 +68,14 @@ public sealed record PartnerAdvertisementResponse(
     string Text,
     int Weight);
 
+public sealed record SystemAnnouncementResponse(
+    string Text,
+    int Weight);
+
 public sealed record PartnerAdvertisementConfigResponse(
     int HiddenWeight,
-    IReadOnlyList<PartnerAdvertisementResponse> Advertisements);
+    IReadOnlyList<PartnerAdvertisementResponse> Advertisements,
+    IReadOnlyList<SystemAnnouncementResponse> Announcements);
 
 public sealed record GenerateTicketRequest(
     long TripId,

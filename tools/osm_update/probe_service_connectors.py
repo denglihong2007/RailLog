@@ -169,16 +169,24 @@ def main(argv: list[str] | None = None) -> int:
 
         baseline_lines, baseline_preferred = [], []
         service_lines, service_preferred = [], []
-        # 普速腿的偏好集由线路名决定（见 RailLog 的 preferred_basis）：不传 line_key
-        # 就等于把偏好集关掉，这条 probe 量的就不是生产行为了。
-        line_key = (
-            geo.line_match_key(leg.route_name)
-            if leg.profile == geo.CONVENTIONAL
-            else None
+        # 偏好集与生产一致：线路名三档匹配（见 builder.line_matches），高铁腿再并上标签。
+        # 匹配要基于整条走廊的 way 一起判——只拿单条 way 看，分不出「严格同名」与
+        # 「靠前缀认领」，probe 量的就不再是生产行为了。
+        corridor = [
+            entry for entry in resolved if _bbox_hits(_way_bbox(entry[4]), bbox)
+        ]
+        matched = builder.line_matches(
+            [
+                (
+                    geo.line_match_key(name) if name else None,
+                    geo.line_base_key(name) if name else None,
+                )
+                for _service, name, _hsr, _conventional, _coords in corridor
+            ],
+            leg.route_name,
         )
-        for service, name, is_hsr, is_conventional, coords in resolved:
-            if not _bbox_hits(_way_bbox(coords), bbox):
-                continue
+        for entry, is_matched in zip(corridor, matched):
+            service, name, is_hsr, is_conventional, coords = entry
             # 基线永远不含任何 service way——不然 --service-kinds 会一并改掉基线，
             # 三次运行比的就不是同一个基准了（这个坑踩过：60% 的增益被算成了 0%）。
             if service in {"yard", "siding"}:
@@ -191,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
             baseline_preferred.append(
                 builder.CachedWay(
                     is_hsr, is_conventional, coords, name=name
-                ).preferred_for(leg.profile, line_key)
+                ).preferred_for(leg.profile, is_matched)
             )
 
         with_service = geo.RailData(

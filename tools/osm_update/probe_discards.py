@@ -37,13 +37,13 @@ def main() -> int:
 
     connection = sqlite3.connect(f"file:{args.routes_db}?mode=ro", uri=True)
     try:
-        for route_name, version_id in builder._pick_route_versions(connection):
+        for route_name, line_id in builder._pick_routes(connection):
             rows = connection.execute(
-                "SELECT station_index, station_name, mileage FROM stations"
-                " WHERE route_version_id = ? ORDER BY station_index",
-                (version_id,),
+                "SELECT seq, station, km FROM line_stations"
+                " WHERE line_id = ? ORDER BY seq",
+                (line_id,),
             ).fetchall()
-            for index, (_station_index, name, _mileage) in enumerate(rows):
+            for index, (_seq, name, _mileage) in enumerate(rows):
                 if name not in names:
                     continue
                 prev_row = rows[index - 1] if index else None

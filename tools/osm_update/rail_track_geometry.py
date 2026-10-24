@@ -1,12 +1,15 @@
 """铁路站间轨道折线的几何算法。
 
 构图与吸附的思路移植自 TrainTrack 项目已经验证的实现（OSM 铁路网 → 图 →
-吸附 → A*）。本项目独有的是**里程约束消歧**：
+吸附 → A*）。本项目独有的是**按线路名选路**：
 
-    RailLog 的 routes.db 带有每站的线路里程桩，站间里程因此是已知量。
     同一对车站之间可能存在并行线路（例如京沪高铁与京沪铁路），纯几何最短路
-    永远只会选出较短的那条。这里改用 Yen 算法枚举前 k 条最短路，再挑选长度
-    与已知里程最接近的那条，从而把并行线路区分开。
+    永远只会选出较短的那条。这里改用 Yen 算法枚举前 k 条最短路，再按「长度 +
+    离开目标线的里程 × 代价倍率」评分：目标线由 OSM way 的线路名确定，站间段
+    属于哪条线来自线路库的站序。
+
+    里程（线路库的 km）不参与选路，只作为诊断字段记录。它是运价里程，断链处
+    与轨道实长能差出十几公里；经由线路的计算另有自己的数据链。
 
 本模块只做计算、不做 IO，便于单元测试。
 """
@@ -281,7 +284,8 @@ def line_match_key(value: str) -> str:
     「铁路」之前的部分：客里表的线路名带区段后缀，OSM 的 way 名不带。
 
     对不上就返回一个匹配不到任何 way 的键，这是**故意**的：说明这条线路名在 OSM 里没有
-    同名正线，调用方据此拿到空的偏好集、退化成纯里程判定（见 `preferred_for`）。
+    同名正线，调用方据此拿到空的偏好集、交给 OSM 标签兜底或退回纯几何（见
+    `line_base_key` 与 `preferred_for`）。
     """
     trimmed = (value or "").strip().replace("（", "(").replace("）", ")")
     if not trimmed:
@@ -299,6 +303,33 @@ def line_match_key(value: str) -> str:
     else:
         name = _SEGMENT_SUFFIX_RE.sub("", name)
     return name.lower() or trimmed.lower()
+
+
+# 速度等级词。[LINE_ALIASES] 已把「高铁/客专/客运专线」归一成「高速」，这里补上它没有
+# 归一的「城际」和「专线」，就是线路名里所有会区分速度等级的写法。
+LINE_CLASS_WORDS = ("高速", "城际", "专线")
+
+
+def line_base_key(value: str) -> str:
+    """线路的「基本名」：匹配键再去掉速度等级词。
+
+    新线路库（`lines`/`line_stations`）把速度等级词从线路名里删掉了——「京港高铁合安段」
+    变成「京港合安段」、「沪宁沿江高铁」变成「沪宁沿江」——而 OSM 的 way 名一个字没变，
+    于是 [line_match_key] 的严格比较整批对不上。基本名把两侧的等级词都抹掉，用来说明
+    「这是不是同一条线」：
+
+        沪宁沿江        ↔ 沪宁沿江高速线   → 两边都是「沪宁沿江」（基本名相等）
+        京包张包段      ← 京包客专线       → 「京包张包」以「京包」开头（前缀）
+        京广            ↛ 京广高速线       → 只有落到前缀档时才会撞上，见调用方
+
+    抹掉等级词会丢掉「普速/高铁」的区分，所以**不能**拿基本名直接当匹配键用：京广线与
+    京广高速线在基本名上是一个键。调用方必须限定使用场景（见
+    `build_rail_tracks.line_matches` 的三档递进：严格档命中就不再用基本名）。
+    """
+    key = line_match_key(value)
+    for word in LINE_CLASS_WORDS:
+        key = key.replace(word, "")
+    return key
 
 
 def track_key(route_name: str, from_station: str, to_station: str) -> str:
@@ -326,7 +357,13 @@ def way_name(tags: dict) -> Optional[str]:
 
 
 def infer_profile(route_name: str) -> str:
-    """从线路名推断轨道类型。"""
+    """从线路名推断轨道类型。
+
+    新线路库删掉了线路名里的速度等级词（「京港高铁合安段」→「京港合安段」），这里会
+    把约 30 条高铁线判成普速。判错不致命：偏好集的主证据是线路名匹配（见
+    `build_rail_tracks.line_matches`），profile 只在「名字对不上任何 way」时才决定
+    用不用 OSM 标签兜底。
+    """
     name = route_name or ""
     if any(keyword in name for keyword in HSR_ROUTE_KEYWORDS):
         return HSR
@@ -403,13 +440,18 @@ def way_flags(tags: dict) -> Tuple[bool, bool]:
 class RailData:
     """一次取数范围内的铁路 way。
 
-    lines 是全部 way 的坐标序列；preferred[i] 表示第 i 条 way 是否匹配目标 profile；
-    names[i] 是它的线路名（`name`/`name:zh`），只用于把折线拆成「哪几条线拼的」。
+    lines 是全部 way 的坐标序列；preferred[i] 表示第 i 条 way 是否属于目标线（由
+    线路名匹配，名字全线对不上时才退回 OSM 标签）；names[i] 是它的线路名
+    （`name`/`name:zh`），用于把折线拆成「哪几条线拼的」。
+
+    name_matched 记录取数范围里有没有任何 way 的名字对上了本线。选路不看它——
+    preferred 已经把结论带上了——它只用于诊断（`preferred_basis`）。
     """
 
     lines: List[List[Coord]] = field(default_factory=list)
     preferred: List[bool] = field(default_factory=list)
     names: List[Optional[str]] = field(default_factory=list)
+    name_matched: bool = False
 
     def is_empty(self) -> bool:
         return not self.lines
@@ -427,6 +469,7 @@ class RailData:
             lines=[*self.lines, *other.lines],
             preferred=[*self.preferred, *other.preferred],
             names=[*self.names_padded(), *other.names_padded()],
+            name_matched=self.name_matched or other.name_matched,
         )
 
 
@@ -435,7 +478,7 @@ class RailGraph:
     """站间寻路用的无向图。
 
     adjacency 的边权是投影空间欧氏距离（km）；preferred_edges 记录该边是否
-    至少被一条匹配目标 profile 的 way 覆盖，用于在长度相近的候选之间取舍。
+    至少被一条属于目标线的 way 覆盖，候选评分用它算「离线里程」。
 
     way_of/way_names 是给「这条折线由哪几条线路拼成」用的侧表：edge → 建图时的 way
     序号。**不塞进 adjacency 的元组里**——那个元组被 A*/Yen/重采样等一堆地方按
@@ -488,7 +531,7 @@ def corridor_filter(
     """只保留落在起终点直线走廊内的 way，显著缩小图的规模。
 
     并行线路（高铁/普速）通常相距只有几公里到几十公里，走廊宽度足以同时容纳，
-    因此不会影响里程消歧。
+    因此不会影响按线名选路。
     """
     if rail.is_empty():
         return rail
@@ -652,7 +695,7 @@ def k_shortest_paths(
 
 
 # --------------------------------------------------------------------------
-# 单段规划：里程约束消歧
+# 单段规划：按线路名选路
 # --------------------------------------------------------------------------
 
 
@@ -664,6 +707,15 @@ class PathCandidate:
     # 登乘跳：折线首尾「站坐标 → 目标线上车点」两段直线的合计（km），每段各自不超
     # 过 jump_radius_km，所以这个数最大到 2×半径。0 表示两端都是同分量吸附、没跳。
     board_jump_km: float = 0.0
+
+    @property
+    def unpreferred_km(self) -> float:
+        """折线里不在偏好集（名字对不上本线）的里程。
+
+        吸附空隙也算在 length_km 里，但没参与 ratio 的统计，所以这里只是一个略偏大
+        的近似——选路只拿它比较候选之间的相对大小，这点偏差不影响结论。
+        """
+        return self.length_km * (1.0 - self.preferred_ratio)
 
 
 @dataclass
@@ -740,7 +792,7 @@ def _snap_node(
 
     只按距离取最近的那个节点。并行的高铁与普速在同名车站各有自己的节点，站坐标可能
     离**另一条线**的节点更近，于是整段只能沿那条线走——这一层不去猜，交给
-    `search_paths` 把两种锚法都算一遍、由候选评分（里程误差 + 贴 profile）来定。
+    `search_paths` 把两种锚法都算一遍、由候选评分（贴线程度 + 长度）来定。
 
     阈值内一个节点都没有时，兜底是找到最近的一条**图上的边**，把该边从中拆开、插入
     投影点，这样只有两端有节点的稀疏 way 也能走得通，且不会多出翻越端点的近路。
@@ -902,8 +954,16 @@ def _alternative_snaps(
     ]
 
 
-EXTRA_SNAP_ERROR_RATIO = 0.05
 EXTRA_SNAP_PROFILE_FLOOR = 0.5
+
+# 主吸附对的最短候选超过直线距离这么多倍时，同样当作可疑、去试备用吸附点。
+#
+# 这是纯几何判据，和里程无关：最近的那个图节点有时落在站场死端/环线上，从它出发只能
+# 绕一圈回到正线。取值故意压得低：触发一次的代价只是多枚举几对 Yen，而漏掉一段就会
+# 在 App 上留下一个来回绕的圈。实测现库成功段的 `length / 直线距离` 中位 1.09、
+# p95 1.47，1.2 会让约两成的段多算几对；真盘山的线路误触发也无妨——备用候选只是
+# 多摆几条，仍由代价函数在「长度 + 离线里程」上比。
+EXTRA_SNAP_RATIO = 1.2
 
 # 站坐标所在的分量与目标线不通时，允许「跳」到目标线上的节点上车，这一跳的最大长度。
 #
@@ -921,12 +981,14 @@ DEFAULT_JUMP_SNAPS = 4
 # 现有候选「大半走在目标线上」时就不必跳了——它已经是对的了，再跳只是白花钱。
 #
 # 为什么不用 `EXTRA_SNAP_PROFILE_FLOOR`（0.5）：那个数是给「主对候选可疑不可疑」用的，
-# 分不清「走在目标线上」和「走在另一条同样被偏好命中的线上」。高铁侧尤其糊——preferred
-# 的定义是「带 highspeed/maxspeed 标签」，于是任何一条 200km/h 以上的线都算数。实测
-# 京广高铁 广州北→广州南：站坐标吸附在京广线上（非偏好），两端同分量、走得通，那条
-# 走法借道南广线（250km/h，同样带标签），整段 ratio 0.5004 刚刚压过 0.5 的门槛，于是
-# 登乘跳一次都不触发，这一段就一直画在 51.71km 的绕行线上（里程差 4.71km）。跳上去的
-# 正确解是 46.10km、ratio 1.00、里程差 0.90km——两个指标都更好，只是没机会上场。
+# 门槛太低，会把「走在目标线上」和「只在站场里蹭到一小段目标线、出站就换别的线」的
+# 候选混为一谈。实测京广高铁 广州北→广州南：站坐标吸附在京广线上（非偏好），两端
+# 同分量、走得通，那条走法借道南广线，整段只有一半落在目标线上，ratio 0.5004 刚刚
+# 压过 0.5 的门槛，于是登乘跳一次都不触发，这一段就一直画在 51.71km 的绕行线上。
+# 跳上去的正确解是 46.10km、ratio 1.00——该跳的时候必须跳。
+#
+# 名字成为主证据之后，并行线不再因为「同为高铁」混进偏好集，这类候选的 ratio 会更低；
+# 门槛保留 0.9，继续挡「站场内蹭到线、出站就换线」的走法。
 JUMP_PROFILE_FLOOR = 0.9
 
 
@@ -1024,6 +1086,25 @@ def _jump_snap_candidates(
     return candidates
 
 
+def _candidates_look_right(
+    candidates: Sequence[PathCandidate], start: Coord, end: Coord
+) -> bool:
+    """候选里有没有一条「既贴目标线、长度又不离谱」的走法。
+
+    备用吸附对要不要继续试就以它为准：第一对通了、但只能沿站场环线绕一大圈时，
+    显然不值得收手。
+    """
+    straight_km = haversine_km(start, end)
+    for item in candidates:
+        if item.preferred_ratio < EXTRA_SNAP_PROFILE_FLOOR:
+            continue
+        if straight_km < DETOUR_MIN_STRAIGHT_KM:
+            return True
+        if item.length_km <= EXTRA_SNAP_RATIO * straight_km:
+            return True
+    return False
+
+
 def search_paths(
     graph: RailGraph,
     start: Coord,
@@ -1033,7 +1114,6 @@ def search_paths(
     k: int = 6,
     snap_threshold_km: float = 5.0,
     max_length_km: Optional[float] = None,
-    mileage_km: Optional[float] = None,
     extra_snaps: int = 0,
     jump_radius_km: float = DEFAULT_JUMP_RADIUS_KM,
     jump_snaps: int = DEFAULT_JUMP_SNAPS,
@@ -1041,19 +1121,18 @@ def search_paths(
     """吸附起终点后枚举候选路径，按长度升序返回。
 
     主吸附对（各自最近的节点）不通时，会换到别的候选吸附点再试（见
-    `_alternative_snaps`），这是原来就有的兜底，先试的永远是主吸附对。
+    `_alternative_snaps`），这是原来就有的兜底，先试的永远是主吸附对。换过去的也会
+    继续试下去，直到有一条「既贴目标线、长度又不离谱」的（见
+    `_candidates_look_right`）——第一对通了但只能沿站场环线绕一圈的段，正是靠这一步
+    才拉回直路的。
 
-    `mileage_km` 与 `extra_snaps` 一起用时，多算一层：主吸附对的候选如果看着不对
-    （离里程太远，或者大半路程压在非目标 profile 的边上），就把 [extra_snaps] 个
-    「落在目标 profile 边上的节点」组成的吸附对也算一遍，**候选合并在一起**返回，
-    由调用方的评分去定。并行的高铁与普速在同名车站各有节点、站坐标可能离另一条线更近
-    （实测宝成线 昭化→江油：离西成客专的江油节点 140m、离宝成自己的 233m），只按距离
-    锚到客专之后，那一段就只有沿客专走的一条 151km 的解法（里程 135km，误差 16km 仍在
-    35% 容差里）；把宝成那边的 136km、preferred 0.99 的那条一起摆上，评分自然选对。
-
-    多算出来的候选要进得了「与里程相容」的那一档（见 `plan_leg` 的 close_error_ratio）
-    才有机会被选中，所以本来就贴里程的段不会被一堆差候选挤掉；反过来，主吸附对已经
-    贴里程又贴 profile 的段也不会多算这一次。
+    `extra_snaps` 时，主吸附对的候选如果看着不对（大半路程压在非目标线的边上、最短
+    候选比直线距离长出太多，或者这条腿根本没有名字证据），就把 [extra_snaps] 个
+    「落在目标线上」的吸附对也算一遍，**候选合并在一起**返回，由调用方的评分去定。
+    并行的高铁与普速在同名车站各有节点、站坐标可能离另一条线更近（实测宝成线
+    昭化→江油：离西成客专的江油节点 140m、离宝成自己的 233m），只按距离锚到客专
+    之后，那一段就只有沿客专走的一条 151km 的解法；把宝成那边的 136km、preferred
+    0.99 的那条一起摆上，按贴线程度评分自然选对。
     """
     if graph.is_empty():
         return [], "empty_graph"
@@ -1064,6 +1143,9 @@ def search_paths(
         return [], "snap_failed"
 
     attempts = [(start_node, start_dist, end_node, end_dist)]
+    # 备用吸附对的候选先攒着：第一对通了不代表通得对——站场里落在环线/死端上的节点
+    # 只能绕一大圈回正线，而下一对里就有一条直路。几何上说得过去才收手。
+    collected: List[PathCandidate] = []
     for index, (from_node, from_dist, to_node, to_dist) in enumerate(attempts):
         candidates = _plan_attempt(
             graph,
@@ -1088,7 +1170,6 @@ def search_paths(
                         candidates,
                         k=k,
                         max_length_km=max_length_km,
-                        mileage_km=mileage_km,
                         extra_snaps=extra_snaps,
                         skip=(from_node, to_node),
                     )
@@ -1113,8 +1194,13 @@ def search_paths(
                             seen={(item.path[0], item.path[-1]) for item in candidates},
                         )
                     )
-            candidates.sort(key=lambda item: item.length_km)
-            return candidates, None
+                # 备用吸附对在 `_extra_snap_candidates` 里已经算过一遍了，这里可以收手。
+                candidates.sort(key=lambda item: item.length_km)
+                return candidates, None
+            collected.extend(candidates)
+            if _candidates_look_right(collected, start, end):
+                collected.sort(key=lambda item: item.length_km)
+                return collected, None
         if index == 0:
             # 第一次不通才去算候选对：算分量是 O(V+E)，不该让每个成功的段都付这笔钱。
             attempts.extend(
@@ -1127,6 +1213,11 @@ def search_paths(
                     skip=(start_node, end_node),
                 )
             )
+
+    if collected:
+        # 备用对全试完也没有几何上说得过去的那条：把攒下的都摆出来，由代价函数选。
+        collected.sort(key=lambda item: item.length_km)
+        return collected, None
 
     # 同分量的吸附对全试过了还是不通，最后试一把跨分量登乘跳。
     #
@@ -1164,31 +1255,42 @@ def _extra_snap_candidates(
     *,
     k: int,
     max_length_km: Optional[float],
-    mileage_km: Optional[float],
     extra_snaps: int,
     skip: Tuple[Coord, Coord],
 ) -> List[PathCandidate]:
-    """主吸附对的候选看着不对时，再算几个「落在目标 profile 边上」的吸附对。
+    """主吸附对的候选看着不对时，再算几个「落在目标线上」的吸附对。
 
     只在主吸附对可疑时才动手，否则每个段都要为这几对多跑一遍 Yen 枚举。
     """
     if extra_snaps <= 0:
         return []
-    # 一条偏好边都没有（普速腿的线路名对不上任何 OSM way）时，「ratio < 阈值」不再说明
-    # 任何事——它恒成立，所以那一条判据要整个让开，否则每个这样的段都白跑一遍额外枚举。
+    # 可疑判据有两条，任一成立就多算几对：
+    # - 有偏好集时，主吸附对的候选全都不够贴线（低于 EXTRA_SNAP_PROFILE_FLOOR）；
+    # - 主吸附对的最短候选比直线距离长出太多（超过 EXTRA_SNAP_RATIO 倍）——最近的那个
+    #   图节点常常落在站场死端/环线上，从它出发只能绕一大圈回正线，而离站 100m 的另一
+    #   个节点就是直路。实测成灌线 犀浦→红光镇：最近节点 2m 处走 16.94km，一百多米外
+    #   的节点走 3.65km（直线 3.55km）；珠机城际线 珠海长隆→井湾 15.81 vs 6.19km。
+    #   撤掉里程预算之后，这是唯一还会把这类吸附点对顶掉的判据，所以必须按几何补上。
     #
-    # 但**只让开 ratio 那条**，里程误差那条必须留着：那才是真正判断「这个吸附对看着就不对」
-    # 的判据，而名字对不上的腿恰恰最需要它。曾把两条一起挡掉（`if not graph.preferred_edges:
-    # return []`），代价是普速 name-miss 段丢掉了备用吸附锚点的兜底——实测 新靖线新海段
-    # 盐城→东台：主线吸附对所在分量里只有一条 82.27km 的绕行路（里程差 19.27km），而备用
-    # 锚点能找到 61.86km 的正路（里程差 1.14km）；护栏一挡，兜底不再执行，这段从「准」变
-    # 成「差 19km」。全国约 30 段因此从误差 <2km 劣化到 >2km。
-    suspicious = bool(graph.preferred_edges) and (
-        min(item.preferred_ratio for item in primary) < EXTRA_SNAP_PROFILE_FLOOR
-    )
-    if not suspicious and mileage_km is not None and mileage_km > 0:
-        best_error = min(abs(item.length_km - mileage_km) for item in primary)
-        suspicious = best_error > EXTRA_SNAP_ERROR_RATIO * mileage_km
+    # 没有偏好集时（普速腿的线路名对不上任何 OSM way），ratio 恒为 0、说明不了任何事，
+    # 但这条腿恰恰只剩吸附点这一个变量——一律多算几对，由「最短」来定。实测 新靖线
+    # 新海段 盐城→东台：主锚点所在分量里只有一条 82.27km 的绕行路，备用锚点能找到
+    # 61.86km 的正路；这条兜底必须留着。
+    #
+    # 曾经这里还有一条「长度离里程太远也可疑」的判据，它随凑里程机制一起去掉——里程
+    # 不再参与选路，也就不该再用来决定要不要多算吸附对。
+    if not graph.preferred_edges:
+        suspicious = True
+    else:
+        straight_km = haversine_km(start, end)
+        suspicious = (
+            min(item.preferred_ratio for item in primary) < EXTRA_SNAP_PROFILE_FLOOR
+            or (
+                straight_km >= DETOUR_MIN_STRAIGHT_KM
+                and min(item.length_km for item in primary)
+                > EXTRA_SNAP_RATIO * straight_km
+            )
+        )
     if not suspicious:
         return []
 
@@ -1225,36 +1327,38 @@ def _extra_snap_candidates(
 # 绕路护栏：折线实长相对起终点直线距离的倍率上限。
 #
 # 客里表的站点坐标来自维基数据，个别站与线上同名站差了很远，于是最短路会为了
-# 「串上」那个站而绕出一大圈——里程判据反而可能放它过去，因为运价里程同样失真。
-# 铁路再盘山，实长也很少超过直线距离的三倍，所以超过就直接舍去，App 回退直线，
+# 「串上」那个站而绕出一大圈。铁路再盘山，实长也很少超过直线距离的三倍，所以
+# 超过就直接舍去（这是纯几何护栏，不依赖里程），App 回退直线，
 # 好过画一条明显错误的线。实测全网 5229 段的比值中位 1.10、p99 1.93，3.0 只砍
 # 掉明显异常的尾巴（约 12 段），不会误伤真盘山线路。
 DEFAULT_DETOUR_RATIO = 3.0
 DETOUR_MIN_STRAIGHT_KM = 0.05
 
 
-# 里程接受判据的绝对余量下限（km）：误差在 `里程 * max_error_ratio` 之内**或**在
-# 这么多公里之内，都算接受。
+# 候选评分：`长度 + 离线里程 × 本倍率`，取最小的一条。
 #
-# 为什么必须有：`mileage` 是客运运价里程，不是轨道实长。短腿尤其明显——线路所、
-# 联络线这类区段根本不计客运运价，里程是个名义值，实测一批 1km 量级的腿，轨道实长
-# 比里程长 36%~56%，纯按 35% 相对余量就会被判「里程不匹配」而退回直线。而 1km 量级
-# 的腿多出的这几百米摊到行程地图上肉眼看不出来，丢掉折线的代价反而大得多。
-#
-# 长腿不受影响：35% 相对余量在小里程之外总是更大，所以这个下限只在里程 ≲5.7km 时
-# 生效，那边界之外的口径一个字没变。
-DEFAULT_ERROR_SLACK_KM = 2.0
+# 只按长度取最短，会把正确但略长的同名正线让给一条走别的线路的直线捷径；只按
+# preferred_ratio 取最高，又会为了省掉几个百分点的无名站场段而选一条明显更长的
+# 绕行线。折成一个标量后两个毛病都没有：离线 1km 相当于多绕 5km。实测徐兰高速线
+# 渭南北→临潼东，回头支线长 33.59km、离线约 9.5km（借道大西高速线），代价约
+# 81km；正线 24.3km、几乎全在徐兰上，代价约 25km。里程表在这一段本身是错的
+# （相邻站 km 差 30km，OSM 实长 24.3km），以前正是它把折线拉上了回头支线。
+OFF_NAME_PENALTY = 5.0
 
 
-# 主吸附对的候选看着不对时，额外再算几个「落在目标 profile 边上」的吸附点对。
+def _candidate_cost(item: PathCandidate) -> float:
+    return item.length_km + OFF_NAME_PENALTY * item.unpreferred_km
+
+
+# 主吸附对的候选看着不对时，额外再算几个「落在目标线上」的吸附点对。
 #
-# 只在可疑时才动手（离里程太远、或大半路程压在非目标 profile 的边上），否则每个成功
-# 的段都要多付一次 Yen 枚举。实测全量 5225 段里有 1681 段（32%）会触发。
+# 只在可疑时才动手（大半路程压在非目标线的边上，或这条腿根本没有名字证据），否则
+# 每个成功的段都要多付一次 Yen 枚举。实测全量 5225 段里有 1681 段（32%）会触发。
 #
 # 上限取 8 是因为「自己那条线」的节点在站场里往往排得很后：实测兰新线 达坂城→乌鲁木齐南
 # 乌鲁木齐南一端最近的 6 个节点走出来的都是绕经市区那条 100.3km 的走法，直的那条
-# 83.4km（同为目标 profile 的线，只有里程能分辨，误差 3.4km vs 13.3km）要到第 7 个
-# 节点才出得来。每对多跑一次 Yen，代价 ~0.05s 量级，8 对换这一段画对，划算。
+# 83.4km 要到第 7 个节点才出得来。每对多跑一次 Yen，代价 ~0.05s 量级，8 对换这一段
+# 画对，划算。
 DEFAULT_EXTRA_SNAPS = 8
 
 
@@ -1268,9 +1372,6 @@ def plan_leg(
     step_m: float = 400.0,
     snap_threshold_km: float = 5.0,
     k_paths: int = 6,
-    max_error_ratio: float = 0.35,
-    error_slack_km: float = DEFAULT_ERROR_SLACK_KM,
-    close_error_ratio: float = 0.05,
     detour_ratio: float = DEFAULT_DETOUR_RATIO,
     extra_snaps: int = DEFAULT_EXTRA_SNAPS,
     jump_radius_km: float = DEFAULT_JUMP_RADIUS_KM,
@@ -1278,17 +1379,20 @@ def plan_leg(
 ) -> LegPlan:
     """规划一个站间区间的轨道折线。
 
-    先用走廊过滤缩小图，再枚举前 k 条最短路；里程已知时选长度最接近里程的那条，
-    长度相近时优先贴目标 profile 的（preferred_ratio 高）。并行的高铁与普速在同名
-    车站各有节点，站坐标可能离另一条线更近，所以主锚点的候选看着不对时会再算几个
-    「落在目标 profile 边上」的锚点一起评（见 `search_paths`）；连贴线的候选都没有时，
-    还会跨连通分量跳到目标线上车（`_jump_snap_candidates`）。
+    先用走廊过滤缩小图，再枚举前 k 条最短路，按 `长度 + 离线里程 ×
+    [OFF_NAME_PENALTY]` 取代价最低的一条。哪条线是「本线」由线路名决定：偏好集由
+    调用方按 OSM 的 way 名匹配好（见 build_rail_tracks 的 `line_matches`）。并行的高铁
+    与普速在同名车站各有节点，站坐标可能离另一条线更近，所以主锚点的候选看着不对时
+    会再算几个「落在目标线上」的锚点一起评（见 `search_paths`）；连贴线的候选都没有
+    时，还会跨连通分量跳到目标线上车（`_jump_snap_candidates`）。
 
-    接受判据是「误差在 [max_error_ratio] 或 [error_slack_km] 之内」，取较宽松的一
-    边——见 [DEFAULT_ERROR_SLACK_KM] 里为什么短腿必须有绝对余量。
+    `mileage_km` **只写进结果、不参与选路**：线路库的 km 是运价里程，断链处相邻站的
+    差值能和轨道实长差出十几公里（实测徐兰高速线 渭南北→临潼东 的 km 差 30km、OSM
+    实长 24.3km），拿它反推几何会把折线拽到并行的另一条线上，或者绕出回头支线。
+    里程的用途在经由线路计算，那边另有自己的数据链。
 
-    通过判据后还有一道收尾：折线实长超过起终点直线距离 [detour_ratio] 倍的段直接
-    舍去（`circuitous`）。
+    最后还有一道收尾：折线实长超过起终点直线距离 [detour_ratio] 倍的段直接舍去
+    （`circuitous`），这是站坐标飞到同名异地时的兜底，与里程无关。
     """
     if rail.is_empty():
         return LegPlan(ok=False, reason="no_rail_data", mileage_km=mileage_km)
@@ -1302,11 +1406,6 @@ def plan_leg(
         return LegPlan(ok=False, reason="empty_graph", mileage_km=mileage_km)
 
     projection = Projection((start[0] + end[0]) / 2.0)
-    max_length = (
-        None
-        if mileage_km is None or mileage_km <= 0
-        else mileage_km * (1.0 + max_error_ratio) + 5.0
-    )
     candidates, reason = search_paths(
         graph,
         start,
@@ -1314,61 +1413,31 @@ def plan_leg(
         projection,
         k=k_paths,
         snap_threshold_km=snap_threshold_km,
-        max_length_km=max_length,
-        mileage_km=mileage_km,
         extra_snaps=extra_snaps,
         jump_radius_km=jump_radius_km,
         jump_snaps=jump_snaps,
     )
     # 只有 1 个节点的「路径」不是轨道：起终点吸附到同一个节点时 Yen 就是给这个，长度
     # 等于两端吸附空隙之和，几何上却是一个点——`_finalize` 把首尾覆盖成站点坐标后连 2
-    # 个点都剩不下，App 什么也画不出来。里程够长时它还会落进 `DEFAULT_ERROR_SLACK_KM`
-    # 的余量里被接受（实测「昆河线 南洞→大塔」1.68km 那段就是），所以在这里剔除。
+    # 个点都剩不下，App 什么也画不出来（实测「昆河线 南洞→大塔」1.68km 那段就是），
+    # 所以在这里剔除。
     usable = [item for item in candidates if len(item.path) >= 2]
     if candidates and not usable:
         reason = "no_path"  # 当作没找到路，走下面同一套归类
     candidates = usable
 
     if not candidates:
-        # 里程已知时，长度上限来自里程；搜不到路径说明没有与里程相容的走法，
-        # 这本身就是一次里程不匹配，而不是单纯的拓扑断裂。
-        if reason == "no_path" and mileage_km is not None and mileage_km > 0:
-            return LegPlan(ok=False, reason="mileage_mismatch", mileage_km=mileage_km)
         return LegPlan(ok=False, reason=reason or "no_path", mileage_km=mileage_km)
 
-    if mileage_km is None or mileage_km <= 0:
-        # 里程未知：只能信几何，取最短；长度相同时优先贴目标 profile 的。
-        chosen = min(candidates, key=lambda item: (item.length_km, -item.preferred_ratio))
-        error_km = None
-        error_ratio = None
-    else:
-        by_error = sorted(candidates, key=lambda item: abs(item.length_km - mileage_km))
-        best_error = abs(by_error[0].length_km - mileage_km)
-        # 长度接近时优先「贴 profile」的候选，避免为几十米的误差选到冗余支线。
-        tolerance = max(best_error, mileage_km * close_error_ratio)
-        close = [
-            item for item in by_error if abs(item.length_km - mileage_km) <= tolerance
-        ]
-        chosen = min(
-            close,
-            key=lambda item: (
-                -round(item.preferred_ratio, 2),
-                abs(item.length_km - mileage_km),
-            ),
-        )
+    chosen = min(candidates, key=_candidate_cost)
+    # 里程只作为诊断数据落库：折线实长与运价里程差多少，查库时能看到。它不再决定
+    # 选哪条候选，也不再因为差得远而把整段判失败。
+    if mileage_km is not None and mileage_km > 0:
         error_km = abs(chosen.length_km - mileage_km)
         error_ratio = error_km / mileage_km
-        if error_km > max(mileage_km * max_error_ratio, error_slack_km):
-            return LegPlan(
-                ok=False,
-                reason="mileage_mismatch",
-                length_km=chosen.length_km,
-                mileage_km=mileage_km,
-                mileage_error_km=error_km,
-                mileage_error_ratio=error_ratio,
-                preferred_ratio=chosen.preferred_ratio,
-                board_jump_km=chosen.board_jump_km,
-            )
+    else:
+        error_km = None
+        error_ratio = None
 
     straight_km = haversine_km(start, end)
     if (

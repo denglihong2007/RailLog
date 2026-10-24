@@ -112,6 +112,32 @@ class RouteService {
     return Isolate.run(() => _resolveJourney(graph, sections));
   }
 
+  /// 已存经由在当前线路库里画不出来的行程。
+  ///
+  /// 「画不出来」指线路名解析不到、或该线路上找不到这一段的起止站：地图只能把这一段
+  /// 退化成直线，用户看到的就是「经由损坏 / 线路数据库不通」。空经由不算损坏——那是
+  /// 还没填，不是填错了。
+  static Future<Set<int>> findUndrawableTripIds(
+    Iterable<TripRecord> source,
+  ) async {
+    final trips = source
+        .where((trip) => trip.isRailTrip && trip.viaRouteSegments.isNotEmpty)
+        .toList(growable: false);
+    if (trips.isEmpty) return const {};
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(() {
+      final ids = <int>{};
+      for (final trip in trips) {
+        if (trip.viaRouteSegments.any(
+          (segment) => !graph.isSegmentDrawable(segment),
+        )) {
+          ids.add(trip.id);
+        }
+      }
+      return ids;
+    });
+  }
+
   static RouteResolution _resolveJourney(
     _RouteGraph graph,
     List<StationPairDistance> sections,
@@ -175,16 +201,20 @@ class RouteService {
 
     final database = await openDatabase(databasePath, readOnly: true);
     try {
+      // 先按线路名排序（同名再按 line_id）：并行线路的里程桩完全相同时（京沪线 与
+      // 沪宁高速、陇海线 与 宁西西合段），走哪条由邻接表的加入次序决定。line_id 是
+      // 线路库每次重新生成时重新分配的，按它排会让同一趟行程的经由随库版本漂移；
+      // 线路名稳定，并列时的取舍也就稳定。
       final rows = await database.rawQuery('''
         SELECT
-          r.route_name,
-          s.route_version_id,
-          s.station_index,
-          s.station_name,
-          s.mileage
-        FROM stations s
-        JOIN routes r ON r.route_version_id = s.route_version_id
-        ORDER BY s.route_version_id, s.station_index
+          l.line_name,
+          ls.line_id,
+          ls.seq,
+          ls.station,
+          ls.km
+        FROM line_stations ls
+        JOIN lines l ON l.line_id = ls.line_id
+        ORDER BY l.line_name, ls.line_id, ls.seq
       ''');
       return _RouteGraph.fromRows(rows);
     } finally {
@@ -225,7 +255,9 @@ class _RouteGraph {
   }
 
   List<String> stationsForRoute(String routeName) {
-    final stations = routeStationIndexes[routeName];
+    final resolvedRouteName = _resolveRouteName(routeName);
+    if (resolvedRouteName == null) return const [];
+    final stations = routeStationIndexes[resolvedRouteName];
     if (stations == null) return const [];
     final entries = stations.values.toList()
       ..sort((first, second) {
@@ -258,6 +290,18 @@ class _RouteGraph {
       for (final entry in selected)
         RouteStation(name: entry.name, mileage: entry.mileage),
     ];
+  }
+
+  /// 这一段能否在当前线路库里画出来：线路名解析得到，且起止站都在这条线上。
+  bool isSegmentDrawable(ViaRouteSegment segment) {
+    final resolvedRouteName = _resolveRouteName(segment.routeName);
+    if (resolvedRouteName == null) return false;
+    final section = _stationsBetweenOnRoute(
+      resolvedRouteName,
+      segment.fromStation,
+      segment.toStation,
+    );
+    return section != null && section.isNotEmpty;
   }
 
   JourneyStations stationsForJourney(
@@ -313,17 +357,17 @@ class _RouteGraph {
   factory _RouteGraph.fromRows(List<Map<String, Object?>> rows) {
     final adjacency = <String, List<_RouteEdge>>{};
     final routeStationIndexes = <String, Map<String, _RouteStationEntry>>{};
-    String? currentRouteId;
+    String? currentLineId;
     String? previousStation;
     double? previousMileage;
 
     for (final row in rows) {
-      final routeId = row['route_version_id']?.toString();
-      final routeName = row['route_name']?.toString().trim() ?? '';
-      final station = row['station_name']?.toString().trim() ?? '';
-      final mileage = (row['mileage'] as num?)?.toDouble();
-      final stationIndex = (row['station_index'] as num?)?.toInt();
-      if (routeId == null ||
+      final lineId = row['line_id']?.toString();
+      final routeName = row['line_name']?.toString().trim() ?? '';
+      final station = row['station']?.toString().trim() ?? '';
+      final mileage = (row['km'] as num?)?.toDouble();
+      final stationIndex = (row['seq'] as num?)?.toInt();
+      if (lineId == null ||
           routeName.isEmpty ||
           station.isEmpty ||
           mileage == null ||
@@ -344,22 +388,27 @@ class _RouteGraph {
         );
       }
 
-      if (routeId != currentRouteId) {
-        currentRouteId = routeId;
+      if (lineId != currentLineId) {
+        currentLineId = lineId;
         previousStation = null;
         previousMileage = null;
       }
       if (previousStation != null && previousStation != station) {
         final distance = (mileage - previousMileage!).abs();
-        final forward = _RouteEdge(
-          fromStation: previousStation,
-          toStation: station,
-          routeName: routeName,
-          distanceKm: distance,
-        );
-        final backward = forward.reversed();
-        adjacency.putIfAbsent(previousStation, () => []).add(forward);
-        adjacency.putIfAbsent(station, () => []).add(backward);
+        // 新线路库里个别站没有里程（如京西线的北京写成 0，与前站北京西相同），
+        // 差值为 0 时不能当成「两站同点」加一条零长边，否则寻路会把它们当成
+        // 可瞬移的相邻站。跳过这一条边，后续站仍从当前站往前接。
+        if (distance > 0) {
+          final forward = _RouteEdge(
+            fromStation: previousStation,
+            toStation: station,
+            routeName: routeName,
+            distanceKm: distance,
+          );
+          final backward = forward.reversed();
+          adjacency.putIfAbsent(previousStation, () => []).add(forward);
+          adjacency.putIfAbsent(station, () => []).add(backward);
+        }
       }
       previousStation = station;
       previousMileage = mileage;
@@ -432,11 +481,13 @@ class _RouteGraph {
     String fromStation,
     String toStation,
   ) {
+    final resolvedRouteName = _resolveRouteName(routeName);
+    if (resolvedRouteName == null) return null;
     final start = _resolveStationName(fromStation);
     final end = _resolveStationName(toStation);
     if (start == null || end == null) return null;
     if (start == end) return 0;
-    final edges = _shortestPath(start, end, routeName: routeName);
+    final edges = _shortestPath(start, end, routeName: resolvedRouteName);
     if (edges == null) return null;
     return edges.fold<double>(0, (sum, edge) => sum + edge.distanceKm);
   }
@@ -461,7 +512,17 @@ class _RouteGraph {
       (candidate) =>
           candidate.replaceFirst(RegExp(r'(铁路|线)$'), '') == normalized,
     );
-    return matches.length == 1 ? matches.single : null;
+    if (matches.length == 1) return matches.single;
+
+    // 新线路库的线名常省略速度等级与「线」字（京港高铁合安段 → 京港合安段、
+    // 宁西线西合段 → 宁西西合段），旧行程里存下来的经由名仍是老写法。精确匹配
+    // 失败后再按宽松键找一次；只有唯一命中才采用，避免把「京广线」和「京广高铁」
+    // 这类只差速度等级的并行线路混成一条。
+    final loose = _looseRouteKey(routeName);
+    final looseMatches = routeStationIndexes.keys
+        .where((candidate) => _looseRouteKey(candidate) == loose)
+        .toList(growable: false);
+    return looseMatches.length == 1 ? looseMatches.single : null;
   }
 
   List<String>? _stationsBetweenOnRoute(
@@ -627,9 +688,9 @@ class _RouteGraph {
     var exploredStates = 0;
     // 已经收下的候选。终点节点先出队，不代表它就是这一「线路名数」里最贴目标的那个：
     // 优先级里只有终点节点用真误差，中转节点用的都是误差下界，两条走法可以在同一个中转站
-    // 上打平——新丰镇→西安 有 陇海线 27+10 与 宁西线西合段 35 两条等长走法，前者合 328
-    // （时刻表就是这个数）、后者合 326，谁先弹出全看堆的内部次序。所以收下之后还要接着把
-    // 「线路名数不比它多、误差下界还比它小」的节点走完，从中挑最贴目标的那个。
+    // 上打平——新丰镇→西安 有 陇海线 与 宁西西合段 两条等长的走法（都是 35 km），谁先
+    // 弹出全看堆的内部次序。所以收下之后还要接着把「线路名数不比它多、误差下界还比它小」
+    // 的节点走完，从中挑最贴目标的那个。
     List<_RouteEdge>? accepted;
     var acceptedNames = 0;
     var acceptedError = 0.0;
@@ -700,9 +761,9 @@ class _RouteGraph {
         if (!visited.add(next.stateKey)) continue;
         // 出队次序的第二个判据是「离目标里程至少还差多少」，而不是潜力里程（走到这儿的累计
         // 里程 + 到终点的最短距离）。潜力里程小只说明走得短，不代表贴目标：D966 的
-        // 西安北→石家庄 目标 807，一条绕 徐兰高速线+大西临潼东联络线、在太原枢纽反复
-        // 换线的走法潜力 806、误差 1，比真正落在 807 上、太原枢纽全程走大西高铁的走法
-        // 出队更早；按误差排就不会——误差 0 先于误差 1，并列带只用来放宽「先用线路名少的」。
+        // 西安北→石家庄 目标 807，绕 徐兰高速线+临潼东联络、或在太原枢纽反复换线的走法
+        // 潜力里程可以更短，误差反而更大；按误差排就不会——误差 0 先于误差 1，并列带只用
+        // 来放宽「先用线路名少的」。
         final errorLowerBound = edge.toStation == end
             ? (nextDistance - targetDistance).abs()
             : _errorLowerBound(nextDistance, lowerBound, targetDistance);
@@ -888,6 +949,18 @@ class _RouteStateStep {
 String _routeStateKey(String station, String? routeName) =>
     '$station\u0000${routeName ?? ''}';
 
+/// 线路名的宽松键：去掉速度等级词和「铁路/线」。
+///
+/// 新线路库的命名省掉了等级词（「京港高铁合安段」写作「京港合安段」），
+/// 「宁西线西合段」也写作「宁西西合段」。只在精确匹配失败时用它兜底，
+/// 调用方还会要求唯一命中，不能拿它当主键。
+String _looseRouteKey(String value) {
+  var key = value.trim();
+  key = key.replaceAll(RegExp(r'(客运专线|高铁|客专|城际|高速)'), '');
+  key = key.replaceAll(RegExp(r'(铁路|线)'), '');
+  return key.toLowerCase();
+}
+
 class _ExactSearchNode {
   const _ExactSearchNode({
     required this.station,
@@ -1011,11 +1084,10 @@ const _distanceTolerance = 0.55;
 /// 这个带内算里程并列，并列时取用到的线路名最少的走法（与 `_shortestPath` 的次级判据一致）。
 const _distanceTieBand = 1.0;
 
-/// 每多经过一站允许的额外误差。刻度差是**逐站累积**的，走法越长差得越多，所以并列带不
-/// 能是个固定值：包西线 新丰镇→延安 要经过 10 个站，D16 的这段里程 333 km 比时刻表多 5 km，
-/// 而少走 6 km 的那种「借道包西高铁延西段」的走法误差只有 1 km——固定 1 km 的带子会把后者
-/// 当成更贴目标，于是在 甘泉北 换到平行线上。按每站 0.5 km 放宽后，5 km 落在 14 个站的
-/// 刻度差允许量（7 km）里，线路名少（3 个）的那条才对。
+/// 每多经过一站允许的额外误差。时刻表的累计里程和 routes.db 的里程桩是两套刻度，偏差
+/// **逐站累积**（沪宁段每过一站就差 1 km），走法越长差得越多，所以并列带不能是个固定值。
+/// 带子太窄，「终点前一站换到平行的另一条线上」那种里程更贴目标、但多用一个线路名的借道
+/// 走法就会冒头；按每站 0.5 km 放宽后，线路名少的那条才保得住。
 const _mileageDriftPerHop = 0.5;
 
 const _maxExactSearchStates = 150000;

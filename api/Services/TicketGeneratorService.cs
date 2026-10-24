@@ -39,7 +39,7 @@ public sealed partial class TicketGeneratorService(
         if (details is null) return null;
         var trip = details.Trip;
 
-        var ticketNumber = $"A{trip.TicketId.ToString("D6", CultureInfo.InvariantCulture)}";
+        var ticketNumber = FormatTicketNumber(trip.TicketId);
         var travelDate = trip.DepartureTime ?? trip.CreatedAt;
         // 结算日期跟着「打印日期」走，而不是乘车日期。本系统没有单独的出票时间，
         // 就把行程的录入时间当作打印日期，取它的次日。
@@ -297,6 +297,27 @@ public sealed partial class TicketGeneratorService(
         if (string.IsNullOrWhiteSpace(request.SerialPrefix)) return "请输入票号前缀";
         if (!SerialPrefixRegex().IsMatch(request.SerialPrefix.Trim())) return "票号前缀必须是 10 位数字";
         return null;
+    }
+
+    // 票纸编号：首位字母表示十万位及以上，其后 6 位数字的首位恒为 0。
+    // 例如 123456 → B023456（B 对应 1 个十万，余数 23456 补成 023456）。
+    private static string FormatTicketNumber(long ticketId)
+    {
+        var series = ticketId / 100000;
+        var serial = ticketId % 100000;
+        return $"{FormatSeries(series)}{serial.ToString("D6", CultureInfo.InvariantCulture)}";
+    }
+
+    private static string FormatSeries(long series)
+    {
+        // A→0、B→1、…、Z→25；再往上按表格列名进位（26→AA）。
+        var letters = new StringBuilder();
+        do
+        {
+            letters.Insert(0, (char)('A' + (int)(series % 26)));
+            series = series / 26 - 1;
+        } while (series >= 0);
+        return letters.ToString();
     }
 
     private static string FormatSeatClass(string? value, bool showNewAirConditioned)

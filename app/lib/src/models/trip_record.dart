@@ -70,6 +70,41 @@ class TripRecord {
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 
+  /// 批量维护只改其中一两个字段，其余原样带过来。
+  ///
+  /// 只覆盖重建会用到的字段，传 `null` 表示保留原值——到点目前不需要清空。
+  TripRecord copyWith({
+    DateTime? arrivalTime,
+    double? mileageKm,
+    List<ViaRouteSegment>? viaRouteSegments,
+  }) {
+    return TripRecord(
+      id: id,
+      ticketId: ticketId,
+      clientId: clientId,
+      ownerUserId: ownerUserId,
+      trainNumber: trainNumber,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      deletedAt: deletedAt,
+      rollingStock: rollingStock,
+      companyName: companyName,
+      fromStation: fromStation,
+      toStation: toStation,
+      departureTime: departureTime,
+      arrivalTime: arrivalTime ?? this.arrivalTime,
+      mileageKm: mileageKm ?? this.mileageKm,
+      viaRouteSegments: viaRouteSegments ?? this.viaRouteSegments,
+      seatType: seatType,
+      seatNumber: seatNumber,
+      price: price,
+      isRailTrip: isRailTrip,
+      isLocalOnly: isLocalOnly,
+      notes: notes,
+      groupName: groupName,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

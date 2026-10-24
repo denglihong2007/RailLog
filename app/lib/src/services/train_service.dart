@@ -537,14 +537,23 @@ class TrainService {
     }
   }
 
+  /// 历史库里的车次前缀检索。
+  ///
+  /// [limit] 同时是服务端截断数和客户端建议数；批量核对车次时需要看到号对车次，
+  /// 默认的 20 条会被同前缀的单号车次挤满，调用方可以放宽。
   static Future<List<TrainSearchResult>> searchHistoricalTrains(
     String trainNumberPrefix,
-    String version,
-  ) async {
+    String version, {
+    int limit = 20,
+  }) async {
     try {
       final response = await ApiClient.instance.dio.get<Map<String, dynamic>>(
         '/api/train-timetables/search',
-        queryParameters: {'trainNumber': trainNumberPrefix, 'version': version},
+        queryParameters: {
+          'trainNumber': trainNumberPrefix,
+          'version': version,
+          if (limit > 0) 'limit': limit,
+        },
       );
       final trains = response.data?['trains'];
       if (response.statusCode != 200 || trains is! List) return const [];
@@ -552,7 +561,7 @@ class TrainService {
           .whereType<Map<String, dynamic>>()
           .map(TrainSearchResult.fromJson)
           .toList(growable: false);
-      return normalizeTrainSuggestions(trainNumberPrefix, results);
+      return normalizeTrainSuggestions(trainNumberPrefix, results, limit: limit);
     } on DioException catch (_) {
       return const [];
     }
