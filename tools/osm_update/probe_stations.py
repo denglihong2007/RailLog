@@ -72,7 +72,7 @@ def main() -> int:
     )
 
     conn = sqlite3.connect(f"file:{builder.DEFAULT_ROUTES_DB}?mode=ro", uri=True)
-    names = sorted({row[0] for row in conn.execute("SELECT DISTINCT station_name FROM stations")})
+    names = sorted({row[0] for row in conn.execute("SELECT DISTINCT station FROM line_stations")})
     conn.close()
 
     csv_index = builder.StationCoordinateIndex.from_csv(builder.DEFAULT_COORDINATES)

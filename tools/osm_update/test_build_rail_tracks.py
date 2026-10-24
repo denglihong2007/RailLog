@@ -24,50 +24,50 @@ import rail_track_geometry as geo  # noqa: E402
 
 
 def _write_routes_db(path: Path) -> None:
-    """构造一个迷你 routes.db：含无坐标站、同坐标站名、以及线路多版本。"""
+    """构造一个迷你线路库：含无坐标站、同坐标站名、以及同名残本。"""
     connection = sqlite3.connect(path)
     connection.executescript(
         """
-        CREATE TABLE routes (route_version_id TEXT PRIMARY KEY, route_name TEXT, datatype TEXT);
-        CREATE TABLE stations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          route_version_id TEXT, station_index INTEGER, station_name TEXT, mileage REAL
+        CREATE TABLE lines (line_id INTEGER PRIMARY KEY, line_name TEXT NOT NULL);
+        CREATE TABLE line_stations (
+          line_id INTEGER NOT NULL, seq INTEGER NOT NULL,
+          station TEXT NOT NULL, km INTEGER NOT NULL,
+          PRIMARY KEY (line_id, seq)
         );
         """
     )
     connection.executemany(
-        "INSERT INTO routes VALUES (?,?,?)",
+        "INSERT INTO lines VALUES (?,?)",
         [
-            ("1", "京沪高速线", "2026-7-15"),
-            ("2", "宝成线", "2026-7-15"),
-            # 旧版本：应被同名的 2026-7-15 版本取代。
-            ("3", "新线", "2026-1-1"),
-            ("4", "新线", "2026-8-1"),
+            (1, "京沪高速线"),
+            (2, "宝成线"),
+            (3, "新线"),
             # 相邻两站的坐标被匹配到相隔数千公里的同名站 → 应判为不可信。
-            ("5", "远线", "2026-7-15"),
+            (4, "远线"),
+            # 同名但只有两个站的残本：应被站点更全的 3 号行取代。
+            (5, "新线"),
         ],
     )
     connection.executemany(
-        "INSERT INTO stations (route_version_id, station_index, station_name, mileage) VALUES (?,?,?,?)",
+        "INSERT INTO line_stations (line_id, seq, station, km) VALUES (?,?,?,?)",
         [
             # 中间一站没有坐标（线路所），应被跳过，其前后两站直接相连。
-            ("1", 1, "北京南站", 0.0),
-            ("1", 2, "京津所", 30.0),
-            ("1", 3, "廊坊站", 60.0),
-            ("1", 4, "天津站", 120.0),
+            (1, 1, "北京南站", 0),
+            (1, 2, "京津所", 30),
+            (1, 3, "廊坊站", 60),
+            (1, 4, "天津站", 120),
             # 同一地点两个站名 → 坐标相同 → 应合并成一个点。
-            ("2", 1, "宝鸡站", 0.0),
-            ("2", 2, "宝鸡站(老)", 0.0),
-            ("2", 3, "凤州站", 90.0),
-            # 旧版本多一站，用来验证被整版替换而不是混在一起。
-            ("3", 1, "甲站", 0.0),
-            ("3", 2, "乙站", 10.0),
-            ("4", 1, "甲站", 0.0),
-            ("4", 2, "乙站", 20.0),
-            ("4", 3, "丙站", 40.0),
+            (2, 1, "宝鸡站", 0),
+            (2, 2, "宝鸡站(老)", 0),
+            (2, 3, "凤州站", 90),
+            (3, 1, "甲站", 0),
+            (3, 2, "乙站", 20),
+            (3, 3, "丙站", 40),
             # 里程 20km，但两站坐标相隔 3000km 以上 → 坐标不可信。
-            ("5", 1, "近站", 0.0),
-            ("5", 2, "远站", 20.0),
+            (4, 1, "近站", 0),
+            (4, 2, "远站", 20),
+            (5, 1, "甲站", 0),
+            (5, 2, "乙站", 10),
         ],
     )
     connection.commit()
@@ -242,8 +242,8 @@ class EnumerateLegsTest(unittest.TestCase):
         self.assertEqual(len(legs), 1)
         self.assertEqual((legs[0].from_station, legs[0].to_station), ("宝鸡站", "凤州站"))
 
-    def test_uses_latest_route_version(self) -> None:
-        # datatype 2026-8-1 的版本有 3 站（2 段），2026-1-1 的只有 2 站（1 段）。
+    def test_uses_the_more_complete_duplicate_line(self) -> None:
+        # 3 号行有 3 站（2 段），5 号残本只有 2 站（1 段）。
         legs = self.legs_for("新线")
 
         self.assertEqual(len(legs), 2)
@@ -356,27 +356,38 @@ class ParseSourceTest(unittest.TestCase):
     def test_preferred_for_varies_by_profile(self) -> None:
         hsr = builder.CachedWay(True, False, [(30.0, 104.0)])
         conventional = builder.CachedWay(False, True, [(30.0, 104.0)], name="宁西线")
-        # 名字对不上任何 way 的普速腿：偏好集为空，纯按里程判定。
-        mismatch = builder.CachedWay(False, True, [(30.0, 104.0)], name="沪蓉线")
 
+        # 高铁侧认 OSM 标签：站场附近的正线常常没有 name，只认名字会全丢。
         self.assertTrue(hsr.preferred_for(geo.HSR))
         self.assertFalse(hsr.preferred_for(geo.CONVENTIONAL))
         self.assertTrue(conventional.preferred_for(geo.ALL))
-        # 普速侧只看线路名：同名才进偏好集（「宁西线西合段」剥掉「段」后就是「宁西线」）。
-        key = geo.line_match_key("宁西线西合段")
-        self.assertTrue(conventional.preferred_for(geo.CONVENTIONAL, key))
-        self.assertFalse(mismatch.preferred_for(geo.CONVENTIONAL, key))
-        # 没给出线路名（或名字对不上）时不能默认进偏好集——那正是老 bug 的成因：
-        # 「没打高铁标签」被当成「就是这条普速线」，于是并行的沪蓉线被压掉。
+
+        # 普速侧只认名字匹配（matched 由 line_matches 判定）。
+        self.assertTrue(conventional.preferred_for(geo.CONVENTIONAL, matched=True))
+        # 没匹配上时不能默认进偏好集——那正是老 bug 的成因：「没打高铁标签」被当成
+        # 「就是这条普速线」，于是并行的沪蓉线被压掉。
         self.assertFalse(conventional.preferred_for(geo.CONVENTIONAL))
-        self.assertFalse(conventional.preferred_for(geo.CONVENTIONAL, ""))
+
+    def test_hsr_legs_take_the_union_of_tags_and_names(self) -> None:
+        # 高铁腿：标签与名字匹配取并集。名字匹配上的 way 即使没打 maxspeed 也算目标线
+        # ——这正是新线路库把高铁判成普速时仍能贴对线的原因。
+        hsr = builder.CachedWay(True, False, [(30.0, 104.0)])
+        untagged = builder.CachedWay(False, True, [(30.0, 104.0)], name="京港高速线")
+
+        self.assertTrue(hsr.preferred_for(geo.HSR))
+        self.assertTrue(untagged.preferred_for(geo.HSR, matched=True))
+        self.assertFalse(untagged.preferred_for(geo.HSR))
 
     def test_way_line_key_is_normalized_once(self) -> None:
         way = builder.CachedWay(False, True, [(30.0, 104.0)], name="京广客运专线")
 
         self.assertEqual(way.line_key, "京广高速")
+        self.assertEqual(way.base_key, "京广")
         self.assertEqual(
             builder.CachedWay(False, True, [(30.0, 104.0)], name=None).line_key, None
+        )
+        self.assertEqual(
+            builder.CachedWay(False, True, [(30.0, 104.0)], name=None).base_key, None
         )
 
     def test_service_ways_never_enter_any_preference_set(self) -> None:
@@ -384,7 +395,7 @@ class ParseSourceTest(unittest.TestCase):
         service = builder.CachedWay(False, False, [(30.0, 104.0)], name="沪蓉线")
 
         for profile in (geo.HSR, geo.CONVENTIONAL, geo.ALL):
-            self.assertFalse(service.preferred_for(profile, geo.line_match_key("宁蓉线宁渝段")))
+            self.assertFalse(service.preferred_for(profile, matched=True))
 
     def test_cache_round_trip_keeps_way_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -624,26 +635,27 @@ def _write_discard_routes_db(path: Path) -> None:
     connection = sqlite3.connect(path)
     connection.executescript(
         """
-        CREATE TABLE routes (route_version_id TEXT PRIMARY KEY, route_name TEXT, datatype TEXT);
-        CREATE TABLE stations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          route_version_id TEXT, station_index INTEGER, station_name TEXT, mileage REAL
+        CREATE TABLE lines (line_id INTEGER PRIMARY KEY, line_name TEXT NOT NULL);
+        CREATE TABLE line_stations (
+          line_id INTEGER NOT NULL, seq INTEGER NOT NULL,
+          station TEXT NOT NULL, km INTEGER NOT NULL,
+          PRIMARY KEY (line_id, seq)
         );
         """
     )
     connection.executemany(
-        "INSERT INTO routes VALUES (?,?,?)",
+        "INSERT INTO lines VALUES (?,?)",
         [
-            ("1", "试线", "2026-7-15"),
-            ("2", "偏线", "2026-7-15"),
-            ("3", "邻线", "2026-7-15"),
+            (1, "试线"),
+            (2, "偏线"),
+            (3, "邻线"),
         ],
     )
     connection.executemany(
-        "INSERT INTO stations (route_version_id, station_index, station_name, mileage) VALUES (?,?,?,?)",
+        "INSERT INTO line_stations (line_id, seq, station, km) VALUES (?,?,?,?)",
         [
-            (version_id, index + 1, f"{prefix}{suffix}站", float(index * 50))
-            for version_id, prefix in (("1", "试"), ("2", "偏"), ("3", "邻"))
+            (int(line_id), index + 1, f"{prefix}{suffix}站", index * 50)
+            for line_id, prefix in ((1, "试"), (2, "偏"), (3, "邻"))
             for index, suffix in enumerate("甲乙丙丁戊")
         ],
     )
@@ -1093,6 +1105,121 @@ class ConventionalPreferenceTest(unittest.TestCase):
         self.assertEqual(result.preferred_basis, "way-name")
         self.assertEqual(result.plan.preferred_ratio, 1.0)
         self.assertAlmostEqual(result.plan.length_km, detour_km, delta=0.5)
+
+
+class LineMatchesTest(unittest.TestCase):
+    """线路名 → 走廊里的哪些 way。三档递进，前一档命中即停。"""
+
+    @staticmethod
+    def _keys(*names: str) -> list:
+        """把 way 名折算成 line_matches 要的 (line_key, base_key)。"""
+        return [(geo.line_match_key(name), geo.line_base_key(name)) for name in names]
+
+    def test_strict_match_never_consults_the_loose_stages(self) -> None:
+        # 京广线 与 京广高速线 基本名相同。严格档命中了京广线，就绝不能把并行的高铁
+        # 正线也拉进偏好集——那会把普速车次画到高铁正线上。
+        flags = builder.line_matches(self._keys("京广线", "京广高速线"), "京广线")
+        self.assertEqual(flags, [True, False])
+
+    def test_base_key_recovers_a_name_the_new_db_shortened(self) -> None:
+        # 新库把「沪宁沿江高铁」写成「沪宁沿江」，OSM 里还是全名。
+        flags = builder.line_matches(
+            self._keys("沪宁沿江高速线", "京沪高速线"), "沪宁沿江"
+        )
+        self.assertEqual(flags, [True, False])
+
+    def test_prefix_recovers_a_segment_suffix(self) -> None:
+        # 新库「京包张包段」：区段后缀拆不开，只能靠「京包」前缀认领京包客专线。
+        flags = builder.line_matches(
+            self._keys("京包客专线", "京包线", "京沪线"), "京包张包段"
+        )
+        self.assertEqual(flags, [True, True, False])
+
+    def test_prefix_needs_at_least_two_characters(self) -> None:
+        # 单字前缀太容易撞上别的线，宁可退回空偏好集。
+        self.assertEqual(builder.line_matches(self._keys("京线"), "京包张包段"), [False])
+
+    def test_no_match_returns_all_false(self) -> None:
+        flags = builder.line_matches(self._keys("京沪线", "沪宁线"), "阿准富准段")
+        self.assertEqual(flags, [False, False])
+        self.assertEqual(builder.line_matches([], "阿准富准段"), [])
+
+    def test_unnamed_ways_never_match(self) -> None:
+        self.assertEqual(builder.line_matches([(None, None)], "京沪线"), [False])
+
+    def test_wrapper_reads_the_keys_off_ways(self) -> None:
+        ways = [
+            builder.CachedWay(False, True, [(30.0, 104.0)], name="宁西线"),
+            builder.CachedWay(False, True, [(30.0, 104.0)], name="沪蓉线"),
+            builder.CachedWay(False, False, [(30.0, 104.0)]),
+        ]
+        self.assertEqual(
+            builder.line_way_flags(ways, "宁西西合段"), [True, False, False]
+        )
+
+
+class RailDataForLegTest(unittest.TestCase):
+    """偏好集 = 线路名匹配（三档）∪ 高铁腿的 OSM 标签。"""
+
+    class _Source(builder.RailSource):
+        name = "stub"
+
+        def __init__(self, ways) -> None:
+            super().__init__(Path(tempfile.gettempdir()))
+            self._ways = ways
+
+        def ways(self, bbox):  # type: ignore[override]
+            return self._ways
+
+    def _leg(self, route_name: str, profile: str) -> builder.Leg:
+        return builder.Leg(
+            route_name=route_name,
+            from_station="甲",
+            to_station="乙",
+            start=(30.0, 104.0),
+            end=(30.5, 104.5),
+            mileage_km=60.0,
+            profile=profile,
+        )
+
+    def _ways(self):
+        return [
+            # 站线：既非高铁也非普速。
+            builder.CachedWay(False, False, [(30.0, 104.0), (30.5, 104.5)], name="宁西线"),
+            # 严格同名（宁西线西合段 → 宁西）。
+            builder.CachedWay(False, True, [(30.0, 104.0), (30.5, 104.5)], name="宁西线"),
+            # 另一条并行线，名字也对不上。
+            builder.CachedWay(False, True, [(30.0, 104.0), (30.5, 104.5)], name="沪蓉线"),
+            # 只有标签、没有名字：高铁腿的兜底。
+            builder.CachedWay(True, False, [(30.0, 104.0), (30.5, 104.5)]),
+        ]
+
+    def test_conventional_leg_prefers_only_the_matched_line(self) -> None:
+        rail = builder.rail_data_for_leg(
+            self._Source(self._ways()), self._leg("宁西线西合段", geo.CONVENTIONAL)
+        )
+        self.assertEqual(rail.preferred, [False, True, False, False])
+
+    def test_hsr_leg_takes_names_and_tags(self) -> None:
+        source = self._Source(
+            [
+                # 新库删掉了「高铁」，这条线会被判成普速；但名字对得上就照样贴对线。
+                builder.CachedWay(False, True, [(30.0, 104.0)], name="京港高速线"),
+                builder.CachedWay(True, False, [(30.0, 104.0)]),
+                builder.CachedWay(False, False, [(30.0, 104.0)]),
+            ]
+        )
+        rail = builder.rail_data_for_leg(source, self._leg("京港合安段", geo.CONVENTIONAL))
+        self.assertEqual(rail.preferred, [True, False, False])
+
+        rail = builder.rail_data_for_leg(source, self._leg("京港合安段", geo.HSR))
+        self.assertEqual(rail.preferred, [True, True, False])
+
+    def test_unmatched_conventional_leg_has_no_preference(self) -> None:
+        rail = builder.rail_data_for_leg(
+            self._Source(self._ways()), self._leg("阿准富准段", geo.CONVENTIONAL)
+        )
+        self.assertEqual(rail.preferred, [False] * 4)
 
 
 class FakeSource(builder.RailSource):

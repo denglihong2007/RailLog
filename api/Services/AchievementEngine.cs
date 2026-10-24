@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Globalization;
@@ -317,36 +318,35 @@ public static partial class AchievementEngine
     [
         new("长江源特大桥", "青藏线", "沱沱河", "雁石坪"),
         new("虎跳峡金沙江大桥", "滇藏铁路", "拉市海", "小中甸"),
-        new("三堆子金沙江大桥", "成昆线成攀段", "三堆子", "攀枝花"),
+        new("三堆子金沙江大桥", "成昆成攀段", "三堆子", "攀枝花"),
         new("成昆复线金沙江大桥", "峨广铁路", "盐边", "普达"),
         new("水富金沙江大桥", "内六线", "一步滩", "翠屏"),
         new("白沙沱长江大桥", "渝贵线", "重庆西", "珞璜南"),
-        new("明月峡长江大桥", "重庆东环铁路", "皂角树所", "迎龙"),
+        new("明月峡长江大桥", "重庆东环", "皂角树所", "迎龙"),
         new("长寿长江大桥", "渝怀线", "长寿", "王家坝"),
-        new("韩家沱长江大桥", "宁蓉线宁渝段", "丰都", "涪陵北"),
+        new("韩家沱长江大桥", "宁蓉线", "丰都", "涪陵北"),
         new("万州长江大桥", "万凉线", "万州", "五桥"),
-        new("宜昌长江大桥", "宁蓉线宁渝段", "宜昌东", "长阳"),
-        new("枝城长江大桥", "焦柳线焦怀段", "鸦雀岭", "枝城"),
+        new("宜昌长江大桥", "宁蓉线", "宜昌东", "长阳"),
+        new("枝城长江大桥", "焦柳线", "鸦雀岭", "枝城"),
         new("武汉长江大桥", "京广线", "汉西", "武昌"),
         new("天兴洲长江大桥", "京广高铁", "横店东", "武汉"),
         new("天兴洲长江大桥", "滠武线", "滠口", "楠姆庙所"),
         new("黄冈长江大桥", "武冈城际线", "华容东", "黄冈西"),
-        new("鳊鱼洲长江大桥", "京港高铁安九段", "黄梅南", "庐山"),
+        new("鳊鱼洲长江大桥", "京港安九段", "黄梅南", "庐山"),
         new("九江长江大桥", "京九线", "小池口", "九江"),
-        new("安庆长江大桥", "宁安城际线", "池州", "安庆"),
+        new("安庆长江大桥", "宁安城际", "池州", "安庆"),
         new("铜陵长江大桥", "合福高速线", "无为", "铜陵北"),
         new("铜陵长江大桥", "庐铜线", "龙桥", "钟鸣所"),
         new("芜湖长江三桥", "合杭高铁", "芜湖北", "芜湖"),
         new("芜湖长江大桥", "淮南线", "裕溪口", "芜湖"),
         new("大胜关长江大桥", "京沪高速线", "滁州", "南京南"),
-        new("大胜关长江大桥", "宁蓉线宁渝段", "南京南", "浦口"),
+        new("大胜关长江大桥", "宁蓉线", "南京南", "浦口"),
         new("南京长江大桥", "京沪线", "林场", "南京"),
-        new("五峰山长江大桥", "连镇铁路", "扬州东", "大港南"),
+        new("五峰山长江大桥", "连镇客专线", "扬州东", "大港南"),
         new("沪苏通长江大桥", "沪苏通线", "南通西", "张家港")
     ];
 
-    // 附表2（33 座中的 32 座；台前黄河大桥所属京港高速线雄商段尚未进入 routes.db，
-    // 两站均不存在，故不收录）
+    // 附表2（33 座中的 32 座；台前黄河大桥所属京港雄商段没有台前站，故不收录）
     private static readonly IReadOnlyList<RailwaySection> YellowRiverBridges =
     [
         new("河口黄河大桥", "兰新客专线", "兰州西", "陈家湾西"),
@@ -357,7 +357,7 @@ public static partial class AchievementEngine
         new("靖远黄河大桥", "红会线", "吴家川", "靖远西"),
         new("靖远黄河特大桥", "银兰高铁", "平川西", "靖远北"),
         new("中卫黄河大桥", "宝中线", "宣和", "柳家庄"),
-        new("中宁黄河特大桥", "太中线", "中宁东", "黄羊湾"),
+        new("中宁黄河特大桥", "太中客专", "中宁东", "黄羊湾"),
         new("永宁黄河特大桥", "定银线", "灵武", "银川南"),
         new("银川机场黄河特大桥", "银兰高铁", "银川东", "河东机场"),
         new("乌海黄河大桥", "包银高铁", "乌海南", "惠农南"),
@@ -366,11 +366,11 @@ public static partial class AchievementEngine
         new("三盛公黄河大桥", "包兰线", "巴彦高勒", "杭锦旗"),
         new("包西铁路黄河特大桥", "包西线", "包头", "达拉特西"),
         new("呼准鄂铁路黄河特大桥", "呼鄂线", "托克托东", "准格尔"),
-        new("吴堡黄河特大桥", "太中线", "柳林南", "吴堡"),
+        new("吴堡黄河特大桥", "太中客专", "柳林南", "吴堡"),
         new("禹门口黄河大桥", "侯阎线", "禹门口", "韩城"),
         new("风陵渡黄河大桥", "南同蒲线", "风陵渡", "孟塬"),
-        new("焦枝铁路黄河大桥", "焦柳线焦怀段", "留庄", "王庄"),
-        new("郑焦城际铁路黄河大桥", "郑太客专", "黄河景区", "武陟"),
+        new("焦枝铁路黄河大桥", "焦柳线", "留庄", "王庄"),
+        new("郑焦城际铁路黄河大桥", "郑太客专线", "黄河景区", "武陟"),
         new("郑焦城际铁路黄河大桥", "京广线", "焦作东", "南阳寨"),
         new("郑新黄河大桥", "京广高铁", "新乡东", "郑州东"),
         new("万滩黄河大桥", "济郑高铁", "新乡南", "杨庄所"),
@@ -381,7 +381,7 @@ public static partial class AchievementEngine
         new("济南黄河大桥", "京沪高速线", "德州东", "济南西"),
         new("济南黄河大桥", "齐河联络线", "大漠刘所", "济南西"),
         new("泺口黄河大桥", "济南线", "桥南", "济南"),
-        new("济南黄河公铁两用桥", "石济客专线", "大郑庄所", "济南东"),
+        new("济南黄河公铁两用桥", "石济客专", "大郑庄所", "济南东"),
         new("龙居黄河大桥", "德大线", "利津南", "刘集")
     ];
     private static readonly IReadOnlyList<RailwaySection> SeaBayBridges =
@@ -389,49 +389,53 @@ public static partial class AchievementEngine
         new("普兰店海湾特大桥", "沈大高速线", "瓦房店西", "金普"),
         new("宁德特大桥", "杭深线", "宁德", "罗源"),
         new("平潭海峡公铁大桥", "福平铁路", "长乐南", "平潭"),
-        new("湄洲湾跨海大桥", "甬广高铁福漳段", "莆田", "泉港"),
-        new("泉州湾跨海大桥", "甬广高铁福漳段", "泉州东", "泉州南"),
-        new("安海湾特大桥", "甬广高铁福漳段", "泉州南", "禾山所"),
+        new("湄洲湾跨海大桥", "甬广福漳段", "莆田", "泉港"),
+        new("泉州湾跨海大桥", "甬广福漳段", "泉州东", "泉州南"),
+        new("安海湾特大桥", "甬广福漳段", "泉州南", "禾山所"),
         new("杏林大桥", "鹰厦线", "杏林", "厦门高崎")
     ];
 
-    // 附表4：承担客运、长度超过 20 公里的特长隧道。秦岭马白山隧道（武西高速线
-    // 商洛西-蓝田）两端车站尚未进入 routes.db，待路网数据补全后再参与判定。
+    // 附表4：承担客运、长度超过 20 公里的特长隧道。
     private static readonly IReadOnlyList<RailwaySection> Tunnels =
     [
-        new("松山湖隧道", "广惠城际", "道滘", "常平东"),
-        new("深港隧道", "广深港高速线", "深圳北", "香港西九龙"),
+        new("松山湖隧道", "广惠城际线", "道滘", "常平东"),
+        new("深港隧道", "广深港高速线", "深圳北", "香港西九龙", SpansLines: true),
         new("新关角隧道", "青藏线", "天峻", "察汗诺"),
-        new("平安隧道", "川青铁路青黄段", "石大关", "叠溪"),
-        new("西秦岭隧道", "兰渝线兰渭段", "陇南", "姚渡"),
+        new("平安隧道", "川青青黄段", "石大关", "叠溪"),
+        new("西秦岭隧道", "兰渝兰渭段", "陇南", "姚渡"),
         new("太行山隧道", "石太客专线", "获鹿所", "阳泉北"),
-        new("德胜隧道", "川青铁路青黄段", "镇江关", "松潘"),
-        new("秦岭马白山隧道", "武西高速线", "商洛西", "蓝田"),
+        new("德胜隧道", "川青青黄段", "镇江关", "松潘"),
+        new("秦岭马白山隧道", "武西高铁", "商洛西", "蓝田"),
         new("中天山隧道", "南疆线", "鱼儿沟", "马兰"),
         new("青云山隧道", "永莆线", "永泰", "涵江北"),
         new("小相岭隧道", "峨广铁路", "越西", "喜德西"),
-        new("吕梁山隧道", "太中线", "汾阳", "吕梁"),
+        new("吕梁山隧道", "太中客专", "汾阳", "吕梁"),
         new("当金山隧道", "敦煌线", "肃北", "苏干湖"),
         new("乌鞘岭隧道", "兰新线", "打柴沟", "龙沟"),
-        new("跃龙门隧道", "川青铁路青黄段", "高川", "茂县")
+        new("跃龙门隧道", "川青青黄段", "高川", "茂县")
     ];
 
-    // 「蜀道不难」要求的 7 个横穿秦岭的客运区间。routes.db 目前只能完整解析 5 个：
-    // 西渝高速线、武西高速线尚未入库（蓝田、商洛西、安康西等站也不存在），
-    // 这两段待路网数据补全后再参与判定。
+    // 「蜀道不难」要求的 7 个横穿秦岭的客运区间。
     private static readonly IReadOnlyList<RailwaySection> QinlingPassages =
     [
-        new("兰渝线", "兰渝线兰渭段", "夏官营客车所", "广元"),
+        new("兰渝线", "兰渝兰渭段", "夏官营客车所", "广元"),
         new("宝成线", "宝成线", "宝鸡", "阳平关"),
         new("西成客专线", "西成客专线", "鄠邑", "洋县西"),
         new("西康线", "西康线", "引镇", "大岭铺"),
-        new("西渝高速线", "西渝高速线", "西安东", "安康西"),
-        new("宁西线", "宁西线西合段", "西峡", "新丰镇"),
-        new("武西高速线", "武西高速线", "十堰东", "蓝田")
+        new("西渝高速线", "西渝西康段", "西安东", "安康西"),
+        new("宁西线", "宁西西合段", "西峡", "新丰镇"),
+        new("武西高速线", "武西高铁", "十堰东", "蓝田")
     ];
 
     private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> RouteStations = new(LoadRouteStations);
+    private static readonly Lazy<IReadOnlySet<string>> KnownStations = new(() =>
+        RouteStations.Value.Values
+            .SelectMany(stations => stations.Keys)
+            .ToHashSet(StringComparer.Ordinal));
+    // 旧线路库用这些合成线路表示出入境；新库只把口岸线修到国境站，存量行程仍按它们认。
     private static readonly string[] BorderRouteMarkers = ["丹东国境线", "绥芬河交界", "满洲里交界", "二连交界", "阿拉山口交界", "凭祥交界"];
+    // 新库里口岸线的终点站。磨憨（境）单独判——它的境外段也在库里。
+    private static readonly string[] BorderStationNames = ["丹东", "绥芬河", "满洲里", "二连", "阿拉山口", "凭祥"];
 
     // 使者莅临的别国首都车站。同一座城市的多个车站算作一项（阿斯塔纳的 1 号站与光明之路站），
     // 站名按别名做包含匹配，因为行程里的站名是用户自由填写的（"河内嘉林"、"莫斯科雅罗斯拉夫尔"
@@ -740,12 +744,12 @@ public static partial class AchievementEngine
             NarrativeNote: "惊人的长度，极致的运量",
             Trigger: i => FirstRollingStockMatch(i.Trips, GreatWallExpressModels)),
         new("qinlingPassage", Touring, "landscape_outlined", "蜀道不难", "行经全部横穿秦岭的铁路客运区间", 20,
-            Note: "完整行经以下区间：兰渝线夏官营-广元、宝成线宝鸡-阳平关、西成客专线鄠邑-洋县西、西康线引镇-大岭铺、西渝高速线西安东-安康西、宁西线西峡-新丰镇、武西高速线十堰东-蓝田；其中 2 段待路网数据补全后参与判定",
+            Note: "完整行经以下区间：兰渝线夏官营-广元、宝成线宝鸡-阳平关、西成客专线鄠邑-洋县西、西康线引镇-大岭铺、西渝高速线西安东-安康西、宁西线西峡-新丰镇、武西高速线十堰东-蓝田",
             NarrativeNote: "西当太白有铁道，可以横插群山间",
             Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(QinlingPassages))),
         new("tunnelCollection", Touring, "subway_outlined", "云霞明灭",
             "行经全部承担客运的 20 公里以上的特长隧道", 40,
-            Note: "截至2026年10月共15座，其中当前可判定14座，详见附表4",
+            Note: "截至2026年10月共15座，详见附表4",
             NarrativeNote: "这就是地铁吧",
             Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(Tunnels))),
         new("heavenlyThoroughfare", Touring, "add_road_outlined", "天堑通途", "行经武汉长江大桥", 10,
@@ -1512,7 +1516,7 @@ public static partial class AchievementEngine
         "thousandKilometers" => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 1000),
         "fourThousandKmJourney" => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 4000),
         "airRail" => P(AirportStationCount(trips), 3),
-        "lonelyPlanet" => P(CollectedCount(trips, trip => new[] { "若和铁路", "格库线" }.Where(route => RouteNames(trip).Any(name => name.Contains(route, StringComparison.Ordinal)))), 2),
+        "lonelyPlanet" => P(CollectedCount(trips, trip => MatchingRoutes(trip, ["若和铁路", "格库线"])), 2),
         "hundredThousandKilometers" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
         "travelAllMountains" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 500000),
         "fiftyThousandSpending" => P(trips.Sum(trip => trip.Price), 50000),
@@ -1752,12 +1756,17 @@ public static partial class AchievementEngine
         CollectionRequirements(
             trips,
             routes.Select(route => (Key: route, Label: route)),
-            trip =>
-            {
-                var routeNames = RouteNames(trip).ToList();
-                return routes.Where(route =>
-                    routeNames.Any(name => name.Contains(route, StringComparison.Ordinal)));
-            });
+            trip => MatchingRoutes(trip, routes));
+
+    /// <summary>行程里哪些要求的线路被走到了。旧名与新名都认（若和铁路 / 若和线）。</summary>
+    private static IEnumerable<string> MatchingRoutes(
+        PublicTrip trip,
+        IEnumerable<string> routes)
+    {
+        var routeNames = RouteNames(trip).ToList();
+        return routes.Where(route => routeNames.Any(name =>
+            name.Contains(route, StringComparison.Ordinal) || RouteNameMatches(name, route)));
+    }
 
     private static IReadOnlyList<AchievementRequirement> RollingStockRequirements(
         List<PublicTrip> trips,
@@ -1792,13 +1801,9 @@ public static partial class AchievementEngine
                 .Select(group => (Key: group.Key, Label: group.Key)),
             trip =>
             {
-                var segments = RouteSegments(trip);
+                var segments = RouteSpans(trip);
                 return availableSections
-                    .Where(section => segments.Any(segment => CoversRouteSection(
-                        segment,
-                        section.RouteName,
-                        section.FromStation,
-                        section.ToStation)))
+                    .Where(section => segments.Any(segment => CoversRouteSection(segment, section)))
                     .Select(section => section.Name);
             });
     }
@@ -1806,16 +1811,11 @@ public static partial class AchievementEngine
     private static IReadOnlyList<AchievementRequirement> RouteCatalogRequirements(
         List<PublicTrip> trips)
     {
-        var catalog = RouteStations.Value.Keys.ToHashSet(StringComparer.Ordinal);
         return CollectionRequirements(
             trips,
-            catalog.OrderBy(route => route, StringComparer.Ordinal)
+            RouteStations.Value.Keys.Order(StringComparer.Ordinal)
                 .Select(route => (Key: route, Label: route)),
-            trip => RouteNames(trip)
-                .Select(name => catalog.Contains(name)
-                    ? name
-                    : catalog.FirstOrDefault(route => route.Contains(name, StringComparison.Ordinal)))
-                .Where(name => !string.IsNullOrEmpty(name))!);
+            trip => RouteNames(trip).SelectMany(CatalogRoutesFor));
     }
 
     private static double MaxDurationHours(IEnumerable<PublicTrip> trips) => trips
@@ -2225,7 +2225,7 @@ public static partial class AchievementEngine
         var first = NormalizedStation(segment.FromStation);
         var second = NormalizedStation(segment.ToStation);
         if (StringComparer.Ordinal.Compare(first, second) > 0) (first, second) = (second, first);
-        return new RouteSectionKey(segment.RouteName, first, second);
+        return new RouteSectionKey(CanonicalRouteName(segment.RouteName), first, second);
     }
 
     private static RepeatedTripKey RepeatedTripKeyFor(PublicTrip trip)
@@ -2954,22 +2954,16 @@ public static partial class AchievementEngine
     {
         var required = routes.ToHashSet(StringComparer.Ordinal);
         return FirstCollectionCompletion(trips, required, trip => required
-            .Where(route => RouteNames(trip).Any(name => name.Contains(route, StringComparison.Ordinal)))
+            .Where(route => RouteNames(trip).Any(name =>
+                name.Contains(route, StringComparison.Ordinal) || RouteNameMatches(name, route)))
             .ToHashSet(StringComparer.Ordinal));
     }
 
-    private static int RouteCatalogCount(IEnumerable<PublicTrip> trips)
-    {
-        var catalog = RouteStations.Value.Keys.ToHashSet(StringComparer.Ordinal);
-        return trips
-            .SelectMany(RouteNames)
-            .Select(name => catalog.Contains(name)
-                ? name
-                : catalog.FirstOrDefault(route => route.Contains(name, StringComparison.Ordinal)))
-            .Where(name => !string.IsNullOrEmpty(name))
-            .Distinct(StringComparer.Ordinal)
-            .Count();
-    }
+    private static int RouteCatalogCount(IEnumerable<PublicTrip> trips) => trips
+        .SelectMany(RouteNames)
+        .SelectMany(CatalogRoutesFor)
+        .Distinct(StringComparer.Ordinal)
+        .Count();
 
     private static PublicTrip? FirstRouteCatalogCompletion(IEnumerable<PublicTrip> trips)
     {
@@ -2978,11 +2972,8 @@ public static partial class AchievementEngine
         foreach (var trip in trips)
         {
             foreach (var name in RouteNames(trip))
-            {
-                var match = RouteStations.Value.Keys.FirstOrDefault(route =>
-                    route == name || route.Contains(name, StringComparison.Ordinal));
-                if (match is not null) covered.Add(match);
-            }
+                foreach (var match in CatalogRoutesFor(name))
+                    covered.Add(match);
             if (covered.Count >= requiredCount) return trip;
         }
         return null;
@@ -2995,7 +2986,8 @@ public static partial class AchievementEngine
         {
             var from = NormalizedStation(trip.FromStation);
             var to = NormalizedStation(trip.ToStation);
-            var route = string.Join("|", RouteNames(trip));
+            // 新旧线路名指同一条走法时不能算两种路线，否则同一趟车重录一次就能刷成就。
+            var route = CanonicalRouteSignature(trip);
             if (from.Length == 0 || to.Length == 0 || route.Length == 0) continue;
             var key = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
             if (!groups.TryGetValue(key, out var routes))
@@ -3012,7 +3004,7 @@ public static partial class AchievementEngine
         {
             var from = NormalizedStation(trip.FromStation);
             var to = NormalizedStation(trip.ToStation);
-            var route = string.Join("|", RouteNames(trip));
+            var route = CanonicalRouteSignature(trip);
             if (from.Length == 0 || to.Length == 0 || route.Length == 0) continue;
             var key = string.CompareOrdinal(from, to) <= 0 ? (from, to) : (to, from);
             if (!groups.TryGetValue(key, out var routes))
@@ -3118,21 +3110,19 @@ public static partial class AchievementEngine
             (from == "香港西九龙" && to is "福田" or "深圳北");
     }
 
-    private static bool UnlocksBorderCrossing(PublicTrip trip) => RouteSegments(trip).Any(segment =>
-        BorderRouteMarkers.Any(marker => segment.RouteName.Contains(marker, StringComparison.Ordinal)) ||
-        (segment.RouteName.Contains("中老昆万铁路昆磨段", StringComparison.Ordinal) &&
-            (NormalizedStation(segment.FromStation) == "磨憨（境）" || NormalizedStation(segment.ToStation) == "磨憨（境）")));
+    private static bool UnlocksBorderCrossing(PublicTrip trip) => BorderCrossing(trip) is not null;
 
     private static PublicTrip? FirstDifferentBorderCompletion(List<PublicTrip> trips)
     {
         var visits = new List<(string Border, bool Entry, DateTime Time, PublicTrip Trip)>();
         foreach (var trip in trips)
-        foreach (var segment in RouteSegments(trip))
         {
-            var border = BorderName(segment);
-            if (border is null) continue;
-            var entry = IsEntryDirection(segment);
-            visits.Add((border, entry, entry ? Departure(trip) : (trip.ArrivalTime ?? Departure(trip)), trip));
+            if (BorderCrossing(trip) is not { } crossing) continue;
+            visits.Add((
+                crossing.Border,
+                crossing.Entry,
+                crossing.Entry ? Departure(trip) : (trip.ArrivalTime ?? Departure(trip)),
+                trip));
         }
         visits.Sort((a, b) => a.Time != b.Time ? a.Time.CompareTo(b.Time) : a.Trip.TicketId.CompareTo(b.Trip.TicketId));
         foreach (var current in visits.Where(item => !item.Entry))
@@ -3141,22 +3131,66 @@ public static partial class AchievementEngine
         return null;
     }
 
-    private static string? BorderName(RouteSegment segment)
+    /// <summary>一次出入境：口岸站与方向（true 为入境）。</summary>
+    private static (string Border, bool Entry)? BorderCrossing(PublicTrip trip)
     {
-        var marker = BorderRouteMarkers.FirstOrDefault(value => segment.RouteName.Contains(value, StringComparison.Ordinal));
-        if (marker is not null) return marker;
-        return segment.RouteName.Contains("中老昆万铁路昆磨段", StringComparison.Ordinal) &&
-            (NormalizedStation(segment.FromStation) == "磨憨（境）" || NormalizedStation(segment.ToStation) == "磨憨（境）") ? "磨憨（境）" : null;
+        var segments = RouteSegments(trip);
+        if (segments.Count == 0) return null;
+
+        // 中老铁路的磨万段连同万象这些境外站都在库里，「终点不在库」的端点规则对它不成立；
+        // 跨过磨憨（境）本身就算出入境。只认昆磨段——磨万段是以磨憨（境）为起点的。
+        foreach (var segment in segments)
+        {
+            if (segment.RouteName.Trim() is not ("中老昆万铁路昆磨段" or "昆万昆磨段")) continue;
+            if (NormalizedStation(segment.ToStation) == "磨憨（境）") return ("磨憨（境）", false);
+            if (NormalizedStation(segment.FromStation) == "磨憨（境）") return ("磨憨（境）", true);
+        }
+
+        // 存量行程里还留着旧的合成边境线（丹东国境线等），它们不在新库里，按老办法认。
+        foreach (var segment in segments)
+        {
+            if (!BorderRouteMarkers.Any(marker =>
+                    segment.RouteName.Contains(marker, StringComparison.Ordinal))) continue;
+            var border = BorderStationAt(segment.FromStation) ?? BorderStationAt(segment.ToStation);
+            if (border is null) continue;
+            var from = NormalizedStation(segment.FromStation);
+            return (border, from.Contains("交接", StringComparison.Ordinal) ||
+                from == "新义州" || from.Contains("（境）", StringComparison.Ordinal));
+        }
+
+        // 新库的口岸线只修到国境站：出境看最后一条在库线路是否止于口岸站、而行程终点不在库中，
+        // 入境反过来看第一条在库线路。
+        var last = segments.LastOrDefault(segment => ResolvesInCatalog(segment.RouteName));
+        if (BorderStationAt(last?.ToStation) is { } exit && !IsKnownStation(trip.ToStation))
+            return (exit, false);
+        var first = segments.FirstOrDefault(segment => ResolvesInCatalog(segment.RouteName));
+        if (BorderStationAt(first?.FromStation) is { } entry && !IsKnownStation(trip.FromStation))
+            return (entry, true);
+        return null;
     }
 
-    private static bool IsEntryDirection(RouteSegment segment)
+    private static bool ResolvesInCatalog(string routeName) => CatalogRoutesFor(routeName).Count > 0;
+
+    private static string? BorderStationAt(string? station)
     {
-        var from = NormalizedStation(segment.FromStation);
-        var to = NormalizedStation(segment.ToStation);
-        return from.Contains("交接", StringComparison.Ordinal) || from == "新义州" || from == "磨憨（境）" || from.Contains("（境）", StringComparison.Ordinal);
+        var normalized = NormalizedStation(station ?? string.Empty);
+        if (normalized.Length == 0) return null;
+        if (normalized is "磨憨" or "磨憨（境）") return "磨憨（境）";
+        return BorderStationNames.FirstOrDefault(name =>
+            string.Equals(name, normalized, StringComparison.Ordinal));
     }
 
-    private static bool UnlocksHanxiWuchang(PublicTrip trip) => RouteSegments(trip).Any(segment =>
+    /// <summary>行程里的站名是否出现在线路库中——口岸线止于国境站，境外站都不在库。</summary>
+    private static bool IsKnownStation(string station)
+    {
+        var normalized = NormalizedStation(station);
+        if (normalized.Length == 0) return false;
+        if (KnownStations.Value.Contains(normalized)) return true;
+        return StationNameAliases.TryGetValue(normalized, out var aliases) &&
+            aliases.Any(alias => KnownStations.Value.Contains(alias));
+    }
+
+    private static bool UnlocksHanxiWuchang(PublicTrip trip) => RouteSpans(trip).Any(segment =>
         CoversRouteSection(segment, "京广线", "汉西", "武昌"));
 
     private static bool UnlocksSnowBlockingBlueGate(PublicTrip trip)
@@ -3166,7 +3200,7 @@ public static partial class AchievementEngine
         var start = new DateTime(2008, 1, 10);
         var end = new DateTime(2008, 2, 10);
         if (arrival < start || departure >= end) return false;
-        return RouteSegments(trip).Any(segment =>
+        return RouteSpans(trip).Any(segment =>
             CoversRouteSection(segment, "京广线", "武昌", "广州"));
     }
 
@@ -3178,13 +3212,9 @@ public static partial class AchievementEngine
         var sections = availableSections;
         foreach (var trip in trips)
         {
-            var segments = RouteSegments(trip);
+            var segments = RouteSpans(trip);
             foreach (var section in sections)
-                if (segments.Any(segment => CoversRouteSection(
-                        segment,
-                        section.RouteName,
-                        section.FromStation,
-                        section.ToStation)))
+                if (segments.Any(segment => CoversRouteSection(segment, section)))
                     covered.Add(section.Name);
         }
         return covered.Count;
@@ -3202,13 +3232,9 @@ public static partial class AchievementEngine
         if (required.Count == 0) return null;
         foreach (var trip in trips)
         {
-            var segments = RouteSegments(trip);
+            var segments = RouteSpans(trip);
             foreach (var section in sections)
-                if (segments.Any(segment => CoversRouteSection(
-                        segment,
-                        section.RouteName,
-                        section.FromStation,
-                        section.ToStation)))
+                if (segments.Any(segment => CoversRouteSection(segment, section)))
                     covered.Add(section.Name);
             if (required.IsSubsetOf(covered)) return trip;
         }
@@ -3219,14 +3245,18 @@ public static partial class AchievementEngine
     private static IReadOnlyList<RailwaySection> AvailableSections(
         IReadOnlyList<RailwaySection> sections)
     {
-        var routes = RouteStations.Value;
         return sections
             .Where(section =>
-                routes.TryGetValue(section.RouteName, out var stations) &&
-                stations.ContainsKey(NormalizedStation(section.FromStation)) &&
-                stations.ContainsKey(NormalizedStation(section.ToStation)))
+                SectionStations(section) is { } stations &&
+                TryRouteStation(stations, section.FromStation, out _) &&
+                TryRouteStation(stations, section.ToStation, out _))
             .ToList();
     }
+
+    private static IReadOnlyDictionary<string, int>? SectionStations(RailwaySection section) =>
+        section.SpansLines
+            ? FamilyChain(section.RouteName)
+            : RouteStations.Value.GetValueOrDefault(section.RouteName);
 
     /// <summary>区段类成就的进度：按区段名去重计数，分母是实际可判定的区段数。</summary>
     private static AchievementProgress SectionProgress(
@@ -3239,16 +3269,216 @@ public static partial class AchievementEngine
             available.Select(section => section.Name).Distinct(StringComparer.Ordinal).Count());
     }
 
-    private static bool CoversRouteSection(RouteSegment segment, string routeName, string first, string second)
+    // 新线路库换了一套线路命名：删掉速度等级词和分段名里的「线」——
+    // 宁西线西合段→宁西西合段、京港高铁安九段→京港安九段、若和铁路→若和线。
+    // 历史行程里存的仍是旧库的写法，所以线路名比对按三档递进：同名 → 去掉末尾
+    // 「线/铁路」 → 抹平速度等级词与所有「线/铁路」。最后一档会把 京广线 与 京广高铁
+    // 归到同一个键，因此仅当涉及的名字不在线路库里时才启用——在册的两条不同线路绝不合并。
+    private static readonly string[] RouteSuffixWords = ["铁路", "线"];
+    private static readonly string[] RouteSpeedWords = ["客运专线", "高铁", "客专", "城际", "高速"];
+
+    // 字面规则救不了的改名：跨段合并（宁蓉线、焦柳线）、拆分（广深港）、换词
+    // （西渝高速线→西渝西康段、武西高速线→武西高铁、连镇铁路→连镇客专线）。
+    // 同一族视为同一条线；中老铁路的磨万段是境外延伸，跨境判定一并认。
+    private static readonly string[][] RouteNameFamilies =
+    [
+        ["广深港高速线", "广深港广深", "广深港福田", "广深港香港"],
+        ["宁蓉线", "宁蓉线宁渝段", "宁蓉线成渝段"],
+        ["焦柳线", "焦柳线焦怀段", "焦柳线怀柳段"],
+        ["西渝高速线", "西渝西康段"],
+        ["武西高速线", "武西高铁", "武西高铁云十段", "武西高铁走革段", "武西走革段"],
+        ["连镇铁路", "连镇客专线"],
+        ["中老昆万铁路昆磨段", "昆万昆磨段", "昆万磨万段"]
+    ];
+
+    private static readonly Lazy<IReadOnlyDictionary<string, string[]>> RouteNameFamilyIndex = new(
+        () =>
+        {
+            var index = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (var family in RouteNameFamilies)
+            foreach (var name in family)
+            {
+                if (!index.TryGetValue(name, out var members))
+                    index[name] = members = new HashSet<string>(StringComparer.Ordinal);
+                members.UnionWith(family);
+            }
+            return index.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.ToArray(),
+                StringComparer.Ordinal);
+        });
+
+    /// <summary>同族各线首尾相接拼成一条虚拟线的站序，给拆线后的跨段区段（深港隧道）判定用。</summary>
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> RouteFamilyChains =
+        new(BuildRouteFamilyChains);
+
+    private static IReadOnlyDictionary<string, int>? FamilyChain(string routeName) =>
+        RouteFamilyChains.Value.GetValueOrDefault(routeName.Trim());
+
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> BuildRouteFamilyChains()
     {
-        if (!segment.RouteName.Contains(routeName, StringComparison.Ordinal)) return false;
-        var stations = RouteStations.Value.GetValueOrDefault(routeName) ??
-            RouteStations.Value.FirstOrDefault(item => item.Key.Contains(routeName, StringComparison.Ordinal)).Value;
+        var chains = new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.Ordinal);
+        foreach (var family in RouteNameFamilies)
+        {
+            var lines = family
+                .Select(name => RouteStations.Value.TryGetValue(name, out var stations) ? stations : null)
+                .Where(stations => stations is not null)
+                .Select(stations => stations!.OrderBy(pair => pair.Value).Select(pair => pair.Key).ToList())
+                .ToList();
+            if (lines.Count < 2) continue;
+            var chain = new List<string>(lines[0]);
+            var remaining = lines.Skip(1).ToList();
+            var joined = true;
+            while (remaining.Count > 0)
+            {
+                var next = remaining.FindIndex(line =>
+                    line[0] == chain[^1] || line[^1] == chain[^1]);
+                if (next < 0) { joined = false; break; }
+                var following = remaining[next];
+                remaining.RemoveAt(next);
+                if (following[^1] == chain[^1]) following.Reverse();
+                chain.AddRange(following.Skip(1));
+            }
+            // 接不起来的族不建虚拟线——宁可判不了，也不要给出错位的站序。
+            if (!joined) continue;
+            var index = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < chain.Count; i++) index.TryAdd(chain[i], i);
+            foreach (var name in family) chains[name] = index;
+        }
+        return chains;
+    }
+
+    /// <summary>新库改过个别站名（夏官营客车所→夏官营客所），行程里的名称按各自当时的库生成。</summary>
+    private static readonly IReadOnlyDictionary<string, string[]> StationNameAliases =
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["夏官营客车所"] = ["夏官营客所"],
+            ["夏官营客所"] = ["夏官营客车所"]
+        };
+
+    private static string TrimRouteSuffix(string value)
+    {
+        var result = value.Trim();
+        foreach (var suffix in RouteSuffixWords)
+            if (result.EndsWith(suffix, StringComparison.Ordinal))
+                return result[..^suffix.Length];
+        return result;
+    }
+
+    private static string LooseRouteName(string value)
+    {
+        var result = value.Trim();
+        foreach (var word in RouteSpeedWords)
+            result = result.Replace(word, string.Empty, StringComparison.Ordinal);
+        foreach (var word in RouteSuffixWords)
+            result = result.Replace(word, string.Empty, StringComparison.Ordinal);
+        return result;
+    }
+
+    private static bool RouteNameMatches(string name, string target)
+    {
+        var left = name.Trim();
+        var right = target.Trim();
+        if (left.Length == 0 || right.Length == 0) return false;
+        if (string.Equals(left, right, StringComparison.Ordinal)) return true;
+        if (RouteNameFamilyIndex.Value.TryGetValue(left, out var family) &&
+            family.Contains(right, StringComparer.Ordinal)) return true;
+        if (string.Equals(TrimRouteSuffix(left), TrimRouteSuffix(right), StringComparison.Ordinal)) return true;
+        if (RouteStations.Value.ContainsKey(left) && RouteStations.Value.ContainsKey(right)) return false;
+        return string.Equals(LooseRouteName(left), LooseRouteName(right), StringComparison.Ordinal);
+    }
+
+    // 归一化要遍历 790 条云端线路，而行程里出现的线路名种类很少，按名缓存即可。
+    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> CatalogRoutesCache =
+        new(StringComparer.Ordinal);
+
+    /// <summary>把行程里的线路名解析到云端线路库里的一到多条线路（同名优先，其次逐档归一）。</summary>
+    private static IReadOnlyList<string> CatalogRoutesFor(string name)
+    {
+        var value = name.Trim();
+        return value.Length == 0 ? [] : CatalogRoutesCache.GetOrAdd(value, ResolveCatalogRoutes);
+    }
+
+    private static IReadOnlyList<string> ResolveCatalogRoutes(string value)
+    {
+        var catalog = RouteStations.Value;
+        if (catalog.ContainsKey(value)) return [value];
+        if (RouteNameFamilyIndex.Value.TryGetValue(value, out var family))
+        {
+            var familyMatches = family
+                .Where(catalog.ContainsKey)
+                .Order(StringComparer.Ordinal)
+                .ToList();
+            if (familyMatches.Count > 0) return familyMatches;
+        }
+        var suffix = TrimRouteSuffix(value);
+        var suffixMatches = catalog.Keys
+            .Where(route => string.Equals(TrimRouteSuffix(route), suffix, StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        if (suffixMatches.Count > 0) return suffixMatches;
+        var loose = LooseRouteName(value);
+        return catalog.Keys
+            .Where(route => string.Equals(LooseRouteName(route), loose, StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>区段去重、路线去重用的线路身份：旧名与新名落到同一个键。</summary>
+    private static string CanonicalRouteName(string name)
+    {
+        var value = name.Trim();
+        if (value.Length == 0 || RouteStations.Value.ContainsKey(value)) return value;
+        var candidates = CatalogRoutesFor(value);
+        return candidates.Count > 0 ? candidates[0] : LooseRouteName(value);
+    }
+
+    private static string CanonicalRouteSignature(PublicTrip trip) =>
+        string.Join("|", RouteNames(trip).Select(CanonicalRouteName));
+
+    private static bool TryRouteStation(
+        IReadOnlyDictionary<string, int> stations, string station, out int index)
+    {
+        var normalized = NormalizedStation(station);
+        if (stations.TryGetValue(normalized, out index)) return true;
+        if (StationNameAliases.TryGetValue(normalized, out var aliases))
+            foreach (var alias in aliases)
+                if (stations.TryGetValue(alias, out index))
+                    return true;
+        index = 0;
+        return false;
+    }
+
+    private static bool CoversRouteSection(RouteSegment segment, RailwaySection section) =>
+        CoversRouteSection(
+            segment,
+            section.RouteName,
+            section.FromStation,
+            section.ToStation,
+            section.SpansLines);
+
+    private static bool CoversRouteSection(RouteSegment segment, string routeName, string first, string second) =>
+        CoversRouteSection(segment, routeName, first, second, spansLines: false);
+
+    private static bool CoversRouteSection(
+        RouteSegment segment,
+        string routeName,
+        string first,
+        string second,
+        bool spansLines)
+    {
+        if (!RouteNameMatches(segment.RouteName, routeName)) return false;
+        var stations = spansLines
+            ? FamilyChain(routeName)
+            : RouteStations.Value.GetValueOrDefault(routeName) ??
+                RouteStations.Value.FirstOrDefault(item =>
+                    item.Key.Contains(routeName, StringComparison.Ordinal) ||
+                    RouteNameMatches(routeName, item.Key)).Value;
         if (stations is null) return false;
-        if (!stations.TryGetValue(NormalizedStation(segment.FromStation), out var from) ||
-            !stations.TryGetValue(NormalizedStation(segment.ToStation), out var to)) return false;
-        if (!stations.TryGetValue(first, out var start) || !stations.TryGetValue(second, out var end))
-            return false;
+        if (!TryRouteStation(stations, segment.FromStation, out var from) ||
+            !TryRouteStation(stations, segment.ToStation, out var to)) return false;
+        if (!TryRouteStation(stations, first, out var start) ||
+            !TryRouteStation(stations, second, out var end)) return false;
         var low = Math.Min(start, end); var high = Math.Max(start, end);
         return Math.Min(from, to) <= low && Math.Max(from, to) >= high;
     }
@@ -3260,7 +3490,7 @@ public static partial class AchievementEngine
         using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
         connection.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT r.route_name, s.station_name, s.station_index FROM routes r JOIN stations s USING(route_version_id)";
+        command.CommandText = "SELECT l.line_name, ls.station, ls.seq FROM lines l JOIN line_stations ls USING(line_id) ORDER BY l.line_id, ls.seq";
         using var reader = command.ExecuteReader();
         var result = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
         while (reader.Read())
@@ -3473,6 +3703,37 @@ public static partial class AchievementEngine
         }
     }
 
+    /// <summary>把同一线路族里相邻的几段并成一段：新库把 广深港高速线 拆成广深/福田/香港
+    /// 三条，一段行程因此会在同一条物理线路上留下两三条相邻段，逐段判定会漏掉跨段的区段
+    /// （深港隧道的 深圳北-香港西九龙）。只并显式登记过的族，不按归一化键并——那会把
+    /// 京广线与京广高铁并为一条。</summary>
+    private static IReadOnlyList<RouteSegment> RouteSpans(PublicTrip trip)
+    {
+        var spans = new List<RouteSegment>();
+        foreach (var segment in RouteSegments(trip))
+        {
+            if (spans.Count > 0)
+            {
+                var previous = spans[^1];
+                // 只有首尾相接的两段才合并：新库把广深港高速线拆成了广深/福田/香港三条，
+                // 深圳北→福田、福田→香港西九龙 要拼回一段才覆盖得了深港隧道这一区间。
+                if (NormalizedStation(previous.ToStation) == NormalizedStation(segment.FromStation) &&
+                    RouteNameFamilyIndex.Value.TryGetValue(previous.RouteName, out var family) &&
+                    family.Contains(segment.RouteName, StringComparer.Ordinal))
+                {
+                    spans[^1] = previous with
+                    {
+                        ToStation = segment.ToStation,
+                        MileageKm = previous.MileageKm + segment.MileageKm
+                    };
+                    continue;
+                }
+            }
+            spans.Add(segment);
+        }
+        return spans;
+    }
+
     private sealed record RepeatedTripKey(
         string TrainNumber,
         string RollingStockModel,
@@ -3508,12 +3769,15 @@ public static partial class AchievementEngine
         string SecondStation);
 
     /// <summary>一条用于判定的铁路区段：在线路 <paramref name="RouteName"/> 上，行经
-    /// FromStation→ToStation 即视为经过。附表 1–4 的桥梁、隧道共用。</summary>
+    /// FromStation→ToStation 即视为经过。附表 1–4 的桥梁、隧道共用。
+    /// <paramref name="SpansLines"/> 表示这条物理线在新库中被拆成了同族的几条线
+    /// （广深港高速线 → 广深/福田/香港），判定时要先把同族各线接成一条虚拟线。</summary>
     private sealed record RailwaySection(
         string Name,
         string RouteName,
         string FromStation,
-        string ToStation);
+        string ToStation,
+        bool SpansLines = false);
 
     private sealed record StationVisit(string Station, DateTime Time, PublicTrip Trip);
 

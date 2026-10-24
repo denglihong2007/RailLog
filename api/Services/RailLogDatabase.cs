@@ -1395,9 +1395,10 @@ public sealed class RailLogDatabase
             connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT r.route_name, s.station_name, s.station_index
-                FROM routes r
-                JOIN stations s ON s.route_version_id=r.route_version_id;
+                SELECT l.line_name, ls.station, ls.seq
+                FROM lines l
+                JOIN line_stations ls USING(line_id)
+                ORDER BY l.line_id, ls.seq;
                 """;
             using var reader = command.ExecuteReader();
             while (reader.Read())

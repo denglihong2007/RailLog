@@ -185,9 +185,9 @@ void main() {
       ]);
 
       final via = _describeSegments(result.segments);
-      // 新丰镇→西安 这段 陇海线 与 宁西线西合段 的站序和里程桩一模一样（新丰镇 35 /
-      // 窑村 17 / 灞桥 10 / 西安 0，两边都是 35 km），走哪条只看谁先松弛，所以这里只断言
-      // 折返被记成两段，不锁死线路名。
+      // 新丰镇→西安 这段 陇海线 与 宁西西合段 的里程桩不同、总里程都是 35 km（宁西西合段
+      // 在 灞桥 与 西安 之间多一个 浐灞），走哪条只看谁先松弛，所以这里只断言折返被记成
+      // 两段，不锁死线路名。
       final reversalIndex = result.segments.indexWhere(
         (s) => s.toStation == '西安',
       );
@@ -204,9 +204,12 @@ void main() {
         isEmpty,
         reason: '实际经由：$via',
       );
+      // 延安→西安 326（包西线 291 + 宁西西合段 35），西安→镇安 141（西安→灞桥 10 +
+      // 田灞联络线 8 + 西康线 田王→镇安 123），合计 467。旧库的西康线还经过 灞桥、
+      // 镇安 的里程桩也不同，合出来是 473；现在的数值正好等于时刻表的 141。
       expect(
         result.segments.fold<double>(0, (sum, s) => sum + s.mileageKm),
-        473,
+        467,
       );
 
       final stations = await _tripStations(
@@ -216,16 +219,19 @@ void main() {
         '镇安',
         469,
       );
-      expect(_neighboursOf(stations, '西安'), [
-        '灞桥',
-        '灞桥',
-      ], reason: '西安 该留在站表里，且进出都取 灞桥，实际站表：$stations');
+      // 新线路库的 宁西西合段 在 灞桥 与 西安 之间还有 浐灞，折返时进出 西安 都经过它。
+      expect(
+        _neighboursOf(stations, '西安'),
+        ['浐灞', '浐灞'],
+        reason: '西安 该留在站表里，且进出都取同一条折返路，实际站表：$stations',
+      );
     });
 
     test('折返点落在段中间也断开（新丰镇→西安→镇安）', () async {
-      // 区间 1 最短走法 宁西线西合段 新丰镇→窑村→灞桥→西安 35 km，区间 2 第一条边是
-      // 西安→灞桥 10 km：端点（灞桥）并不等于这一段的起点（新丰镇），只看「首尾同名」
-      // 是漏的，合并出来会是 新丰镇→灞桥 这种首尾不同名的重叠走法。
+      // 区间 1 最短走法（陇海线 与 宁西西合段 在这段上新丰镇→窑村→灞桥→西安 都是
+      // 35 km，走哪条只看谁先松弛）到 西安，区间 2 第一条边是 西安→灞桥 10 km：
+      // 端点（灞桥）并不等于这一段的起点（新丰镇），只看「首尾同名」是漏的，合并出来会是
+      // 新丰镇→灞桥 这种首尾不同名的重叠走法。
       final result = await RouteService.resolveJourney(const [
         StationPairDistance(
           fromStation: '新丰镇',
@@ -244,9 +250,12 @@ void main() {
         (s) => s.toStation == '西安' && s.mileageKm == 35,
       );
       expect(reversalIndex, isNonNegative, reason: '实际经由：$via');
+      // 只断言折返被断开，不锁死线路名：陇海线与宁西西合段在这段上的总里程一样。
+      final backTrack = result.segments[reversalIndex + 1];
+      expect(backTrack.fromStation, '西安', reason: '实际经由：$via');
       expect(
-        _describeSegment(result.segments[reversalIndex + 1]),
-        '宁西线西合段 西安→灞桥 10',
+        [backTrack.toStation, backTrack.mileageKm],
+        ['灞桥', 10],
         reason: '实际经由：$via',
       );
       expect(
@@ -262,20 +271,22 @@ void main() {
         '镇安',
         176,
       );
+      // 同上：宁西西合段 在 灞桥 与 西安 之间还有 浐灞。
       expect(_neighboursOf(stations, '西安'), [
-        '灞桥',
-        '灞桥',
+        '浐灞',
+        '浐灞',
       ], reason: '西安 该留在站表里，实际站表：$stations');
     });
   });
 
-  // 太原枢纽 里 大西高铁、石太客专线、郑太客专 共享 太原东/太原/长风街所/太原南 四站，
-  // 但各条线的里程桩不一样（长风街所→太原：大西 5 km、石太 4 km；太原→太原东 两边都是 3 km）。
-  // 于是「大西 →石太 →大西 →石太」这种在枢纽里反复换线的走法，能比老老实实待在大西高铁上
-  // 多凑出几公里：D966 的 西安北→石家庄 目标 807，反复换线那条合 806。出队次序必须先要
-  // 线路名少（见 `_mileageDriftPerHop`）而不是先看谁里程短，这类走法才不会冒头。
+  // 太原枢纽 里 大西高铁、石太客专线、郑太客专线 共享 太原/长风街所/太原南 三站
+  // （太原东 只有 石太客专线 还有），但各条线的里程桩不一样（长风街所→太原：大西 5 km、
+  // 石太 4 km）。于是「大西 →石太 →大西 →石太」这种在枢纽里反复换线的走法，能比老老实实
+  // 待在大西高铁上多凑出几公里：D966 的 西安北→石家庄 目标 807，反复换线那条合 806。
+  // 出队次序必须先要线路名少（见 `_mileageDriftPerHop`）而不是先看谁里程短，这类走法才
+  // 不会冒头。
   group('不为了凑里程在枢纽里反复换线', () {
-    test('D966 西安北→石家庄 整段留在大西高铁上，到太原东才换石太客专线', () async {
+    test('D966 西安北→石家庄 整段留在大西高铁上，到太原才换石太客专线', () async {
       final result = await RouteService.resolveJourney(const [
         StationPairDistance(
           fromStation: '西安北',
@@ -293,17 +304,18 @@ void main() {
       );
       expect(
         result.segments.where((s) => s.routeName == '大西高铁').single.toStation,
-        '太原东',
+        '太原',
         reason: '实际经由：$via',
       );
       expect(
         result.segments.where((s) => s.routeName == '石太客专线').single.fromStation,
-        '太原东',
+        '太原',
         reason: '实际经由：$via',
       );
-      // 目标 807 是时刻表的累计里程，routes.db 的大西高铁 西安北→太原东 是 583，
-      // 差 3 km 落在「每站 0.5 km」的刻度差允许量（24 站 → 12 km）里，不值得为它再插一段
-      // 5 km 的大西临潼东联络线（那是「借道凑里程」，线路名从 2 个涨到 4 个）。
+      // 目标 807 是时刻表的累计里程，routes.db 的大西高铁 西安北→太原 是 580、
+      // 石太客专线 太原→石家庄 是 224，合计差 3 km，落在「每站 0.5 km」的刻度差允许量
+      // （24 站 → 12 km）里，不值得为它再插一段 5 km 的 临潼东联络（那是「借道凑里程」，
+      // 线路名从 2 个涨到 4 个）。
       expect(
         result.segments.fold<double>(0, (sum, s) => sum + s.mileageKm),
         804,
@@ -360,10 +372,11 @@ void main() {
   });
 
   // 刻度差是逐站累积的，里程容差不能是个固定值。D16 的 西安东→延安 目标 328：
-  // 老老实实走 西康线 + 陇海线 + 包西线 进延安是 331（经过 15 站，误差 3），而在
-  // 甘泉北 换到平行的 包西高铁延西段 走那 34 km（包西线 上是 40 km）正好少 6 km，
-  // 凑出 327（误差 1）。容差若死死钉在 1 km，后者就成了「更贴目标」的那条，
-  // 于是「终点前一站换到平行高铁线上」这种专为凑里程的走法冒头。
+  // 老老实实走 西康线 + 陇海线 + 包西线 进延安是 327（经过 14 站，误差 1）。
+  // 新线路库里 西康线 不再经过 灞桥、镇安 的里程桩也变了，这条正路本身已经贴着目标，
+  // 不用再靠刻度差允许量去压过「在 甘泉北 换到平行的 包西延西段」的走法（换线后
+  // 只有 321 km，误差 7）。保留这条断言是为了锁住结果：一路走 包西线，线路名从 3 个
+  // 涨到 4 个的借道走法不该冒头。
   group('刻度差随经过站数累积，不为了几公里借道平行线', () {
     test('D16 西安东→延安 一路走包西线进延安', () async {
       final result = await RouteService.resolveJourney(const [
@@ -378,16 +391,30 @@ void main() {
       final names = result.segments.map((s) => s.routeName).toList();
       expect(
         names,
-        isNot(contains('包西高铁延西段')),
-        reason: '不该在 甘泉北 换到平行的高铁线上凑那 6 km，实际经由：$via',
+        isNot(contains('包西延西段')),
+        reason: '不该在 甘泉北 换到平行的高铁线上借道，实际经由：$via',
       );
       expect(names, hasLength(3), reason: '实际经由：$via');
       expect(names.last, '包西线', reason: '实际经由：$via');
       expect(result.segments.last.toStation, '延安', reason: '实际经由：$via');
       expect(
         result.segments.fold<double>(0, (sum, s) => sum + s.mileageKm),
-        331,
+        327,
       );
+    });
+  });
+
+  // 旧行程里存下来的经由名是新线路库之前的写法（宁西线西合段、沪宁沿江高铁）。
+  // 展开站表和贴轨前都要先把它们解析到新库的线路名上，否则这些行程会退化成
+  // 只剩首尾站、地图上只剩直线。
+  group('旧线路名解析到新库', () {
+    test('去掉速度等级词的旧写法仍能查到线路与里程', () async {
+      final stations = await RouteService.getStationsForRoute('宁西线西合段');
+      expect(stations, contains('西安'));
+      expect(await RouteService.getDistanceOnRoute('宁西线西合段', '西安', '灞桥'), 10);
+
+      final hsrStations = await RouteService.getStationsForRoute('沪宁沿江高铁');
+      expect(hsrStations, isNotEmpty);
     });
   });
 }

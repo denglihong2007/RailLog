@@ -99,6 +99,39 @@ class LineMatchKeyTest(unittest.TestCase):
         self.assertEqual(geo.line_match_key("   "), "")
 
 
+class LineBaseKeyTest(unittest.TestCase):
+    """基本名：匹配键再去掉速度等级词，用来容忍新线路库删掉等级词的改名。
+
+    它**故意**不区分速度等级，所以只能用在严格匹配落空之后——见
+    `build_rail_tracks.line_matches`。
+    """
+
+    def test_drops_class_words_from_the_db_name(self) -> None:
+        # 新线路库的写法：等级词被删掉。
+        self.assertEqual(geo.line_base_key("沪宁沿江"), "沪宁沿江")
+        self.assertEqual(geo.line_base_key("京包张包段"), "京包张包")
+        self.assertEqual(geo.line_base_key("京港合安段"), "京港合安")
+
+    def test_drops_class_words_from_the_osm_name(self) -> None:
+        self.assertEqual(geo.line_base_key("沪宁沿江高速线"), "沪宁沿江")
+        self.assertEqual(geo.line_base_key("京包客专线张包段"), "京包")
+        self.assertEqual(geo.line_base_key("京广客运专线"), "京广")
+
+    def test_meets_in_the_middle(self) -> None:
+        self.assertEqual(
+            geo.line_base_key("沪宁沿江"), geo.line_base_key("沪宁沿江高速线")
+        )
+        self.assertEqual(geo.line_base_key("沪宁沿江"), geo.line_base_key("沪宁沿江高铁"))
+
+    def test_collapses_hsr_and_conventional_on_purpose(self) -> None:
+        # 这正是不能拿基本名当匹配键的原因：两者在基本名上是同一条线。
+        self.assertEqual(geo.line_base_key("京广线"), geo.line_base_key("京广高速线"))
+
+    def test_empty_input(self) -> None:
+        self.assertEqual(geo.line_base_key(""), "")
+        self.assertEqual(geo.line_base_key("   "), "")
+
+
 class ProfileTest(unittest.TestCase):
     def test_infers_hsr_from_route_name(self) -> None:
         for name in ("京沪高速线", "京津城际线", "安六客专线", "包银高铁"):

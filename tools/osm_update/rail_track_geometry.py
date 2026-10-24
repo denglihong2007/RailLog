@@ -281,7 +281,8 @@ def line_match_key(value: str) -> str:
     「铁路」之前的部分：客里表的线路名带区段后缀，OSM 的 way 名不带。
 
     对不上就返回一个匹配不到任何 way 的键，这是**故意**的：说明这条线路名在 OSM 里没有
-    同名正线，调用方据此拿到空的偏好集、退化成纯里程判定（见 `preferred_for`）。
+    同名正线，调用方据此拿到空的偏好集、退化成纯里程判定（见 `line_base_key` 与
+    `preferred_for`）。
     """
     trimmed = (value or "").strip().replace("（", "(").replace("）", ")")
     if not trimmed:
@@ -299,6 +300,33 @@ def line_match_key(value: str) -> str:
     else:
         name = _SEGMENT_SUFFIX_RE.sub("", name)
     return name.lower() or trimmed.lower()
+
+
+# 速度等级词。[LINE_ALIASES] 已把「高铁/客专/客运专线」归一成「高速」，这里补上它没有
+# 归一的「城际」和「专线」，就是线路名里所有会区分速度等级的写法。
+LINE_CLASS_WORDS = ("高速", "城际", "专线")
+
+
+def line_base_key(value: str) -> str:
+    """线路的「基本名」：匹配键再去掉速度等级词。
+
+    新线路库（`lines`/`line_stations`）把速度等级词从线路名里删掉了——「京港高铁合安段」
+    变成「京港合安段」、「沪宁沿江高铁」变成「沪宁沿江」——而 OSM 的 way 名一个字没变，
+    于是 [line_match_key] 的严格比较整批对不上。基本名把两侧的等级词都抹掉，用来说明
+    「这是不是同一条线」：
+
+        沪宁沿江        ↔ 沪宁沿江高速线   → 两边都是「沪宁沿江」（基本名相等）
+        京包张包段      ← 京包客专线       → 「京包张包」以「京包」开头（前缀）
+        京广            ↛ 京广高速线       → 只有落到前缀档时才会撞上，见调用方
+
+    抹掉等级词会丢掉「普速/高铁」的区分，所以**不能**拿基本名直接当匹配键用：京广线与
+    京广高速线在基本名上是一个键。调用方必须限定使用场景（见
+    `build_rail_tracks.line_matches` 的三档递进：严格档命中就不再用基本名）。
+    """
+    key = line_match_key(value)
+    for word in LINE_CLASS_WORDS:
+        key = key.replace(word, "")
+    return key
 
 
 def track_key(route_name: str, from_station: str, to_station: str) -> str:
@@ -326,7 +354,13 @@ def way_name(tags: dict) -> Optional[str]:
 
 
 def infer_profile(route_name: str) -> str:
-    """从线路名推断轨道类型。"""
+    """从线路名推断轨道类型。
+
+    新线路库删掉了线路名里的速度等级词（「京港高铁合安段」→「京港合安段」），这里会
+    把约 30 条高铁线判成普速。判错不致命：偏好集的主证据是线路名匹配（见
+    `build_rail_tracks.line_matches`），profile 只在「名字对不上任何 way」时才决定
+    用不用 OSM 标签兜底。
+    """
     name = route_name or ""
     if any(keyword in name for keyword in HSR_ROUTE_KEYWORDS):
         return HSR

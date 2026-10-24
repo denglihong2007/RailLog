@@ -14,8 +14,8 @@
                                  —— 解析后的站坐标，App 侧优先用它标站
 
 站间对的枚举必须与 App 侧 TripMapService.buildData 完全一致：同一线路内按
-station_index 排序，只保留能查到坐标的站点，相邻坐标相同者合并，然后相邻两站
-构成一段。这样管线里的每一段都能在 App 侧被真实绘制到。
+seq 排序，只保留能查到坐标的站点，相邻坐标相同者合并，然后相邻两站构成一段。
+这样管线里的每一段都能在 App 侧被真实绘制到。
 
 车站坐标以 coordinates.csv 为基线，OSM（railway=station/halt 节点）只就近校正它、
 并补上它缺的站。OSM 坐标就是轨道上的点，能让折线端点与 App 标记的站位置一致；
@@ -306,35 +306,30 @@ class EnumerationStats:
         return counts
 
 
-def _version_sort_key(datatype: str, version_id: str) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
-    """datatype 形如 '2026-7-15'；按数字段比较，避免字符串比较把 10 排到 2 前面。"""
-    numbers = tuple(int(part) for part in re.findall(r"\d+", datatype or ""))
-    version_numbers = tuple(int(part) for part in re.findall(r"\d+", version_id or ""))
-    return (numbers, version_numbers)
+def _pick_routes(connection: sqlite3.Connection) -> List[Tuple[str, int]]:
+    """线路名 → line_id，按线路名排序。
 
-
-def _pick_route_versions(connection: sqlite3.Connection) -> List[Tuple[str, str]]:
-    """每个 route_name 取一个版本：datatype 最新，其次 version_id 最大，其次站点最多。
-
-    个别线路在库里有两个版本（如「田灞联络线」），必须定一个，否则主键会冲突。
-    这与 App 侧 routeStationIndexes 用 route_name 做键、后者覆盖前者的行为一致。
+    新线路库（`lines` / `line_stations`）一条线只有一行，line_name 不重复；
+    万一出现同名行，取站点最多的那条——站点少的通常是只录了端点或一段区间的
+    残本。同名且站数也相同时取 line_id 小的，保证结果稳定。App 侧也以线路名
+    为键，这里的取舍与它保持一致。
     """
     rows = connection.execute(
         """
-        SELECT r.route_version_id, r.route_name, r.datatype, COUNT(s.id)
-        FROM routes r
-        LEFT JOIN stations s ON s.route_version_id = r.route_version_id
-        GROUP BY r.route_version_id
+        SELECT l.line_id, l.line_name, COUNT(ls.seq)
+        FROM lines l
+        LEFT JOIN line_stations ls ON ls.line_id = l.line_id
+        GROUP BY l.line_id
         """
     ).fetchall()
 
-    best: Dict[str, Tuple[Tuple, str]] = {}
-    for version_id, route_name, datatype, station_count in rows:
-        sort_key = (*_version_sort_key(datatype, version_id), int(station_count or 0))
-        current = best.get(route_name)
+    best: Dict[str, Tuple[Tuple[int, int], int]] = {}
+    for line_id, line_name, station_count in rows:
+        sort_key = (int(station_count or 0), -int(line_id))
+        current = best.get(line_name)
         if current is None or sort_key > current[0]:
-            best[route_name] = (sort_key, version_id)
-    return sorted((route_name, entry[1]) for route_name, entry in best.items())
+            best[line_name] = (sort_key, int(line_id))
+    return sorted((line_name, entry[1]) for line_name, entry in best.items())
 
 
 def _leg_mileage(
@@ -362,22 +357,22 @@ def enumerate_legs(
     try:
         wanted = {geo.route_key(name) for name in route_filter} if route_filter else None
 
-        for route_name, version_id in _pick_route_versions(connection):
+        for route_name, line_id in _pick_routes(connection):
             if wanted is not None and geo.route_key(route_name) not in wanted:
                 continue
             stats.route_count += 1
 
             rows = connection.execute(
                 """
-                SELECT station_index, station_name, mileage
-                FROM stations WHERE route_version_id = ?
-                ORDER BY station_index
+                SELECT seq, station, km
+                FROM line_stations WHERE line_id = ?
+                ORDER BY seq
                 """,
-                (version_id,),
+                (line_id,),
             ).fetchall()
             stats.station_rows += len(rows)
 
-            # 与 App 侧一致：先按 station_index 排序，剔除查不到坐标的站，
+            # 与 App 侧一致：先按 seq 排序，剔除查不到坐标的站，
             # 再合并相邻的同坐标站（同一地点两个站名会塌成一个）。
             located: List[Tuple[str, geo.Coord, Optional[float]]] = []
             for _, station_name, mileage in rows:
@@ -431,33 +426,100 @@ class CachedWay:
     is_conventional: bool
     coords: List[geo.Coord]
     # OSM 的 way 名（`name`/`name:zh`），绝大多数中国铁路正线都带，且就是客里表里的
-    # 线路名。寻路本身不看它，但**普速腿偏好哪条线**要靠它——见 `preferred_for`。
+    # 线路名。寻路本身不看它，但**哪条 way 属于这条线路**要靠它——见 `preferred_for`。
     name: Optional[str] = None
     # 由 name 归一化出来的线路匹配键（见 [geo.line_match_key]），建网格时算一次。
     line_key: Optional[str] = field(init=False, default=None)
+    # 匹配键再去掉速度等级词（见 [geo.line_base_key]），用来容忍新线路库删掉等级词的改名。
+    base_key: Optional[str] = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         self.line_key = geo.line_match_key(self.name) if self.name else None
+        self.base_key = geo.line_base_key(self.name) if self.name else None
 
-    def preferred_for(self, profile: str, line_key: Optional[str] = None) -> bool:
+    def preferred_for(self, profile: str, matched: bool = False) -> bool:
         """这条 way 算不算「目标线」。
 
-        高铁侧继续认 OSM 的 `highspeed`/`maxspeed` 标签：那是映射者主动打的，是证据。
+        名字对得上本线（`matched`，由 [line_matches] 判定）就是最具体的证据，两侧都认。
+        名字对不上时才退回 OSM 标签：
+
+        高铁侧继续认 `highspeed`/`maxspeed`：那是映射者主动打的，是证据，而且站场附近的
+        正线常常没有 name，只认名字会把它们全丢掉。名字匹配与标签取**并集**，不会比原来
+        更差。
         普速侧**不能**认标签——`_is_conventional_way` 的规则是「没打高铁标签就算普速」，
         于是站场股道、无名联络线、乃至真正的其他普速线全在同一个默认桶里，那个桶的
         `preferred_ratio` 说明不了任何事，却拿到最高优先级（实测宁蓉线宁渝段因此被画到
         并行的宁西线上：沪蓉线里程误差 0.22km、宁西线 0.47km，两条都在宽容带内，普速
-        那一桶的 ratio 1.00 直接翻掉了里程证据）。所以普速侧改认**线路名**：只有名字
-        对得上这条线路的 way 才算数；对不上就是空集，让里程自己说话。
+        那一桶的 ratio 1.00 直接翻掉了里程证据）。
         """
-        if profile == geo.HSR:
-            return self.is_hsr
-        if profile == geo.ALL:
-            return self.is_hsr or self.is_conventional
         # 站线（两者皆假）不属于任何线路，名字再像也不算。
         if not (self.is_hsr or self.is_conventional):
             return False
-        return line_key is not None and self.line_key == line_key
+        if profile == geo.ALL:
+            return True
+        return matched or (profile == geo.HSR and self.is_hsr)
+
+
+def line_matches(
+    keys: Sequence[Tuple[Optional[str], Optional[str]]], route_name: str
+) -> List[bool]:
+    """这条线路名对应输入的哪些 way。`keys` 是每个 way 的 (line_key, base_key)。
+
+    三档递进，**前一档命中就不再往下走**：
+
+    1. 匹配键相同：名字一模一样（含别名归一）。
+    2. 基本名相同：新线路库删掉了等级词，沪宁沿江 ↔ 沪宁沿江高速线。
+    3. way 的基本名是线路基本名的前缀：客里表的区段后缀没法机械地拆开，京包张包段
+       只能靠「京包」前缀找到京包客专线。
+
+    为什么必须逐档短路：基本名抹掉了速度等级，京广线与京广高速线在基本名上是同一个键。
+    只要这条线在 OSM 里有严格同名正线（第 1 档），就绝不能再把另一等级的并行线拉进
+    偏好集——那会把普速车次画到高铁正线上。第 2、3 档只在严格档完全落空时启用，此时
+    这条线路名本来就没有同名正线，同基本名的 way 是唯一可用的证据。
+
+    第 3 档可能让前缀相同的两条线互相认领对方的 way（「京包」与「京包张包段」），
+    这在走廊内都是同一条物理走廊，且偏好只用于长度相近候选之间的取舍，里程仍是主裁判。
+    """
+    strict, base = geo.line_match_key(route_name), geo.line_base_key(route_name)
+    if strict:
+        flags = [line_key == strict for line_key, _base in keys]
+        if any(flags):
+            return flags
+    if base:
+        flags = [_base == base for _line_key, _base in keys]
+        if any(flags):
+            return flags
+        flags = [
+            bool(_base) and len(_base) >= 2 and base.startswith(_base)  # type: ignore[arg-type]
+            for _line_key, _base in keys
+        ]
+        if any(flags):
+            return flags
+    return [False] * len(keys)
+
+
+def line_match_stage(
+    keys: Sequence[Tuple[Optional[str], Optional[str]]], route_name: str
+) -> Optional[str]:
+    """[line_matches] 是靠哪一档命中的：`strict` / `base` / `prefix`，没命中是 None。
+
+    只给诊断用（probe_line_match）：第 2、3 档命中说明新线路库的名字与 OSM 分叉了，
+    一条线从 strict 掉到 base/prefix 时值得看一眼是不是真的同一条线。
+    """
+    flags = line_matches(keys, route_name)
+    if not any(flags):
+        return None
+    strict, base = geo.line_match_key(route_name), geo.line_base_key(route_name)
+    if any(flag and line_key == strict for flag, (line_key, _b) in zip(flags, keys)):
+        return "strict"
+    if any(flag and _b == base for flag, (_k, _b) in zip(flags, keys)):
+        return "base"
+    return "prefix"
+
+
+def line_way_flags(ways: Sequence[CachedWay], route_name: str) -> List[bool]:
+    """[line_matches] 的便利包装：直接从 way 上取两个键。"""
+    return line_matches([(way.line_key, way.base_key) for way in ways], route_name)
 
 
 def _tags_to_flags(tags: dict) -> Tuple[bool, bool]:
@@ -1106,17 +1168,17 @@ class StationFix:
 
 
 def routes_station_names(routes_db: Path) -> Dict[str, List[str]]:
-    """线路名 → 站名序列（按 station_index）。与 enumerate_legs 挑版本的方式一致。"""
+    """线路名 → 站名序列（按 seq）。与 enumerate_legs 挑线路的方式一致。"""
     connection = sqlite3.connect(f"file:{routes_db}?mode=ro", uri=True)
     try:
         result: Dict[str, List[str]] = {}
-        for route_name, version_id in _pick_route_versions(connection):
+        for route_name, line_id in _pick_routes(connection):
             rows = connection.execute(
                 """
-                SELECT station_name FROM stations
-                WHERE route_version_id = ? ORDER BY station_index
+                SELECT station FROM line_stations
+                WHERE line_id = ? ORDER BY seq
                 """,
-                (version_id,),
+                (line_id,),
             ).fetchall()
             result[route_name] = [row[0] for row in rows]
         return result
@@ -1292,19 +1354,19 @@ def discard_implausible_station_coordinates(
     seen: set = set()
     connection = sqlite3.connect(f"file:{routes_db}?mode=ro", uri=True)
     try:
-        for _route_name, version_id in _pick_route_versions(connection):
+        for _route_name, line_id in _pick_routes(connection):
             rows = connection.execute(
                 """
-                SELECT station_index, station_name, mileage
-                FROM stations WHERE route_version_id = ?
-                ORDER BY station_index
+                SELECT seq, station, km
+                FROM line_stations WHERE line_id = ?
+                ORDER BY seq
                 """,
-                (version_id,),
+                (line_id,),
             ).fetchall()
 
             # 与 enumerate_legs 完全一致的取站方式：跳过无坐标站、合并相邻同坐标站。
             located: List[Tuple[str, geo.Coord, Optional[float]]] = []
-            for _station_index, station_name, mileage in rows:
+            for _seq, station_name, mileage in rows:
                 coordinate = index.find(station_name)
                 if coordinate is None:
                     continue
@@ -1366,11 +1428,12 @@ def rail_data_for_leg(source: RailSource, leg: Leg) -> geo.RailData:
     bbox = geo.bbox_for_corridor(leg.start, leg.end, corridor_km)
     ways = source.ways(bbox)
     lines = [way.coords for way in ways]
-    # 普速腿的偏好靠线路名匹配，高铁腿仍然靠标签；见 [CachedWay.preferred_for]。
-    line_key = (
-        geo.line_match_key(leg.route_name) if leg.profile == geo.CONVENTIONAL else None
-    )
-    preferred = [way.preferred_for(leg.profile, line_key) for way in ways]
+    # 偏好集以线路名为准（三档递进，见 [line_matches]）；名字对不上时高铁腿退回 OSM 标签。
+    matched = line_way_flags(ways, leg.route_name)
+    preferred = [
+        way.preferred_for(leg.profile, is_matched)
+        for way, is_matched in zip(ways, matched)
+    ]
     return geo.RailData(
         lines=lines,
         preferred=preferred,
@@ -2019,13 +2082,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"它们在 stations 表里写成坐标为 NULL 的行，App 见到即不回退 CSV"
         ),
         "schema_version": SCHEMA_VERSION,
-        # 偏好集的依据分两侧：高铁认 OSM 等级标签，普速认线路名。查线位画错时先看这行。
+        # 偏好集的依据：线路名是主证据，OSM 标签只给高铁腿兜底。查线位画错时先看这行。
         "preferred_basis": (
-            "高铁腿 preferred=way.is_hsr（OSM 标签）；"
-            "普速腿 preferred=way 名与 route_name 归一化后同名（line_match_key）；"
-            "名字对不上则偏好集为空、该腿纯按里程与绕行倍率判定"
+            "偏好集以线路名为准：line_match_key → line_base_key（去掉速度等级词）→ "
+            "基本名前缀，三档递进、前一档命中即停；高铁腿再并入 OSM 的 highspeed/maxspeed 标签；"
+            "名字对不上又不是高铁时偏好集为空，该腿纯按里程与绕行倍率判定"
         ),
         "line_aliases": ";".join(f"{alias}->{canonical}" for alias, canonical in geo.LINE_ALIASES),
+        "line_class_words": ";".join(geo.LINE_CLASS_WORDS),
         "jump_radius_km": f"{args.jump_radius_km}",
         "board_jump": (
             "站场与目标正线拓扑断开时，允许吸附到半径内目标线上的节点"

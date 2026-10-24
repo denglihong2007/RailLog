@@ -106,8 +106,8 @@ def collect_db_chars() -> set[str]:
         (
             "routes.db",
             [
-                "SELECT route_name FROM routes",
-                "SELECT station_name FROM stations",
+                "SELECT line_name FROM lines",
+                "SELECT station FROM line_stations",
             ],
         ),
         (
