@@ -44,6 +44,7 @@ import sys
 import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import closing
 from pathlib import Path
 
 TABLE_COLUMNS = (
@@ -81,6 +82,10 @@ BUILD_PRAGMAS = (
     "PRAGMA temp_store = MEMORY",
     "PRAGMA cache_size = -262144",
 )
+
+# ProcessPoolExecutor 在 Windows 上硬性限制 worker 数（_MAX_WINDOWS_WORKERS = 61），
+# 超过会直接 ValueError。这里按平台收敛，--jobs 传大了也只用到上限。
+MAX_POOL_WORKERS = 61 if os.name == "nt" else 255
 
 
 def quote(identifier: str) -> str:
@@ -244,7 +249,7 @@ def build_part(payload: tuple[str, list[tuple[str, str, int]]]):
     part_path, versions = payload
     counts: dict[str, int] = {}
     stats = {"extra_blocks": 0, "extra_rows": 0}
-    with sqlite3.connect(part_path) as connection:
+    with closing(sqlite3.connect(part_path)) as connection:
         for pragma in BUILD_PRAGMAS:
             connection.execute(pragma)
         connection.execute("BEGIN")
@@ -264,7 +269,7 @@ def chunk_versions(
     versions: list[tuple[str, Path]], jobs: int
 ) -> list[list[tuple[str, str, int]]]:
     """按文件大小做贪心装箱，让各 worker 的活尽量一样重。"""
-    jobs = max(1, min(jobs, len(versions)))
+    jobs = max(1, min(jobs, len(versions), MAX_POOL_WORKERS))
     sized = sorted(versions, key=lambda item: item[1].stat().st_size, reverse=True)
     buckets: list[list[tuple[str, str, int]]] = [[] for _ in range(jobs)]
     loads = [0] * jobs
@@ -279,7 +284,7 @@ def chunk_versions(
 def existing_versions(database: Path) -> set[str]:
     if not database.exists():
         return set()
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         names = [
             row[0]
             for row in connection.execute(
@@ -297,7 +302,7 @@ def merge_parts(database: Path, parts: list[str]) -> None:
     """把各 part 库的表整表搬进最终库。先插后建索引远快于边插边维护索引。"""
     if not parts:
         return
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         for pragma in BUILD_PRAGMAS:
             connection.execute(pragma)
         for index, part in enumerate(parts):
@@ -319,7 +324,7 @@ def merge_parts(database: Path, parts: list[str]) -> None:
 
 
 def validate_database(database: Path, expected: dict[str, int]) -> None:
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         for version, count in expected.items():
             name = table_name(version)
             columns = tuple(
@@ -341,16 +346,15 @@ def validate_database(database: Path, expected: dict[str, int]) -> None:
             bad_last = connection.execute(
                 f"""
                 SELECT COUNT(*)
-                FROM {quote(name)} AS timetable
-                JOIN (
-                    SELECT TrainCode1, TrainCode2, MAX(OrderID) AS last_order
+                FROM (
+                    SELECT StartTime,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY TrainCode1, TrainCode2
+                               ORDER BY OrderID DESC, rowid DESC
+                           ) AS position
                     FROM {quote(name)}
-                    GROUP BY TrainCode1, TrainCode2
-                ) AS bounds
-                  ON bounds.TrainCode1 = timetable.TrainCode1
-                 AND bounds.TrainCode2 = timetable.TrainCode2
-                 AND bounds.last_order = timetable.OrderID
-                WHERE timetable.StartTime <> ''
+                )
+                WHERE position = 1 AND StartTime <> ''
                 """
             ).fetchone()[0]
             if bad_first or bad_last:
@@ -386,8 +390,8 @@ def main() -> None:
     parser.add_argument(
         "--jobs",
         type=int,
-        default=min(255, os.cpu_count() or 1),
-        help="并行 worker 数，默认 min(255, CPU 核数)",
+        default=min(MAX_POOL_WORKERS, os.cpu_count() or 1),
+        help="并行 worker 数，默认 min(平台上限, CPU 核数)；Windows 上限 61",
     )
     parser.add_argument("--limit-versions", type=int, default=None)
     parser.add_argument(
@@ -462,7 +466,7 @@ def main() -> None:
 
         database.parent.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             for pragma in BUILD_PRAGMAS:
                 connection.execute(pragma)
             for version, _path in pending:
@@ -476,7 +480,7 @@ def main() -> None:
         print(f"阶段 2 合并：{merge_elapsed:.1f}s")
 
         started = time.perf_counter()
-        with sqlite3.connect(database) as connection:
+        with closing(sqlite3.connect(database)) as connection:
             for pragma in BUILD_PRAGMAS:
                 connection.execute(pragma)
             for version, _ in pending:
@@ -493,6 +497,7 @@ def main() -> None:
 
     final_counts = {version: counts[version] for version, _ in pending}
     started = time.perf_counter()
+    print(f"校验 {len(final_counts)} 个版本的表结构/行数/端点……", flush=True)
     validate_database(database, final_counts)
     print(f"校验通过（{time.perf_counter() - started:.1f}s）")
 
