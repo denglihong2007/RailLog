@@ -29,10 +29,19 @@ class PartnerApplicationService {
       response.data ?? const {},
     );
     final hiddenWeight = max(0, config.hiddenWeight);
-    final advertisements = config.advertisements
-        .where((item) => item.weight > 0 && item.text.trim().isNotEmpty)
-        .toList(growable: false);
-    final totalWeight = advertisements.fold<int>(
+    final candidates = <PartnerAdvertisement>[
+      for (final item in config.advertisements)
+        if (item.weight > 0 && item.text.trim().isNotEmpty) item,
+      for (final announcement in config.announcements)
+        if (announcement.weight > 0 && announcement.text.trim().isNotEmpty)
+          PartnerAdvertisement(
+            partnerId: '',
+            text: announcement.text,
+            weight: announcement.weight,
+            isAnnouncement: true,
+          ),
+    ];
+    final totalWeight = candidates.fold<int>(
       hiddenWeight,
       (total, item) => total + item.weight,
     );
@@ -41,9 +50,9 @@ class PartnerApplicationService {
     var roll = Random().nextInt(totalWeight);
     if (roll < hiddenWeight) return null;
     roll -= hiddenWeight;
-    for (final advertisement in advertisements) {
-      if (roll < advertisement.weight) return advertisement;
-      roll -= advertisement.weight;
+    for (final candidate in candidates) {
+      if (roll < candidate.weight) return candidate;
+      roll -= candidate.weight;
     }
     return null;
   }
