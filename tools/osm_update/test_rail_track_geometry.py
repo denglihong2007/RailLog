@@ -388,7 +388,6 @@ class PathSearchTest(unittest.TestCase):
             rail,
             start=(30.0, 104.006),
             end=(30.5, 104.006),
-            mileage_km=56.0,
             extra_snaps=2,
         )
 
@@ -409,22 +408,85 @@ class PathSearchTest(unittest.TestCase):
         # 一次 Yen 枚举不值，这也是「不会把本来对的段改坏」的前提。
         rail = geo.RailData(lines=[_straight_way()], preferred=[True])
 
-        candidates, reason = self._search(rail, mileage_km=56.0, extra_snaps=2)
+        candidates, reason = self._search(rail, extra_snaps=2)
 
         self.assertIsNone(reason)
         self.assertEqual(len(candidates), 1)
+
+    def test_retries_the_snaps_when_the_nearest_node_sits_on_a_long_loop(self) -> None:
+        """最近节点落在环线/死端上时，几何判据要触发备用吸附。
+
+        站坐标离环线起点 5m、离正线起点 333m。主吸附对只能沿环线绕一大圈，
+        直线距离 55.6km、环线 150km；没有里程预算之后，只有「最短候选超过直线
+        1.2 倍」这条纯几何判据能把正线那条直路摆进候选。实测成灌线 犀浦→红光镇
+        （16.94 vs 3.65km）、珠机城际线 珠海长隆→井湾（15.81 vs 6.19km）同形。
+        """
+        straight = [(30.0, 104.003), (30.5, 104.003)]
+        loop = [
+            (30.0, 104.00005),
+            (30.0, 104.5),
+            (30.2, 104.5),
+            (30.2, 104.00005),
+            (30.5, 104.00005),
+            (30.5, 104.003),
+        ]
+        rail = geo.RailData(lines=[straight, loop], preferred=[True, True])
+
+        candidates, reason = self._search(
+            rail,
+            start=(30.0, 104.0),
+            end=(30.5, 104.003),
+            extra_snaps=2,
+        )
+
+        self.assertIsNone(reason)
+        lengths = sorted(item.length_km for item in candidates)
+        # 正线那条（55.6km + 333m 吸附空隙）必须出现在候选里，并且是最短的。
+        self.assertAlmostEqual(lengths[0], 55.9, delta=1.0)
+        self.assertGreater(max(lengths), 140.0)
+
+    def test_keeps_trying_alternative_snaps_until_the_geometry_makes_sense(self) -> None:
+        """主吸附对不通时，换过去的第一对也可能是环线，要接着往下试。
+
+        起点最近的节点在这条与正线不通的短侧线上，所以主吸附对直接失败。备用对按
+        吸附距离排序，第一对落在环线上（132km），第二对才是正线（55.6km）。收手太早
+        就会把环线当成唯一解。实测广深港高速线 虎门→光明城 的主吸附对就是不通的，
+        换过去的第一条是 53.29km 的绕行线，正解 37.19km。
+        """
+        spur = [(30.0, 104.00002), (30.0, 104.01)]
+        straight = [(30.0, 104.002), (30.5, 104.002)]
+        loop = [
+            (30.0, 104.0005),
+            (30.0, 104.4),
+            (30.2, 104.4),
+            (30.2, 104.0005),
+            (30.5, 104.0005),
+            (30.5, 104.002),
+        ]
+        rail = geo.RailData(
+            lines=[spur, straight, loop], preferred=[False, True, True]
+        )
+
+        candidates, reason = self._search(
+            rail, start=(30.0, 104.0), end=(30.5, 104.002)
+        )
+
+        self.assertIsNone(reason)
+        lengths = sorted(item.length_km for item in candidates)
+        self.assertAlmostEqual(lengths[0], 55.8, delta=1.0)
+        self.assertGreater(max(lengths), 120.0)
 
     def test_picks_the_target_lines_path_over_a_nearer_other_line(self) -> None:
         """复现真实故障的形状：锚点落在另一条线上，于是只能绕远。
 
         宝成线 昭化→江油 实测就是如此：站坐标离西成客专的江油节点 140m、离宝成自己
         233m，锚到客专后唯一走得通的是「先沿宝成到广元、再上客专往南」151km，而宝成
-        自己 136km 的那条就在旁边——里程 135km 对这种偏差毫无办法（35% 容差里）。
+        自己 136km 的那条就在旁边——只按最短会选到绕行的那条。
 
         这里用同样的拓扑：主线（preferred）直连；另一条线（非 preferred）从同一端出发
         绕东侧一大圈到终点附近，终点坐标离它的端点更近，两条线的终点节点互不相通。
         修法不是让吸附去猜哪条线是自己的（那样会把「另一条线更近」的段一律改锚，实测
-        全网 216 段反而变差），而是把两种锚法的候选合并、由里程误差加 preferred 一起评。
+        全网 216 段反而变差），而是把两种锚法的候选合并、按贴线程度与长度一起评。
         """
         mainline = _straight_way()  # (30.0,104.0) → (30.5,104.0)，55.6km
         bypass = [  # 同一端出发、绕东侧 4.8km 再往南、最后向西拐回，64.7km
@@ -442,11 +504,10 @@ class PathSearchTest(unittest.TestCase):
             (30.5, 104.0033),
             rail,
             geo.CONVENTIONAL,
-            mileage_km=58.0,
         )
 
         self.assertTrue(plan.ok, plan.reason)
-        # 取主线那条（55.6km，误差 2.4km），而不是绕过那条（64.7km，误差 6.7km）。
+        # 取主线那条（55.6km、ratio 1.0），而不是绕过那条（64.7km、ratio 0.0）。
         self.assertAlmostEqual(plan.length_km, 55.6, delta=1.0)
         self.assertEqual(plan.preferred_ratio, 1.0)
 
@@ -649,7 +710,6 @@ class ExtraSnapWithoutProfileTest(unittest.TestCase):
             primary,
             k=5,
             max_length_km=None,
-            mileage_km=63.0,  # 绕行 55.6km 的误差 7.4km 在宽容带内，够触发误差判据
             extra_snaps=8,
             skip=(start_node, end_node),
         )
@@ -739,7 +799,6 @@ class JumpSnapTest(unittest.TestCase):
             self.end,
             self.rail,
             geo.CONVENTIONAL,
-            mileage_km=target_km,
         )
 
         self.assertTrue(plan.ok, plan.reason)
@@ -798,9 +857,7 @@ class JumpSnapTest(unittest.TestCase):
         rail = self._detour_rail()
         target_km = geo.path_length_km(self.target)
 
-        plan = geo.plan_leg(
-            self.start, self.end, rail, geo.CONVENTIONAL, mileage_km=target_km
-        )
+        plan = geo.plan_leg(self.start, self.end, rail, geo.CONVENTIONAL)
 
         self.assertTrue(plan.ok, plan.reason)
         self.assertEqual(plan.line_runs[0][0], "京广高速线")
@@ -822,18 +879,18 @@ class JumpSnapTest(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# 里程约束消歧：本功能相对 TrainTrack 纯最短路的核心增益
+# 按线路名选路：本功能相对 TrainTrack 纯最短路的核心增益
 # --------------------------------------------------------------------------
 
 
-class MileageDisambiguationTest(unittest.TestCase):
+class LineNameChoiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.start = (30.0, 104.0)
         self.end = (30.5, 104.0)
         self.straight = _straight_way()
         self.detour = _detour_way()
-        # 直线是高铁（有 maxspeed），绕行线是普速。
-        self.rail_hsr = geo.RailData(
+        # 直线在目标线上，绕行线不是。
+        self.rail = geo.RailData(
             lines=[self.straight, self.detour], preferred=[True, False]
         )
         self.straight_km = geo.path_length_km(self.straight)
@@ -844,75 +901,66 @@ class MileageDisambiguationTest(unittest.TestCase):
         self.assertAlmostEqual(self.straight_km, 55.6, delta=1.0)
         self.assertAlmostEqual(self.detour_km, 80.1, delta=1.0)
 
-    def test_matching_mileage_selects_each_parallel_line(self) -> None:
-        straight_plan = geo.plan_leg(
-            self.start,
-            self.end,
-            self.rail_hsr,
-            geo.HSR,
-            mileage_km=self.straight_km,
-        )
-        detour_plan = geo.plan_leg(
-            self.start,
-            self.end,
-            self.rail_hsr,
-            geo.HSR,
-            mileage_km=self.detour_km,
-        )
+    def test_picks_the_on_line_candidate_over_a_shorter_other_line(self) -> None:
+        # 直线也贴线、绕行线不贴线，代价函数把绕行线按离线里程加重，选直的那条。
+        plan = geo.plan_leg(self.start, self.end, self.rail, geo.HSR)
 
-        self.assertTrue(straight_plan.ok, straight_plan.reason)
-        self.assertTrue(detour_plan.ok, detour_plan.reason)
-        self.assertAlmostEqual(straight_plan.length_km, self.straight_km, delta=1.0)
-        self.assertAlmostEqual(detour_plan.length_km, self.detour_km, delta=1.0)
-        # 几何最短路永远是那条直线；只有里程能把绕行线选出来。
-        self.assertGreater(detour_plan.length_km, straight_plan.length_km + 20)
+        self.assertTrue(plan.ok, plan.reason)
+        self.assertAlmostEqual(plan.length_km, self.straight_km, delta=1.0)
+        self.assertEqual(plan.preferred_ratio, 1.0)
 
-    def test_mileage_does_not_override_a_clearly_matching_short_line(self) -> None:
-        # 里程指向直线时不应被 preferred_ratio 拽到绕行线上。
+    def test_mileage_no_longer_selects_the_parallel_line(self) -> None:
+        # 里程指向绕行线时，选路也不动摇：里程只记录、不参与选择。
         plan = geo.plan_leg(
-            self.start, self.end, self.rail_hsr, geo.HSR, mileage_km=self.straight_km
+            self.start, self.end, self.rail, geo.HSR, mileage_km=self.detour_km
         )
 
         self.assertTrue(plan.ok, plan.reason)
+        self.assertAlmostEqual(plan.length_km, self.straight_km, delta=1.0)
         self.assertEqual(plan.preferred_ratio, 1.0)
-        self.assertLessEqual(plan.mileage_error_ratio, 0.05)
+        # 误差如实记录，供查库时核对里程表本身。
+        self.assertGreater(plan.mileage_error_km, 20)
 
-    def test_without_mileage_falls_back_to_geometry(self) -> None:
-        # 里程缺失时只能信几何，取最短；同长度才看 profile。
-        plan = geo.plan_leg(self.start, self.end, self.rail_hsr, geo.HSR)
+    def test_mileage_far_off_does_not_reject_the_leg(self) -> None:
+        plan = geo.plan_leg(
+            self.start, self.end, self.rail, geo.HSR, mileage_km=1.0
+        )
+
+        self.assertTrue(plan.ok, plan.reason)
+        self.assertAlmostEqual(plan.length_km, self.straight_km, delta=1.0)
+        self.assertGreater(plan.mileage_error_ratio, 1.0)
+
+    def test_without_mileage_records_no_error(self) -> None:
+        plan = geo.plan_leg(self.start, self.end, self.rail, geo.HSR)
 
         self.assertTrue(plan.ok, plan.reason)
         self.assertAlmostEqual(plan.length_km, self.straight_km, delta=1.0)
         self.assertIsNone(plan.mileage_error_km)
 
-    def test_rejects_leg_when_no_candidate_matches_mileage(self) -> None:
-        plan = geo.plan_leg(
-            self.start,
-            self.end,
-            self.rail_hsr,
-            geo.HSR,
-            mileage_km=self.straight_km * 3,
-            max_error_ratio=0.35,
-        )
 
-        self.assertFalse(plan.ok)
-        self.assertEqual(plan.reason, "mileage_mismatch")
-        self.assertGreater(plan.mileage_error_ratio, 0.35)
+class OffNamePenaltyTest(unittest.TestCase):
+    """代价函数：离线里程按 OFF_NAME_PENALTY 折成长度，短但走错线的候选会输。"""
 
-    def test_rejects_leg_when_mileage_is_far_below_any_route(self) -> None:
-        # 里程小到长度上限之内根本没有路径，同样算里程不匹配。
-        plan = geo.plan_leg(self.start, self.end, self.rail_hsr, geo.HSR, mileage_km=1.0)
+    def test_prefers_a_slightly_longer_on_line_path_over_an_off_line_shortcut(self) -> None:
+        start, end = (30.0, 104.0), (30.5, 104.0)
+        # 目标线：比直线长 4km 的弧线；捷径：直线，但整段不贴线。
+        on_line = [(30.0, 104.0), (30.25, 104.08), (30.5, 104.0)]
+        shortcut = [(30.0, 104.0), (30.5, 104.0)]
+        on_line_km = geo.path_length_km(on_line)
+        shortcut_km = geo.path_length_km(shortcut)
+        self.assertGreater(on_line_km, shortcut_km)
+        self.assertLess(on_line_km - shortcut_km, geo.OFF_NAME_PENALTY * shortcut_km)
 
-        self.assertFalse(plan.ok)
-        self.assertEqual(plan.reason, "mileage_mismatch")
+        rail = geo.RailData(lines=[shortcut, on_line], preferred=[False, True])
+        plan = geo.plan_leg(start, end, rail, geo.CONVENTIONAL)
+
+        self.assertTrue(plan.ok, plan.reason)
+        self.assertEqual(plan.preferred_ratio, 1.0)
+        self.assertAlmostEqual(plan.length_km, on_line_km, delta=0.5)
 
 
-class ShortLegSlackTest(unittest.TestCase):
-    """短腿的绝对余量：运价里程对线路所/联络线只是名义值，别把折线判掉。
-
-    余量同时会放进一类「一节点路径」（两端吸附到同一节点），那不是一个折线，
-    所以在同一个判据里一起挡掉——见下面 `test_rejects_a_leg_whose_endpoints_...`。
-    """
+class MileageRecordingTest(unittest.TestCase):
+    """短腿的运价里程只是名义值：以前它会把段判失败，现在只记录误差。"""
 
     def setUp(self) -> None:
         self.start = (30.0, 104.0)
@@ -927,27 +975,14 @@ class ShortLegSlackTest(unittest.TestCase):
         )
 
         self.assertTrue(plan.ok, plan.reason)
-        # 相对误差 60% 远超 35%：接受的唯一理由是绝对余量。
+        # 相对误差 60%：现在只写进诊断列，不再据此判失败。
         self.assertGreater(plan.mileage_error_ratio, 0.35)
-        self.assertLessEqual(plan.mileage_error_km, geo.DEFAULT_ERROR_SLACK_KM)
-
-    def test_rejects_the_same_leg_without_the_slack(self) -> None:
-        plan = geo.plan_leg(
-            self.start,
-            self.end,
-            self.rail,
-            geo.CONVENTIONAL,
-            mileage_km=1.0,
-            error_slack_km=0.0,
-        )
-
-        self.assertFalse(plan.ok)
-        self.assertEqual(plan.reason, "mileage_mismatch")
+        self.assertAlmostEqual(plan.mileage_error_km, 0.6, delta=0.1)
 
     def test_rejects_a_leg_whose_endpoints_snap_to_one_node(self) -> None:
         # 两站都在同一条 way 的同一个节点附近（相距 0.56km）：吸附后「路径」只有那个
-        # 节点，长度全是吸附空隙、几何上是个点。里程几乎为 0 的误差会让它被接受，但
-        # 画出来只有一个点，所以必须判失败、让 App 回退直线。
+        # 节点，长度全是吸附空隙、几何上是个点。画出来只有一个点，所以必须判失败、
+        # 让 App 回退直线——这条与里程无关。
         line = [(30.0, 104.0), (30.2, 104.0)]
         rail = geo.RailData(lines=[line], preferred=[True])
 
@@ -971,23 +1006,6 @@ class ShortLegSlackTest(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertEqual([len(item.path) for item in candidates], [1])
         self.assertAlmostEqual(candidates[0].length_km, 0.56, delta=0.05)
-
-    def test_slack_is_a_floor_not_an_allowance_on_top(self) -> None:
-        # 55.6km 的线、里程 39.7km：相对误差 40% 刚过阈值，绝对误差 15.9km 远超余量。
-        # 余量只该在里程足够小时接管判据，不该把长腿的阈值放大成 35%+2km。
-        long_line = _straight_way()
-        rail = geo.RailData(lines=[long_line], preferred=[True])
-
-        plan = geo.plan_leg(
-            (30.0, 104.0),
-            (30.5, 104.0),
-            rail,
-            geo.HSR,
-            mileage_km=geo.path_length_km(long_line) / 1.4,
-        )
-
-        self.assertFalse(plan.ok)
-        self.assertEqual(plan.reason, "mileage_mismatch")
 
 
 # --------------------------------------------------------------------------
@@ -1014,7 +1032,6 @@ class DetourGuardTest(unittest.TestCase):
             self.end,
             self.rail,
             geo.CONVENTIONAL,
-            mileage_km=self.length,
         )
 
         self.assertFalse(plan.ok)
@@ -1027,7 +1044,6 @@ class DetourGuardTest(unittest.TestCase):
             self.end,
             self.rail,
             geo.CONVENTIONAL,
-            mileage_km=self.length,
             detour_ratio=10.0,
         )
 
@@ -1043,7 +1059,6 @@ class DetourGuardTest(unittest.TestCase):
             self.end,
             rail,
             geo.CONVENTIONAL,
-            mileage_km=geo.path_length_km(detour),
         )
 
         self.assertTrue(plan.ok, plan.reason)

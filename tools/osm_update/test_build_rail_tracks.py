@@ -357,7 +357,7 @@ class ParseSourceTest(unittest.TestCase):
         hsr = builder.CachedWay(True, False, [(30.0, 104.0)])
         conventional = builder.CachedWay(False, True, [(30.0, 104.0)], name="宁西线")
 
-        # 高铁侧认 OSM 标签：站场附近的正线常常没有 name，只认名字会全丢。
+        # 高铁侧在名字落空时认 OSM 标签：站场附近的正线常常没有 name，只认名字会全丢。
         self.assertTrue(hsr.preferred_for(geo.HSR))
         self.assertFalse(hsr.preferred_for(geo.CONVENTIONAL))
         self.assertTrue(conventional.preferred_for(geo.ALL))
@@ -368,15 +368,18 @@ class ParseSourceTest(unittest.TestCase):
         # 「就是这条普速线」，于是并行的沪蓉线被压掉。
         self.assertFalse(conventional.preferred_for(geo.CONVENTIONAL))
 
-    def test_hsr_legs_take_the_union_of_tags_and_names(self) -> None:
-        # 高铁腿：标签与名字匹配取并集。名字匹配上的 way 即使没打 maxspeed 也算目标线
-        # ——这正是新线路库把高铁判成普速时仍能贴对线的原因。
+    def test_hsr_legs_take_tags_only_when_no_name_matched(self) -> None:
+        # 名字是主证据：走廊里只要有一条同名 way，高铁侧就不再并入等级标签，否则
+        # 并行的高铁线会把两边的 ratio 一起刷到 1.0，选路又得靠里程来分辨。
         hsr = builder.CachedWay(True, False, [(30.0, 104.0)])
-        untagged = builder.CachedWay(False, True, [(30.0, 104.0)], name="京港高速线")
+        named = builder.CachedWay(False, True, [(30.0, 104.0)], name="京港高速线")
 
         self.assertTrue(hsr.preferred_for(geo.HSR))
-        self.assertTrue(untagged.preferred_for(geo.HSR, matched=True))
-        self.assertFalse(untagged.preferred_for(geo.HSR))
+        self.assertFalse(hsr.preferred_for(geo.HSR, tags_fallback=False))
+        # 名字匹配上的 way 即使没打 maxspeed 也算目标线——这正是新线路库把高铁判成
+        # 普速时仍能贴对线的原因。
+        self.assertTrue(named.preferred_for(geo.HSR, matched=True))
+        self.assertFalse(named.preferred_for(geo.HSR))
 
     def test_way_line_key_is_normalized_once(self) -> None:
         way = builder.CachedWay(False, True, [(30.0, 104.0)], name="京广客运专线")
@@ -1056,7 +1059,7 @@ class ConventionalLineNameSource(builder.RailSource):
 
 
 class ConventionalPreferenceTest(unittest.TestCase):
-    """普速腿的偏好集：名字对不上就为空，退回纯里程判定（宁蓉线宁渝段的自愈）。"""
+    """普速腿的偏好集：名字对不上就为空，退回最短几何（宁蓉线宁渝段的自愈）。"""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -1074,19 +1077,19 @@ class ConventionalPreferenceTest(unittest.TestCase):
             to_station="长安集",
             start=source.start,
             end=source.end,
-            # 运价里程贴近直线那条（差 0.3km），离绕行那条差 1.7km。
+            # 里程贴着直线那条：撤掉里程判据后，它只该作为诊断数据留下来。
             mileage_km=straight_km + 0.3,
             profile=geo.CONVENTIONAL,
         )
         return (
-            builder.plan_leg_with_source(source, leg, 400.0, 0.35),
+            builder.plan_leg_with_source(source, leg, 400.0),
             straight_km,
             detour_km,
         )
 
-    def test_unmatched_line_name_falls_back_to_pure_mileage(self) -> None:
+    def test_unmatched_line_name_falls_back_to_shortest_geometry(self) -> None:
         # 「宁蓉线宁渝段」归一化后是「宁蓉」，与 OSM 的「沪蓉线」（沪蓉）对不上：
-        # 偏好集为空，于是里程证据重新说了算 → 选到沪蓉线。
+        # 偏好集为空，于是取最短的走法 → 沪蓉线。
         result, straight_km, detour_km = self._plan("宁蓉线宁渝段")
 
         self.assertTrue(result.plan.ok, result.plan.reason)
@@ -1096,9 +1099,9 @@ class ConventionalPreferenceTest(unittest.TestCase):
         self.assertLess(result.plan.length_km, detour_km - 1.0)
         self.assertEqual(result.plan.line_runs[0][0], "沪蓉线")
 
-    def test_matched_line_name_still_beats_mileage(self) -> None:
-        # 反向对照：名字真的对上了（「宁西线西合段」→「宁西线」），名字就该压过里程，
-        # 否则 D1 只是把老 bug 从「一律偏好」翻成「一律不偏好」。
+    def test_matched_line_name_beats_the_shorter_other_line(self) -> None:
+        # 反向对照：名字真的对上了（「宁西线西合段」→「宁西线」），哪怕那条线更长，
+        # 也该走它，否则选路就只是「取最短」。
         result, straight_km, detour_km = self._plan("宁西线西合段")
 
         self.assertTrue(result.plan.ok, result.plan.reason)
@@ -1200,7 +1203,7 @@ class RailDataForLegTest(unittest.TestCase):
         )
         self.assertEqual(rail.preferred, [False, True, False, False])
 
-    def test_hsr_leg_takes_names_and_tags(self) -> None:
+    def test_hsr_leg_prefers_the_matched_name_and_drops_tags(self) -> None:
         source = self._Source(
             [
                 # 新库删掉了「高铁」，这条线会被判成普速；但名字对得上就照样贴对线。
@@ -1211,9 +1214,25 @@ class RailDataForLegTest(unittest.TestCase):
         )
         rail = builder.rail_data_for_leg(source, self._leg("京港合安段", geo.CONVENTIONAL))
         self.assertEqual(rail.preferred, [True, False, False])
+        self.assertTrue(rail.name_matched)
 
+        # 高铁腿也一样：名字对上了，就不再把无名的等级标签 way 拉进偏好集。
         rail = builder.rail_data_for_leg(source, self._leg("京港合安段", geo.HSR))
-        self.assertEqual(rail.preferred, [True, True, False])
+        self.assertEqual(rail.preferred, [True, False, False])
+        self.assertTrue(rail.name_matched)
+
+    def test_hsr_leg_falls_back_to_tags_when_no_name_matches(self) -> None:
+        source = self._Source(
+            [
+                builder.CachedWay(False, True, [(30.0, 104.0)], name="京港高速线"),
+                builder.CachedWay(True, False, [(30.0, 104.0)]),
+                builder.CachedWay(False, False, [(30.0, 104.0)]),
+            ]
+        )
+        rail = builder.rail_data_for_leg(source, self._leg("阿准富准段", geo.HSR))
+
+        self.assertEqual(rail.preferred, [False, True, False])
+        self.assertFalse(rail.name_matched)
 
     def test_unmatched_conventional_leg_has_no_preference(self) -> None:
         rail = builder.rail_data_for_leg(
@@ -1260,22 +1279,27 @@ class PlanLegWithSourceTest(unittest.TestCase):
             profile=geo.HSR,
         )
 
-    def test_uses_mileage_to_pick_the_longer_parallel_line(self) -> None:
+    def test_mileage_does_not_change_the_choice(self) -> None:
+        # FakeSource 的两条线都没有名字：高铁腿退回 OSM 标签，直线是高铁、绕行线是普速。
+        # 无论里程指向哪一条，选路都取贴线（ratio 1.0）的直线；里程只如实记录误差。
         straight_km = geo.path_length_km(self.source.straight)
         detour_km = geo.path_length_km(self.source.detour)
 
-        near = builder.plan_leg_with_source(self.source, self.leg, 400.0, 0.35)
+        near = builder.plan_leg_with_source(self.source, self.leg, 400.0)
         far = builder.plan_leg_with_source(
             self.source,
             builder.Leg(**{**self.leg.__dict__, "mileage_km": detour_km}),
             400.0,
-            0.35,
         )
 
         self.assertTrue(near.plan.ok, near.plan.reason)
         self.assertAlmostEqual(near.plan.length_km, straight_km, delta=1.0)
+        self.assertEqual(near.plan.preferred_ratio, 1.0)
+        self.assertIsNone(near.plan.mileage_error_km)
         self.assertTrue(far.plan.ok, far.plan.reason)
-        self.assertAlmostEqual(far.plan.length_km, detour_km, delta=1.0)
+        self.assertAlmostEqual(far.plan.length_km, straight_km, delta=1.0)
+        self.assertEqual(far.plan.preferred_ratio, 1.0)
+        self.assertGreater(far.plan.mileage_error_km, 20)
 
     def test_fetch_failure_is_reported_not_raised(self) -> None:
         class Broken(FakeSource):
@@ -1284,7 +1308,7 @@ class PlanLegWithSourceTest(unittest.TestCase):
             def ways(self, bbox):  # type: ignore[override]
                 raise RuntimeError("网络不可达")
 
-        result = builder.plan_leg_with_source(Broken(self.cache_dir), self.leg, 400.0, 0.35)
+        result = builder.plan_leg_with_source(Broken(self.cache_dir), self.leg, 400.0)
 
         self.assertFalse(result.plan.ok)
         self.assertTrue(result.plan.reason.startswith("fetch_failed"), result.plan.reason)
@@ -1292,7 +1316,7 @@ class PlanLegWithSourceTest(unittest.TestCase):
     def test_suspect_coordinate_skips_the_fetch_entirely(self) -> None:
         leg = builder.Leg(**{**self.leg.__dict__, "suspect_reason": "suspect_coordinate"})
 
-        result = builder.plan_leg_with_source(self.source, leg, 400.0, 0.35)
+        result = builder.plan_leg_with_source(self.source, leg, 400.0)
 
         self.assertFalse(result.plan.ok)
         self.assertEqual(result.plan.reason, "suspect_coordinate")
@@ -1300,7 +1324,7 @@ class PlanLegWithSourceTest(unittest.TestCase):
         self.assertEqual(self.source.queries, [])
 
     def test_requested_bbox_is_tight_around_the_leg(self) -> None:
-        builder.plan_leg_with_source(self.source, self.leg, 400.0, 0.35)
+        builder.plan_leg_with_source(self.source, self.leg, 400.0)
 
         (south, west, north, east) = self.source.queries[0]
         # 0.5° 长的区段，走廊半宽 13.9km ≈ 0.125° + margin。

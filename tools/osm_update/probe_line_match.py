@@ -2,8 +2,8 @@
 
 只读，不写任何文件。用途：
 
-1. 给「偏好集以线路名为准」一个实际影响的定量——名字对不上的段只按里程判定，
-   这份清单就是「哪些段没有偏好信号」。
+1. 给「偏好集以线路名为准」一个实际影响的定量——名字对不上的段没有偏好信号，
+   候选只按几何长度选，这份清单就是「哪些段会这样」。
 2. 将来某条线又被画错时的入口：先在清单里找它，再决定是补别名还是查 OSM。
 
 匹配是三档递进的（见 `build_rail_tracks.line_matches`）：严格同名 → 去掉速度等级词
@@ -127,7 +127,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             f" / 前缀 {counts['prefix']}）"
         )
         if profile == geo.CONVENTIONAL and misses:
-            print(f"  这些段偏好集为空、只按里程与绕行倍率判定。{ALIAS_HINT}")
+            print(f"  这些段偏好集为空、只按几何长度与绕行倍率判定。{ALIAS_HINT}")
         for route_name, stage in entries if args.verbose else misses:
             mark = "  " if stage else "✗ "
             print(f"    {mark}{route_name}  →  {stage or '(对不上)'}")

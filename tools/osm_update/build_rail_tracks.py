@@ -2,7 +2,7 @@
 """离线生成站间轨道折线，写入 app/assets/db/rail_tracks.db。
 
 输入：
-  app/assets/db/routes.db        线路与车站里程表（决定站间对与里程约束）
+  app/assets/db/routes.db        线路与车站里程表（决定站间对；km 只作诊断记录）
   app/assets/db/coordinates.csv  站点 WGS84 坐标（兜底）
   china.osm.pbf                  铁路网几何 + OSM 车站坐标（主源，--source pbf）
                                  或 Overpass API（--source overpass，调试用）
@@ -426,7 +426,8 @@ class CachedWay:
     is_conventional: bool
     coords: List[geo.Coord]
     # OSM 的 way 名（`name`/`name:zh`），绝大多数中国铁路正线都带，且就是客里表里的
-    # 线路名。寻路本身不看它，但**哪条 way 属于这条线路**要靠它——见 `preferred_for`。
+    # 线路名。**哪条 way 属于这条线路**完全靠它判定——见 `preferred_for`，这是选路
+    # 的主证据。
     name: Optional[str] = None
     # 由 name 归一化出来的线路匹配键（见 [geo.line_match_key]），建网格时算一次。
     line_key: Optional[str] = field(init=False, default=None)
@@ -437,27 +438,38 @@ class CachedWay:
         self.line_key = geo.line_match_key(self.name) if self.name else None
         self.base_key = geo.line_base_key(self.name) if self.name else None
 
-    def preferred_for(self, profile: str, matched: bool = False) -> bool:
+    def preferred_for(
+        self, profile: str, matched: bool = False, *, tags_fallback: bool = True
+    ) -> bool:
         """这条 way 算不算「目标线」。
 
         名字对得上本线（`matched`，由 [line_matches] 判定）就是最具体的证据，两侧都认。
-        名字对不上时才退回 OSM 标签：
+        名字对不上时才看 `tags_fallback`：
 
-        高铁侧继续认 `highspeed`/`maxspeed`：那是映射者主动打的，是证据，而且站场附近的
-        正线常常没有 name，只认名字会把它们全丢掉。名字匹配与标签取**并集**，不会比原来
-        更差。
+        高铁侧可以认 `highspeed`/`maxspeed`：那是映射者主动打的，是证据，而且站场附近的
+        正线常常没有 name，只认名字会把它们全丢掉。所以**整条腿在走廊里一条同名 way
+        都没有**时，高铁腿退回标签。
+
+        但走廊里只要有一条同名 way（`tags_fallback=False`），高铁侧也不再认标签：名字
+        对上了，目标线就是确定的，再把并行的另一条带 highspeed 标签的线拉进偏好集，
+        只会让两边的 `preferred_ratio` 一起刷到 1.0，选路又得靠里程来分辨——而里程正是
+        这段要撤掉的东西。实测徐兰高速线 渭南北→临潼东 的回头支线就是借大西高速线
+        的大半段刷出高 ratio 的。
+
         普速侧**不能**认标签——`_is_conventional_way` 的规则是「没打高铁标签就算普速」，
         于是站场股道、无名联络线、乃至真正的其他普速线全在同一个默认桶里，那个桶的
         `preferred_ratio` 说明不了任何事，却拿到最高优先级（实测宁蓉线宁渝段因此被画到
-        并行的宁西线上：沪蓉线里程误差 0.22km、宁西线 0.47km，两条都在宽容带内，普速
-        那一桶的 ratio 1.00 直接翻掉了里程证据）。
+        并行的宁西线上：沪蓉线与宁西线都在走廊里，普速那一桶的 ratio 1.00 让错误的那条
+        胜出）。
         """
         # 站线（两者皆假）不属于任何线路，名字再像也不算。
         if not (self.is_hsr or self.is_conventional):
             return False
         if profile == geo.ALL:
             return True
-        return matched or (profile == geo.HSR and self.is_hsr)
+        if matched:
+            return True
+        return tags_fallback and profile == geo.HSR and self.is_hsr
 
 
 def line_matches(
@@ -478,7 +490,7 @@ def line_matches(
     这条线路名本来就没有同名正线，同基本名的 way 是唯一可用的证据。
 
     第 3 档可能让前缀相同的两条线互相认领对方的 way（「京包」与「京包张包段」），
-    这在走廊内都是同一条物理走廊，且偏好只用于长度相近候选之间的取舍，里程仍是主裁判。
+    这在走廊内都是同一条物理走廊，认领到的候选仍会按贴在目标线上的里程占比排序。
     """
     strict, base = geo.line_match_key(route_name), geo.line_base_key(route_name)
     if strict:
@@ -1428,16 +1440,20 @@ def rail_data_for_leg(source: RailSource, leg: Leg) -> geo.RailData:
     bbox = geo.bbox_for_corridor(leg.start, leg.end, corridor_km)
     ways = source.ways(bbox)
     lines = [way.coords for way in ways]
-    # 偏好集以线路名为准（三档递进，见 [line_matches]）；名字对不上时高铁腿退回 OSM 标签。
+    # 偏好集以线路名为准（三档递进，见 [line_matches]）：名字一旦对上，就只认同名
+    # way，高铁腿也不再并入等级标签（否则并行的高铁线会把两边的 ratio 一起刷到 1）。
+    # 名字全线落空时，高铁腿才退回 OSM 标签；普速腿没有可用的标签，偏好集为空。
     matched = line_way_flags(ways, leg.route_name)
+    any_match = any(matched)
     preferred = [
-        way.preferred_for(leg.profile, is_matched)
+        way.preferred_for(leg.profile, is_matched, tags_fallback=not any_match)
         for way, is_matched in zip(ways, matched)
     ]
     return geo.RailData(
         lines=lines,
         preferred=preferred,
         names=[way.name for way in ways],
+        name_matched=any_match,
     )
 
 
@@ -1450,8 +1466,9 @@ def rail_data_for_leg(source: RailSource, leg: Leg) -> geo.RailData:
 class LegResult:
     leg: Leg
     plan: geo.LegPlan
-    # 这一段的偏好集是怎么来的：`tags`（高铁，认 OSM 标签）/ `way-name`（普速，名字
-    # 匹配上了同名正线）/ `none`（普速，名字对不上任何 way，纯按里程判定）。
+    # 这一段的偏好集是怎么来的：`way-name`（走廊里有 way 的名字对上了本线，高铁/
+    # 普速都算）/ `tags`（名字对不上，高铁腿退回 OSM 等级标签）/ `none`（名字对不上
+    # 且是普速腿，偏好集为空、纯按几何选路）。
     preferred_basis: str = ""
 
 
@@ -1459,7 +1476,6 @@ def plan_leg_with_source(
     source: RailSource,
     leg: Leg,
     step_m: float,
-    max_error_ratio: float,
     detour_ratio: float = geo.DEFAULT_DETOUR_RATIO,
     jump_radius_km: float = geo.DEFAULT_JUMP_RADIUS_KM,
 ) -> LegResult:
@@ -1470,10 +1486,10 @@ def plan_leg_with_source(
         rail = rail_data_for_leg(source, leg)
     except Exception as exc:
         return LegResult(leg, geo.LegPlan(ok=False, reason=f"fetch_failed: {exc}"))
-    if leg.profile == geo.HSR:
-        basis = "tags"
-    elif any(rail.preferred):
+    if rail.name_matched:
         basis = "way-name"
+    elif any(rail.preferred):
+        basis = "tags"
     else:
         basis = "none"
     plan = geo.plan_leg(
@@ -1483,7 +1499,6 @@ def plan_leg_with_source(
         leg.profile,
         mileage_km=leg.mileage_km,
         step_m=step_m,
-        max_error_ratio=max_error_ratio,
         detour_ratio=detour_ratio,
         jump_radius_km=jump_radius_km,
     )
@@ -1518,9 +1533,8 @@ WORKER_STEADY_GB = 0.6
 LOAD_MEMORY_BUDGET_RATIO = 0.7
 
 _WORKER_SOURCE: Optional[RailSource] = None
-_WORKER_OPTIONS: Tuple[float, float, float, float] = (
+_WORKER_OPTIONS: Tuple[float, float, float] = (
     400.0,
-    0.35,
     geo.DEFAULT_DETOUR_RATIO,
     geo.DEFAULT_JUMP_RADIUS_KM,
 )
@@ -1571,7 +1585,6 @@ def _init_worker(
     pbf: Optional[str],
     endpoints: Sequence[str],
     step_m: float,
-    max_error_ratio: float,
     detour_ratio: float,
     jump_radius_km: float = geo.DEFAULT_JUMP_RADIUS_KM,
     load_slots: Optional[object] = None,
@@ -1600,16 +1613,16 @@ def _init_worker(
     finally:
         if load_slots is not None:
             load_slots.release()
-    _WORKER_OPTIONS = (step_m, max_error_ratio, detour_ratio, jump_radius_km)
+    _WORKER_OPTIONS = (step_m, detour_ratio, jump_radius_km)
 
 
 def _plan_leg_in_worker(leg: Leg) -> LegResult:
     source = _WORKER_SOURCE
     if source is None:  # initializer 没跑成，说明进程池配置有问题
         return LegResult(leg, geo.LegPlan(ok=False, reason="worker_not_initialized"))
-    step_m, max_error_ratio, detour_ratio, jump_radius_km = _WORKER_OPTIONS
+    step_m, detour_ratio, jump_radius_km = _WORKER_OPTIONS
     return plan_leg_with_source(
-        source, leg, step_m, max_error_ratio, detour_ratio, jump_radius_km=jump_radius_km
+        source, leg, step_m, detour_ratio, jump_radius_km=jump_radius_km
     )
 
 
@@ -1621,7 +1634,6 @@ def _worker_initializer_args(args: argparse.Namespace, load_slots: object = None
         str(args.pbf) if args.pbf else None,
         tuple(args.overpass_endpoints or OVERPASS_ENDPOINTS),
         args.step_m,
-        args.max_error_ratio,
         args.detour_ratio,
         args.jump_radius_km,
         load_slots,
@@ -1661,7 +1673,8 @@ CREATE TABLE tracks (
   length_km       REAL NOT NULL,
   mileage_km      REAL,
   mileage_error_km REAL,
-  -- 贴目标线（高铁：OSM 等级标签；普速：线路名匹配）的里程占比，与选路时用的是同一个数
+  -- 贴目标线的里程占比（名字匹配；走廊里没有同名 way 的高铁腿用 OSM 等级标签），
+  -- 与选路时用的是同一个数
   preferred_ratio REAL,
   -- 折线由几段拼成（= track_lines 的行数）。注意**不是「换了几条线」**：无名 way
   -- （站场股道、少数没标名字的联络线）也算一段，而 OSM 里正线常被短的无名 way 打断，
@@ -1869,8 +1882,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="并行规划的进程数；每个进程各读一份 PBF，稳定后约 0.6GB，"
                              "启动那 20 秒瞬时约 2.4GB（16 进程约需 36GB 富余内存）")
     parser.add_argument("--step-m", type=float, default=400.0, help="折线重采样步长（米）")
-    parser.add_argument("--max-error-ratio", type=float, default=0.35,
-                        help="折线长度与里程的最大相对偏差，超出则记为失败")
     parser.add_argument("--detour-ratio", type=float, default=geo.DEFAULT_DETOUR_RATIO,
                         help="折线实长相对起终点直线距离的倍率上限，超出则记为失败"
                              "（客里表站坐标失真导致的绕路）")
@@ -1897,7 +1908,7 @@ def print_enumeration(stats: EnumerationStats, legs_total: int) -> None:
     print(f"  高铁/城际    : {profiles.get(geo.HSR, 0)}")
     print(f"  普速         : {profiles.get(geo.CONVENTIONAL, 0)}")
     with_mileage = sum(1 for leg in stats.legs if leg.mileage_km)
-    print(f"  带里程约束   : {with_mileage} / {len(stats.legs)}")
+    print(f"  带里程记录   : {with_mileage} / {len(stats.legs)}")
     if stats.suspect_legs:
         print(f"  坐标不可信   : {stats.suspect_legs}（跳过取数，记为失败、App 回退直线）")
 
@@ -2047,8 +2058,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not item.plan.ok:
             reason = item.plan.reason.split(":")[0]
             reasons[reason] = reasons.get(reason, 0) + 1
-    # 普速腿里名字对不上任何 way 的段数：这些段没有偏好信号，只按里程判定。数字一涨，
-    # 说明运价里程表的线路名和 OSM 的 way 名开始分叉（要么补别名，要么查 OSM）。
+    # 普速腿里名字对不上任何 way 的段数：这些段没有名字证据，只按最短几何选路。数字
+    # 一涨，说明线路库的线路名和 OSM 的 way 名开始分叉（要么补别名，要么查 OSM）。
     basis_counts: Dict[str, int] = {}
     for item in finished:
         basis_counts[item.preferred_basis] = basis_counts.get(item.preferred_basis, 0) + 1
@@ -2060,8 +2071,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "source": source_name,
         "step_m": f"{args.step_m:.0f}",
-        "max_error_ratio": f"{args.max_error_ratio}",
-        "error_slack_km": f"{geo.DEFAULT_ERROR_SLACK_KM}",
+        "routing": (
+            "按线路名选路：候选代价 = 长度 + 离线里程 × "
+            f"{geo.OFF_NAME_PENALTY}；里程只记录、不参与选路"
+        ),
         "detour_ratio": f"{args.detour_ratio}",
         "workers": args.workers,
         "legs_total": len(legs),
@@ -2072,7 +2085,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "coordinate_source": coordinate_source,
         # 影响结果的取数/算法口径，记下来才能分辨两份库是哪一套跑出来的。
         "way_filter": "railway=rail；service=yard/siding 作为非 preferred 连接线保留",
-        "snap_fallback": "最近吸附点不通时改试同分量的次近节点",
+        "snap_fallback": (
+            "最近吸附点不通、走廊里没有偏好 way、贴线比例低于 "
+            f"{geo.EXTRA_SNAP_PROFILE_FLOOR}，或最短候选超过直线距离 "
+            f"{geo.EXTRA_SNAP_RATIO} 倍时，改试同分量的备用吸附点对；"
+            "备用对只能绕环线时继续试下一对"
+        ),
         "station_disambiguation": (
             f"同名候选按线路 way 就近消歧（半径 {LINE_SNAP_RADIUS_KM:.0f}km），"
             f"修正 {len(fixes)} 个站的坐标"
@@ -2082,11 +2100,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"它们在 stations 表里写成坐标为 NULL 的行，App 见到即不回退 CSV"
         ),
         "schema_version": SCHEMA_VERSION,
-        # 偏好集的依据：线路名是主证据，OSM 标签只给高铁腿兜底。查线位画错时先看这行。
+        # 偏好集的依据：线路名是主证据，OSM 标签只给名字落空的高铁腿兜底。查线位画错时先看这行。
         "preferred_basis": (
             "偏好集以线路名为准：line_match_key → line_base_key（去掉速度等级词）→ "
-            "基本名前缀，三档递进、前一档命中即停；高铁腿再并入 OSM 的 highspeed/maxspeed 标签；"
-            "名字对不上又不是高铁时偏好集为空，该腿纯按里程与绕行倍率判定"
+            "基本名前缀，三档递进、前一档命中即停；名字对上时高铁腿也只认同名 way，"
+            "不再并入等级标签；走廊里一条同名 way 都没有时，高铁腿退回 OSM 的 "
+            "highspeed/maxspeed 标签，普速腿偏好集为空、纯按几何选路"
         ),
         "line_aliases": ";".join(f"{alias}->{canonical}" for alias, canonical in geo.LINE_ALIASES),
         "line_class_words": ";".join(geo.LINE_CLASS_WORDS),
