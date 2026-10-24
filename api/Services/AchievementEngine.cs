@@ -210,6 +210,16 @@ public static partial class AchievementEngine
         new("CR400BF-G", "0051"),
         new("CR400AF-G", "0021")
     ];
+    // 「宫车之过」：加装 LKJ 装置的高速动车组。
+    private static readonly IReadOnlyList<RollingStockTarget> LkjEquippedEmuModels =
+    [
+        new("CRH380A", "2796"),
+        new("CR400AF", "2183"),
+        new("CR400AF", "2184"),
+        new("CR400AF", "2185"),
+        new("CR400AF", "2186"),
+        new("CR400AF", "2187")
+    ];
     private static readonly IReadOnlyList<RollingStockTarget> PrototypeModels =
     [
         new("CR400BF", "0305"), new("CR400BF", "0503"), new("CR400BF", "0507"),
@@ -346,7 +356,7 @@ public static partial class AchievementEngine
         new("沪苏通长江大桥", "沪苏通线", "南通西", "张家港")
     ];
 
-    // 附表2（33 座中的 32 座；台前黄河大桥所属京港雄商段没有台前站，故不收录）
+    // 附表2：33 座黄河大桥。
     private static readonly IReadOnlyList<RailwaySection> YellowRiverBridges =
     [
         new("河口黄河大桥", "兰新客专线", "兰州西", "陈家湾西"),
@@ -376,6 +386,7 @@ public static partial class AchievementEngine
         new("万滩黄河大桥", "济郑高铁", "新乡南", "杨庄所"),
         new("长东黄河大桥", "新石线", "文庄村", "东明县"),
         new("孙口黄河大桥", "京九线", "台前", "梁山"),
+        new("台前黄河大桥", "京港雄商段", "台前东", "梁山"),
         new("长清黄河大桥", "济郑高铁", "长清", "茌平南"),
         new("曹家圈黄河特大桥", "京沪线", "晏城", "桥南"),
         new("济南黄河大桥", "京沪高速线", "德州东", "济南西"),
@@ -423,7 +434,7 @@ public static partial class AchievementEngine
         new("西成客专线", "西成客专线", "鄠邑", "洋县西"),
         new("西康线", "西康线", "引镇", "大岭铺"),
         new("西渝高速线", "西渝西康段", "西安东", "安康西"),
-        new("宁西线", "宁西西合段", "西峡", "新丰镇"),
+        new("宁西线", "宁西西合段", "西峡", "渭南西"),
         new("武西高速线", "武西高铁", "十堰东", "蓝田")
     ];
 
@@ -743,10 +754,11 @@ public static partial class AchievementEngine
         new("greatWallExpress", RailwayCatalog, "electric_bolt_outlined", "飞驰长城", "乘坐一次 17 节编组的动力分散型动车组", 10,
             NarrativeNote: "惊人的长度，极致的运量",
             Trigger: i => FirstRollingStockMatch(i.Trips, GreatWallExpressModels)),
-        new("qinlingPassage", Touring, "landscape_outlined", "蜀道不难", "行经全部横穿秦岭的铁路客运区间", 20,
-            Note: "完整行经以下区间：兰渝线夏官营-广元、宝成线宝鸡-阳平关、西成客专线鄠邑-洋县西、西康线引镇-大岭铺、西渝高速线西安东-安康西、宁西线西峡-新丰镇、武西高速线十堰东-蓝田",
+        new("qinlingPassage", Touring, "landscape_outlined", "蜀道不难", "至少经由 5 条铁路线路完整横穿秦岭", 20,
+            MaxExperience: 30,
+            Note: "兰渝线夏官营-广元、宝成线宝鸡-阳平关、西成客专线鄠邑-洋县西、西康线引镇-大岭铺、西渝高速线西安东-安康西、宁西线西峡-渭南西、武西高速线十堰东-蓝田；每多一种额外获得5点经验，上限为30点",
             NarrativeNote: "西当太白有铁道，可以横插群山间",
-            Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(QinlingPassages))),
+            Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(QinlingPassages), 5)),
         new("tunnelCollection", Touring, "subway_outlined", "云霞明灭",
             "行经全部承担客运的 20 公里以上的特长隧道", 40,
             Note: "截至2026年10月共15座，详见附表4",
@@ -765,7 +777,7 @@ public static partial class AchievementEngine
         new("fTrain", RailwayCatalog, "u_turn_left_outlined", "中途遣返", "乘坐一次 F 字头列车", 40,
             NarrativeNote: "列车行驶未半而中道折返",
             Trigger: i => First(i.Trips, trip => trip.TrainNumber.Trim().StartsWith("F", StringComparison.OrdinalIgnoreCase))),
-        new("axleOverheat", RailwayCatalog, "device_thermostat_outlined", "轴温过高", "乘坐一次 CR400BF-5033 型列车", 25,
+        new("axleOverheat", RailwayCatalog, "device_thermostat_outlined", "轴温过高", "乘坐一次 CR400BF-5033 号列车", 25,
             NarrativeNote: "西成机破京沪焚，掌声送给○○人",
             Trigger: i => FirstRollingStockMatch(i.Trips, [new("CR400BF", "5033")])),
         new("permanentMagnetPower", RailwayCatalog, "bolt_outlined", "永磁动力", "乘坐一次 CRH380AN 型列车", 25,
@@ -836,7 +848,7 @@ public static partial class AchievementEngine
             NarrativeNote: "这要花不少积分，先生",
             Trigger: i => First(i.Trips, UnlocksStoredUpReward)),
         new("drippingStone", FunJourneys, "opacity_outlined", "滴水穿石",
-            "在任意 30 天内用积分兑换至少 10 次里程不低于 50 公里的车票", 25,
+            "在任意 30 天内用积分兑换至少 10 次里程超过 50 公里的车票", 25,
             NarrativeNote: "像极了在B站一直白嫖攒硬币的人",
             Trigger: i => FirstThirtyDayRedemptionCompletion(i.Trips, 10)),
         new("soundSleep", FunJourneys, "hotel_outlined", "酣然入梦", "乘坐全程高级软卧或高级动卧列车的下铺", 25,
@@ -878,7 +890,7 @@ public static partial class AchievementEngine
             NarrativeNote: "这车去年就发车了，现在才到",
             Trigger: i => First(i.Trips, UnlocksNewYearsEve)),
         new("specialGift", FunJourneys, "card_giftcard_outlined", "特别贺礼",
-            "在 1 月 1 日乘坐数字部分为该年年份的车次", 15,
+            "在 1 月 1 日乘坐数字部分为该年年份的车次", 25,
             Note: "中途切换车次也可以",
             NarrativeNote: "即使不打报销凭证也很有纪念意义了",
             Trigger: i => First(i.Trips, UnlocksSpecialGift)),
@@ -893,7 +905,14 @@ public static partial class AchievementEngine
         new("moistensJiangnan", RailwayCatalog, "water_drop_outlined", "润泽江南", "乘坐一次杭州亚运会限定车型 CR400BF-Z-0524", 25,
             NarrativeNote: "天王老子来了这也是紫茄子",
             Trigger: i => FirstRollingStockMatch(i.Trips, [new("CR400BF-Z", "0524")])),
-        new("facingTheWorld", RailwayCatalog, "public_outlined", "面向世界", "乘坐一次 CR400 系列可变轨距列车", 20,
+        new("lkjEquippedEmu", RailwayCatalog, "help_outline", "宫车之过",
+            "至少乘坐过 3 列加装 LKJ 装置的高速动车组", 25,
+            MaxExperience: 40,
+            Note: "CRH380A-2796, CR400AF-2183, 2184, 2185, 2186, 2187；每多一组额外获得5点经验，上限为40点",
+            NarrativeNote: "开门，社区送温暖",
+            Trigger: i => FirstPartialRollingStockCompletion(i.Trips, LkjEquippedEmuModels, 3)),
+        new("facingTheWorld", RailwayCatalog, "public_outlined", "面向世界", "乘坐一次 CR400 系列可变轨距动车组", 20,
+            Note: "CR400AF-G-0021, CR400BF-0031, CR400BF-G-0051",
             NarrativeNote: "跨国高铁项目何时再次重启",
             Trigger: i => FirstRollingStockMatch(i.Trips, VariableGaugeModels)),
         new("revivalPrototype", RailwayCatalog, "science_outlined", "复兴之路", "乘坐一次 CR400 或 CR300 原样车", 20,
@@ -1095,14 +1114,15 @@ public static partial class AchievementEngine
             NarrativeNote: "望不到周围有别的城市",
             Trigger: i => FirstStationVisit(i.Trips, ["茫崖", "花土沟"])),
         new("goddessYangtzeBridges", Touring, "architecture_outlined", "神女无恙", "行经全部承担客运的铁路长江大桥", 40,
+            Note: "截至2026年10月共25座，详见附表1",
             NarrativeNote: "1950年的人也许也不会想到如今有这么多长江大桥",
             Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(YangtzeBridges))),
         new("muddyWavesSweepSky", Touring, "tsunami", "浊浪排空", "行经全部承担客运的铁路黄河大桥", 40,
-            Note: "截至2026年9月共32座，详见附表2",
+            Note: "截至2026年10月共33座，详见附表2",
             NarrativeNote: "一桥飞架，百尺之冰亦可渡",
             Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(YellowRiverBridges))),
         new("mistyVastWaters", Touring, "anchor", "烟波微茫", "行经全部承担客运的铁路跨海大桥或海湾大桥", 20,
-            Note: "截至2026年9月共7座，详见附表3",
+            Note: "截至2026年10月共7座，详见附表3",
             NarrativeNote: "或许大多数人只能想起其中一两座",
             Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(SeaBayBridges))),
         new("oneStoneThreeBirds", FunJourneys, "filter_3_outlined", "一石三鸟", "单次行程同时满足其他至少三项成就的取得条件", 30,
@@ -1146,11 +1166,13 @@ public static partial class AchievementEngine
             Hidden: true,
             Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24))),
-        new("pitchDark", ExtremeChallenges, "inventory_2_outlined", "暗无天日", "乘坐棚车代客的列车移动至少 20 公里", 80,
+        new("pitchDark", ExtremeChallenges, "inventory_2_outlined", "暗无天日",
+            "乘坐单程至少 30 分钟的棚车代客列车", 80,
             Note: "路用列车也可以",
             NarrativeNote: "我是在坐车吗……这分明是在坐牢！",
             Hidden: true,
-            Trigger: i => First(i.Trips, trip => IsBoxcarSeat(trip.SeatType) && trip.MileageKm >= 20)),
+            Trigger: i => First(i.Trips, trip => IsBoxcarSeat(trip.SeatType) &&
+                ValidDuration(trip) >= TimeSpan.FromMinutes(30))),
         new("standingTall", ExtremeChallenges, "directions_railway_outlined", "顶天立地",
             "持无座或硬座车票乘坐单程至少 24 小时的非空调列车", 80,
             NarrativeNote: "老资历我敬你",
@@ -1180,12 +1202,12 @@ public static partial class AchievementEngine
             NarrativeNote: "各种技术参数你或许比车辆厂的职工还熟悉",
             Hidden: true,
             Trigger: i => FirstCollectionCompletion(i.Trips, EmuSubModelNames, trip => SmallEmuMatches(trip.RollingStock))),
-        new("refinedMechanic", RailwayCatalog, "handyman_outlined", "精益求精", "分别乘坐全部和谐型与复兴型量产机车牵引的列车", 80,
+        new("refinedMechanic", RailwayCatalog, "handyman_outlined", "精益求精", "分别乘坐全部和谐型与复兴型量产机车牵引的列车（不含动集动力车、调机与非国铁机车）", 80,
             Note: "HXD1, HXD1B, HXD1C, HXD1D, HXD2, HXD2B, HXD2C, HXD3, HXD3B, HXD3C, HXD3D, HXN3, HXN5, FXD1, FXD1BA, FXD2BA, FXD3, FXN3C, FXN5C, FXSY",
             NarrativeNote: "更大功率，更高运力",
             Hidden: true,
             Trigger: i => FirstCollectionCompletion(i.Trips, ModernLocomotives, trip => RollingStockMatches(trip.RollingStock, ModernLocomotives))),
-        new("dawnBreaks", RailwayCatalog, "wb_twilight_outlined", "曙光乍现", "分别乘坐全部东风型与韶山型量产机车牵引的列车", 80,
+        new("dawnBreaks", RailwayCatalog, "wb_twilight_outlined", "曙光乍现", "分别乘坐全部东风型与韶山型量产机车牵引的列车（不含调机与非国铁机车）", 80,
             Note: "DF1, DF3, DF4, DF4B, DF4C, DF4D, DF7D, DF8, DF8B, DF9, DF10F, DF11, DF11Z, DF11G, DF21, SS1, SS3, SS3B, SS4, SS6, SS6B, SS7, SS7C, SS7D, SS7E, SS8, SS9",
             NarrativeNote: "听说这是HCM的最爱",
             Hidden: true,
@@ -1434,6 +1456,13 @@ public static partial class AchievementEngine
                 0,
                 CollectedCount(trips, trip =>
                     RollingStockMatches(trip.RollingStock, PrototypeModels)) - 1) * 5,
+            "lkjEquippedEmu" => Math.Max(
+                0,
+                CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)) - 3) * 5,
+            "qinlingPassage" => Math.Max(
+                0,
+                SectionCoverageCount(trips, AvailableSections(QinlingPassages)) - 5) * 5,
             "steamPower" => Math.Max(
                 0,
                 CollectedCount(trips, trip =>
@@ -1506,6 +1535,9 @@ public static partial class AchievementEngine
             CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
             EmuModelFamilies.Count),
         "allSeatTypes" => P(CollectedCount(trips, SeatTypeMatches), RegularSeatTypes.Count),
+        "lkjEquippedEmu" => P(
+            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)),
+            3),
         "noSeat12Hours" => P(MaxDurationHours(trips.Where(IsNoSeat)), 12),
         "sweatLikeRain" => P(MaxDurationHours(trips.Where(trip => HasNonAirConditionedCoach(trip.RollingStock))), 12),
         "immovableMountain" => P(MaxDurationHours(trips.Where(IsNoSeat)), 24),
@@ -1551,7 +1583,7 @@ public static partial class AchievementEngine
         "goddessYangtzeBridges" => SectionProgress(trips, YangtzeBridges),
         "muddyWavesSweepSky" => SectionProgress(trips, YellowRiverBridges),
         "mistyVastWaters" => SectionProgress(trips, SeaBayBridges),
-        "qinlingPassage" => SectionProgress(trips, QinlingPassages),
+        "qinlingPassage" => SectionProgress(trips, QinlingPassages, 5),
         "tunnelCollection" => SectionProgress(trips, Tunnels),
         "completeEmuFleet" => P(CompleteEmuFamilyCount(trips), 1),
         "dreamExpress" => P(
@@ -1591,7 +1623,7 @@ public static partial class AchievementEngine
         "substituteSeats" => P(trips.Count(trip => IsSubstituteSeat(trip.SeatType)), 3),
         "extraCarriage" => P(trips.Count(trip => HasExtraCarriage(trip.SeatNumber)), 1),
         "specialGift" => P(trips.Count(UnlocksSpecialGift), 1),
-        "pitchDark" => P(trips.Count(trip => IsBoxcarSeat(trip.SeatType) && trip.MileageKm >= 20), 1),
+        "pitchDark" => P(MaxDurationHours(trips.Where(trip => IsBoxcarSeat(trip.SeatType))) * 60, 30),
         "drippingStone" => P(MaxThirtyDayRedemptionCount(trips), 10),
         "fourOfAKind" => P(trips.Count(trip => HasQuadrupleSetNumber(trip.RollingStock)), 1),
         "allAlone" => P(trips.Count(UnlocksAllAlone), 1),
@@ -1671,6 +1703,7 @@ public static partial class AchievementEngine
         "railwayTrailblazer" => RollingStockRequirements(trips, EarlyEmuModels),
         "whatAgeIsThis" => RollingStockRequirements(trips, EarlyPassengerCoachModels),
         "revivalPrototype" => RollingStockRequirements(trips, PrototypeModels),
+        "lkjEquippedEmu" => RollingStockRequirements(trips, LkjEquippedEmuModels),
         "meritAndHonor" => RollingStockRequirements(trips, HonorLocomotives),
         "friendshipForever" => RollingStockRequirements(trips, EarlyImportedLocomotives),
         "steamPower" => RollingStockRequirements(trips, SteamLocomotives),
@@ -2064,6 +2097,21 @@ public static partial class AchievementEngine
     {
         var values = targets.ToHashSet();
         return First(trips, trip => RollingStockMatches(trip.RollingStock, values).Count > 0);
+    }
+
+    /// <summary>至少收集到 <paramref name="required"/> 个不同车组时返回该次行程。</summary>
+    private static PublicTrip? FirstPartialRollingStockCompletion(
+        List<PublicTrip> trips,
+        IReadOnlyList<RollingStockTarget> targets,
+        int required)
+    {
+        var collected = new HashSet<RollingStockTarget>();
+        foreach (var trip in trips)
+        {
+            collected.UnionWith(RollingStockMatches(trip.RollingStock, targets));
+            if (collected.Count >= required) return trip;
+        }
+        return null;
     }
 
     private static bool ContainsRollingStock(PublicTrip trip, string value) =>
@@ -2858,10 +2906,10 @@ public static partial class AchievementEngine
         return maximum;
     }
 
-    /// <summary>积分兑换没有单独字段，沿用「票价为 0 且里程不少于 50 公里」的约定，
+    /// <summary>积分兑换没有单独字段，沿用「票价为 0 且里程超过 50 公里」的约定，
     /// 与「厚积薄发」对积分票的判定保持一致。</summary>
     private static bool IsRedeemedTicket(PublicTrip trip) =>
-        trip.Price == 0 && trip.MileageKm >= 50;
+        trip.Price == 0 && trip.MileageKm > 50;
 
     private static PublicTrip? FirstThirtyDayRedemptionCompletion(List<PublicTrip> trips, int target)
     {
@@ -3224,19 +3272,27 @@ public static partial class AchievementEngine
         List<PublicTrip> trips,
         IReadOnlyList<RailwaySection> availableSections)
     {
-        var covered = new HashSet<string>(StringComparer.Ordinal);
-        var sections = availableSections;
-        var required = sections
+        var required = availableSections
             .Select(section => section.Name)
             .ToHashSet(StringComparer.Ordinal);
         if (required.Count == 0) return null;
+        return FirstSectionThresholdCompletion(trips, availableSections, required.Count);
+    }
+
+    /// <summary>至少完整行经 <paramref name="required"/> 个不同区段时返回该次行程。</summary>
+    private static PublicTrip? FirstSectionThresholdCompletion(
+        List<PublicTrip> trips,
+        IReadOnlyList<RailwaySection> availableSections,
+        int required)
+    {
+        var covered = new HashSet<string>(StringComparer.Ordinal);
         foreach (var trip in trips)
         {
             var segments = RouteSpans(trip);
-            foreach (var section in sections)
+            foreach (var section in availableSections)
                 if (segments.Any(segment => CoversRouteSection(segment, section)))
                     covered.Add(section.Name);
-            if (required.IsSubsetOf(covered)) return trip;
+            if (covered.Count >= required) return trip;
         }
         return null;
     }
@@ -3258,15 +3314,19 @@ public static partial class AchievementEngine
             ? FamilyChain(section.RouteName)
             : RouteStations.Value.GetValueOrDefault(section.RouteName);
 
-    /// <summary>区段类成就的进度：按区段名去重计数，分母是实际可判定的区段数。</summary>
+    /// <summary>区段类成就的进度：按区段名去重计数，分母是实际可判定的区段数；
+    /// 传 <paramref name="target"/> 时按该门槛计数（用于「至少 N 段」类成就）。</summary>
     private static AchievementProgress SectionProgress(
         IEnumerable<PublicTrip> trips,
-        IReadOnlyList<RailwaySection> sections)
+        IReadOnlyList<RailwaySection> sections,
+        int? target = null)
     {
         var available = AvailableSections(sections);
-        return P(
-            SectionCoverageCount(trips, available),
-            available.Select(section => section.Name).Distinct(StringComparer.Ordinal).Count());
+        var required = target ?? available
+            .Select(section => section.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        return P(SectionCoverageCount(trips, available), required);
     }
 
     // 新线路库换了一套线路命名：删掉速度等级词和分段名里的「线」——
