@@ -112,6 +112,32 @@ class RouteService {
     return Isolate.run(() => _resolveJourney(graph, sections));
   }
 
+  /// 已存经由在当前线路库里画不出来的行程。
+  ///
+  /// 「画不出来」指线路名解析不到、或该线路上找不到这一段的起止站：地图只能把这一段
+  /// 退化成直线，用户看到的就是「经由损坏 / 线路数据库不通」。空经由不算损坏——那是
+  /// 还没填，不是填错了。
+  static Future<Set<int>> findUndrawableTripIds(
+    Iterable<TripRecord> source,
+  ) async {
+    final trips = source
+        .where((trip) => trip.isRailTrip && trip.viaRouteSegments.isNotEmpty)
+        .toList(growable: false);
+    if (trips.isEmpty) return const {};
+    final graph = await (_graphFuture ??= _loadGraph());
+    return Isolate.run(() {
+      final ids = <int>{};
+      for (final trip in trips) {
+        if (trip.viaRouteSegments.any(
+          (segment) => !graph.isSegmentDrawable(segment),
+        )) {
+          ids.add(trip.id);
+        }
+      }
+      return ids;
+    });
+  }
+
   static RouteResolution _resolveJourney(
     _RouteGraph graph,
     List<StationPairDistance> sections,
@@ -264,6 +290,18 @@ class _RouteGraph {
       for (final entry in selected)
         RouteStation(name: entry.name, mileage: entry.mileage),
     ];
+  }
+
+  /// 这一段能否在当前线路库里画出来：线路名解析得到，且起止站都在这条线上。
+  bool isSegmentDrawable(ViaRouteSegment segment) {
+    final resolvedRouteName = _resolveRouteName(segment.routeName);
+    if (resolvedRouteName == null) return false;
+    final section = _stationsBetweenOnRoute(
+      resolvedRouteName,
+      segment.fromStation,
+      segment.toStation,
+    );
+    return section != null && section.isNotEmpty;
   }
 
   JourneyStations stationsForJourney(

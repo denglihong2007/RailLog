@@ -81,6 +81,8 @@ class AllTripsPage extends StatefulWidget {
     this.openTrip,
     this.enableSelection = false,
     this.enableGrouping = false,
+    this.headerBuilder,
+    this.selectionBarBuilder,
   });
 
   final List<DashboardTripEntry> trips;
@@ -93,8 +95,43 @@ class AllTripsPage extends StatefulWidget {
   /// 已按条件筛过的子集（实体详情、图表、成就解锁）保持关闭。
   final bool enableGrouping;
 
+  /// 列表上方（搜索框之上）的额外控件，供复用本页的批量操作放自己的筛选条。
+  final WidgetBuilder? headerBuilder;
+
+  /// 多选时替换默认的 [SelectionActionsBar]。
+  ///
+  /// 复用它做别的批量操作（如按历史时刻表重建）时，不需要另写一套列表/多选界面。
+  final Widget Function(BuildContext context, TripsSelection selection)?
+  selectionBarBuilder;
+
   @override
   State<AllTripsPage> createState() => _AllTripsPageState();
+}
+
+/// 复用「全部行程」的多选界面时，交给外部批量操作的状态与入口。
+class TripsSelection {
+  const TripsSelection({
+    required this.visibleTrips,
+    required this.selectedTrips,
+    required this.busyLabel,
+    required this.setBusyLabel,
+    required this.exitSelection,
+  });
+
+  /// 当前搜索/筛选下可见的行程（不合并分组）。
+  final List<DashboardTripEntry> visibleTrips;
+
+  /// 已选中的行程。
+  final List<DashboardTripEntry> selectedTrips;
+
+  /// 非空时页面标题显示它，并禁止继续改选。
+  final String? busyLabel;
+
+  /// 设置 [busyLabel]。
+  final ValueChanged<String?> setBusyLabel;
+
+  /// 退出多选并清空选择。
+  final VoidCallback exitSelection;
 }
 
 class _AllTripsPageState extends State<AllTripsPage> {
@@ -199,6 +236,11 @@ class _AllTripsPageState extends State<AllTripsPage> {
   void _startSelection() {
     if (!widget.enableSelection || _busyLabel != null) return;
     setState(() => _isSelecting = true);
+  }
+
+  void _setBusyLabel(String? label) {
+    if (!mounted || _busyLabel == label) return;
+    setState(() => _busyLabel = label);
   }
 
   void _clearSelection() {
@@ -890,16 +932,26 @@ class _AllTripsPageState extends State<AllTripsPage> {
                 ],
         ),
         bottomNavigationBar: _selectionMode
-            ? SelectionActionsBar(
-                busy: _busyLabel != null,
-                hasSelection: _selectedTripIds.isNotEmpty,
-                canGenerate: _selectedTripsCanGenerate,
-                onGroup: _groupSelectedTrips,
-                onDelete: _deleteSelectedTrips,
-                onDownload: _downloadSelectedImages,
-                onExportJournal: _exportSelectedJournal,
-                onOrder: _orderSelectedTickets,
-              )
+            ? (widget.selectionBarBuilder?.call(
+                    context,
+                    TripsSelection(
+                      visibleTrips: trips,
+                      selectedTrips: _selectedTrips,
+                      busyLabel: _busyLabel,
+                      setBusyLabel: _setBusyLabel,
+                      exitSelection: _clearSelection,
+                    ),
+                  ) ??
+                  SelectionActionsBar(
+                    busy: _busyLabel != null,
+                    hasSelection: _selectedTripIds.isNotEmpty,
+                    canGenerate: _selectedTripsCanGenerate,
+                    onGroup: _groupSelectedTrips,
+                    onDelete: _deleteSelectedTrips,
+                    onDownload: _downloadSelectedImages,
+                    onExportJournal: _exportSelectedJournal,
+                    onOrder: _orderSelectedTickets,
+                  ))
             : null,
         body: SafeArea(
           child: Center(
@@ -909,6 +961,16 @@ class _AllTripsPageState extends State<AllTripsPage> {
               ),
               child: Column(
                 children: [
+                  if (widget.headerBuilder != null)
+                    // Column 默认按内容居中放子项；不撑满宽度的话，复用方传进来的
+                    // 一行筛选控件会缩成一小块悬在页面中间。
+                    SizedBox(
+                      width: double.infinity,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: widget.headerBuilder!(context),
+                      ),
+                    ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: LayoutBuilder(
