@@ -445,6 +445,37 @@ class PathSearchTest(unittest.TestCase):
         self.assertAlmostEqual(lengths[0], 55.9, delta=1.0)
         self.assertGreater(max(lengths), 140.0)
 
+    def test_widens_the_snap_pool_when_one_end_is_crowded_with_throat_nodes(self) -> None:
+        """一端节点密集时，交叉积取前 N 对会把这一端的纵深挤掉。
+
+        复现达成线 保平所→成都：站坐标落在站场咽喉里，最近的十几个节点全在一条
+        环线上，真正接正路的节点排在第 13 位。只按「吸附距离之和」取前几对时，
+        每一对都从咽喉进环线（约 152km，直线 55.6km）；把每个起始节点都和最近的
+        终点节点配一遍，第 13 位那个（145m 外）才带着 55.7km 的直路进来。实测
+        原库这一段画成 14.9km 的环线，直线只有 6.3km、里程 6km。
+        """
+        throat = [(30.0, 104.0005 + 0.0001 * i) for i in range(12)]
+        loop = [
+            *throat,
+            (30.0, 104.5),
+            (30.5, 104.5),
+            (30.5, 104.0),
+        ]
+        mainline = [(30.0, 104.002), (30.5, 104.0)]
+        rail = geo.RailData(lines=[loop, mainline], preferred=[False, True])
+
+        candidates, reason = self._search(
+            rail,
+            start=(30.0, 104.0005),
+            end=(30.5, 104.0),
+            extra_snaps=2,
+        )
+
+        self.assertIsNone(reason)
+        lengths = sorted(item.length_km for item in candidates)
+        self.assertAlmostEqual(lengths[0], 55.7, delta=1.0)
+        self.assertGreater(max(lengths), 140.0)
+
     def test_keeps_trying_alternative_snaps_until_the_geometry_makes_sense(self) -> None:
         """主吸附对不通时，换过去的第一对也可能是环线，要接着往下试。
 

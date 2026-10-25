@@ -313,10 +313,9 @@ LINE_CLASS_WORDS = ("高速", "城际", "专线")
 def line_base_key(value: str) -> str:
     """线路的「基本名」：匹配键再去掉速度等级词。
 
-    新线路库（`lines`/`line_stations`）把速度等级词从线路名里删掉了——「京港高铁合安段」
-    变成「京港合安段」、「沪宁沿江高铁」变成「沪宁沿江」——而 OSM 的 way 名一个字没变，
-    于是 [line_match_key] 的严格比较整批对不上。基本名把两侧的等级词都抹掉，用来说明
-    「这是不是同一条线」：
+    2.6.1 的线路库把速度等级词从线路名里删掉了——「京港高铁合安段」变成「京港合安段」、
+    「沪宁沿江高铁」变成「沪宁沿江」；当前线路库恢复了全名，但仍有个别线名不带等级词。
+    基本名把两侧的等级词都抹掉，用来在命名分叉时说明「这是不是同一条线」：
 
         沪宁沿江        ↔ 沪宁沿江高速线   → 两边都是「沪宁沿江」（基本名相等）
         京包张包段      ← 京包客专线       → 「京包张包」以「京包」开头（前缀）
@@ -359,10 +358,10 @@ def way_name(tags: dict) -> Optional[str]:
 def infer_profile(route_name: str) -> str:
     """从线路名推断轨道类型。
 
-    新线路库删掉了线路名里的速度等级词（「京港高铁合安段」→「京港合安段」），这里会
-    把约 30 条高铁线判成普速。判错不致命：偏好集的主证据是线路名匹配（见
-    `build_rail_tracks.line_matches`），profile 只在「名字对不上任何 way」时才决定
-    用不用 OSM 标签兜底。
+    2.6.1 的线路库删掉了线路名里的速度等级词（「京港高铁合安段」→「京港合安段」），
+    当时会把约 30 条高铁线判成普速；当前线路库恢复了全名，正常能判对。判错不致命：
+    偏好集的主证据是线路名匹配（见 `build_rail_tracks.line_matches`），profile 只在
+    「名字对不上任何 way」时才决定用不用 OSM 标签兜底。
     """
     name = route_name or ""
     if any(keyword in name for keyword in HSR_ROUTE_KEYWORDS):
@@ -908,6 +907,7 @@ def _alternative_snaps(
     skip: Tuple[Coord, Coord],
     limit: int = SNAP_CANDIDATE_LIMIT,
     prefer_profile: bool = False,
+    per_side: bool = False,
 ) -> List[Tuple[Coord, float, Coord, float]]:
     """最近的那对吸附点之间不通时，给出别的候选对，按吸附距离之和升序。
 
@@ -917,6 +917,12 @@ def _alternative_snaps(
     `prefer_profile` 时改成优先「两端都接在目标 profile 的边上」的对，再比吸附距离：
     并行的高铁与普速各有节点，要挑的是自己那条线上的节点，而它在站场里往往不是最近的
     那个（同一个车站附近可能有好几条股道）。
+
+    `per_side` 时不做交叉积取前 `limit` 对，而是「两端各取最近 `limit` 个节点，分别与
+    另一端的最近节点配对」。交叉积按吸附距离之和排序有个盲点：一端节点密集（站场咽喉
+    里十几个节点挤在两百米内）时，与它们配对的每一对都排在前面，另一端的纵深一个都
+    轮不到。实测达成线 保平所→成都：最近的 16 个起始节点里前 11 个都在环线咽喉上，
+    第 12 个（202m 外）才接上往西的正路；只取前 8 对时整段绕成 14.9km（直线 6.3km）。
 
     为什么需要这个：站场里一个车站附近常有好几条股道，`_snap_node` 只看距离，
     于是最近的节点可能落在一条与正线不通的孤立侧线上，整段就变成「找不到路」。
@@ -928,25 +934,66 @@ def _alternative_snaps(
     starts = _snap_candidates(graph, start, projection, threshold_km, SNAP_NODE_POOL)
     ends = _snap_candidates(graph, end, projection, threshold_km, SNAP_NODE_POOL)
     component = _component_ids(graph)
+
+    def allowed(
+        start_node: Coord, end_node: Coord
+    ) -> bool:
+        return component.get(start_node) == component.get(end_node) and (
+            start_node,
+            end_node,
+        ) != skip
+
+    def entry(
+        start_dist: float, start_node: Coord, end_dist: float, end_node: Coord
+    ) -> Tuple[bool, float, float, Coord, float, Coord]:
+        return (
+            not (
+                _on_preferred_edge(graph, start_node)
+                and _on_preferred_edge(graph, end_node)
+            ),
+            start_dist + end_dist,
+            start_dist,
+            start_node,
+            end_dist,
+            end_node,
+        )
+
+    key = (lambda item: (item[0], item[1])) if prefer_profile else (lambda item: item[1])
+
+    if per_side:
+        pairs: List[Tuple[bool, float, float, Coord, float, Coord]] = []
+        if starts and ends:
+            end_dist, end_node = ends[0]
+            pairs.extend(
+                entry(start_dist, start_node, end_dist, end_node)
+                for start_dist, start_node in starts
+                if allowed(start_node, end_node)
+            )
+            start_dist, start_node = starts[0]
+            pairs.extend(
+                entry(start_dist, start_node, end_dist, end_node)
+                for end_dist, end_node in ends
+                if allowed(start_node, end_node)
+            )
+        pairs.sort(key=key)
+        seen_pairs: Set[Tuple[Coord, Coord]] = set()
+        selected: List[Tuple[Coord, float, Coord, float]] = []
+        for _, _, start_dist, start_node, end_dist, end_node in pairs:
+            node_pair = (start_node, end_node)
+            if node_pair in seen_pairs:
+                continue
+            seen_pairs.add(node_pair)
+            selected.append((start_node, start_dist, end_node, end_dist))
+        return selected
+
     pairs = sorted(
         (
-            (
-                not (
-                    _on_preferred_edge(graph, start_node)
-                    and _on_preferred_edge(graph, end_node)
-                ),
-                start_dist + end_dist,
-                start_dist,
-                start_node,
-                end_dist,
-                end_node,
-            )
+            entry(start_dist, start_node, end_dist, end_node)
             for start_dist, start_node in starts
             for end_dist, end_node in ends
-            if component.get(start_node) == component.get(end_node)
-            and (start_node, end_node) != skip
+            if allowed(start_node, end_node)
         ),
-        key=(lambda item: (item[0], item[1])) if prefer_profile else (lambda item: item[1]),
+        key=key,
     )
     return [
         (start_node, start_dist, end_node, end_dist)
@@ -1279,48 +1326,75 @@ def _extra_snap_candidates(
     #
     # 曾经这里还有一条「长度离里程太远也可疑」的判据，它随凑里程机制一起去掉——里程
     # 不再参与选路，也就不该再用来决定要不要多算吸附对。
+    straight_km = haversine_km(start, end)
+    geometric_doubt = (
+        straight_km >= DETOUR_MIN_STRAIGHT_KM
+        and min(item.length_km for item in primary) > EXTRA_SNAP_RATIO * straight_km
+    )
     if not graph.preferred_edges:
         suspicious = True
     else:
-        straight_km = haversine_km(start, end)
         suspicious = (
             min(item.preferred_ratio for item in primary) < EXTRA_SNAP_PROFILE_FLOOR
-            or (
-                straight_km >= DETOUR_MIN_STRAIGHT_KM
-                and min(item.length_km for item in primary)
-                > EXTRA_SNAP_RATIO * straight_km
-            )
+            or geometric_doubt
         )
     if not suspicious:
         return []
 
     extra: List[PathCandidate] = []
     seen = {(item.path[0], item.path[-1]) for item in primary}
-    for from_node, from_dist, to_node, to_dist in _alternative_snaps(
-        graph,
-        start,
-        end,
-        projection,
-        threshold_km,
-        skip=skip,
-        limit=extra_snaps,
-        prefer_profile=True,
-    ):
-        for item in _plan_attempt(
+
+    def absorb(pairs: Sequence[Tuple[Coord, float, Coord, float]]) -> None:
+        for from_node, from_dist, to_node, to_dist in pairs:
+            for item in _plan_attempt(
+                graph,
+                projection,
+                from_node,
+                from_dist,
+                to_node,
+                to_dist,
+                k=k,
+                max_length_km=max_length_km,
+            ):
+                key = (item.path[0], item.path[-1])
+                if key in seen:
+                    continue
+                seen.add(key)
+                extra.append(item)
+
+    absorb(
+        _alternative_snaps(
             graph,
+            start,
+            end,
             projection,
-            from_node,
-            from_dist,
-            to_node,
-            to_dist,
-            k=k,
-            max_length_km=max_length_km,
-        ):
-            key = (item.path[0], item.path[-1])
-            if key in seen:
-                continue
-            seen.add(key)
-            extra.append(item)
+            threshold_km,
+            skip=skip,
+            limit=extra_snaps,
+            prefer_profile=True,
+        )
+    )
+    # 第一排备用对没救回来（最短候选仍明显比直线长），说明最近的若干个节点全在
+    # 同一个站场咽喉里，需要把两端的纵深都试到：每个起始节点配最近的终点节点，
+    # 每个终点节点配最近的起始节点。交叉积按吸附距离之和排序做不到这件事——一端
+    # 节点越密，它占掉的名额越多。这条只在几何判据成立时才走，实测达成线
+    # 保平所→成都 靠它从 14.9km 的环线改回 6.5km 的直路。
+    if geometric_doubt and min(
+        (item.length_km for item in [*primary, *extra]), default=float("inf")
+    ) > EXTRA_SNAP_RATIO * straight_km:
+        absorb(
+            _alternative_snaps(
+                graph,
+                start,
+                end,
+                projection,
+                threshold_km,
+                skip=skip,
+                limit=SNAP_NODE_POOL,
+                prefer_profile=True,
+                per_side=True,
+            )
+        )
     return extra
 
 

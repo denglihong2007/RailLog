@@ -131,6 +131,29 @@ _STATION_SUFFIX_RE = re.compile(r"(火车站|站)$")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
+# 车站节点的「本名」字段。改名后的站会把旧名留给别人：常平站的 old_name 是「东莞」，
+# 与真正的东莞站分居广九线两端，两者都在同一个 key 下竞争时坐标会被带偏 18km。
+# 有本名节点的 key 只在本名候选里挑，`alt_name`/`old_name` 只补本名缺口。
+_PRIMARY_NAME_FIELDS = ("name", "name:zh")
+
+
+def _append_candidate(
+    bucket: Dict[str, List[Tuple[str, float, float]]],
+    key: str,
+    name: str,
+    latitude: float,
+    longitude: float,
+) -> None:
+    """按坐标去重地往同名候选表里追加一项。"""
+    values = bucket.setdefault(key, [])
+    if any(
+        abs(latitude - item[1]) < 1e-6 and abs(longitude - item[2]) < 1e-6
+        for item in values
+    ):
+        return
+    values.append((name, latitude, longitude))
+
+
 def _station_keys(value: str) -> List[str]:
     """与 Dart _stationKeys 完全一致：先给原始小写，再给归一化名。"""
     trimmed = value.strip().replace("（", "(").replace("）", ")")
@@ -143,6 +166,17 @@ def _station_keys(value: str) -> List[str]:
     if normalized:
         keys.append(normalized)
     return keys
+
+
+# 城轨车站同样打 railway=station，但和本库的国铁车站不是一回事：成都地铁红牌楼站
+# 与国铁红牌楼站相距 1.7km，两者都叫「红牌楼」，first-wins 会把国铁站画到地铁站上。
+# 这些站既不在客里表里，也不该参与「同名车站」的竞争，一律不进候选。
+_METRO_STATION_VALUES = ("subway", "light_rail", "monorail", "tram")
+
+
+def _is_metro_station(tags: object) -> bool:
+    """节点是否属于城市轨道（地铁/轻轨/单轨/有轨电车）而非国铁。"""
+    return tags.get("subway") == "yes" or tags.get("station") in _METRO_STATION_VALUES
 
 
 def _parse_csv_row(line: str) -> Optional[Tuple[str, float, float]]:
@@ -431,7 +465,7 @@ class CachedWay:
     name: Optional[str] = None
     # 由 name 归一化出来的线路匹配键（见 [geo.line_match_key]），建网格时算一次。
     line_key: Optional[str] = field(init=False, default=None)
-    # 匹配键再去掉速度等级词（见 [geo.line_base_key]），用来容忍新线路库删掉等级词的改名。
+    # 匹配键再去掉速度等级词（见 [geo.line_base_key]），用来容忍 2.6.1 删掉等级词的改名。
     base_key: Optional[str] = field(init=False, default=None)
 
     def __post_init__(self) -> None:
@@ -480,7 +514,7 @@ def line_matches(
     三档递进，**前一档命中就不再往下走**：
 
     1. 匹配键相同：名字一模一样（含别名归一）。
-    2. 基本名相同：新线路库删掉了等级词，沪宁沿江 ↔ 沪宁沿江高速线。
+    2. 基本名相同：2.6.1 删掉了等级词，或线名本来不带等级词，沪宁沿江 ↔ 沪宁沿江高速线。
     3. way 的基本名是线路基本名的前缀：客里表的区段后缀没法机械地拆开，京包张包段
        只能靠「京包」前缀找到京包客专线。
 
@@ -515,7 +549,7 @@ def line_match_stage(
 ) -> Optional[str]:
     """[line_matches] 是靠哪一档命中的：`strict` / `base` / `prefix`，没命中是 None。
 
-    只给诊断用（probe_line_match）：第 2、3 档命中说明新线路库的名字与 OSM 分叉了，
+    只给诊断用（probe_line_match）：第 2、3 档命中说明线路库的名字与 OSM 分叉了，
     一条线从 strict 掉到 base/prefix 时值得看一眼是不是真的同一条线。
     """
     flags = line_matches(keys, route_name)
@@ -846,6 +880,8 @@ class PbfRailSource(RailSource):
         self.grid = WayGrid(grid_deg)
         self._stations: Dict[str, Tuple[str, float, float]] = {}
         self._station_candidates: Dict[str, List[Tuple[str, float, float]]] = {}
+        self._primary_candidates: Dict[str, List[Tuple[str, float, float]]] = {}
+        self._primary_stations: Dict[str, Tuple[str, float, float]] = {}
         self._verified: Dict[str, Tuple[str, float, float]] = {}
         self._fixes: List[StationFix] = []
         # (routes.db, coordinates.csv)：有这两份才能按线路消歧车站坐标；缺省不消歧，
@@ -882,6 +918,8 @@ class PbfRailSource(RailSource):
 
             def node(self, n: osmium.osm.Node) -> None:
                 if n.tags.get("railway") not in ("station", "halt"):
+                    return
+                if _is_metro_station(n.tags):
                     return
                 location = n.location
                 if location.valid():
@@ -945,11 +983,11 @@ class PbfRailSource(RailSource):
         resolved_at = time.time()
         self._resolve_stations()
         save_osm_stations(
-            self.cache_dir, self._stations, self._verified, self._fixes
+            self.cache_dir, self.station_coordinates(), self._verified, self._fixes
         )
         print(
             f"  PBF 读入       : {len(self.grid)} 条 way、{node_refs} 个节点引用、"
-            f"{len(self._stations)} 个车站键"
+            f"{len(self.station_coordinates())} 个车站键"
             f"（第一遍 {first_pass - started:.0f}s、第二遍 {second_pass - first_pass:.0f}s"
             + (
                 f"、坐标消歧 {time.time() - resolved_at:.0f}s"
@@ -966,18 +1004,25 @@ class PbfRailSource(RailSource):
             return
         routes_db, coordinates_path = self._stations_context
         candidates: Dict[str, List[Tuple[str, float, float]]] = {
-            key: list(values) for key, values in self._station_candidates.items()
+            key: list(values)
+            for key, values in self._primary_candidates.items()
+            if values
         }
+        # 别名候选只在没有本名节点时参与：有本名说明这站确实叫这个名字，借名的
+        # 旧名节点不能顶掉它。CSV 不算本名节点——客里表里的站往往早就改过名，
+        # 只靠 OSM 的 old_name 才找得到现在的节点（老古沟→金山湾就是这种）。
+        for key, values in self._station_candidates.items():
+            if key in self._primary_candidates:
+                continue
+            for item in values:
+                _append_candidate(candidates, key, *item)
         for name, latitude, longitude in _csv_candidates(coordinates_path):
             for key in _station_keys(name):
-                bucket = candidates.setdefault(key, [])
-                if not any(
-                    abs(latitude - item[1]) < 1e-6 and abs(longitude - item[2]) < 1e-6
-                    for item in bucket
-                ):
-                    bucket.append((name, latitude, longitude))
+                _append_candidate(candidates, key, name, latitude, longitude)
         # 报告里的「旧值」要和改动前真正写进库的一致，也就是套着 30km 守卫的那一份。
-        current = StationCoordinateIndex.from_sources(self._stations, coordinates_path)
+        current = StationCoordinateIndex.from_sources(
+            self.station_coordinates(), coordinates_path
+        )
         fallback = {
             key: coordinate
             for key in candidates
@@ -1007,27 +1052,37 @@ class PbfRailSource(RailSource):
 
         每个别名都登记：`name` 是英文而 `name:zh` 是中文时，客里表用的是中文，
         只留第一个会把这条站彻底查不到。
+
+        本名（`name`/`name:zh`）另记一份：改过名的站会把旧名让给别人，只有本名
+        这份能把坐标抢回来，详见 [_PRIMARY_NAME_FIELDS]。
         """
-        for alias in (
-            tags.get("name"),
-            tags.get("name:zh"),
-            tags.get("alt_name"),
-            tags.get("old_name"),
-        ):
+        for field in ("name", "name:zh", "alt_name", "old_name"):
+            alias = tags.get(field)
             if not alias:
                 continue
+            primary = field in _PRIMARY_NAME_FIELDS
             for key in _station_keys(alias):
-                candidates = self._station_candidates.setdefault(key, [])
-                if not any(
-                    abs(latitude - item[1]) < 1e-6 and abs(longitude - item[2]) < 1e-6
-                    for item in candidates
-                ):
-                    candidates.append((alias, latitude, longitude))
+                _append_candidate(
+                    self._station_candidates, key, alias, latitude, longitude
+                )
                 self._stations.setdefault(key, (alias, latitude, longitude))
+                if primary:
+                    _append_candidate(
+                        self._primary_candidates, key, alias, latitude, longitude
+                    )
+                    self._primary_stations.setdefault(
+                        key, (alias, latitude, longitude)
+                    )
 
     def station_coordinates(self) -> Dict[str, Tuple[str, float, float]]:
-        """归一化站名 → (原始站名, 纬度, 经度)。"""
-        return self._stations
+        """归一化站名 → (原始站名, 纬度, 经度)；本名优先于别名。
+
+        别名只能补本名没覆盖的 key。兜底坐标（没有线路上下文时直接写库）也要守
+        这条，否则常平站又会顶掉东莞站。
+        """
+        merged = dict(self._stations)
+        merged.update(self._primary_stations)
+        return merged
 
     def station_candidates(self) -> Dict[str, List[Tuple[str, float, float]]]:
         """归一化站名 → 全部同名候选坐标（含别名去重）。"""
@@ -1215,7 +1270,8 @@ class LineWayLookup:
     「这个候选是不是在这条线上」只能按空间距离查。同名站会出现在多条线上，同一
     个坐标会被反复查，因此按坐标（毫米级取整）缓存 way 列表。
 
-    线路名比对用 [geo.route_key]，与折线主键、profile 判定同一套归一化。
+    线路名比对用 [geo.line_match_key]（不是 [geo.route_key]）：客里表的线路名带区段
+    后缀，OSM 的 way 名不带，`成都西环线安红段` 与 `成都西环线` 只有前者认得出同一条线。
     """
 
     def __init__(self, grid: "WayGrid", radius_km: float) -> None:
@@ -1234,15 +1290,20 @@ class LineWayLookup:
             self._ways[key] = cached
         return cached
 
-    def distance_to_line(self, coordinate: geo.Coord, line_key: str) -> float:
-        """候选坐标到该线路 way 的最短距离；半径内没有该线路的 way 时为 inf。"""
+    def distance_to_line(self, coordinate: geo.Coord, route_name: str) -> float:
+        """候选坐标到该线路 way 的最短距离；半径内没有该线路的 way 时为 inf。
+
+        `line_match_key` 在第一个「线」/「铁路」处截断，正好吃掉区段后缀；速度等级词
+        （高速/城际/专线）仍然保留，不会把京广线与京广高速线混成一条。
+        """
+        line_key = geo.line_match_key(route_name)
         key = (round(coordinate[0], 3), round(coordinate[1], 3), line_key)
         cached = self._distances.get(key)
         if cached is not None:
             return cached
         best = float("inf")
         for way in self._ways_near(coordinate):
-            if not way.name or geo.route_key(way.name) != line_key:
+            if not way.name or geo.line_match_key(way.name) != line_key:
                 continue
             distance = geo.path_distance_km(coordinate, way.coords)
             if distance < best:
@@ -1298,7 +1359,7 @@ def disambiguate_stations(
         for alias, latitude, longitude in options:
             coordinate = (latitude, longitude)
             for route_name in lines:
-                distance = lookup.distance_to_line(coordinate, geo.route_key(route_name))
+                distance = lookup.distance_to_line(coordinate, route_name)
                 if distance < best_distance:
                     best, best_line, best_distance = (
                         (alias, latitude, longitude),
