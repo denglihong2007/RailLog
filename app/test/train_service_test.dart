@@ -123,13 +123,68 @@ void main() {
     });
   });
 
+  group('TrainService.splitCombinedTrainSuggestions', () {
+    TrainSearchResult train(String number, {String? trainCodes}) =>
+        TrainSearchResult(
+          trainNumber: number,
+          departureStation: '始发站',
+          arrivalStation: '终到站',
+          trainNo: number,
+          trainCodes: trainCodes,
+        );
+
+    test('splits a combined train into every number matching the prefix', () {
+      final split = TrainService.splitCombinedTrainSuggestions('G18', [
+        train('G1885/G1888', trainCodes: 'G1885/G1888'),
+      ]);
+
+      expect(split.map((result) => result.trainNumber), ['G1885', 'G1888']);
+      // 拆行只改展示号，规范号对留着，查站序仍能定位到这一趟车。
+      expect(split.map((result) => result.trainCodes), [
+        'G1885/G1888',
+        'G1885/G1888',
+      ]);
+    });
+
+    test('shows only the number that matches a complete query', () {
+      final split = TrainService.splitCombinedTrainSuggestions('G1888', [
+        train('G1888/G1885', trainCodes: 'G1885/G1888'),
+      ]);
+
+      expect(split.map((result) => result.trainNumber), ['G1888']);
+    });
+
+    test('keeps the pair when the number belongs to two different trains', () {
+      final split = TrainService.splitCombinedTrainSuggestions('D8269', [
+        train('D8269/D8272', trainCodes: 'D8269/D8272'),
+        train('D8269/D8300', trainCodes: 'D8269/D8300'),
+      ]);
+
+      expect(split.map((result) => result.trainNumber), [
+        'D8269/D8272',
+        'D8269/D8300',
+      ]);
+    });
+
+    test('leaves single-number trains untouched', () {
+      final split = TrainService.splitCombinedTrainSuggestions('G2', [
+        train('G2'),
+        train('G20'),
+      ]);
+
+      expect(split.map((result) => result.trainNumber), ['G2', 'G20']);
+    });
+  });
+
   group('TrainService.selectHistoricalTrain', () {
-    TrainSearchResult train(String number) => TrainSearchResult(
-      trainNumber: number,
-      departureStation: '始发站',
-      arrivalStation: '终到站',
-      trainNo: number,
-    );
+    TrainSearchResult train(String number, {String? trainCodes}) =>
+        TrainSearchResult(
+          trainNumber: number,
+          departureStation: '始发站',
+          arrivalStation: '终到站',
+          trainNo: number,
+          trainCodes: trainCodes,
+        );
 
     test('prefers the exact train number over a prefix match', () {
       final selected = TrainService.selectHistoricalTrain('G2', [
@@ -177,6 +232,52 @@ void main() {
 
     test('returns null for an empty candidate list', () {
       expect(TrainService.selectHistoricalTrain('G2', const []), isNull);
+    });
+
+    test('matches a combined train by either number in the pair', () {
+      // 检索接口把命中的号排在展示号前面：输入 G1888 时返回 G1888/G1885。
+      expect(
+        TrainService.selectHistoricalTrain('G1888', [
+          train('G1888/G1885', trainCodes: 'G1885/G1888'),
+        ], fallbackToFirst: false)?.trainNumber,
+        'G1888/G1885',
+      );
+      expect(
+        TrainService.selectHistoricalTrain('G1885', [
+          train('G1885/G1888', trainCodes: 'G1885/G1888'),
+        ], fallbackToFirst: false)?.trainNumber,
+        'G1885/G1888',
+      );
+    });
+
+    test('still prefers the exact single number over a combined pair', () {
+      expect(
+        TrainService.selectHistoricalTrain('D8269', [
+          train('D8269/D8272', trainCodes: 'D8269/D8272'),
+          train('D8269'),
+        ], fallbackToFirst: false)?.trainNumber,
+        'D8269',
+      );
+    });
+
+    test('refuses a number shared by two different trains', () {
+      expect(
+        TrainService.selectHistoricalTrain('D8269', [
+          train('D8269/D8272', trainCodes: 'D8269/D8272'),
+          train('D8269/D8300', trainCodes: 'D8269/D8300'),
+        ], fallbackToFirst: false),
+        isNull,
+      );
+    });
+
+    test('accepts the same combined train shown in either order', () {
+      expect(
+        TrainService.selectHistoricalTrain('G1888', [
+          train('G1888/G1885', trainCodes: 'G1885/G1888'),
+          train('G1885/G1888', trainCodes: 'G1885/G1888'),
+        ], fallbackToFirst: false)?.trainNumber,
+        'G1888/G1885',
+      );
     });
   });
 }

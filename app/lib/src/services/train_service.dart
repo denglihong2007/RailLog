@@ -561,10 +561,63 @@ class TrainService {
           .whereType<Map<String, dynamic>>()
           .map(TrainSearchResult.fromJson)
           .toList(growable: false);
-      return normalizeTrainSuggestions(trainNumberPrefix, results, limit: limit);
+      return normalizeTrainSuggestions(
+        trainNumberPrefix,
+        splitCombinedTrainSuggestions(trainNumberPrefix, results),
+        limit: limit,
+      );
     } on DioException catch (_) {
       return const [];
     }
+  }
+
+  /// 号对车次在检索结果里拆成单个号，一趟车按号各出一行。
+  ///
+  /// 合并运行的 G1885/G1888 在库里是一趟车，检索结果按命中的号排前面展示
+  /// （`G1888/G1885`）。但用户手里只有票面上的一个号，选中后车次也该记成这个号，
+  /// 所以按号拆开展示（[result.trainNumber] 用单个号，[TrainSearchResult.trainCodes]
+  /// 仍是规范号对，查站序不会串车）。
+  ///
+  /// 同一个号若挂在两趟不同的车上（车次冲突），拆开就分不清是哪一趟，保留号对原样。
+  /// 号对里只有一个号匹配前缀时只出那一行；前缀同时匹配两个号（`G18`）时两行都出。
+  static List<TrainSearchResult> splitCombinedTrainSuggestions(
+    String query,
+    List<TrainSearchResult> results,
+  ) {
+    final normalizedQuery = _normalizeTrainNumber(query);
+    if (normalizedQuery.isEmpty) return results;
+
+    // 每个单号挂在哪几趟车上（按规范号对归一）；多于一趟就是车次冲突。
+    final ownersByNumber = <String, Set<String>>{};
+    for (final result in results) {
+      final identity = _trainIdentity(result);
+      for (final part in _trainNumberParts(result.trainNumber)) {
+        ownersByNumber.putIfAbsent(part, () => <String>{}).add(identity);
+      }
+    }
+
+    bool isConflicted(String part) => (ownersByNumber[part]?.length ?? 0) != 1;
+
+    final expanded = <TrainSearchResult>[];
+    for (final result in results) {
+      final parts = _trainNumberParts(result.trainNumber);
+      if (parts.length < 2) {
+        expanded.add(result);
+        continue;
+      }
+      final matching =
+          parts.where((part) => part.startsWith(normalizedQuery)).toList()
+            ..sort();
+      if (matching.isEmpty) continue;
+      for (final part in matching) {
+        if (!isConflicted(part)) {
+          expanded.add(result.withTrainNumber(part));
+        }
+      }
+      // 有号拆不开（冲突）时保留整行号对，列表上才分得清是哪一趟。
+      if (matching.any(isConflicted)) expanded.add(result);
+    }
+    return expanded;
   }
 
   /// 按乘车日期从历史时刻表取整趟站序。
@@ -578,6 +631,9 @@ class TrainService {
   /// 当成这趟车。导入路径有票面始发/终到站兜底、认错了会被站名匹配挡下来，所以保留
   /// 默认的宽松；拿历史时刻表当**参照**的路径（只借它的里程、站序另有来源）没有这层
   /// 保护，必须传 `false`。
+  ///
+  /// 号对车次（库里记成 `G1885/G1888`）即使只输入其中一个号也算同号，只要该号没有
+  /// 同时挂在别的号对下；见 [selectHistoricalTrain]。
   static Future<HistoricalScheduleLookup?> lookupHistoricalSchedule({
     required String trainNumber,
     required DateTime boardingDate,
@@ -605,6 +661,11 @@ class TrainService {
   }
 
   /// 从检索结果里挑出与 [query] 同号的车次；无精确命中时按 [fallbackToFirst] 取首个。
+  ///
+  /// 合并运行的车次在库里记成号对（`G1885/G1888`），检索结果按命中的单个号展示
+  /// （`G1888/G1885`），所以「同号」也包括号对里的任一个号：输入 G1888 就能拿到
+  /// 这趟车的停点。但同一个号可能挂在多个号对下（2017.04.20 的 D8269 与
+  /// D8269/D8272 是两趟不同的车），这时算车次冲突，不猜是哪一个。
   static TrainSearchResult? selectHistoricalTrain(
     String query,
     List<TrainSearchResult> candidates, {
@@ -613,8 +674,37 @@ class TrainService {
     for (final candidate in candidates) {
       if (_matchesTrainNumber(candidate.trainNumber, query)) return candidate;
     }
+    final normalizedQuery = _normalizeTrainNumber(query);
+    final aliasMatches = candidates
+        .where(
+          (candidate) => _trainNumberParts(
+            candidate.trainNumber,
+          ).contains(normalizedQuery),
+        )
+        .toList(growable: false);
+    // 同一趟车的展示号可能排在不同位置（G1888/G1885 与 G1885/G1888），按号对
+    // 归一后再数；只有唯一一趟车命中才采用。
+    if (aliasMatches.isNotEmpty &&
+        aliasMatches.map(_trainIdentity).toSet().length == 1) {
+      return aliasMatches.first;
+    }
     if (fallbackToFirst && candidates.isNotEmpty) return candidates.first;
     return null;
+  }
+
+  /// 车次号里以 "/" 分隔的单个号（`D111/D114` → `{D111, D114}`，单号原样）。
+  static Set<String> _trainNumberParts(String value) => _normalizeTrainNumber(
+    value,
+  ).split('/').where((part) => part.isNotEmpty).toSet();
+
+  /// 一趟车的身份：优先用库里的规范号对（[TrainSearchResult.trainCodes]），
+  /// 号对顺序不敏感。同一个单号挂在两个号对下时身份不同，正是「车次冲突」。
+  static String _trainIdentity(TrainSearchResult candidate) {
+    final codes = _normalizeTrainNumber(candidate.trainCodes ?? '');
+    final parts = _trainNumberParts(
+      codes.isEmpty ? candidate.trainNumber : codes,
+    ).toList()..sort();
+    return parts.join('/');
   }
 
   static Future<List<String>> fetchHistoricalStations(String version) async {

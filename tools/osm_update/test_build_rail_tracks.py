@@ -632,6 +632,48 @@ class DisambiguateStationsTest(unittest.TestCase):
 
         self.assertEqual(resolved["新立屯"], self.LIAONING)
 
+    def test_treats_a_segment_name_as_the_same_line_as_its_os_m_name(self) -> None:
+        # 客里表 2026-10 起的线路名恢复了区段后缀（成都西环线安红段），OSM 的 way
+        # 名仍是「成都西环线」。route_key 只剥尾部「线」，两者并不相等；消歧如果用它，
+        # 这类线路上的同名车站一个都判不出来（实测成都地铁红牌楼站因此胜出）。
+        grid = builder.WayGrid(grid_deg=0.1)
+        grid.add(self._line_way("成都西环线", 30.625))
+
+        resolved, _ = builder.disambiguate_stations(
+            grid,
+            {
+                "红牌楼": [
+                    ("红牌楼", 30.6375, 122.175),   # 地铁站，离正线 1.4km
+                    ("红牌楼", 30.62434, 122.175),  # 国铁站，70m
+                ]
+            },
+            {"成都西环线安红段": ["红牌楼"]},
+            {},
+        )
+
+        self.assertEqual(resolved["红牌楼"][1:], (30.62434, 122.175))
+
+
+class MetroStationFilterTest(unittest.TestCase):
+    """地铁/轻轨车站也打 railway=station，但不能当国铁车站的坐标来源。"""
+
+    def test_rejects_metro_station_nodes(self) -> None:
+        for tags in (
+            {"railway": "station", "station": "subway", "subway": "yes"},
+            {"railway": "station", "subway": "yes"},
+            {"railway": "station", "station": "light_rail"},
+            {"railway": "halt", "station": "tram"},
+        ):
+            self.assertTrue(builder._is_metro_station(tags), tags)
+
+    def test_keeps_mainline_station_nodes(self) -> None:
+        for tags in (
+            {"railway": "station", "name": "红牌楼"},
+            {"railway": "station", "station": "train"},
+            {"railway": "halt"},
+        ):
+            self.assertFalse(builder._is_metro_station(tags), tags)
+
 
 def _write_discard_routes_db(path: Path) -> None:
     """三条同构线路，站名互不相同，好分别验证「哪一条上的哪一站被舍去」。"""
@@ -926,6 +968,22 @@ def _write_pbf(path: Path) -> None:
             tags={"railway": "station", "name": "甲站"},
         )
     )
+    # 常平站把「东莞」当 old_name（2022 年东莞站东移后改名留下的），真正的东莞站
+    # 在 18km 外的常平西侧。别名不能顶掉本名，否则整条广九线会歪过去。
+    writer.add_node(
+        osmium.osm.mutable.Node(
+            id=11,
+            location=(113.854420, 23.091229),
+            tags={"railway": "station", "name": "东莞"},
+        )
+    )
+    writer.add_node(
+        osmium.osm.mutable.Node(
+            id=12,
+            location=(114.000380, 22.987180),
+            tags={"railway": "station", "name": "常平", "old_name": "东莞"},
+        )
+    )
     writer.add_way(osmium.osm.mutable.Way(
         id=101, nodes=[1, 2], tags={"railway": "rail", "maxspeed": "350"},
     ))
@@ -1009,6 +1067,23 @@ class PbfRailSourceTest(unittest.TestCase):
         # 兜底表仍是 first-wins，用法与改动前一致。
         self.assertEqual(
             self.source.station_coordinates()["甲"], ("甲站", 30.0, 104.0)
+        )
+
+    def test_a_namesake_borrowing_its_old_name_cannot_displace_the_real_station(self) -> None:
+        # 常平站的 old_name 是「东莞」，但它离真正的东莞站 18km。本名节点必须压过
+        # 别名节点——两个候选一起交给 disambiguate_stations 会被线路几何带到常平去。
+        self.assertEqual(
+            self.source.station_coordinates()["东莞"],
+            ("东莞", 23.091229, 113.854420),
+        )
+        # 候选表仍然两个都收，留作诊断；关键是谁进兜底表。
+        # 候选名就是匹配到的那个别名，所以这里比坐标。
+        self.assertEqual(
+            sorted(
+                round(latitude, 6)
+                for _, latitude, _ in self.source.station_candidates()["东莞"]
+            ),
+            [22.987180, 23.091229],
         )
 
     def test_writes_the_station_cache_so_later_runs_skip_the_pbf(self) -> None:

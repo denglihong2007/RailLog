@@ -30,6 +30,19 @@ class TrainSearchResult {
 
   String get summary => '$departureStation → $arrivalStation $trainNo';
 
+  /// 换一个展示号，其余（含查站序用的标识）不变。
+  ///
+  /// 号对车次拆成单个号展示时用：查站序仍按单个号走服务端解析，[trainCodes]
+  /// 保留规范号对，导入/重建路径据此认车不会被拆行影响。
+  TrainSearchResult withTrainNumber(String value) => TrainSearchResult(
+    trainNumber: value,
+    departureStation: departureStation,
+    arrivalStation: arrivalStation,
+    trainNo: value,
+    trainCodes: trainCodes,
+    lookupDate: lookupDate,
+  );
+
   factory TrainSearchResult.fromJson(
     Map<String, dynamic> json, {
     DateTime? lookupDate,
