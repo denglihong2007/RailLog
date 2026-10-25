@@ -302,20 +302,30 @@ void main() {
         hasLength(names.length),
         reason: '同一条线不该出现两段（那就是反复换线），实际经由：$via',
       );
+      // 新线路库里 太原东 与 太原 同时在 大西高铁、石太客专线 上，两处换线都是
+      // 西安北→石家庄 804 km（太原东 583+221、太原 580+224），并列时取哪一站由
+      // 松弛次序决定。只锁「换线前后是同一个站」，不锁具体站名。
+      final transfer = result.segments
+          .where((s) => s.routeName == '大西高铁')
+          .single
+          .toStation;
       expect(
-        result.segments.where((s) => s.routeName == '大西高铁').single.toStation,
-        '太原',
+        ['太原', '太原东'],
+        contains(transfer),
         reason: '实际经由：$via',
       );
       expect(
-        result.segments.where((s) => s.routeName == '石太客专线').single.fromStation,
-        '太原',
+        result.segments
+            .where((s) => s.routeName == '石太客专线')
+            .single
+            .fromStation,
+        transfer,
         reason: '实际经由：$via',
       );
-      // 目标 807 是时刻表的累计里程，routes.db 的大西高铁 西安北→太原 是 580、
-      // 石太客专线 太原→石家庄 是 224，合计差 3 km，落在「每站 0.5 km」的刻度差允许量
-      // （24 站 → 12 km）里，不值得为它再插一段 5 km 的 临潼东联络（那是「借道凑里程」，
-      // 线路名从 2 个涨到 4 个）。
+      // 目标 807 是时刻表的累计里程，routes.db 的大西高铁 西安北→太原（或太原东）
+      // 加石太客专线 太原（或太原东）→石家庄 是 804，合计差 3 km，落在「每站 0.5 km」
+      // 的刻度差允许量（24 站 → 12 km）里，不值得为它再插一段 5 km 的 临潼东联络
+      // （那是「借道凑里程」，线路名从 2 个涨到 4 个）。
       expect(
         result.segments.fold<double>(0, (sum, s) => sum + s.mileageKm),
         804,
@@ -415,6 +425,13 @@ void main() {
 
       final hsrStations = await RouteService.getStationsForRoute('沪宁沿江高铁');
       expect(hsrStations, isNotEmpty);
+    });
+
+    test('字面规则救不了的拆线名按别名表落到当前线路', () async {
+      expect(await RouteService.getStationsForRoute('广深港香港'), contains('香港西九龙'));
+      expect(await RouteService.getStationsForRoute('武西高速线'), contains('十堰东'));
+      expect(await RouteService.getStationsForRoute('西渝高速线'), contains('安康西'));
+      expect(await RouteService.getStationsForRoute('昆万磨万段'), isNotEmpty);
     });
   });
 }

@@ -395,7 +395,7 @@ class _RouteGraph {
       }
       if (previousStation != null && previousStation != station) {
         final distance = (mileage - previousMileage!).abs();
-        // 新线路库里个别站没有里程（如京西线的北京写成 0，与前站北京西相同），
+        // 线路库里个别站没有里程（如包环线的包头东写成 0，与前站包头相同），
         // 差值为 0 时不能当成「两站同点」加一条零长边，否则寻路会把它们当成
         // 可瞬移的相邻站。跳过这一条边，后续站仍从当前站往前接。
         if (distance > 0) {
@@ -514,10 +514,12 @@ class _RouteGraph {
     );
     if (matches.length == 1) return matches.single;
 
-    // 新线路库的线名常省略速度等级与「线」字（京港高铁合安段 → 京港合安段、
-    // 宁西线西合段 → 宁西西合段），旧行程里存下来的经由名仍是老写法。精确匹配
-    // 失败后再按宽松键找一次；只有唯一命中才采用，避免把「京广线」和「京广高铁」
-    // 这类只差速度等级的并行线路混成一条。
+    // 2.6.1 的线路库删过速度等级与「线」字（京港高铁合安段 → 京港合安段、
+    // 宁西线西合段 → 宁西西合段）；当前线路库恢复成全名，旧行程里两种写法都有。
+    // 字面规则救不了的少数改名先查别名表，再按宽松键找一次；只有唯一命中才采用，
+    // 避免把「京广线」和「京广高铁」这类只差速度等级的并行线路混成一条。
+    final alias = _routeNameAliases[routeName];
+    if (alias != null && routeStationIndexes.containsKey(alias)) return alias;
     final loose = _looseRouteKey(routeName);
     final looseMatches = routeStationIndexes.keys
         .where((candidate) => _looseRouteKey(candidate) == loose)
@@ -949,11 +951,28 @@ class _RouteStateStep {
 String _routeStateKey(String station, String? routeName) =>
     '$station\u0000${routeName ?? ''}';
 
+/// 各版线路库之间改了名的线路：旧经由名 → 当前库里的线路名。
+///
+/// 武西高速线、西渝高速线是 2.6.0 以前的写法，当前库按区段拆成了
+/// 武西高铁云十段 / 西渝高铁西康段；广深港的三段是 2.6.1 的临时拆法。
+/// 只放能唯一落到一条线的改名：宁蓉线、焦柳线这类在库里拆成多条的不在此列，
+/// 旧库的经由本来就存区段名。
+const Map<String, String> _routeNameAliases = {
+  '武西高速线': '武西高铁云十段',
+  '武西高铁': '武西高铁云十段',
+  '西渝高速线': '西渝高铁西康段',
+  '广深港广深': '广深港高速线',
+  '广深港福田': '广深港高速线',
+  '广深港香港': '广深港高速线',
+  '昆万昆磨段': '中老昆万铁路昆磨段',
+  '昆万磨万段': '中老昆万铁路磨万段',
+};
+
 /// 线路名的宽松键：去掉速度等级词和「铁路/线」。
 ///
-/// 新线路库的命名省掉了等级词（「京港高铁合安段」写作「京港合安段」），
-/// 「宁西线西合段」也写作「宁西西合段」。只在精确匹配失败时用它兜底，
-/// 调用方还会要求唯一命中，不能拿它当主键。
+/// 2.6.1 的命名省掉了等级词（「京港高铁合安段」写作「京港合安段」），
+/// 「宁西线西合段」也写作「宁西西合段」；当前库恢复成全名。只在精确匹配和
+/// 别名表失败时用它兜底，调用方还会要求唯一命中，不能拿它当主键。
 String _looseRouteKey(String value) {
   var key = value.trim();
   key = key.replaceAll(RegExp(r'(客运专线|高铁|客专|城际|高速)'), '');
