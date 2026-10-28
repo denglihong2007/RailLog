@@ -8,8 +8,9 @@ import 'package:raillog/src/models/train_search_result.dart';
 import 'package:raillog/src/models/timetable_source.dart';
 import 'package:raillog/src/models/timetable_version.dart';
 import 'package:raillog/src/models/trip_record.dart';
-import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
+import 'package:raillog/src/pages/import_email_page.dart';
+import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/train_ticket_ocr_models.dart';
@@ -421,6 +422,13 @@ class _AddTripPageState extends State<AddTripPage> {
     if (saved == true && mounted) widget.onTripSaved();
   }
 
+  Future<void> _openEmailImport() async {
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(m3PageRoute(builder: (context) => const ImportEmailPage()));
+    if (saved == true && mounted) widget.onTripSaved();
+  }
+
   Future<void> _openExcelImport() async {
     if (_isImportingExcel) return;
     await showExcelImportGuide(context, onPick: _pickAndImportExcel);
@@ -619,6 +627,13 @@ class _AddTripPageState extends State<AddTripPage> {
           title: '从 12306 导入',
           description: '核验电子发票，导入近 180 天行程并逐条确认',
           onTap: _open12306Import,
+        ),
+        const SizedBox(height: 12),
+        EntryMethodCard(
+          icon: Icons.alternate_email,
+          title: '从邮箱导入',
+          description: '读取 12306 购票通知邮件，解析后逐条确认',
+          onTap: _openEmailImport,
         ),
         const SizedBox(height: 12),
         EntryMethodCard(

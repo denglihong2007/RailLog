@@ -7,6 +7,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/email_connection_settings_page.dart';
 import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
@@ -67,7 +68,11 @@ class SettingsPage extends StatelessWidget {
                       const SettingsSectionHeader(title: '数据'),
                       const SizedBox(height: AppSpacing.sm),
                       const SettingsListCard(
-                        children: [_DataSyncEntry(), _TimetableRebuildEntry()],
+                        children: [
+                          _MailImportEntry(),
+                          _DataSyncEntry(),
+                          _TimetableRebuildEntry(),
+                        ],
                       ),
                       const SizedBox(height: AppSpacing.xxl),
                       const SettingsSectionHeader(title: '应用'),
@@ -286,6 +291,18 @@ class _TicketOcrEntry extends StatelessWidget {
     title: '车票识别',
     subtitle: '配置百度智能云或阿里云密钥，自动识别车票信息',
     onTap: () => _push(context, const TicketOcrSettingsPage()),
+  );
+}
+
+class _MailImportEntry extends StatelessWidget {
+  const _MailImportEntry();
+
+  @override
+  Widget build(BuildContext context) => SettingsNavTile(
+    icon: Icons.alternate_email,
+    title: '邮箱导入',
+    subtitle: '配置 IMAP / POP3 邮箱，从 12306 购票通知邮件导入行程',
+    onTap: () => _push(context, const EmailConnectionSettingsPage()),
   );
 }
 
