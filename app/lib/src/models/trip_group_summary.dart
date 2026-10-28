@@ -131,6 +131,9 @@ class TripGroupSummary {
 
   DateTime get earliestDeparture => earliestTrip.departureTime;
 
+  /// 组内最晚出发的那趟的出发时间；列表按它给分组卡片定位。
+  DateTime get latestDeparture => trips.last.departureTime;
+
   /// 最晚到达那趟的到达时间；那趟没填到达时间时返回 null。
   DateTime? get latestArrival => latestArrivalTrip.arrivalTime;
 

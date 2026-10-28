@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/trip_detail_settings.dart';
+import 'package:raillog/src/services/trip_list_settings.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/settings/settings_section.dart';
@@ -19,6 +20,8 @@ class DisplaySettingsPage extends StatelessWidget {
         const _ThemeCard(),
         const SizedBox(height: AppSpacing.md),
         const _MapCard(),
+        const SizedBox(height: AppSpacing.md),
+        const _TripListCard(),
         const SizedBox(height: AppSpacing.md),
         const _TripDetailCard(),
       ],
@@ -129,6 +132,30 @@ class _MapCard extends StatelessWidget {
       },
     );
   }
+}
+
+class _TripListCard extends StatelessWidget {
+  const _TripListCard();
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: TripListSettings.instance,
+    builder: (context, _) {
+      final settings = TripListSettings.instance;
+      return SettingsCard(
+        title: '行程列表',
+        icon: Icons.view_agenda_outlined,
+        child: SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          secondary: const Icon(Icons.compress),
+          title: const Text('紧凑视图'),
+          subtitle: const Text('车票卡片只显示车次、日期、起讫站与票价，一屏可看更多行程'),
+          value: settings.compactMode,
+          onChanged: settings.setCompactMode,
+        ),
+      );
+    },
+  );
 }
 
 class _TripDetailCard extends StatelessWidget {
