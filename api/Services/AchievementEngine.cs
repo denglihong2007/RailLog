@@ -203,7 +203,7 @@ public static partial class AchievementEngine
     [
         "商务座", "特等座", "高级软卧", "高级动卧"
     ];
-    private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥"];
+    private static readonly HashSet<string> AirportStationsWithoutAirportSuffix = ["美兰", "龙洞堡", "上海虹桥","龙嘉"];
     private static readonly IReadOnlyList<RollingStockTarget> VariableGaugeModels =
     [
         new("CR400BF", "0031"),
