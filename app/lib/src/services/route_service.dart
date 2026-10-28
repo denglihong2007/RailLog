@@ -395,20 +395,20 @@ class _RouteGraph {
       }
       if (previousStation != null && previousStation != station) {
         final distance = (mileage - previousMileage!).abs();
-        // 线路库里个别站没有里程（如包环线的包头东写成 0，与前站包头相同），
-        // 差值为 0 时不能当成「两站同点」加一条零长边，否则寻路会把它们当成
-        // 可瞬移的相邻站。跳过这一条边，后续站仍从当前站往前接。
-        if (distance > 0) {
-          final forward = _RouteEdge(
-            fromStation: previousStation,
-            toStation: station,
-            routeName: routeName,
-            distanceKm: distance,
-          );
-          final backward = forward.reversed();
-          adjacency.putIfAbsent(previousStation, () => []).add(forward);
-          adjacency.putIfAbsent(station, () => []).add(backward);
-        }
+        // 相邻两站的里程桩可能相同（杭深线的 绅坊 与 乐清东 都写作 377 km，
+        // 合福高速线的 延平 与 南平北 都是 729 km），这时差值为 0。仍然要连上这条
+        // 零长边：线路库是按 seq 连成的链，缺一条边就把整条线断成两截，按线路名过滤
+        // 的搜索（经由选择里的站间距离就是它）跨不过断点，会报「线路不连接起终点」。
+        // 代价只是这一段不占里程，而沿线走法的总里程等于两端里程桩之差，不受影响。
+        final forward = _RouteEdge(
+          fromStation: previousStation,
+          toStation: station,
+          routeName: routeName,
+          distanceKm: distance,
+        );
+        final backward = forward.reversed();
+        adjacency.putIfAbsent(previousStation, () => []).add(forward);
+        adjacency.putIfAbsent(station, () => []).add(backward);
       }
       previousStation = station;
       previousMileage = mileage;
