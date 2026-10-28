@@ -2077,17 +2077,28 @@ public static partial class AchievementEngine
         targets.Where(target => RollingStockMatches(value, target)).ToHashSet();
 
     private static bool RollingStockModelMatches(TrainModelParseResult parsed, string model) =>
-        parsed.ModelCode.Equals(model, StringComparison.OrdinalIgnoreCase) ||
-        parsed.Model.Equals(model, StringComparison.OrdinalIgnoreCase);
+        NormalizedModelCode(parsed.ModelCode).Equals(model, StringComparison.OrdinalIgnoreCase) ||
+        NormalizedModelCode(parsed.Model).Equals(model, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>动力集中动车组按动力车生产厂分 CR200J1 / CR200J3，技术改进型写作
+    /// CR200J1-C、CR200J3-A 等；附表6 只按技术改进型分档，所以识别前把 J1/J3 折回 J。
+    /// 只折紧跟 CR200J 之后的 1 或 3：CR200JS-G（双层）与 LCR200J（澜沧号）保持原样。</summary>
+    private static string NormalizedModelCode(string model) =>
+        model.Length >= 7 &&
+        model.StartsWith("CR200J", StringComparison.OrdinalIgnoreCase) &&
+        model[6] is '1' or '3' &&
+        (model.Length == 7 || model[7] == '-')
+            ? "CR200J" + model[7..]
+            : model;
 
     private static IEnumerable<string> RollingStockModelCodes(string? value)
     {
         foreach (var parsed in TrainModelParser.ParseTrainString(value))
         {
             if (parsed.ModelCode.Length > 0)
-                yield return parsed.ModelCode.ToUpperInvariant();
+                yield return NormalizedModelCode(parsed.ModelCode).ToUpperInvariant();
             if (parsed.Model.Length > 0 && !parsed.Model.Equals(parsed.ModelCode, StringComparison.Ordinal))
-                yield return parsed.Model.ToUpperInvariant();
+                yield return NormalizedModelCode(parsed.Model).ToUpperInvariant();
         }
     }
 
@@ -2205,7 +2216,7 @@ public static partial class AchievementEngine
     /// <summary>一个车型段的具体身份：有车号就是“型号 车号”，没车号就只是型号。</summary>
     private static IEnumerable<string> RollingStockIdentities(TrainModelParseResult model)
     {
-        var code = model.ModelCode.Length > 0 ? model.ModelCode : model.Model;
+        var code = NormalizedModelCode(model.ModelCode.Length > 0 ? model.ModelCode : model.Model);
         return model.Numbers.Count > 0
             ? model.Numbers.Select(number => $"{code} {number}")
             : [code];
@@ -2299,7 +2310,7 @@ public static partial class AchievementEngine
     private static string RollingStockModel(string? value)
     {
         var models = TrainModelParser.ParseTrainString(value)
-            .Select(model => model.ModelCode.ToUpperInvariant())
+            .Select(model => NormalizedModelCode(model.ModelCode).ToUpperInvariant())
             .Where(model => model.Length > 0)
             .ToArray();
         return models.Length == 0 ? string.Empty : string.Join('+', models);
@@ -2351,7 +2362,7 @@ public static partial class AchievementEngine
         foreach (var parsed in TrainModelParser.ParseTrainString(value))
         {
             if (parsed.Category != TrainCategory.EMU) continue;
-            var model = parsed.ModelCode.Length > 0 ? parsed.ModelCode : parsed.Model;
+            var model = NormalizedModelCode(parsed.ModelCode.Length > 0 ? parsed.ModelCode : parsed.Model);
             if (model.Length == 0) continue;
             foreach (var number in parsed.Numbers)
                 if (int.TryParse(number, out var setNumber))
