@@ -1494,10 +1494,14 @@ def print_discarded_stations(
         print(f"      …另有 {len(discarded) - limit} 个")
 
 
-def rail_data_for_leg(source: RailSource, leg: Leg) -> geo.RailData:
+def rail_data_for_leg(
+    source: RailSource, leg: Leg, corridor_km: Optional[float] = None
+) -> geo.RailData:
     # 只取走廊范围内的数据：plan_leg 里的 corridor_filter 会丢掉走廊外的一切，
-    # 所以 bbox 按走廊宽度收紧既不影响结果，又能大幅减少取数量。
-    corridor_km = geo.corridor_km_for(leg.start, leg.end)
+    # 所以 bbox 按走廊宽度收紧既不影响结果，又能大幅减少取数量。宽走廊重试时
+    # 传进来的 `corridor_km` 必须与 `plan_leg` 用的一致，否则取数范围和过滤范围脱节。
+    if corridor_km is None:
+        corridor_km = geo.corridor_km_for(leg.start, leg.end)
     bbox = geo.bbox_for_corridor(leg.start, leg.end, corridor_km)
     ways = source.ways(bbox)
     lines = [way.coords for way in ways]
@@ -1533,6 +1537,49 @@ class LegResult:
     preferred_basis: str = ""
 
 
+# 宽走廊重试：默认走廊按起终点直线距离算（`geo.corridor_km_for`），站与站之间
+# 一旦有大弯，正线就会整段落在走廊外，图被切成两半、报 `no_path`。实测宁铜线
+# 南京→中华门 的直线只有 9.1km、走廊 10km，而正线绕着城南走，最远处偏出 10.4km；
+# 京沪高速线 北京南→廊坊 也是同一回事（黄村一带偏出 14.6km）。这类段把走廊放宽
+# 重取一次就能接上，全量 87 条失败里 41 条是这么救回来的。
+#
+# 上限 80km 是被「正线整段绕着走」的段顶出来的：格库线 依吞布拉克→米兰 直线 138km、
+# 里程 230km，正线先向东北进阿尔金山、再折回西北，最远处离弦线 66km——45km 的上限
+# 让这一段的图始终断开（no_path），放到 2×（69km）才连上，走出来的 231km 与里程
+# 只差 0.6%。上限再高只会把取数范围扩到别的干线上，收益归论证环节管。
+WIDE_CORRIDOR_FACTORS = (2.0, 4.0)
+WIDE_CORRIDOR_MAX_KM = 80.0
+# 哪些失败值得放宽了再试：图断开/吸附不上，以及「找到了但绕得太离谱」——窄走廊
+# 里被迫绕站场环线的情形不少（津山线 秦皇岛→龙家营 窄走廊 22km+，宽走廊 10.4km）。
+WIDE_RETRY_REASONS = frozenset(
+    {"no_path", "snap_failed", "empty_graph", "no_rail_data", "circuitous"}
+)
+# 宽走廊取到的路要有证据才收：运价里程对得上，或者大半路程压在本线的同名 way 上。
+# 不符合就宁可继续报失败——走廊放到 45km 后，图上最省事的路可能是旁边另一条干线
+# （磁莱线 磁窑→莱芜东 给出的是 京沪线+辛泰线 87.5km，而里程表是 120km）。
+WIDE_ACCEPT_RATIO = 0.5
+
+
+def _wide_attempt_is_credible(plan: geo.LegPlan, leg: Leg) -> bool:
+    if not plan.ok:
+        return False
+    length = plan.length_km or 0.0
+    if geo.mileage_corroborates(length, leg.mileage_km):
+        return True
+    if (plan.preferred_ratio or 0.0) < WIDE_ACCEPT_RATIO:
+        return False
+    if leg.mileage_km is None or leg.mileage_km <= 0:
+        return True
+    # 名字对得上还不够。宽走廊把两条线之间的断口一起收了进来，最省事的路可能是
+    # 「先绕到远处的汇合点、再沿平行线折回来」——兴泉铁路 永安南→大田北 就是这样：
+    # 实长 91.6km、贴线率 0.85，可里程表只有 64km，多出来的 27km 是先沿鹰厦线向北
+    # 走了 13km 再原路南下。里程表在这里是唯一的尺子：折返一定让实长显著超过里程。
+    # 只拦「长得离谱」，短于里程不拦——吸附空隙只会让实长偏短，不是错误信号。
+    return length <= leg.mileage_km + max(
+        geo.MILEAGE_CORROBORATION_KM, geo.MILEAGE_CORROBORATION_RATIO * leg.mileage_km
+    )
+
+
 def plan_leg_with_source(
     source: RailSource,
     leg: Leg,
@@ -1543,26 +1590,48 @@ def plan_leg_with_source(
     # 坐标不可信的段在枚举阶段就定好了：取数毫无意义（走廊会覆盖半个国家），直接记失败。
     if leg.suspect_reason is not None:
         return LegResult(leg, geo.LegPlan(ok=False, reason=leg.suspect_reason))
+
+    def attempt(corridor_km: Optional[float]) -> Tuple[geo.RailData, geo.LegPlan, str]:
+        rail = rail_data_for_leg(source, leg, corridor_km)
+        if rail.name_matched:
+            basis = "way-name"
+        elif any(rail.preferred):
+            basis = "tags"
+        else:
+            basis = "none"
+        plan = geo.plan_leg(
+            leg.start,
+            leg.end,
+            rail,
+            leg.profile,
+            mileage_km=leg.mileage_km,
+            step_m=step_m,
+            detour_ratio=detour_ratio,
+            jump_radius_km=jump_radius_km,
+            corridor_km=corridor_km,
+        )
+        return rail, plan, basis
+
     try:
-        rail = rail_data_for_leg(source, leg)
+        rail, plan, basis = attempt(None)
     except Exception as exc:
         return LegResult(leg, geo.LegPlan(ok=False, reason=f"fetch_failed: {exc}"))
-    if rail.name_matched:
-        basis = "way-name"
-    elif any(rail.preferred):
-        basis = "tags"
-    else:
-        basis = "none"
-    plan = geo.plan_leg(
-        leg.start,
-        leg.end,
-        rail,
-        leg.profile,
-        mileage_km=leg.mileage_km,
-        step_m=step_m,
-        detour_ratio=detour_ratio,
-        jump_radius_km=jump_radius_km,
-    )
+
+    if plan.ok or plan.reason not in WIDE_RETRY_REASONS:
+        return LegResult(leg, plan, basis)
+
+    base_km = geo.corridor_km_for(leg.start, leg.end)
+    for factor in WIDE_CORRIDOR_FACTORS:
+        width = min(WIDE_CORRIDOR_MAX_KM, base_km * factor)
+        if width <= base_km * 1.0001:  # 已经在上限上，再放宽没有意义
+            break
+        try:
+            _wide_rail, wide_plan, wide_basis = attempt(width)
+        except Exception:
+            # 取数失败就用默认走廊的结论；重试本来就是锦上添花，不该把失败原因改坏。
+            continue
+        if _wide_attempt_is_credible(wide_plan, leg):
+            return LegResult(leg, wide_plan, wide_basis)
     return LegResult(leg, plan, basis)
 
 

@@ -1094,6 +1094,48 @@ class DetourGuardTest(unittest.TestCase):
 
         self.assertTrue(plan.ok, plan.reason)
 
+    def test_detour_corroborated_by_mileage_is_kept(self) -> None:
+        # 宁铜线 南京→中华门：直线 9.1km，正线沿城南绕到 30.4km，里程表写 33km。
+        # 里程对得上就说明是线路本身绕，不是站坐标飞了。
+        plan = geo.plan_leg(
+            self.start,
+            self.end,
+            self.rail,
+            geo.CONVENTIONAL,
+            mileage_km=self.length,
+        )
+
+        self.assertTrue(plan.ok, plan.reason)
+        self.assertAlmostEqual(plan.length_km, self.length, delta=0.1)
+
+    def test_detour_with_conflicting_mileage_is_still_rejected(self) -> None:
+        plan = geo.plan_leg(
+            self.start,
+            self.end,
+            self.rail,
+            geo.CONVENTIONAL,
+            mileage_km=self.length / 3.0,
+        )
+
+        self.assertFalse(plan.ok)
+        self.assertEqual(plan.reason, "circuitous")
+
+
+class MileageCorroborationTest(unittest.TestCase):
+    def test_missing_mileage_never_corroborates(self) -> None:
+        self.assertFalse(geo.mileage_corroborates(30.0, None))
+        self.assertFalse(geo.mileage_corroborates(30.0, 0.0))
+
+    def test_short_legs_use_the_flat_three_km_tolerance(self) -> None:
+        self.assertTrue(geo.mileage_corroborates(30.4, 33.0))
+        self.assertTrue(geo.mileage_corroborates(4.0, 1.0))  # 差 3km，正好在边界上
+        self.assertFalse(geo.mileage_corroborates(5.46, 1.0))  # 昆河线那种吸附空隙拉长的段
+        self.assertFalse(geo.mileage_corroborates(30.0, 38.0))  # 差 8km，超过 20%
+
+    def test_long_legs_use_the_twenty_percent_tolerance(self) -> None:
+        self.assertTrue(geo.mileage_corroborates(108.0, 120.0))  # 差 12km < 24km
+        self.assertFalse(geo.mileage_corroborates(87.5, 120.0))  # 差 32.5km > 24km
+
 
 # --------------------------------------------------------------------------
 # 输出形态
