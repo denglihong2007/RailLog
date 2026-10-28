@@ -11,6 +11,7 @@ import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/journal_export_service.dart';
 import 'package:raillog/src/services/journal_settings.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
+import 'package:raillog/src/services/trip_list_settings.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
@@ -30,7 +31,8 @@ typedef TripEntryOpener =
 sealed class _TripListEntry {
   const _TripListEntry();
 
-  DateTime get departureTime;
+  /// 排序用的时间：单趟取出发时间，分组取组内最晚一趟的出发时间。
+  DateTime get sortTime;
   Duration? get duration;
   double get mileageKm;
   double get price;
@@ -42,7 +44,7 @@ class _SingleTripEntry extends _TripListEntry {
   final DashboardTripEntry trip;
 
   @override
-  DateTime get departureTime => trip.departureTime;
+  DateTime get sortTime => trip.departureTime;
 
   @override
   Duration? get duration => trip.duration;
@@ -60,7 +62,7 @@ class _GroupTripEntry extends _TripListEntry {
   final TripGroupSummary group;
 
   @override
-  DateTime get departureTime => group.earliestDeparture;
+  DateTime get sortTime => group.latestDeparture;
 
   @override
   Duration? get duration => group.totalDuration;
@@ -81,6 +83,7 @@ class AllTripsPage extends StatefulWidget {
     this.openTrip,
     this.enableSelection = false,
     this.enableGrouping = false,
+    this.compactView,
     this.headerBuilder,
     this.selectionBarBuilder,
   });
@@ -94,6 +97,9 @@ class AllTripsPage extends StatefulWidget {
   /// 只对「完整行程列表」开启：按 `groupName` 合并成卡片。
   /// 已按条件筛过的子集（实体详情、图表、成就解锁）保持关闭。
   final bool enableGrouping;
+
+  /// 覆盖紧凑视图开关；`null` 时跟随设置里的全局偏好。
+  final bool? compactView;
 
   /// 列表上方（搜索框之上）的额外控件，供复用本页的批量操作放自己的筛选条。
   final WidgetBuilder? headerBuilder;
@@ -677,15 +683,13 @@ class _AllTripsPageState extends State<AllTripsPage> {
     }
 
     final comparison = switch (_sortField) {
-      _TripSortField.departureTime => a.departureTime.compareTo(
-        b.departureTime,
-      ),
+      _TripSortField.departureTime => a.sortTime.compareTo(b.sortTime),
       _TripSortField.duration => a.duration?.compareTo(b.duration!) ?? 0,
       _TripSortField.price => a.price.compareTo(b.price),
       _TripSortField.mileage => a.mileageKm.compareTo(b.mileageKm),
     };
     if (comparison != 0) return _descending ? -comparison : comparison;
-    return b.departureTime.compareTo(a.departureTime);
+    return b.sortTime.compareTo(a.sortTime);
   }
 
   Future<void> _showFilters() async {
@@ -1056,16 +1060,23 @@ class _AllTripsPageState extends State<AllTripsPage> {
                   Expanded(
                     child: entries.isEmpty
                         ? const _NoTripsFound()
-                        : _ResponsiveTripsList(
-                            entries: entries,
-                            openTrip: widget.openTrip,
-                            selectionMode: _selectionMode,
-                            selectedTripIds: _selectedTripIds,
-                            onToggleSelection: _toggleSelection,
-                            enableSelection: widget.enableSelection,
-                            expandedGroupNames: _expandedGroupNames,
-                            onToggleGroup: _toggleGroup,
-                            onSelectGroupMembers: _selectGroupMembers,
+                        // 设置页改了紧凑开关后返回时，列表要按新密度重建。
+                        : ListenableBuilder(
+                            listenable: TripListSettings.instance,
+                            builder: (context, _) => _ResponsiveTripsList(
+                              entries: entries,
+                              openTrip: widget.openTrip,
+                              selectionMode: _selectionMode,
+                              selectedTripIds: _selectedTripIds,
+                              onToggleSelection: _toggleSelection,
+                              enableSelection: widget.enableSelection,
+                              expandedGroupNames: _expandedGroupNames,
+                              onToggleGroup: _toggleGroup,
+                              onSelectGroupMembers: _selectGroupMembers,
+                              compact:
+                                  widget.compactView ??
+                                  TripListSettings.instance.compactMode,
+                            ),
                           ),
                   ),
                 ],
@@ -1088,6 +1099,7 @@ class _ResponsiveTripsList extends StatelessWidget {
     required this.expandedGroupNames,
     required this.onToggleGroup,
     required this.onSelectGroupMembers,
+    this.compact = false,
     this.openTrip,
   });
 
@@ -1101,10 +1113,13 @@ class _ResponsiveTripsList extends StatelessWidget {
   final ValueChanged<String> onToggleGroup;
   final ValueChanged<List<DashboardTripEntry>> onSelectGroupMembers;
 
+  /// 紧凑视图：卡片只保留车次、日期、起讫站与票价。
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     const horizontalPadding = 16.0;
-    const gap = 12.0;
+    final gap = compact ? 8.0 : 12.0;
     const minCardWidth = 300.0;
     final colors = Theme.of(context).colorScheme;
     final cards = _flattenEntries(colors);
@@ -1126,7 +1141,7 @@ class _ResponsiveTripsList extends StatelessWidget {
             24,
           ),
           itemCount: rowCount,
-          separatorBuilder: (context, index) => const SizedBox(height: gap),
+          separatorBuilder: (context, index) => SizedBox(height: gap),
           itemBuilder: (context, rowIndex) {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1136,7 +1151,7 @@ class _ResponsiveTripsList extends StatelessWidget {
                   columnIndex < columns;
                   columnIndex++
                 ) ...[
-                  if (columnIndex > 0) const SizedBox(width: gap),
+                  if (columnIndex > 0) SizedBox(width: gap),
                   Expanded(
                     child: _buildCard(cards, rowIndex * columns + columnIndex),
                   ),
@@ -1186,6 +1201,7 @@ class _ResponsiveTripsList extends StatelessWidget {
       selectionMode: selectionMode,
       selected: selectedTripIds.contains(trip.id),
       onToggleSelection: onToggleSelection,
+      compact: compact,
       headerColor: groupName.isEmpty
           ? null
           : _groupHeaderColor(colors, groupName),
@@ -1198,6 +1214,7 @@ class _ResponsiveTripsList extends StatelessWidget {
         group: group,
         headerColor: _groupHeaderColor(colors, group.name),
         expanded: expandedGroupNames.contains(group.name),
+        compact: compact,
         onToggle: () => onToggleGroup(group.name),
         enableSelection: enableSelection,
         onSelectMembers: () => onSelectGroupMembers(group.trips),
@@ -1232,6 +1249,7 @@ class TripTicketCard extends StatelessWidget {
     required this.onToggleSelection,
     this.openTrip,
     this.headerColor,
+    this.compact = false,
   });
 
   final DashboardTripEntry trip;
@@ -1243,10 +1261,18 @@ class TripTicketCard extends StatelessWidget {
   /// 属于某个分组时传入该分组的标题底色，与独立行程区分。
   final Color? headerColor;
 
+  /// 紧凑视图：只显示车次、日期、起讫站与票价，卡片高度大幅缩短。
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final duration = trip.duration;
+    final icon = selectionMode
+        ? (selected ? Icons.check_circle : Icons.radio_button_unchecked)
+        : trip.isRailTrip
+        ? Icons.train_outlined
+        : Icons.commute_outlined;
     return AppCard.outlined(
       color: colors.surface,
       borderColor: selected ? colors.primary : colors.outlineVariant,
@@ -1256,123 +1282,201 @@ class TripTicketCard extends StatelessWidget {
           : () => _openDetails(context),
       onLongPress: () => onToggleSelection(trip),
       padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Container(
-            color:
-                headerColor ??
-                (trip.isRailTrip
-                    ? colors.primaryContainer
-                    : colors.secondaryContainer),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.md,
-            ),
-            child: Row(
+      child: compact
+          ? _buildCompact(context, colors, icon, duration)
+          : Column(
               children: [
-                Icon(
-                  selectionMode
-                      ? (selected
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked)
-                      : trip.isRailTrip
-                      ? Icons.train_outlined
-                      : Icons.commute_outlined,
-                  size: 20,
-                  color: selected ? colors.primary : null,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _trainLabel(trip.trainNumber),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
+                Container(
+                  color:
+                      headerColor ??
+                      (trip.isRailTrip
+                          ? colors.primaryContainer
+                          : colors.secondaryContainer),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        icon,
+                        size: 20,
+                        color: selected ? colors.primary : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _trainLabel(trip.trainNumber),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            trip.ticketLabel,
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                          Text(_formatDate(trip.departureTime)),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      trip.ticketLabel,
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                    Text(_formatDate(trip.departureTime)),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StationTime(
+                              station: trip.fromStation,
+                              dateTime: trip.departureTime,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Column(
+                              children: [
+                                const Icon(Icons.arrow_forward, size: 20),
+                                if (duration != null) ...[
+                                  const SizedBox(height: AppSpacing.xs),
+                                  Text(
+                                    _formatDuration(duration),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelSmall,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: _StationTime(
+                              station: trip.toStation,
+                              dateTime: trip.arrivalTime,
+                              alignEnd: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Divider(height: 1, color: colors.outlineVariant),
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Wrap(
+                              spacing: 14,
+                              runSpacing: 4,
+                              children: [
+                                _TicketDetail(
+                                  icon: Icons.event_seat_outlined,
+                                  text: _seatLabel(trip),
+                                ),
+                                if (trip.mileageKm > 0)
+                                  _TicketDetail(
+                                    icon: Icons.straighten_outlined,
+                                    text: '${trip.mileageKm.round()} km',
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '¥${trip.price.toStringAsFixed(2)}',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: colors.primary),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  /// 紧凑卡片：两行文字配右侧票价，高度约为普通卡片的三分之一。
+  Widget _buildCompact(
+    BuildContext context,
+    ColorScheme colors,
+    IconData icon,
+    Duration? duration,
+  ) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurfaceVariant,
+    );
+    final badgeColor =
+        headerColor ??
+        (trip.isRailTrip ? colors.primaryContainer : colors.secondaryContainer);
+    final badgeIconColor = headerColor != null
+        ? colors.onSurfaceVariant
+        : (trip.isRailTrip
+              ? colors.onPrimaryContainer
+              : colors.onSecondaryContainer);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: badgeColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              size: 16,
+              color: selected ? colors.primary : badgeIconColor,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${trip.fromStation} → ${trip.toStation}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_trainLabel(trip.trainNumber)} · '
+                  '${_formatDateTime(trip.departureTime)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: muted,
                 ),
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _StationTime(
-                        station: trip.fromStation,
-                        dateTime: trip.departureTime,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Column(
-                        children: [
-                          const Icon(Icons.arrow_forward, size: 20),
-                          if (duration != null) ...[
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              _formatDuration(duration),
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: _StationTime(
-                        station: trip.toStation,
-                        dateTime: trip.arrivalTime,
-                        alignEnd: true,
-                      ),
-                    ),
-                  ],
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '¥${trip.price.toStringAsFixed(2)}',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colors.primary,
                 ),
-                const SizedBox(height: 12),
-                Divider(height: 1, color: colors.outlineVariant),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Wrap(
-                        spacing: 14,
-                        runSpacing: 4,
-                        children: [
-                          _TicketDetail(
-                            icon: Icons.event_seat_outlined,
-                            text: _seatLabel(trip),
-                          ),
-                          if (trip.mileageKm > 0)
-                            _TicketDetail(
-                              icon: Icons.straighten_outlined,
-                              text: '${trip.mileageKm.round()} km',
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '¥${trip.price.toStringAsFixed(2)}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleMedium?.copyWith(color: colors.primary),
-                    ),
-                  ],
-                ),
+              ),
+              if (duration != null) ...[
+                const SizedBox(height: 2),
+                Text(_formatDuration(duration), style: muted),
               ],
-            ),
+            ],
           ),
         ],
       ),
@@ -1410,6 +1514,7 @@ class _TripGroupCard extends StatelessWidget {
     required this.onToggle,
     required this.enableSelection,
     required this.onSelectMembers,
+    this.compact = false,
   });
 
   final TripGroupSummary group;
@@ -1418,6 +1523,9 @@ class _TripGroupCard extends StatelessWidget {
   final VoidCallback onToggle;
   final bool enableSelection;
   final VoidCallback onSelectMembers;
+
+  /// 紧凑视图：只显示分组名、趟数、起讫站与总价。
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1433,119 +1541,203 @@ class _TripGroupCard extends StatelessWidget {
         onTap: onToggle,
         onLongPress: enableSelection ? onSelectMembers : null,
         padding: EdgeInsets.zero,
-        child: Column(
-          children: [
-            Container(
-              color: headerColor,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
-              ),
-              child: Row(
+        child: compact
+            ? _buildCompact(context, colors)
+            : Column(
                 children: [
-                  const Icon(Icons.workspaces_outline, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      group.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
+                  Container(
+                    color: headerColor,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.workspaces_outline, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            group.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${group.count} 趟',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            Text(_formatDate(group.earliestDeparture)),
+                          ],
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '${group.count} 趟',
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
-                      Text(_formatDate(group.earliestDeparture)),
-                    ],
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(expanded ? Icons.expand_less : Icons.expand_more),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StationTime(
-                          station: group.fromStation,
-                          dateTime: group.earliestDeparture,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Column(
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      children: [
+                        Row(
                           children: [
-                            Icon(
-                              group.isRoundTrip
-                                  ? Icons.swap_horiz
-                                  : Icons.arrow_forward,
-                              size: 20,
+                            Expanded(
+                              child: _StationTime(
+                                station: group.fromStation,
+                                dateTime: group.earliestDeparture,
+                              ),
                             ),
-                            if (duration != null) ...[
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                _formatDuration(duration),
-                                style: Theme.of(context).textTheme.labelSmall,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
                               ),
-                            ],
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    group.isRoundTrip
+                                        ? Icons.swap_horiz
+                                        : Icons.arrow_forward,
+                                    size: 20,
+                                  ),
+                                  if (duration != null) ...[
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Text(
+                                      _formatDuration(duration),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.labelSmall,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: _StationTime(
+                                station: group.toStation,
+                                dateTime: group.latestArrival,
+                                alignEnd: true,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                      Expanded(
-                        child: _StationTime(
-                          station: group.toStation,
-                          dateTime: group.latestArrival,
-                          alignEnd: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Divider(height: 1, color: colors.outlineVariant),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          spacing: 14,
-                          runSpacing: 4,
+                        const SizedBox(height: 12),
+                        Divider(height: 1, color: colors.outlineVariant),
+                        const SizedBox(height: AppSpacing.md),
+                        Row(
                           children: [
-                            if (group.seatSummary != null)
-                              _TicketDetail(
-                                icon: Icons.event_seat_outlined,
-                                text: group.seatSummary!,
+                            Expanded(
+                              child: Wrap(
+                                spacing: 14,
+                                runSpacing: 4,
+                                children: [
+                                  if (group.seatSummary != null)
+                                    _TicketDetail(
+                                      icon: Icons.event_seat_outlined,
+                                      text: group.seatSummary!,
+                                    ),
+                                  if (group.totalMileageKm > 0)
+                                    _TicketDetail(
+                                      icon: Icons.straighten_outlined,
+                                      text:
+                                          '${group.totalMileageKm.round()} km',
+                                    ),
+                                ],
                               ),
-                            if (group.totalMileageKm > 0)
-                              _TicketDetail(
-                                icon: Icons.straighten_outlined,
-                                text: '${group.totalMileageKm.round()} km',
-                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '¥${group.totalPrice.toStringAsFixed(2)}',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(color: colors.primary),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '¥${group.totalPrice.toStringAsFixed(2)}',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(color: colors.primary),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  /// 紧凑分组卡片：与紧凑车票卡片同高，保留展开/收起入口。
+  Widget _buildCompact(BuildContext context, ColorScheme colors) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurfaceVariant,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: headerColor,
+              borderRadius: BorderRadius.circular(8),
             ),
-          ],
-        ),
+            child: Icon(
+              Icons.workspaces_outline,
+              size: 16,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        group.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        '${group.count} 趟 · '
+                        '${_formatDateTime(group.earliestDeparture)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: muted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${group.fromStation} → ${group.toStation}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '¥${group.totalPrice.toStringAsFixed(2)}',
+            style: theme.textTheme.titleSmall?.copyWith(color: colors.primary),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            expanded ? Icons.expand_less : Icons.expand_more,
+            size: 20,
+            color: colors.onSurfaceVariant,
+          ),
+        ],
       ),
     );
   }

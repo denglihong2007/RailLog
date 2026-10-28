@@ -7,6 +7,7 @@ import 'package:raillog/src/pages/settings/account_security_page.dart';
 import 'package:raillog/src/pages/settings/community_page.dart';
 import 'package:raillog/src/pages/settings/data_sync_settings_page.dart';
 import 'package:raillog/src/pages/settings/display_settings_page.dart';
+import 'package:raillog/src/pages/settings/email_connection_settings_page.dart';
 import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
 import 'package:raillog/src/pages/settings/profile_edit_page.dart';
@@ -78,6 +79,38 @@ void main() {
   testWidgets('火车票生成器页渲染无异常', (tester) async {
     await pumpNarrow(tester, const TicketGeneratorSettingsPage());
     expect(find.text('默认票面信息'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('邮箱导入设置页展示各邮箱的限制与转发提示', (tester) async {
+    await pumpNarrow(tester, const EmailConnectionSettingsPage());
+    expect(find.text('邮箱连接'), findsOneWidget);
+    expect(find.text('各邮箱的限制'), findsOneWidget);
+    expect(
+      find.textContaining('Outlook / Hotmail / Live / Microsoft 365'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('点「转发」发到 QQ、163 等邮箱后再导入'), findsOneWidget);
+    expect(find.textContaining('自动转发'), findsNothing);
+    expect(find.textContaining('规则'), findsNothing);
+    expect(find.textContaining('Google 已停用账号密码登录'), findsOneWidget);
+    expect(find.textContaining('iCloud 不支持 POP3'), findsOneWidget);
+    expect(find.textContaining('Proton Mail'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('输入受限邮箱地址时直接给出对应提示', (tester) async {
+    await pumpNarrow(tester, const EmailConnectionSettingsPage());
+    final emailField = find.byType(TextFormField).first;
+
+    await tester.enterText(emailField, 'someone@outlook.com');
+    await tester.pump();
+    expect(find.textContaining('Outlook 邮箱无法直接连接'), findsOneWidget);
+
+    await tester.enterText(emailField, 'someone@gmail.com');
+    await tester.pump();
+    expect(find.textContaining('Outlook 邮箱无法直接连接'), findsNothing);
+    expect(find.textContaining('Gmail 不能使用登录密码'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 

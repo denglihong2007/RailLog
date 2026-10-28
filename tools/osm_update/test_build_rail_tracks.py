@@ -1412,6 +1412,170 @@ class PlanLegWithSourceTest(unittest.TestCase):
         self.assertLess(north - south, 1.7 / 2)
 
 
+class WideCorridorRetryTest(unittest.TestCase):
+    """默认走廊把正线切成两半时，放宽走廊重取一次（宁铜线 南京→中华门 的情形）。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.cache_dir = Path(self._tmp.name)
+        self.straight = [(30.0 + 0.005 * i, 104.0) for i in range(101)]
+        self.leg = builder.Leg(
+            route_name="测试线",
+            from_station="甲站",
+            to_station="乙站",
+            start=(30.0, 104.0),
+            end=(30.5, 104.0),
+            mileage_km=None,
+            profile=geo.HSR,
+        )
+
+    def test_a_gap_in_the_narrow_corridor_is_retried_wider(self) -> None:
+        straight = self.straight
+
+        class GapSource(builder.RailSource):
+            def __init__(self, cache_dir: Path) -> None:
+                super().__init__(cache_dir)
+                self.queries: list[tuple[float, float, float, float]] = []
+
+            def ways(self, bbox):  # type: ignore[override]
+                self.queries.append(bbox)
+                if len(self.queries) == 1:
+                    return []  # 窄走廊里图是断的
+                return [builder.CachedWay(True, False, straight)]
+
+        source = GapSource(self.cache_dir)
+        result = builder.plan_leg_with_source(source, self.leg, 400.0)
+
+        self.assertEqual(len(source.queries), 2)
+        narrow, wide = source.queries
+        self.assertGreater(wide[2] - wide[0], narrow[2] - narrow[0])
+        self.assertGreater(wide[3] - wide[1], narrow[3] - narrow[1])
+        self.assertTrue(result.plan.ok, result.plan.reason)
+
+    def test_the_retry_goes_past_the_old_45km_cap(self) -> None:
+        # 格库线 依吞布拉克→米兰：正线绕出弦线 66km，45km 的上限怎么放宽都接不上。
+        # 直线 138km → 默认走廊 34.5km，2× 到 69km 才把绕行段收进走廊。
+        leg = builder.Leg(
+            route_name="测试线",
+            from_station="甲站",
+            to_station="乙站",
+            start=(30.0, 104.0),
+            end=(31.24, 104.0),
+            mileage_km=190.0,
+            profile=geo.HSR,
+        )
+        # 绕行段离弦线 43km：比默认走廊宽、比 45km 上限窄，只能靠 2× 收进来。
+        # 首尾两条 way 压在弦线上，所以窄走廊里图分成两块（no_path）。
+        detour = [
+            [(30.0, 104.0), (30.2, 104.45)],
+            [(30.2, 104.45), (31.04, 104.45)],
+            [(31.04, 104.45), (31.24, 104.0)],
+        ]
+
+        class DetourSource(builder.RailSource):
+            def __init__(self, cache_dir: Path) -> None:
+                super().__init__(cache_dir)
+                self.queries: list[tuple[float, float, float, float]] = []
+
+            def ways(self, bbox):  # type: ignore[override]
+                self.queries.append(bbox)
+                return [builder.CachedWay(True, False, coords, name="测试线")
+                        for coords in detour]
+
+        source = DetourSource(self.cache_dir)
+        result = builder.plan_leg_with_source(source, leg, 400.0)
+
+        self.assertTrue(result.plan.ok, result.plan.reason)
+        self.assertEqual(len(source.queries), 2)
+        narrow, wide = source.queries
+        cap_deg = 45.0 / 111.195
+        self.assertLess((narrow[2] - narrow[0] - 1.24) / 2, cap_deg)
+        self.assertGreater((wide[2] - wide[0] - 1.24) / 2, cap_deg)
+
+    def test_a_named_path_that_far_exceeds_mileage_is_rejected(self) -> None:
+        # 兴泉铁路 永安南→大田北 的教训：宽走廊里最省事的路是先沿鹰厦线向北绕十几
+        # 公里、再沿兴泉线原路南下，贴线率 0.85，可实长 91.6km、里程表只有 64km。
+        # 名字对得上不足以收下它，实长还得和里程表相称。
+        detour = [(25.941, 117.385), (26.324, 117.613), (25.707, 117.841)]
+        length = geo.path_length_km(detour)
+
+        class DetourSource(builder.RailSource):
+            def __init__(self, cache_dir: Path) -> None:
+                super().__init__(cache_dir)
+                self.queries = 0
+
+            def ways(self, bbox):  # type: ignore[override]
+                self.queries += 1
+                if self.queries == 1:
+                    return []  # 窄走廊里没有可用的线，逼出宽走廊重试
+                return [builder.CachedWay(True, False, detour, name="测试线")]
+
+        def plan(mileage_km):
+            leg = builder.Leg(
+                route_name="测试线",
+                from_station="甲站",
+                to_station="乙站",
+                start=detour[0],
+                end=detour[-1],
+                mileage_km=mileage_km,
+                profile=geo.HSR,
+            )
+            return builder.plan_leg_with_source(DetourSource(self.cache_dir), leg, 400.0)
+
+        rejected = plan(0.7 * length)
+        self.assertFalse(rejected.plan.ok)
+
+        kept = plan(length)
+        self.assertTrue(kept.plan.ok, kept.plan.reason)
+        self.assertAlmostEqual(kept.plan.length_km, length, delta=0.5)
+
+    def test_wide_attempt_on_someone_elses_line_is_discarded(self) -> None:
+        # 走廊放宽后图上最省事的路可能是旁边另一条干线：磁莱线 磁窑→莱芜东 在
+        # 45km 走廊下给出的是 京沪线+辛泰线。没有同名 way（ratio 0）就宁可继续报失败。
+        switchback = [(30.0, 104.0), (30.25, 106.0), (30.5, 104.0)]
+
+        class WrongLineSource(builder.RailSource):
+            def __init__(self, cache_dir: Path) -> None:
+                super().__init__(cache_dir)
+                self.queries = 0
+
+            def ways(self, bbox):  # type: ignore[override]
+                self.queries += 1
+                if self.queries == 1:
+                    return []
+                return [builder.CachedWay(False, True, switchback)]
+
+        result = builder.plan_leg_with_source(WrongLineSource(self.cache_dir), self.leg, 400.0)
+
+        self.assertFalse(result.plan.ok)
+        self.assertEqual(result.plan.reason, "no_rail_data")
+        self.assertEqual(result.plan.length_km, 0.0)
+
+    def test_mileage_can_vouch_for_a_path_off_the_named_line(self) -> None:
+        # 宁铜线 南京→中华门 的折线走的全是 京沪线/宁芜线（route_name 是「宁铜线」），
+        # ratio 0；救回它的只有「30.4km 对得上里程 33km」这一条证据。
+        switchback = [(30.0, 104.0), (30.25, 106.0), (30.5, 104.0)]
+        length = geo.path_length_km(switchback)
+
+        class WrongLineSource(builder.RailSource):
+            def __init__(self, cache_dir: Path) -> None:
+                super().__init__(cache_dir)
+                self.queries = 0
+
+            def ways(self, bbox):  # type: ignore[override]
+                self.queries += 1
+                if self.queries == 1:
+                    return []
+                return [builder.CachedWay(False, True, switchback)]
+
+        leg = builder.Leg(**{**self.leg.__dict__, "mileage_km": length})
+        result = builder.plan_leg_with_source(WrongLineSource(self.cache_dir), leg, 400.0)
+
+        self.assertTrue(result.plan.ok, result.plan.reason)
+        self.assertAlmostEqual(result.plan.length_km, length, delta=0.5)
+
+
 class WriteDatabaseTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

@@ -1436,6 +1436,32 @@ def _candidate_cost(item: PathCandidate) -> float:
 DEFAULT_EXTRA_SNAPS = 8
 
 
+# 折线实长与运价里程差在这个容差内，就算「里程佐证了这段绕路」。
+#
+# 绕路护栏是纯几何的，对「线路本身就绕」无能为力：宁铜线 南京→中华门 直线只有
+# 9.1km，正线却要沿城南绕到 30km 外，里程表写 33km——3.0 倍护栏会把唯一正确的
+# 几何判成坐标失真。里程表虽然不能用来选路（断链处的 km 差能差出十几公里，见
+# `plan_leg` 的说明），但用来**验证**一条已经选出来的路由是否离谱是够的：
+# 差 2.6km / 8% 说明这条线确实这么绕。
+#
+# 下限只能给 3km，不能再宽：站坐标离已映射的轨道很远时，吸附空隙也计进实长，
+# 短段会凭空「变长」好几公里。实测昆河线 泸江河→1909广场 站间直线 1.5km、轨道
+# 节点只有 0.37km，可两端各吸附出 2-3km 空隙，实长 5.46km；里程表 1km。若容差
+# 取 5km，这种段会被当成「里程佐证」放行，画出来就是一条靠跳线拉长的假绕路。
+MILEAGE_CORROBORATION_KM = 3.0
+MILEAGE_CORROBORATION_RATIO = 0.2
+
+
+def mileage_corroborates(length_km: float, mileage_km: Optional[float]) -> bool:
+    """实长与运价里程对得上（容差 max(3km, 20%)）。里程缺失时无话可说，返回 False。"""
+    if mileage_km is None or mileage_km <= 0:
+        return False
+    tolerance = max(
+        MILEAGE_CORROBORATION_KM, MILEAGE_CORROBORATION_RATIO * mileage_km
+    )
+    return abs(length_km - mileage_km) <= tolerance
+
+
 def plan_leg(
     start: Coord,
     end: Coord,
@@ -1450,6 +1476,7 @@ def plan_leg(
     extra_snaps: int = DEFAULT_EXTRA_SNAPS,
     jump_radius_km: float = DEFAULT_JUMP_RADIUS_KM,
     jump_snaps: int = DEFAULT_JUMP_SNAPS,
+    corridor_km: Optional[float] = None,
 ) -> LegPlan:
     """规划一个站间区间的轨道折线。
 
@@ -1466,12 +1493,18 @@ def plan_leg(
     里程的用途在经由线路计算，那边另有自己的数据链。
 
     最后还有一道收尾：折线实长超过起终点直线距离 [detour_ratio] 倍的段直接舍去
-    （`circuitous`），这是站坐标飞到同名异地时的兜底，与里程无关。
+    （`circuitous`），这是站坐标飞到同名异地时的兜底，与里程无关。唯一的例外是
+    运价里程正好也这么长（见 [mileage_corroborates]）——那就不是坐标飞了，是这条
+    线路本身绕。
+
+    `corridor_km` 只在调用方想重试更宽的数据时才传：默认按起终点直线距离算
+    （[corridor_km_for]）。站间有大弯时正线会整段落在默认走廊外，见
+    build_rail_tracks 的宽走廊重试。
     """
     if rail.is_empty():
         return LegPlan(ok=False, reason="no_rail_data", mileage_km=mileage_km)
 
-    corridor = corridor_filter(rail, start, end)
+    corridor = corridor_filter(rail, start, end, corridor_km)
     if corridor.is_empty():
         return LegPlan(ok=False, reason="no_rail_data", mileage_km=mileage_km)
 
@@ -1517,6 +1550,7 @@ def plan_leg(
     if (
         straight_km >= DETOUR_MIN_STRAIGHT_KM
         and chosen.length_km > detour_ratio * straight_km
+        and not mileage_corroborates(chosen.length_km, mileage_km)
     ):
         return LegPlan(
             ok=False,

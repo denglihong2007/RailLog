@@ -7,8 +7,10 @@ import 'package:raillog/src/pages/all_trips_page.dart';
 Future<void> _pump(
   WidgetTester tester, {
   List<DashboardTripEntry>? trips,
+  bool? compact,
+  Size size = const Size(800, 1000),
 }) async {
-  tester.view.physicalSize = const Size(800, 1000);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -18,6 +20,7 @@ Future<void> _pump(
         trips: trips ?? _groupedTrips(),
         enableSelection: true,
         enableGrouping: true,
+        compactView: compact,
         openTrip: (context, trip) async => null,
       ),
     ),
@@ -116,6 +119,78 @@ void main() {
 
     expect(_headerColor(tester, 'G1'), firstColor);
     expect(_headerColor(tester, 'G2'), firstColor);
+  });
+
+  testWidgets('紧凑视图只保留基础信息，卡片明显变矮', (tester) async {
+    await _pump(tester, compact: true);
+
+    // 分组卡片：分组名、趟数、起讫站与总价，不再显示坐席与里程。
+    expect(find.text('京沪往返'), findsOneWidget);
+    expect(find.text('2 趟 · 2026-01-01 08:00'), findsOneWidget);
+    expect(find.text('北京南 → 上海虹桥'), findsOneWidget);
+    expect(find.text('¥250.00'), findsOneWidget);
+    expect(find.text('二等座'), findsNothing);
+    expect(find.text('500 km'), findsNothing);
+
+    // 未分组的行程同样是紧凑卡片。
+    expect(find.text('D3 · 2026-01-02 09:00'), findsOneWidget);
+    expect(find.text('上海虹桥 → 杭州东'), findsOneWidget);
+    expect(find.text('¥73.00'), findsOneWidget);
+
+    final groupHeight = tester
+        .getSize(find.byKey(const ValueKey('group:京沪往返')))
+        .height;
+    expect(groupHeight, lessThan(80));
+
+    // 展开后成员行程也用紧凑卡片，且保留分组配色。
+    await tester.tap(find.text('京沪往返'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('G1 · 2026-01-01 08:00'), findsOneWidget);
+    expect(find.text('北京南 → 济南西'), findsOneWidget);
+    expect(find.text('¥100.00'), findsOneWidget);
+    expect(find.text('二等座'), findsNothing);
+    expect(find.text('200 km'), findsNothing);
+  });
+
+  testWidgets('分组卡片按组内最新一趟的出发时间排序', (tester) async {
+    // 单列布局，方便直接比较卡片的上下位置。
+    await _pump(
+      tester,
+      size: const Size(400, 1000),
+      trips: [
+        _entry(
+          id: 1,
+          trainNumber: 'G1',
+          from: '北京南',
+          to: '济南西',
+          departure: DateTime(2026, 1, 1, 8),
+          groupName: '周末',
+        ),
+        _entry(
+          id: 2,
+          trainNumber: 'G2',
+          from: '济南西',
+          to: '北京南',
+          departure: DateTime(2026, 1, 3, 8),
+          groupName: '周末',
+        ),
+        _entry(
+          id: 3,
+          trainNumber: 'D3',
+          from: '上海虹桥',
+          to: '杭州东',
+          departure: DateTime(2026, 1, 2, 9),
+          groupName: null,
+        ),
+      ],
+    );
+
+    // 默认按出发时间倒序。分组取组内最晚一趟（1 月 3 日），
+    // 应排在 1 月 2 日的独立行程前面，而不是按最早的 1 月 1 日落到后面。
+    final groupTop = tester.getTopLeft(find.text('周末')).dy;
+    final singleTop = tester.getTopLeft(find.text('D3')).dy;
+    expect(groupTop, lessThan(singleTop));
   });
 
   testWidgets('往返分组用折返站作为终到站并显示双向箭头', (tester) async {

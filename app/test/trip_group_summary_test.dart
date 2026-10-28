@@ -39,6 +39,7 @@ void main() {
     expect(group.trips.map((trip) => trip.id), [1, 2, 3]);
     expect(group.fromStation, '北京南');
     expect(group.earliestDeparture, DateTime(2026, 1, 1, 8));
+    expect(group.latestDeparture, DateTime(2026, 1, 2, 9));
     expect(group.toStation, '上海虹桥');
     expect(group.latestArrival, DateTime(2026, 1, 2, 11));
     expect(group.totalDuration, const Duration(hours: 5));
