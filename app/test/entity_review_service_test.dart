@@ -75,7 +75,126 @@ void main() {
     expect(review.reactions.single.count, 3);
     expect(review.reactions.single.reactedByCurrentUser, isTrue);
   });
+
+  test('withReactions 只换表情回应，其余字段保持不变', () {
+    final review = EntityReview.fromJson({
+      'id': 3,
+      'entityType': 'station',
+      'entityKey': '济南西',
+      'reviewType': 'station',
+      'userId': 'user-1',
+      'displayName': '测试用户',
+      'avatarUrl': null,
+      'rating': 4,
+      'comment': '候车室干净',
+      'tripId': null,
+      'secondTripId': null,
+      'transferMinutes': null,
+      'dish': null,
+      'price': null,
+      'createdAt': '2026-09-14T10:00:00Z',
+      'trip': null,
+      'secondTrip': null,
+      'reactions': [
+        {'emoji': '👍', 'count': 1, 'reactedByCurrentUser': true},
+      ],
+    });
+
+    final updated = review.withReactions([
+      const EntityReviewReaction(
+        emoji: '🎉',
+        count: 2,
+        reactedByCurrentUser: false,
+      ),
+    ]);
+
+    expect(updated.id, review.id);
+    expect(updated.entityKey, review.entityKey);
+    expect(updated.comment, review.comment);
+    expect(updated.rating, review.rating);
+    expect(updated.reactions.single.emoji, '🎉');
+    expect(updated.reactions.single.count, 2);
+    // 原对象不能被改动。
+    expect(review.reactions.single.emoji, '👍');
+  });
+
+  group('reactionsAfterToggle', () {
+    test('首次回应新增一个表情并标记为本人', () {
+      final result = reactionsAfterToggle([
+        const EntityReviewReaction(
+          emoji: '👍',
+          count: 2,
+          reactedByCurrentUser: false,
+        ),
+      ], null, '❤️');
+
+      expect(_counts(result), {'👍': 2, '❤️': 1});
+      expect(_mine(result), {'❤️'});
+    });
+
+    test('换表情时旧表情减一、新表情加一并转移本人标记', () {
+      final result = reactionsAfterToggle([
+        const EntityReviewReaction(
+          emoji: '👍',
+          count: 3,
+          reactedByCurrentUser: true,
+        ),
+        const EntityReviewReaction(
+          emoji: '❤️',
+          count: 1,
+          reactedByCurrentUser: false,
+        ),
+      ], '👍', '❤️');
+
+      expect(_counts(result), {'👍': 2, '❤️': 2});
+      expect(_mine(result), {'❤️'});
+    });
+
+    test('取消本人唯一的回应后该表情消失', () {
+      final result = reactionsAfterToggle([
+        const EntityReviewReaction(
+          emoji: '👍',
+          count: 1,
+          reactedByCurrentUser: true,
+        ),
+        const EntityReviewReaction(
+          emoji: '🎉',
+          count: 1,
+          reactedByCurrentUser: false,
+        ),
+      ], '👍', '👍');
+
+      expect(_counts(result), {'🎉': 1});
+      expect(_mine(result), isEmpty);
+    });
+
+    test('顺序与后端一致：数量降序，同数量按表情排序', () {
+      final result = reactionsAfterToggle([
+        const EntityReviewReaction(
+          emoji: '👍',
+          count: 2,
+          reactedByCurrentUser: false,
+        ),
+        const EntityReviewReaction(
+          emoji: '🎉',
+          count: 1,
+          reactedByCurrentUser: false,
+        ),
+      ], null, '❤️');
+
+      expect(result.map((reaction) => reaction.emoji), ['👍', '❤️', '🎉']);
+    });
+  });
 }
+
+Map<String, int> _counts(List<EntityReviewReaction> reactions) => {
+  for (final reaction in reactions) reaction.emoji: reaction.count,
+};
+
+Set<String> _mine(List<EntityReviewReaction> reactions) => {
+  for (final reaction in reactions)
+    if (reaction.reactedByCurrentUser) reaction.emoji,
+};
 
 Map<String, dynamic> _tripJson(
   int ticketId,

@@ -54,6 +54,57 @@ class EntityReview {
   final TripRecord? trip;
   final TripRecord? secondTrip;
   final List<EntityReviewReaction> reactions;
+
+  EntityReview._({
+    required this.id,
+    required this.entityType,
+    required this.entityKey,
+    required this.reviewType,
+    required this.userId,
+    required this.displayName,
+    required this.avatarUrl,
+    required this.rating,
+    required this.comment,
+    required this.tripId,
+    required this.secondTripId,
+    required this.transferMinutes,
+    required this.routeFromStation,
+    required this.routeToStation,
+    required this.dish,
+    required this.price,
+    required this.createdAt,
+    required this.achievementExperience,
+    required this.trip,
+    required this.secondTrip,
+    required this.reactions,
+  });
+
+  /// 只替换表情回应，其余字段不变。回应接口只回 204，列表拿到本地算出的新状态
+  /// 后直接换掉这一条即可，不必为了一个表情把整页重新拉回第一页。
+  EntityReview withReactions(List<EntityReviewReaction> reactions) =>
+      EntityReview._(
+        id: id,
+        entityType: entityType,
+        entityKey: entityKey,
+        reviewType: reviewType,
+        userId: userId,
+        displayName: displayName,
+        avatarUrl: avatarUrl,
+        rating: rating,
+        comment: comment,
+        tripId: tripId,
+        secondTripId: secondTripId,
+        transferMinutes: transferMinutes,
+        routeFromStation: routeFromStation,
+        routeToStation: routeToStation,
+        dish: dish,
+        price: price,
+        createdAt: createdAt,
+        achievementExperience: achievementExperience,
+        trip: trip,
+        secondTrip: secondTrip,
+        reactions: reactions,
+      );
 }
 
 class EntityReviewReaction {
@@ -73,6 +124,42 @@ class EntityReviewReaction {
   final String emoji;
   final int count;
   final bool reactedByCurrentUser;
+}
+
+/// 本地推算回应后的表情列表，规则与后端一致：每个用户对一条评价至多一个表情，
+/// 换表情是旧表情减一、新表情加一，减到 0 的表情不再展示。
+/// 顺序也与后端一致（数量降序、同数量按表情），这样回应不会让卡片里的表情乱跳。
+List<EntityReviewReaction> reactionsAfterToggle(
+  List<EntityReviewReaction> reactions,
+  String? currentEmoji,
+  String emoji,
+) {
+  final removing = currentEmoji == emoji;
+  final counts = <String, int>{
+    for (final reaction in reactions) reaction.emoji: reaction.count,
+  };
+  if (currentEmoji != null) {
+    final left = (counts[currentEmoji] ?? 1) - 1;
+    if (left <= 0) {
+      counts.remove(currentEmoji);
+    } else {
+      counts[currentEmoji] = left;
+    }
+  }
+  if (!removing) counts[emoji] = (counts[emoji] ?? 0) + 1;
+  final entries = counts.entries.toList()
+    ..sort((a, b) {
+      final byCount = b.value.compareTo(a.value);
+      return byCount != 0 ? byCount : a.key.compareTo(b.key);
+    });
+  return [
+    for (final entry in entries)
+      EntityReviewReaction(
+        emoji: entry.key,
+        count: entry.value,
+        reactedByCurrentUser: !removing && entry.key == emoji,
+      ),
+  ];
 }
 
 TripRecord? _reviewTrip(Object? value, String userId) {
