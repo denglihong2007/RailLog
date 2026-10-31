@@ -1,25 +1,90 @@
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace RailLog.API.Services;
 
 /// <summary>
-/// 历史时刻表库按快照日期版本化，一个版本一张 <c>timetable_&lt;yyyy.MM.dd&gt;</c> 表。
-/// 库本体不进仓库（约 800MB），路径由 user-secrets 里的
-/// <c>TrainTimetables:DatabasePath</c> 指定；没配置时接口一律返回空结果。
+/// 历史时刻表查询。库本体不进仓库，由 <see cref="TimetableSyncService"/> 每天从
+/// GitHub Release 同步到 <c>{ContentRoot}/timetables/</c>，一个快照一个文件
+/// （<c>train_timetables.db</c> 原样保存成 <c>{yyyy.MM.dd}.db</c>）。
+/// <para>
+/// 这里直接读 Release 库的 <c>stops</c> 表，不再转成按版本分表的旧结构。库还没同步下来时
+/// 接口返回空结果。
+/// </para>
 /// </summary>
 public sealed class TrainTimetableService(
-    IOptions<TrainTimetablesOptions> options,
+    IWebHostEnvironment environment,
     ILogger<TrainTimetableService> logger)
 {
-    private readonly TrainTimetablesOptions _options = options.Value;
+    private readonly string _timetablesDirectory =
+        TimetableDatabasePath.ResolveDirectory(environment);
     private readonly SemaphoreSlim _versionsGate = new(1, 1);
     private IReadOnlyList<string>? _versions;
-    private bool _missingPathReported;
+    private bool _missingDirectoryReported;
 
-    /// <summary>可用的版本号，升序。表名的字典序恰好等于时间序。</summary>
+    /// <summary>
+    /// Release 库的 <c>train_no</c> 还没有归一化，查询时按旧接口的规则还原成号对：
+    /// <list type="bullet">
+    /// <item>只取前两段，三段号（<c>1060/1061/1063</c>）丢掉第三段；</item>
+    /// <item>去掉 <c>#N</c> 重号后缀与车号尾缀字母（<c>6062#2</c> → <c>6062</c>，
+    /// <c>4654B</c> → <c>4654</c>）；</item>
+    /// <item>两段相同只留第一段（第二段落成空串）；</item>
+    /// <item>归一化后重号的原始车次只保留字典序最小的一趟，其余整趟丢弃。</item>
+    /// </list>
+    /// 这套规则与原来的构建脚本一致 —— 客户端看到的车次号不变。
+    /// </summary>
+    private const string PairsCte = """
+        codes AS (
+            SELECT DISTINCT train_no FROM stops
+        ),
+        parts AS (
+            SELECT train_no,
+                   trim(CASE WHEN instr(train_no, '/') > 0
+                             THEN substr(train_no, 1, instr(train_no, '/') - 1)
+                             ELSE train_no END) AS raw1,
+                   CASE WHEN instr(train_no, '/') > 0
+                        THEN substr(train_no, instr(train_no, '/') + 1)
+                        ELSE '' END AS rest
+            FROM codes
+        ),
+        split AS (
+            SELECT train_no, raw1,
+                   trim(CASE WHEN instr(rest, '/') > 0
+                             THEN substr(rest, 1, instr(rest, '/') - 1)
+                             ELSE rest END) AS raw2
+            FROM parts
+        ),
+        norm AS (
+            SELECT train_no,
+                   rtrim(upper(CASE WHEN instr(raw1, '#') > 0
+                                    THEN substr(raw1, 1, instr(raw1, '#') - 1)
+                                    ELSE raw1 END),
+                         'ABCDEFGHIJKLMNOPQRSTUVWXYZ') AS code1,
+                   rtrim(upper(CASE WHEN instr(raw2, '#') > 0
+                                    THEN substr(raw2, 1, instr(raw2, '#') - 1)
+                                    ELSE raw2 END),
+                         'ABCDEFGHIJKLMNOPQRSTUVWXYZ') AS code2_raw
+            FROM split
+        ),
+        collapsed AS (
+            SELECT train_no, code1,
+                   CASE WHEN code2_raw = code1 THEN '' ELSE code2_raw END AS code2
+            FROM norm
+        ),
+        pairs AS (
+            SELECT code1, code2, MIN(train_no) AS winner
+            FROM collapsed
+            WHERE code1 <> '' AND code1 GLOB '*[0-9]*'
+            GROUP BY code1, code2
+        )
+        """;
+
+    /// <summary>Release 库里 <c>-</c> 表示没有到发时刻，对外统一成空串。</summary>
+    private static string Time(string column) =>
+        $"CASE WHEN trim({column}) = '-' THEN '' ELSE trim({column}) END";
+
+    /// <summary>可用的版本号，升序。文件名就是版本号，字典序恰好等于时间序。</summary>
     public async Task<IReadOnlyList<string>> GetVersionsAsync(
         CancellationToken cancellationToken = default)
     {
@@ -31,35 +96,28 @@ public sealed class TrainTimetableService(
         {
             if (_versions is not null) return _versions;
 
-            var databasePath = ResolveDatabasePath();
-            if (databasePath is null)
+            if (!Directory.Exists(_timetablesDirectory))
             {
+                if (!_missingDirectoryReported)
+                {
+                    _missingDirectoryReported = true;
+                    logger.LogWarning(
+                        "历史时刻表目录不存在：{Path}，等待 TimetableSyncService 首次同步；"
+                        + "在此之前相关接口会返回空结果",
+                        _timetablesDirectory);
+                }
                 _versions = [];
                 return _versions;
             }
 
-            var versions = new List<string>();
-            try
-            {
-                await using var connection = await OpenConnectionAsync(databasePath, cancellationToken);
-                await using var command = connection.CreateCommand();
-                command.CommandText =
-                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'timetable\\_%' ESCAPE '\\'";
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken))
-                {
-                    var name = reader.GetString(0);
-                    var version = name["timetable_".Length..];
-                    if (IsValidVersion(version)) versions.Add(version);
-                }
-            }
-            catch (SqliteException exception)
-            {
-                logger.LogError(exception, "Failed to read timetable versions from {Path}", databasePath);
-                return [];
-            }
+            var versions = Directory
+                .EnumerateFiles(_timetablesDirectory, "*.db")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(static name => IsValidVersion(name))
+                .Select(static name => name!)
+                .OrderBy(static name => name, StringComparer.Ordinal)
+                .ToList();
 
-            versions.Sort(StringComparer.Ordinal);
             _versions = versions;
             logger.LogInformation(
                 "Historical timetable database offers {Count} versions ({First} .. {Last})",
@@ -112,40 +170,32 @@ public sealed class TrainTimetableService(
         if (connection is null) return [];
 
         await using var command = connection.CreateCommand();
-        var table = Quote(TableName(version));
         var limitClause = limit.HasValue ? "\n    LIMIT @limit" : string.Empty;
         // 匹配按**单个号**（输入 D114 也要能搜到 D111/D114 这趟车），但结果按**号对**
         // 去重：同一趟车只出一行，匹配到的号排在展示号前面。同一个单号若挂在两个
         // 号对下（如 D8269 与 D8269/D8272 是两趟不同的车），两行都在，绝不合并。
-        command.CommandText = $"""
-    WITH matching_trains(code1, code2) AS (
-        SELECT TrainCode1, TrainCode2 FROM {table}
-        WHERE TrainCode1 LIKE @prefix || '%'
-        UNION
-        SELECT TrainCode1, TrainCode2 FROM {table}
-        WHERE TrainCode2 LIKE @prefix || '%'
-    )
+        command.CommandText = WithPairs($"""
     SELECT
-        m.code1,
-        m.code2,
-        CASE WHEN m.code1 LIKE @prefix || '%' THEN m.code1 ELSE m.code2 END AS train_number,
+        p.code1,
+        p.code2,
+        CASE WHEN p.code1 LIKE @prefix || '%' THEN p.code1 ELSE p.code2 END AS train_number,
         (
-            SELECT t.TrainStation FROM {table} t
-            WHERE t.TrainCode1 = m.code1 AND t.TrainCode2 = m.code2
-            ORDER BY t.OrderID ASC, t.rowid ASC
+            SELECT trim(station) FROM stops
+            WHERE train_no = p.winner
+            ORDER BY seq ASC
             LIMIT 1
         ) AS departure_station,
         (
-            SELECT t.TrainStation FROM {table} t
-            WHERE t.TrainCode1 = m.code1 AND t.TrainCode2 = m.code2
-            ORDER BY t.OrderID DESC, t.rowid DESC
+            SELECT trim(station) FROM stops
+            WHERE train_no = p.winner
+            ORDER BY seq DESC
             LIMIT 1
         ) AS arrival_station
-    FROM matching_trains m
-    WHERE (m.code1 IS NOT NULL AND m.code1 <> '')
-       OR (m.code2 IS NOT NULL AND m.code2 <> '')
-    ORDER BY train_number, m.code1, m.code2{limitClause}
-    """;
+    FROM pairs p
+    WHERE p.code1 LIKE @prefix || '%'
+       OR p.code2 LIKE @prefix || '%'
+    ORDER BY train_number, p.code1, p.code2{limitClause}
+    """);
         command.Parameters.AddWithValue("@prefix", prefix);
         if (limit.HasValue)
             command.Parameters.AddWithValue("@limit", Math.Clamp(limit.Value, 1, MaxSearchLimit));
@@ -211,12 +261,14 @@ public sealed class TrainTimetableService(
         await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return [];
         await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT DISTINCT trim(TrainStation) AS station_name
-            FROM {Quote(TableName(version))}
-            WHERE trim(TrainStation) <> ''
+        // 只算归一化后留下的那趟车：重号被丢弃的原始车次不进车站表。
+        command.CommandText = WithPairs("""
+            SELECT DISTINCT trim(s.station) AS station_name
+            FROM stops s
+            JOIN pairs p ON p.winner = s.train_no
+            WHERE trim(s.station) <> ''
             ORDER BY station_name;
-            """;
+            """);
         var result = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -228,10 +280,9 @@ public sealed class TrainTimetableService(
     /// 某一站停靠的全部车次，附上在该站的到发时刻。
     /// </summary>
     /// <remarks>
-    /// 首末站一律按**完整号对** <c>(TrainCode1, TrainCode2)</c> 取：同一个单号若挂在
-    /// 两个号对下就是两趟不同的车，按单号 <c>OR</c> 取首末站会把两趟的站序拼在一起
-    /// （2017.04.20 的 <c>D8269</c> 与 <c>D8269/D8272</c>）。号对相等比较仍走
-    /// <c>(TrainCode1, OrderID)</c> 索引，不会退化成全表扫描。
+    /// 首末站一律按**完整号对**取：同一个单号若挂在两个号对下就是两趟不同的车，按单号
+    /// <c>OR</c> 取首末站会把两趟的站序拼在一起（2017.04.20 的 <c>D8269</c> 与
+    /// <c>D8269/D8272</c>）。
     /// <para>
     /// <b>合并运行的车只出一行</b>：D111+D114 是一趟车，两个号都在这站停，早先 UNION
     /// 两个号等于把同一趟车报成两趟；现在按「一行停站 = 一行结果」出，身份号用完整
@@ -254,20 +305,20 @@ public sealed class TrainTimetableService(
         await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return [];
 
-        var table = Quote(TableName(version));
         await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            WITH station_rows AS (
-                SELECT TrainCode1 AS code1, TrainCode2 AS code2,
-                       ArriveTime, StartTime
-                FROM {table}
-                WHERE trim(TrainStation) = @station
+        command.CommandText = WithPairs($"""
+            , station_rows AS (
+                SELECT p.code1 AS code1, p.code2 AS code2, s.train_no AS winner,
+                       {Time("s.arrival")} AS arrive_time,
+                       {Time("s.departure")} AS start_time
+                FROM stops s
+                JOIN pairs p ON p.winner = s.train_no
+                WHERE trim(s.station) = @station
             ), hits AS (
-                -- DISTINCT 只用来挡脏数据里完全重复的停站行（原来的 UNION 顺带
-                -- 起了这个作用）；同一趟车在这站本来就只有一行。
-                SELECT DISTINCT code1, code2, ArriveTime, StartTime
+                -- DISTINCT 只用来挡脏数据里完全重复的停站行；同一趟车在这站本来就只有一行。
+                SELECT DISTINCT code1, code2, winner, arrive_time, start_time
                 FROM station_rows
-                WHERE code1 <> '' OR code2 <> ''
+                WHERE code1 <> ''
             )
             SELECT
                 h.code1,
@@ -275,22 +326,21 @@ public sealed class TrainTimetableService(
                 -- 首末站按**完整号对**取：同一个单号若挂在两个号对下是两趟车，
                 -- 按单号 OR 会把两趟的站序并在一起。
                 (
-                    SELECT trim(TrainStation) FROM {table}
-                    WHERE TrainCode1 = h.code1 AND TrainCode2 = h.code2
-                    ORDER BY OrderID, rowid LIMIT 1
+                    SELECT trim(station) FROM stops
+                    WHERE train_no = h.winner
+                    ORDER BY seq ASC LIMIT 1
                 ) AS from_station,
                 (
-                    SELECT trim(TrainStation) FROM {table}
-                    WHERE TrainCode1 = h.code1 AND TrainCode2 = h.code2
-                    ORDER BY OrderID DESC, rowid DESC LIMIT 1
+                    SELECT trim(station) FROM stops
+                    WHERE train_no = h.winner
+                    ORDER BY seq DESC LIMIT 1
                 ) AS to_station,
-                h.ArriveTime,
-                h.StartTime
+                h.arrive_time,
+                h.start_time
             FROM hits h
-            WHERE h.code1 <> '' OR h.code2 <> ''
             ORDER BY h.code1, h.code2
             LIMIT @limit
-            """;
+            """);
         command.Parameters.AddWithValue("@station", name);
         command.Parameters.AddWithValue("@limit", MaxTrainsAtStation);
 
@@ -307,8 +357,8 @@ public sealed class TrainTimetableService(
                 ReadString(reader, "from_station"),
                 ReadString(reader, "to_station"),
                 displayCode,
-                ReadString(reader, "ArriveTime"),
-                ReadString(reader, "StartTime"),
+                ReadString(reader, "arrive_time"),
+                ReadString(reader, "start_time"),
                 displayCode));
         }
         return result;
@@ -336,17 +386,18 @@ public sealed class TrainTimetableService(
         if (connection is null) return [];
 
         await using var command = connection.CreateCommand();
-        var table = Quote(TableName(version));
         // 分组键是**号对** (code1, code2)，不是单个号：合并运行的 D111+D114 是一趟车，
         // 早先按单号展开会把同一趟车的每一站各出两行，站序被走成"两趟"，跨天推演跟着错。
         // 号对还有一个好处：万一同一个号出现在两个不同的对里，也不会把两趟车搅在一起。
-        command.CommandText = $"""
-            WITH train_stops AS (
-                SELECT trim(TrainCode1) AS code1, trim(TrainCode2) AS code2,
-                       OrderID, trim(TrainStation) AS station,
-                       ArriveTime, StartTime, Mileage
-                FROM {table}
-                WHERE trim(TrainCode1) <> '' OR trim(TrainCode2) <> ''
+        command.CommandText = WithPairs($"""
+            , train_stops AS (
+                SELECT p.code1 AS code1, p.code2 AS code2,
+                       s.seq AS OrderID, trim(s.station) AS station,
+                       {Time("s.arrival")} AS ArriveTime,
+                       {Time("s.departure")} AS StartTime,
+                       s.km AS Mileage
+                FROM stops s
+                JOIN pairs p ON p.winner = s.train_no
             ), matching AS (
                 SELECT code1, code2,
                        MIN(CASE WHEN station = @fromStation THEN OrderID END) AS from_order,
@@ -365,7 +416,7 @@ public sealed class TrainTimetableService(
             FROM train_stops s
             JOIN selected sel ON sel.code1 = s.code1 AND sel.code2 = s.code2
             ORDER BY s.code1, s.code2, s.OrderID;
-            """;
+            """);
         command.Parameters.AddWithValue("@fromStation", from);
         command.Parameters.AddWithValue("@toStation", to);
         command.Parameters.AddWithValue("@limit", BetweenLimit);
@@ -539,7 +590,7 @@ public sealed class TrainTimetableService(
         var normalizedTrainNumber = trainNumber.Trim().ToUpperInvariant();
         if (normalizedTrainNumber.Length == 0) return new TrainTimetableSchedule([], string.Empty);
 
-        // 只取前两段：库里最多就是号对，三段号在构建时也只保留前两段。
+        // 只取前两段：库里最多就是号对，三段号在归一化时也只保留前两段。
         var parts = normalizedTrainNumber.Split(
             '/',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -548,25 +599,26 @@ public sealed class TrainTimetableService(
         await using var connection = await OpenVersionAsync(version, cancellationToken);
         if (connection is null) return new TrainTimetableSchedule([], normalizedTrainNumber);
 
-        var pair = await ResolvePairAsync(connection, version, parts, cancellationToken);
+        var pair = await ResolvePairAsync(connection, parts, cancellationToken);
         if (pair is null) return new TrainTimetableSchedule([], normalizedTrainNumber);
 
-        var (code1, code2) = pair.Value;
+        var (code1, code2, winner) = pair.Value;
         await using var command = connection.CreateCommand();
+        // 首站没有到点、末站没有发点：Release 库里本来就是 "-"，个别快照里即使填了
+        // 也按旧约定抹掉。
         command.CommandText = $"""
             SELECT
-                TrainStation AS station_name,
-                OrderID AS station_no,
-                ArriveTime AS arrive_time,
-                StartTime AS start_time,
-                '' AS running_time,
-                Mileage AS mileage
-            FROM {Quote(TableName(version))}
-            WHERE TrainCode1 = @code1 AND TrainCode2 = @code2
-            ORDER BY OrderID, rowid
+                trim(station) AS station_name,
+                seq AS station_no,
+                CASE WHEN seq = 1 THEN '' ELSE {Time("arrival")} END AS arrive_time,
+                CASE WHEN seq = (SELECT MAX(seq) FROM stops WHERE train_no = @winner)
+                     THEN '' ELSE {Time("departure")} END AS start_time,
+                km AS mileage
+            FROM stops
+            WHERE train_no = @winner
+            ORDER BY seq
             """;
-        command.Parameters.AddWithValue("@code1", code1);
-        command.Parameters.AddWithValue("@code2", code2);
+        command.Parameters.AddWithValue("@winner", winner);
 
         var result = new List<TrainTimetableStop>();
         TimeSpan? previousEventTime = null;
@@ -610,51 +662,42 @@ public sealed class TrainTimetableService(
     }
 
     /// <summary>
-    /// 把请求里的号对/单号解析成库里唯一一个 <c>(TrainCode1, TrainCode2)</c>。
+    /// 把请求里的号对/单号解析成库里唯一一个号对（<c>code1</c>/<c>code2</c>），
+    /// 连同它对应的原始 <c>train_no</c> —— 停站行是按原始车次号存的。
     /// 号对顺序不敏感（<c>D8272/D8269</c> 与 <c>D8269/D8272</c> 等价）；
     /// 单号按固定优先级挑一个号对，不跨号对合并。
     /// </summary>
-    private static async Task<(string Code1, string Code2)?> ResolvePairAsync(
+    private static async Task<(string Code1, string Code2, string Winner)?> ResolvePairAsync(
         SqliteConnection connection,
-        string version,
         string[] parts,
         CancellationToken cancellationToken)
     {
-        var table = Quote(TableName(version));
         await using var command = connection.CreateCommand();
         if (parts.Length >= 2)
         {
-            command.CommandText = $"""
-                SELECT TrainCode1 AS code1, TrainCode2 AS code2
-                FROM {table}
-                WHERE (TrainCode1 = @first AND TrainCode2 = @second)
-                   OR (TrainCode1 = @second AND TrainCode2 = @first)
+            command.CommandText = WithPairs("""
+                SELECT code1, code2, winner
+                FROM pairs
+                WHERE (code1 = @first AND code2 = @second)
+                   OR (code1 = @second AND code2 = @first)
                 ORDER BY code1, code2
                 LIMIT 1
-                """;
+                """);
             command.Parameters.AddWithValue("@first", parts[0]);
             command.Parameters.AddWithValue("@second", parts[1]);
         }
         else
         {
-            // 走两个索引再 GROUP BY，避免 TrainCode1 OR TrainCode2 的全表扫描。
-            // priority: 0 = 无第二号的号对（D8269），1 = TrainCode1 命中，2 = TrainCode2 命中。
-            command.CommandText = $"""
-                SELECT code1, code2
-                FROM (
-                    SELECT TrainCode1 AS code1, TrainCode2 AS code2,
-                           CASE WHEN TrainCode2 = '' THEN 0 ELSE 1 END AS priority
-                    FROM {table}
-                    WHERE TrainCode1 = @code
-                    UNION ALL
-                    SELECT TrainCode1 AS code1, TrainCode2 AS code2, 2 AS priority
-                    FROM {table}
-                    WHERE TrainCode2 = @code
-                )
-                GROUP BY code1, code2
-                ORDER BY MIN(priority), code1, code2
+            // priority: 0 = 无第二号的号对（D8269），1 = 第一段命中，2 = 第二段命中。
+            command.CommandText = WithPairs("""
+                SELECT code1, code2, winner
+                FROM pairs
+                WHERE code1 = @code OR code2 = @code
+                ORDER BY
+                    CASE WHEN code2 = '' THEN 0 WHEN code1 = @code THEN 1 ELSE 2 END,
+                    code1, code2
                 LIMIT 1
-                """;
+                """);
             command.Parameters.AddWithValue("@code", parts[0]);
         }
 
@@ -662,39 +705,27 @@ public sealed class TrainTimetableService(
         if (!await reader.ReadAsync(cancellationToken)) return null;
         var code1 = ReadString(reader, "code1");
         var code2 = ReadString(reader, "code2");
+        var winner = ReadString(reader, "winner");
         if (code1.Length == 0 && code2.Length == 0) return null;
-        return (code1, code2);
+        return (code1, code2, winner);
     }
 
-    /// <summary>配好且存在的库路径；没配或不存在返回 null（只报一次 warning）。</summary>
-    private string? ResolveDatabasePath()
+    /// <summary>
+    /// 同步服务每写入一个新版本就调用一次，让下一次查询重新读版本列表。
+    /// 与 <see cref="GetVersionsAsync"/> 共用同一把门，保证不会在读完旧列表之后
+    /// 又把旧列表写回缓存。
+    /// </summary>
+    public async Task InvalidateVersionsAsync(CancellationToken cancellationToken = default)
     {
-        var configured = _options.DatabasePath?.Trim();
-        if (string.IsNullOrEmpty(configured))
+        await _versionsGate.WaitAsync(cancellationToken);
+        try
         {
-            if (!_missingPathReported)
-            {
-                _missingPathReported = true;
-                logger.LogWarning(
-                    "历史时刻表数据库未配置，相关接口会返回空结果。请设置 user-secrets："
-                    + "dotnet user-secrets set \"TrainTimetables:DatabasePath\" \"<路径>\\train_timetables.db\"");
-            }
-            return null;
+            _versions = null;
         }
-
-        if (!File.Exists(configured))
+        finally
         {
-            if (!_missingPathReported)
-            {
-                _missingPathReported = true;
-                logger.LogWarning(
-                    "历史时刻表数据库不存在：{Path}（TrainTimetables:DatabasePath 指向的文件找不到）",
-                    configured);
-            }
-            return null;
+            _versionsGate.Release();
         }
-
-        return configured;
     }
 
     private async Task<SqliteConnection?> OpenVersionAsync(
@@ -704,9 +735,10 @@ public sealed class TrainTimetableService(
         if (!IsValidVersion(version)) return null;
         if (!await SupportsVersionAsync(version, cancellationToken)) return null;
 
-        var databasePath = ResolveDatabasePath();
-        if (databasePath is null) return null;
-        return await OpenConnectionAsync(databasePath, cancellationToken);
+        var path = TimetableDatabasePath.Resolve(environment, version);
+        if (!File.Exists(path)) return null;
+
+        return await OpenConnectionAsync(path, cancellationToken);
     }
 
     private static async Task<SqliteConnection> OpenConnectionAsync(
@@ -724,22 +756,21 @@ public sealed class TrainTimetableService(
         return connection;
     }
 
+    private static string WithPairs(string body) => $"WITH {PairsCte}{body}";
+
     /// <summary>版本号形如 2003.11.25。</summary>
     public static bool IsValidVersion(string? version) =>
         version is { Length: 10 } &&
         version[4] == '.' && version[7] == '.' &&
         DateOnly.TryParseExact(version, "yyyy.MM.dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
 
-    private static string TableName(string version) => $"timetable_{version}";
-
-    private static string Quote(string identifier) =>
-        $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
-
     private static string ReadString(SqliteDataReader reader, string name) =>
         reader[name] is DBNull ? string.Empty : Convert.ToString(reader[name])?.Trim() ?? string.Empty;
 
     private static double ReadDouble(SqliteDataReader reader, string name) =>
-        double.TryParse(ReadString(reader, name), out var value) ? value : 0;
+        double.TryParse(ReadString(reader, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : 0;
 
     private static bool TryParseTime(string value, out TimeSpan time)
     {
