@@ -27,6 +27,18 @@ void main() {
     expect(find.byType(ConfettiWidget), findsNothing);
   });
 
+  testWidgets('右上角的添加入口打开成就创意表单', (tester) async {
+    await tester.pumpWidget(_app(_achievements()));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byTooltip('提交成就创意'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('提交成就创意'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '成就名称'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('有待庆祝项时，切到它所属的分类并把它滚进视野再爆彩带', (tester) async {
     final achievements = _achievementsWithFreshUnlocks({_farRailway});
     final target = _byId(achievements, _farRailway);
