@@ -60,5 +60,7 @@ class Ticket12306Order {
     '改签',
     '退票',
     '变更到站',
+    // 红字发票是退票/冲红凭证，不是乘车行程。
+    '红字',
   ].any((keyword) => statusText.contains(keyword));
 }

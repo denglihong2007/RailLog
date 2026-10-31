@@ -27,7 +27,12 @@ public sealed class RailLogDatabase
     // 权重 8:2：回应是主导信号——1 个回应（0.231）就已超过写满参考字数（0.2）；
     // 篇幅只作为弱信号，给还没收到回应的长文一点曝光。
     // 三项之外的评分不再参与，评价星级是个人口味而不是热度。
-    private const int HomeTravelGuideHotDecayDays = 45;
+    // 时间衰减用指数半衰：每过 HomeTravelGuideHotHalfLifeDays 天权重减半。
+    // 旧的双曲衰减（1/(1+age/45)）尾巴太长，几十天前的高回应评价会一直压住新内容；
+    // 而现有数据里反应大多在发布后两周内到齐（反应与发布的中位间隔约 13 天），
+    // 所以按 14 天半衰——发布满两周剩一半、满六周只剩八分之一，
+    // 回应数的优势会随时间让位给新发布、又有回应的评价。
+    private const int HomeTravelGuideHotHalfLifeDays = 14;
     private const int HomeTravelGuideHotReactionRef = 10;
     private const int HomeTravelGuideHotCharRef = 120;
     private const int HomeTravelGuideHotReactionWeight = 8;
@@ -1269,10 +1274,8 @@ public sealed class RailLogDatabase
                 AND trip.UserId=r.UserId AND trip.DeletedAt IS NULL
             LEFT JOIN TripRecords secondTrip ON secondTrip.Id=r.SecondTripId
                 AND secondTrip.UserId=r.UserId AND secondTrip.DeletedAt IS NULL
-            ORDER BY (
-                1.0 / (
-                    1 + (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotDecayDays}.0
-                )
+            ORDER BY POW(0.5,
+                (julianday('now') - julianday(r.CreatedAt)) / {HomeTravelGuideHotHalfLifeDays}.0
             ) * (
                 {HomeTravelGuideHotReactionWeight} * (
                     LN(1 + (

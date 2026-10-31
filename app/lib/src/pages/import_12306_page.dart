@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 import 'package:raillog/src/services/ticket_order_confirmation.dart';
-import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
+import 'package:raillog/src/widgets/ticket_order_selection.dart';
 
 class Import12306Page extends StatefulWidget {
   const Import12306Page({super.key, this.service});
@@ -21,8 +21,8 @@ class Import12306Page extends StatefulWidget {
 class _Import12306PageState extends State<Import12306Page> {
   late final Ticket12306Service _service =
       widget.service ?? Ticket12306Service();
-  final Set<String> _selectedIds = {};
-  final Set<String> _importedIds = {};
+  final Set<String> _selectedKeys = {};
+  final Set<String> _importedKeys = {};
   List<Ticket12306Order> _orders = const [];
   Uint8List? _qrImage;
   String? _username;
@@ -44,7 +44,9 @@ class _Import12306PageState extends State<Import12306Page> {
       _username != null && !_isFinalizingLogin && !_isQuerying;
 
   List<Ticket12306Order> get _selectableOrders => _orders
-      .where((order) => order.canImport && !_importedIds.contains(order.id))
+      .where(
+        (order) => order.canImport && !_importedKeys.contains(order.dedupKey),
+      )
       .toList(growable: false);
 
   @override
@@ -63,8 +65,8 @@ class _Import12306PageState extends State<Import12306Page> {
       _invoiceVerified = false;
       _invoiceVerificationStarted = false;
       _orders = const [];
-      _selectedIds.clear();
-      _importedIds.clear();
+      _selectedKeys.clear();
+      _importedKeys.clear();
       _message = null;
       _qrMessage = null;
       _qrMessageIsError = false;
@@ -237,7 +239,7 @@ class _Import12306PageState extends State<Import12306Page> {
     setState(() {
       _isQuerying = true;
       _message = null;
-      _selectedIds.clear();
+      _selectedKeys.clear();
     });
     try {
       final orders = await _service.queryOrderTrips();
@@ -284,64 +286,66 @@ class _Import12306PageState extends State<Import12306Page> {
 
   Future<void> _importSelected() async {
     final selected = _orders
-        .where((order) => _selectedIds.contains(order.id))
+        .where((order) => _selectedKeys.contains(order.dedupKey))
         .toList(growable: false);
-    if (selected.isEmpty) return;
-    final confirmed = await showTicketImportConfirmationDialog(
-      context,
-      selected.length,
-    );
-    if (!confirmed || !mounted) return;
+    if (selected.isEmpty || _isImporting) return;
+
     setState(() {
       _isImporting = true;
       _message = null;
-    });
-
-    // 版本列表只取一次：service 内部有缓存，但空结果不缓存，
-    // 逐单重复调会在服务端没配时刻表库时白白打一遍网络。
-    final versions = await TrainService.fetchTimetableVersions();
-    if (!mounted) return;
-
-    final importedCount = await confirmTicketOrderImport(
-      context: context,
-      orders: selected,
-      versions: versions,
-      onPreparing: (position) {
-        if (!mounted) return;
-        setState(() => _preparingPosition = position);
-      },
-      onImported: (order) {
-        if (!mounted) return;
-        setState(() {
-          _importedIds.add(order.id);
-          _selectedIds.remove(order.id);
-        });
-      },
-    );
-
-    if (!mounted) return;
-    if (importedCount == selected.length) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('已确认并导入 $importedCount 条行程')));
-      Navigator.of(context).pop(true);
-      return;
-    }
-    setState(() {
-      _isImporting = false;
-      _preparingPosition = null;
       _messageIsError = false;
-      _message = importedCount == 0
-          ? '已取消导入，订单仍保留在待确认列表中'
-          : '已导入 $importedCount 条，其余订单尚未确认';
     });
+
+    try {
+      final result = await runTicketImport(
+        context: context,
+        orders: selected,
+        onPreparing: (position) {
+          if (!mounted) return;
+          setState(() => _preparingPosition = position);
+        },
+        onImported: (order) {
+          if (!mounted) return;
+          setState(() {
+            _importedKeys.add(order.dedupKey);
+            _selectedKeys.remove(order.dedupKey);
+          });
+        },
+      );
+      if (!mounted) return;
+
+      if (result.completed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ticketImportOutcomeMessage(result))),
+        );
+        Navigator.of(context).pop(true);
+        return;
+      }
+      setState(() {
+        _messageIsError = false;
+        _message = ticketImportOutcomeMessage(result);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messageIsError = true;
+        _message = '导入失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isImporting = false;
+          _preparingPosition = null;
+        });
+      }
+    }
   }
 
   void _toggleAll(bool? selected) {
     setState(() {
-      _selectedIds.clear();
+      _selectedKeys.clear();
       if (selected == true) {
-        _selectedIds.addAll(_selectableOrders.map((order) => order.id));
+        _selectedKeys.addAll(_selectableOrders.map((order) => order.dedupKey));
       }
     });
   }
@@ -349,16 +353,15 @@ class _Import12306PageState extends State<Import12306Page> {
   void _toggleOrder(Ticket12306Order order, bool? selected) {
     setState(() {
       if (selected == true) {
-        _selectedIds.add(order.id);
+        _selectedKeys.add(order.dedupKey);
       } else {
-        _selectedIds.remove(order.id);
+        _selectedKeys.remove(order.dedupKey);
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
     final horizontalPadding = width > 880
         ? (width - AppLayout.detailMaxWidth) / 2
@@ -366,9 +369,12 @@ class _Import12306PageState extends State<Import12306Page> {
     final selectable = _selectableOrders;
     final allSelected =
         selectable.isNotEmpty &&
-        selectable.every((order) => _selectedIds.contains(order.id));
+        selectable.every((order) => _selectedKeys.contains(order.dedupKey));
     return Scaffold(
-      appBar: AppBar(title: const Text('12306 行程'), scrolledUnderElevation: 0),
+      appBar: AppBar(
+        title: const Text('从 12306 导入'),
+        scrolledUnderElevation: 0,
+      ),
       body: CustomScrollView(
         slivers: [
           SliverPadding(
@@ -388,7 +394,7 @@ class _Import12306PageState extends State<Import12306Page> {
               10,
             ),
             sliver: const SliverToBoxAdapter(
-              child: _StepHeader(
+              child: TicketImportStepHeader(
                 step: 1,
                 icon: Icons.login,
                 title: '登录铁路 12306',
@@ -431,7 +437,7 @@ class _Import12306PageState extends State<Import12306Page> {
               10,
             ),
             sliver: const SliverToBoxAdapter(
-              child: _StepHeader(
+              child: TicketImportStepHeader(
                 step: 2,
                 icon: Icons.more_horiz,
                 title: '查看更多行程（可选）',
@@ -478,26 +484,36 @@ class _Import12306PageState extends State<Import12306Page> {
               8,
             ),
             sliver: SliverToBoxAdapter(
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: _StepHeader(
-                      step: 3,
-                      icon: Icons.train_outlined,
-                      title: '选择待导入行程',
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    tooltip: '重新查询',
-                    onPressed: _canQuery ? _refreshOrders : null,
-                    icon: _isQuerying
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                  ),
-                ],
+              child: TicketImportStepHeader(
+                step: 3,
+                icon: Icons.train_outlined,
+                title: '选择待导入车票',
+                trailing: IconButton.filledTonal(
+                  tooltip: '重新查询',
+                  onPressed: _canQuery ? _refreshOrders : null,
+                  icon: _isQuerying
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                ),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              0,
+              horizontalPadding,
+              8,
+            ),
+            sliver: SliverToBoxAdapter(
+              child: Text(
+                '勾选车票后逐条确认导入，不会自动写入。',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -510,40 +526,9 @@ class _Import12306PageState extends State<Import12306Page> {
                 8,
               ),
               sliver: SliverToBoxAdapter(
-                child: Material(
-                  color: _messageIsError
-                      ? colors.errorContainer
-                      : colors.secondaryContainer,
-                  borderRadius: BorderRadius.circular(AppRadius.small),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _messageIsError
-                              ? Icons.error_outline
-                              : Icons.info_outline,
-                          color: _messageIsError
-                              ? colors.onErrorContainer
-                              : colors.onSecondaryContainer,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _message!,
-                            style: TextStyle(
-                              color: _messageIsError
-                                  ? colors.onErrorContainer
-                                  : colors.onSecondaryContainer,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                child: TicketImportMessageBanner(
+                  message: _message!,
+                  isError: _messageIsError,
                 ),
               ),
             ),
@@ -551,32 +536,29 @@ class _Import12306PageState extends State<Import12306Page> {
             SliverPadding(
               padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
               sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Checkbox(
-                      value: allSelected,
-                      tristate: _selectedIds.isNotEmpty && !allSelected,
-                      onChanged: _isImporting ? null : _toggleAll,
-                    ),
-                    TextButton(
-                      onPressed: _isImporting
-                          ? null
-                          : () => _toggleAll(!allSelected),
-                      child: const Text('全选'),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '已选择 ${_selectedIds.length} / ${selectable.length}',
-                      style: TextStyle(color: colors.onSurfaceVariant),
-                    ),
-                  ],
+                child: TicketOrderSelectionToolbar(
+                  selectedCount: _selectedKeys.length,
+                  selectableCount: selectable.length,
+                  allSelected: allSelected,
+                  enabled: !_isImporting,
+                  onToggleAll: _toggleAll,
                 ),
               ),
             ),
           if (_orders.isEmpty && !_isQuerying)
             SliverFillRemaining(
               hasScrollBody: false,
-              child: _EmptyOrders(isLoggedIn: _username != null),
+              child: Center(
+                child: TicketImportEmptyState(
+                  icon: _username == null
+                      ? Icons.lock_outline
+                      : Icons.confirmation_number_outlined,
+                  title: _username == null ? '登录后显示近期行程' : '暂无可导入车票',
+                  hint: _username == null
+                      ? '扫码登录后即可查询近 1 个月的 12306 订单'
+                      : '可尝试查看更多行程以加载更早记录',
+                ),
+              ),
             )
           else
             SliverPadding(
@@ -591,10 +573,10 @@ class _Import12306PageState extends State<Import12306Page> {
                 separatorBuilder: (context, index) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final order = _orders[index];
-                  return _OrderTile(
+                  return TicketOrderSelectionTile(
                     order: order,
-                    selected: _selectedIds.contains(order.id),
-                    imported: _importedIds.contains(order.id),
+                    selected: _selectedKeys.contains(order.dedupKey),
+                    imported: _importedKeys.contains(order.dedupKey),
                     enabled: !_isImporting,
                     onChanged: order.canImport
                         ? (value) => _toggleOrder(order, value)
@@ -605,51 +587,14 @@ class _Import12306PageState extends State<Import12306Page> {
             ),
         ],
       ),
-      bottomNavigationBar: _selectedIds.isEmpty
+      bottomNavigationBar: _selectedKeys.isEmpty
           ? null
-          : Material(
-              color: colors.surfaceContainer,
-              child: SafeArea(
-                minimum: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  12,
-                  horizontalPadding,
-                  12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _preparingPosition == null
-                                ? '逐条确认后写入'
-                                : '正在准备第 $_preparingPosition/${_selectedIds.length} 条',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          Text(
-                            '共 ${_selectedIds.length} 条待确认',
-                            style: TextStyle(color: colors.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      onPressed: _isImporting ? null : _importSelected,
-                      icon: _isImporting
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.arrow_forward),
-                      label: const Text('开始确认'),
-                    ),
-                  ],
-                ),
-              ),
+          : TicketImportActionBar(
+              selectedCount: _selectedKeys.length,
+              preparingPosition: _preparingPosition,
+              isImporting: _isImporting,
+              onStart: _importSelected,
+              horizontalPadding: horizontalPadding,
             ),
     );
   }
@@ -924,226 +869,7 @@ class _LoginDetails extends StatelessWidget {
   }
 }
 
-class _StepHeader extends StatelessWidget {
-  const _StepHeader({
-    required this.step,
-    required this.icon,
-    required this.title,
-  });
-
-  final int step;
-  final IconData icon;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        SizedBox.square(
-          dimension: 40,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.secondaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: colors.onSecondaryContainer, size: 21),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '步骤 $step',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: colors.primary),
-              ),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _EmptyOrders extends StatelessWidget {
-  const _EmptyOrders({required this.isLoggedIn});
-
-  final bool isLoggedIn;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isLoggedIn ? Icons.route_outlined : Icons.lock_outline,
-              size: 48,
-              color: colors.outline,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              isLoggedIn ? '暂无可导入行程' : '登录后显示近期行程',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            if (isLoggedIn) ...[
-              const SizedBox(height: 6),
-              Text(
-                '可尝试查看更多行程以加载更早记录',
-                style: TextStyle(color: colors.onSurfaceVariant),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OrderTile extends StatelessWidget {
-  const _OrderTile({
-    required this.order,
-    required this.selected,
-    required this.imported,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final Ticket12306Order order;
-  final bool selected;
-  final bool imported;
-  final bool enabled;
-  final ValueChanged<bool?>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final status = imported ? '已导入' : order.statusText;
-    final canToggle = enabled && !imported && onChanged != null;
-    return AppCard.filled(
-      color: selected ? colors.primaryContainer : colors.surfaceContainerLow,
-      padding: EdgeInsets.zero,
-      onTap: canToggle ? () => onChanged!(!selected) : null,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 14, 16, 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Checkbox(value: selected, onChanged: canToggle ? onChanged : null),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        order.trainCode,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          '${order.fromStation} → ${order.toStation}',
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 14,
-                    runSpacing: 6,
-                    children: [
-                      _OrderFact(
-                        icon: Icons.schedule,
-                        label: _formatDateTime(order.startTime),
-                      ),
-                      if (order.passengerName.isNotEmpty)
-                        _OrderFact(
-                          icon: Icons.person_outline,
-                          label: order.passengerName,
-                        ),
-                      if (order.seatDisplay.isNotEmpty)
-                        _OrderFact(
-                          icon: Icons.event_seat_outlined,
-                          label: order.seatDisplay,
-                        ),
-                      if (order.price > 0)
-                        _OrderFact(
-                          icon: Icons.payments_outlined,
-                          label: '¥${_formatNumber(order.price)}',
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (status.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Text(
-                status,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: order.canImport ? colors.primary : colors.error,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OrderFact extends StatelessWidget {
-  const _OrderFact({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: color),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 Uint8List _decodeQrImage(String source) {
   final comma = source.indexOf(',');
   return base64Decode(comma >= 0 ? source.substring(comma + 1) : source);
 }
-
-String _formatDateTime(DateTime value) =>
-    '${value.month.toString().padLeft(2, '0')}-'
-    '${value.day.toString().padLeft(2, '0')} '
-    '${value.hour.toString().padLeft(2, '0')}:'
-    '${value.minute.toString().padLeft(2, '0')}';
-
-String _formatNumber(double value) => value == value.roundToDouble()
-    ? value.toInt().toString()
-    : value.toStringAsFixed(2);

@@ -184,6 +184,23 @@ class _HomePageState extends State<HomePage> {
     _loadTravelGuide();
   }
 
+  /// 只替换被回应的那一条，不重拉列表。回应接口不返回新状态，本地按后端的
+  /// 「每人每条评价至多一个表情」规则推算；列表长度不变，滚动位置也就不会跳。
+  void _updateTravelGuideReactions(
+    int reviewId,
+    List<EntityReviewReaction> reactions,
+  ) {
+    final index = _travelGuideReviews.indexWhere(
+      (review) => review.id == reviewId,
+    );
+    if (index < 0) return;
+    setState(() {
+      _travelGuideReviews[index] = _travelGuideReviews[index].withReactions(
+        reactions,
+      );
+    });
+  }
+
   bool _handleDashboardScroll(ScrollNotification notification) {
     if (notification.metrics.axis == Axis.vertical &&
         notification.metrics.extentAfter < 320) {
@@ -324,36 +341,42 @@ class _HomePageState extends State<HomePage> {
             onNotification: _handleDashboardScroll,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final pagePadding = switch (constraints.maxWidth) {
-                  < 600 => 16.0,
-                  < 840 => 24.0,
-                  _ => 32.0,
-                };
                 return _DashboardScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 32),
-                  children: [
-                    _PartnerAdvertisementLoader(future: _advertisementFuture),
-                    M3AnimatedVisibility(
-                      visible: !SessionService.instance.isSignedIn,
-                      child: const Padding(
-                        padding: EdgeInsets.only(bottom: 16),
-                        child: M3Reveal(child: _SignInBanner()),
+                  padding: _dashboardPadding(constraints),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Column(
+                        children: [
+                          _PartnerAdvertisementLoader(
+                            future: _advertisementFuture,
+                          ),
+                          M3AnimatedVisibility(
+                            visible: !SessionService.instance.isSignedIn,
+                            child: const Padding(
+                              padding: EdgeInsets.only(bottom: 16),
+                              child: M3Reveal(child: _SignInBanner()),
+                            ),
+                          ),
+                          M3Reveal(
+                            child: _OverviewSection(
+                              stats: stats,
+                              onChanged: _refresh,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          _StatsGrid(stats: stats, onChanged: _refresh),
+                          const SizedBox(height: 24),
+                          _AchievementsLoader(
+                            future: _achievementsFuture,
+                            signedIn: SessionService.instance.isSignedIn,
+                            onRetry: _refresh,
+                            onChanged: _refresh,
+                          ),
+                          const SizedBox(height: 24),
+                        ],
                       ),
                     ),
-                    M3Reveal(
-                      child: _OverviewSection(stats: stats, onChanged: _refresh),
-                    ),
-                    const SizedBox(height: 24),
-                    _StatsGrid(stats: stats, onChanged: _refresh),
-                    const SizedBox(height: 24),
-                    _AchievementsLoader(
-                      future: _achievementsFuture,
-                      signedIn: SessionService.instance.isSignedIn,
-                      onRetry: _refresh,
-                      onChanged: _refresh,
-                    ),
-                    const SizedBox(height: 24),
                     _HomeTravelGuideSection(
                       signedIn: SessionService.instance.isSignedIn,
                       mode: _travelGuideMode,
@@ -364,11 +387,15 @@ class _HomePageState extends State<HomePage> {
                       error: _travelGuideError,
                       onModeChanged: _changeTravelGuideMode,
                       onRetry: _loadTravelGuide,
+                      onReactionsChanged: _updateTravelGuideReactions,
                     ),
-                    if (stats.tripCount == 0) ...[
-                      const SizedBox(height: 24),
-                      const M3Reveal(child: _EmptyStateCard()),
-                    ],
+                    if (stats.tripCount == 0)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: 24),
+                          child: M3Reveal(child: _EmptyStateCard()),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -576,46 +603,42 @@ class _PublicUserPageState extends State<PublicUserPage> {
             onRefresh: _refresh,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final pagePadding = switch (constraints.maxWidth) {
-                  < 600 => 16.0,
-                  < 840 => 24.0,
-                  _ => 32.0,
-                };
                 return _DashboardScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    pagePadding,
-                    24,
-                    pagePadding,
-                    32,
-                  ),
-                  children: [
-                    _PublicProfileCard(user: dashboard.user),
-                    const SizedBox(height: 24),
-                    _OverviewSection(
-                      stats: stats,
-                      onChanged: _refresh,
-                      openTrip: openTrip,
-                      mapTrips: dashboard.trips,
-                      subject: 'TA',
-                      enableTripManagement: false,
+                  padding: _dashboardPadding(constraints),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Column(
+                        children: [
+                          _PublicProfileCard(user: dashboard.user),
+                          const SizedBox(height: 24),
+                          _OverviewSection(
+                            stats: stats,
+                            onChanged: _refresh,
+                            openTrip: openTrip,
+                            mapTrips: dashboard.trips,
+                            subject: 'TA',
+                            enableTripManagement: false,
+                          ),
+                          const SizedBox(height: 24),
+                          _StatsGrid(
+                            stats: stats,
+                            onChanged: _refresh,
+                            openTrip: openTrip,
+                          ),
+                          const SizedBox(height: 24),
+                          _AchievementsSection(
+                            achievements: dashboard.achievements,
+                            onChanged: _refresh,
+                            openTrip: openTrip,
+                          ),
+                          if (stats.tripCount == 0) ...[
+                            const SizedBox(height: 24),
+                            const _EmptyStateCard(),
+                          ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    _StatsGrid(
-                      stats: stats,
-                      onChanged: _refresh,
-                      openTrip: openTrip,
-                    ),
-                    const SizedBox(height: 24),
-                    _AchievementsSection(
-                      achievements: dashboard.achievements,
-                      onChanged: _refresh,
-                      openTrip: openTrip,
-                    ),
-                    if (stats.tripCount == 0) ...[
-                      const SizedBox(height: 24),
-                      const _EmptyStateCard(),
-                    ],
                   ],
                 );
               },
@@ -641,14 +664,29 @@ class _PublicUserPageState extends State<PublicUserPage> {
   }
 }
 
+/// 页面内容的左右内边距：窄屏按断点留白，宽屏把内容限制在 [_dashboardMaxWidth]
+/// 以内并居中。原来靠 `Center + ConstrainedBox` 做，改成 sliver 列表后只能把
+/// 「多出来的宽度」折算进内边距，否则每个条目都要单独包一层居中。
+EdgeInsets _dashboardPadding(BoxConstraints constraints) {
+  final pagePadding = switch (constraints.maxWidth) {
+    < 600 => 16.0,
+    < 840 => 24.0,
+    _ => 32.0,
+  };
+  final horizontal = constraints.maxWidth - pagePadding * 2 > _dashboardMaxWidth
+      ? (constraints.maxWidth - _dashboardMaxWidth) / 2
+      : pagePadding;
+  return EdgeInsets.fromLTRB(horizontal, 24, horizontal, 32);
+}
+
 class _DashboardScrollView extends StatelessWidget {
   const _DashboardScrollView({
-    required this.children,
+    required this.slivers,
     required this.padding,
     this.physics,
   });
 
-  final List<Widget> children;
+  final List<Widget> slivers;
   final EdgeInsetsGeometry padding;
   final ScrollPhysics? physics;
 
@@ -659,17 +697,7 @@ class _DashboardScrollView extends StatelessWidget {
       slivers: [
         SliverPadding(
           padding: padding,
-          sliver: SliverToBoxAdapter(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: _dashboardMaxWidth),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(children: children),
-                ),
-              ),
-            ),
-          ),
+          sliver: SliverMainAxisGroup(slivers: slivers),
         ),
       ],
     );
@@ -967,6 +995,7 @@ class _HomeTravelGuideSection extends StatelessWidget {
     required this.error,
     required this.onModeChanged,
     required this.onRetry,
+    required this.onReactionsChanged,
   });
 
   final bool signedIn;
@@ -978,81 +1007,93 @@ class _HomeTravelGuideSection extends StatelessWidget {
   final Object? error;
   final ValueChanged<TravelGuideMode> onModeChanged;
   final Future<void> Function() onRetry;
+  final void Function(int reviewId, List<EntityReviewReaction> reactions)
+      onReactionsChanged;
+
+  bool get _showList => signedIn && reviews.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _TravelGuideHeader(mode: mode, onModeChanged: onModeChanged),
-        const SizedBox(height: 12),
-        ..._buildBody(context),
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TravelGuideHeader(mode: mode, onModeChanged: onModeChanged),
+              const SizedBox(height: 12),
+              if (!_showList) _buildStatus(context),
+            ],
+          ),
+        ),
+        if (_showList) ...[
+          // 分页会一直往下追加。铺成一个 Column 时所有条目都留在树上，
+          // 越往下滑要布局/绘制的内容越多，所以这里必须用懒构建的 SliverList。
+          SliverList.builder(
+            itemCount: reviews.length,
+            itemBuilder: (context, index) {
+              final review = reviews[index];
+              final isLast = index == reviews.length - 1;
+              return EntityReviewCard(
+                key: ValueKey(review.id),
+                review: review,
+                showTarget: true,
+                showTripLinks: true,
+                showDivider: !isLast,
+                contentPadding: EdgeInsets.fromLTRB(
+                  0,
+                  index == 0 ? 0 : 12,
+                  0,
+                  isLast ? 4 : 14,
+                ),
+                onChanged: onRetry,
+                onReactionChanged: (reactions) =>
+                    onReactionsChanged(review.id, reactions),
+                onTargetTap: () => openEntityReviewTarget(context, review),
+                onTripTap: (trip) => _openTrip(context, review, trip),
+              );
+            },
+          ),
+          SliverToBoxAdapter(child: _buildFooter(context)),
+        ],
       ],
     );
   }
 
-  List<Widget> _buildBody(BuildContext context) {
+  Widget _buildStatus(BuildContext context) {
     if (!signedIn) {
-      return const [
-        _HomeTravelGuideStatus(
-          icon: Icons.cloud_off_outlined,
-          message: _cloudSignInMessage,
-        ),
-      ];
+      return const _HomeTravelGuideStatus(
+        icon: Icons.cloud_off_outlined,
+        message: _cloudSignInMessage,
+      );
     }
     // 已经有内容时不因为刷新而清空，重载进度由下拉刷新自己的指示器表达。
-    if (reviews.isEmpty) {
-      if (loading) return const [LinearProgressIndicator()];
-      if (error != null) {
-        return [
-          _HomeTravelGuideStatus(
-            message: '当前无法获取出行指南',
-            onRetry: onRetry,
-          ),
-        ];
-      }
-      return const [_HomeTravelGuideStatus(message: '暂无出行指南')];
+    if (loading) return const LinearProgressIndicator();
+    if (error != null) {
+      return _HomeTravelGuideStatus(message: '当前无法获取出行指南', onRetry: onRetry);
     }
-    return [
-      Column(
-        children: [
-          for (var index = 0; index < reviews.length; index++)
-            EntityReviewCard(
-              review: reviews[index],
-              showTarget: true,
-              showTripLinks: true,
-              showDivider: index < reviews.length - 1,
-              contentPadding: EdgeInsets.fromLTRB(
-                0,
-                index == 0 ? 0 : 12,
-                0,
-                index < reviews.length - 1 ? 14 : 4,
-              ),
-              onChanged: onRetry,
-              onTargetTap: () =>
-                  openEntityReviewTarget(context, reviews[index]),
-              onTripTap: (trip) => _openTrip(context, reviews[index], trip),
-            ),
-        ],
-      ),
-      if (loadingMore)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16),
-          child: Center(child: CircularProgressIndicator()),
-        )
-      else if (!hasMore)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Center(
-            child: Text(
-              '没有更多了',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
+    return const _HomeTravelGuideStatus(message: '暂无出行指南');
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    if (loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (hasMore) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: Text(
+          '没有更多了',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
-    ];
+      ),
+    );
   }
 
   void _openTrip(BuildContext context, EntityReview review, TripRecord trip) {

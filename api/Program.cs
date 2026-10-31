@@ -15,6 +15,13 @@ builder.Services.AddHostedService<AchievementBackfillService>();
 builder.Services.Configure<TrainTimetablesOptions>(
     builder.Configuration.GetSection("TrainTimetables"));
 builder.Services.AddSingleton<TrainTimetableService>();
+builder.Services.AddHttpClient("timetable-sync", client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
+    client.Timeout = TimeSpan.FromMinutes(10);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("RailLog-Timetable-Sync/1.0");
+});
+builder.Services.AddHostedService<TimetableSyncService>();
 builder.Services.Configure<ContentModerationOptions>(
     builder.Configuration.GetSection("ContentModeration"));
 builder.Services.AddSingleton<SensitiveWordService>();

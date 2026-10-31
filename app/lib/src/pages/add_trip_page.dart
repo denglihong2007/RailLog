@@ -10,6 +10,7 @@ import 'package:raillog/src/models/timetable_version.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/import_12306_page.dart';
 import 'package:raillog/src/pages/import_email_page.dart';
+import 'package:raillog/src/pages/import_invoice_page.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/train_trip_form_page.dart';
 import 'package:raillog/src/services/train_service.dart';
@@ -422,6 +423,13 @@ class _AddTripPageState extends State<AddTripPage> {
     if (saved == true && mounted) widget.onTripSaved();
   }
 
+  Future<void> _openInvoiceImport() async {
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(m3PageRoute(builder: (context) => const ImportInvoicePage()));
+    if (saved == true && mounted) widget.onTripSaved();
+  }
+
   Future<void> _openEmailImport() async {
     final saved = await Navigator.of(
       context,
@@ -627,6 +635,13 @@ class _AddTripPageState extends State<AddTripPage> {
           title: '从 12306 导入',
           description: '核验电子发票，导入近 180 天行程并逐条确认',
           onTap: _open12306Import,
+        ),
+        const SizedBox(height: 12),
+        EntryMethodCard(
+          icon: Icons.receipt_long_outlined,
+          title: '从电子发票导入',
+          description: '选择已下载的 PDF / OFD 电子发票文件或文件夹，逐条确认导入',
+          onTap: _openInvoiceImport,
         ),
         const SizedBox(height: 12),
         EntryMethodCard(

@@ -37,8 +37,40 @@ the newest seven are kept. Configure the behavior in `appsettings.json`:
 
 `Directory` may be absolute. The interval is measured from the newest existing
 backup, so restarting the process does not create a duplicate, and a missed
-window is caught up on the next hourly check. The external timetable database
-is static build output and is not included.
+window is caught up on the next hourly check.
+
+The historical timetables (about 860MB in total) are not included in the
+repository. The API syncs them from the private `denglihong2007/Timetable-Results`
+GitHub releases: it fills in missing versions shortly after startup, then checks
+again every day at 06:00 Beijing time. Each release asset is stored as-is as
+`timetables/{yyyy.MM.dd}.db` and queried directly; versions already on disk are
+skipped. Configure the schedule in `appsettings.json`:
+
+```json
+"TrainTimetables": {
+  "Sync": {
+    "Enabled": true,
+    "Hour": 6,
+    "Minute": 0,
+    "TimeZone": "Asia/Shanghai",
+    "Owner": "denglihong2007",
+    "Repository": "Timetable-Results",
+    "AssetName": "train_timetables.db"
+  }
+}
+```
+
+The release repository is private, so the API needs a GitHub token with read
+access. Set it with user-secrets; never put it in `appsettings.json`:
+
+```powershell
+cd api
+dotnet user-secrets set "TrainTimetables:Sync:GitHubToken" "<github-token>"
+```
+
+The synchronized databases are stored under `api\timetables\`, relative to the
+API content root. The directory is created on first sync and is excluded from
+Git.
 
 The Flutter map loads AMap through API proxy endpoints. Configure the AMap key
 only on the API host; do not place it in the Flutter client:

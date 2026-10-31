@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
+import 'package:raillog/src/pages/achievement_proposal_page.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/services/achievement_unlock_notifier.dart';
@@ -262,6 +263,13 @@ class _AchievementsPageState extends State<AchievementsPage>
       appBar: AppBar(
         title: const Text('成就'),
         scrolledUnderElevation: 3,
+        actions: [
+          IconButton(
+            tooltip: '提交成就创意',
+            onPressed: _openProposal,
+            icon: const Icon(Icons.add),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           // 用户自己切页 = 不想接着看巡回里的下一张了。
@@ -337,6 +345,12 @@ class _AchievementsPageState extends State<AchievementsPage>
               offsetSink: _gridTargetOffset,
             ),
     );
+  }
+
+  void _openProposal() {
+    Navigator.of(
+      context,
+    ).push(m3PageRoute(builder: (_) => const AchievementProposalPage()));
   }
 
   Future<void> _openAchievement(

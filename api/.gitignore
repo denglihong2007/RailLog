@@ -101,6 +101,8 @@ raillog.db
 raillog.db-wal
 raillog.db-shm
 backups/
+# 从 GitHub Release 同步下来的历史时刻表库（约 860MB）
+timetables/
 
 # Chutzpah Test files
 _Chutzpah*

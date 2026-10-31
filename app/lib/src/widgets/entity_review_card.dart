@@ -24,6 +24,7 @@ class EntityReviewCard extends StatelessWidget {
     this.onUserTap,
     this.onTripTap,
     this.onTargetTap,
+    this.onReactionChanged,
   });
 
   final EntityReview review;
@@ -39,6 +40,11 @@ class EntityReviewCard extends StatelessWidget {
   final VoidCallback? onUserTap;
   final void Function(TripRecord trip)? onTripTap;
   final VoidCallback? onTargetTap;
+
+  /// 表情回应成功后的回调，参数是这条评价的新回应列表。
+  /// 给了它就不再调用 [onChanged]：首页「出行指南」是分页追加的，
+  /// 整页重载会把已经翻到的位置打回第一页。
+  final void Function(List<EntityReviewReaction> reactions)? onReactionChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +274,19 @@ class EntityReviewCard extends StatelessWidget {
       }
       return;
     }
-    if (context.mounted) onChanged();
+    if (!context.mounted) return;
+    final changed = onReactionChanged;
+    if (changed != null) {
+      changed(
+        reactionsAfterToggle(
+          review.reactions,
+          currentEmoji.isEmpty ? null : currentEmoji,
+          emoji,
+        ),
+      );
+    } else {
+      onChanged();
+    }
   }
 }
 
