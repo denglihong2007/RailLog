@@ -1005,6 +1005,13 @@ public static partial class AchievementEngine
             NarrativeNote: "全国最早的动车组也在这里",
             Trigger: i => First(i.Trips, trip => RouteNames(trip).Any(
                 route => route.Contains("昆河线", StringComparison.Ordinal)))),
+        new("dieselMetro", RailwayCatalog, "directions_subway_outlined", "内燃地铁",
+            "在 2022-11-01 之后乘坐经由西户线的列车", 15,
+            Note: "判定名称：西户线阿户段",
+            NarrativeNote: "当火车和地铁杂交之后......",
+            Trigger: i => First(i.Trips, trip =>
+                Departure(trip) >= new DateTime(2022, 11, 1) &&
+                RouteNames(trip).Any(route => route.Contains("西户线", StringComparison.Ordinal)))),
         new("vowAtQinling", FunJourneys, "favorite", "海誓山盟", "在 5 月 20 日、2 月 14 日或七夕到访海拔 1,314 米的秦岭站", 20,
             NarrativeNote: "山无陵，江水为竭，冬雷震震，夏雨雪，天地合，乃敢与君绝",
             Trigger: i => First(i.Trips, UnlocksVowAtQinling)),
@@ -1035,6 +1042,12 @@ public static partial class AchievementEngine
         new("centuryDreamFulfilled", Milestones, "flag_circle_outlined", "世纪梦圆", "经由区间去重后的累计里程达到 160,000 公里", 50,
             NarrativeNote: "一百年前，孙中山曾梦想全国修建起16万千米的铁路网",
             Trigger: i => FirstUniqueRouteMileageCompletion(i.Trips, 160000)),
+        new("moonPhases", Milestones, "dark_mode_outlined", "晦朔弦望", "累计乘车时长超过 720 小时", 15,
+            NarrativeNote: "时间真的过得好快",
+            Trigger: i => FirstCumulativeDurationCompletion(i.Trips, 720)),
+        new("seasonsChange", Milestones, "thermostat_outlined", "寒来暑往", "累计乘车时长超过 4,320 小时", 40,
+            NarrativeNote: "还记得你第一次运转已经是多久之前的了吗",
+            Trigger: i => FirstCumulativeDurationCompletion(i.Trips, 4320)),
         new("spendsLikeWater", FunJourneys, "payments_outlined", "挥金如土", "单程票价超过 2,000 元", 40,
             NarrativeNote: "商务座，爽！高级软卧，爽！",
             Trigger: i => First(i.Trips, trip => trip.Price > 2000)),
@@ -1113,14 +1126,14 @@ public static partial class AchievementEngine
         new("remoteWilderness", Touring, "forest_outlined", "渺无人烟", "到访茫崖站或花土沟站", 20,
             NarrativeNote: "望不到周围有别的城市",
             Trigger: i => FirstStationVisit(i.Trips, ["茫崖", "花土沟"])),
-        new("goddessYangtzeBridges", Touring, "architecture_outlined", "神女无恙", "行经全部承担客运的铁路长江大桥", 40,
+        new("goddessYangtzeBridges", Touring, "architecture_outlined", "神女无恙", "行经至少 20 座承担客运的铁路长江大桥", 40,
             Note: "截至2026年10月共25座，详见附表1",
             NarrativeNote: "1950年的人也许也不会想到如今有这么多长江大桥",
-            Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(YangtzeBridges))),
-        new("muddyWavesSweepSky", Touring, "tsunami", "浊浪排空", "行经全部承担客运的铁路黄河大桥", 40,
+            Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(YangtzeBridges), 20)),
+        new("muddyWavesSweepSky", Touring, "tsunami", "浊浪排空", "行经至少 30 座承担客运的铁路黄河大桥", 40,
             Note: "截至2026年10月共33座，详见附表2",
             NarrativeNote: "一桥飞架，百尺之冰亦可渡",
-            Trigger: i => FirstSectionCompletion(i.Trips, AvailableSections(YellowRiverBridges))),
+            Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(YellowRiverBridges), 30)),
         new("mistyVastWaters", Touring, "anchor", "烟波微茫", "行经全部承担客运的铁路跨海大桥或海湾大桥", 20,
             Note: "截至2026年10月共7座，详见附表3",
             NarrativeNote: "或许大多数人只能想起其中一两座",
@@ -1180,6 +1193,11 @@ public static partial class AchievementEngine
             Trigger: i => First(i.Trips, trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24) &&
                 HasNonAirConditionedCoach(trip.RollingStock))),
+        new("threeMonthsApart", ExtremeChallenges, "date_range_outlined", "一别三月",
+            "任意自然年内的乘车总时长超过 2,160 小时", 80,
+            NarrativeNote: "Shall we go, then?",
+            Hidden: true,
+            Trigger: i => FirstCalendarYearDurationCompletion(i.Trips, 2160)),
         new("richerThanNation", ExtremeChallenges, "diamond_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元", 80,
             NarrativeNote: "坐一次丝路梦享号的最豪华包间就够了",
             Hidden: true,
@@ -1530,6 +1548,9 @@ public static partial class AchievementEngine
         "duration24Hours" => P(MaxDurationHours(trips), 24),
         "duration48Hours" => P(MaxDurationHours(trips), 48),
         "duration72Hours" => P(MaxDurationHours(trips), 72),
+        "moonPhases" => P(TotalDurationHours(trips), 720),
+        "seasonsChange" => P(TotalDurationHours(trips), 4320),
+        "threeMonthsApart" => P(MaxCalendarYearDurationHours(trips), 2160),
         "all25Series" => P(CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, Regular25Models)), Regular25Models.Count),
         "allEmuSeries" => P(
             CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
@@ -1580,8 +1601,8 @@ public static partial class AchievementEngine
         "acrossTheRealm" => P(CapitalCityCount(trips), CapitalCityNames.Count),
         "crowningGlory" => P(CapitalStationCount(trips), RequiredCapitalStationCount),
         "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
-        "goddessYangtzeBridges" => SectionProgress(trips, YangtzeBridges),
-        "muddyWavesSweepSky" => SectionProgress(trips, YellowRiverBridges),
+        "goddessYangtzeBridges" => SectionProgress(trips, YangtzeBridges, 20),
+        "muddyWavesSweepSky" => SectionProgress(trips, YellowRiverBridges, 30),
         "mistyVastWaters" => SectionProgress(trips, SeaBayBridges),
         "qinlingPassage" => SectionProgress(trips, QinlingPassages, 5),
         "tunnelCollection" => SectionProgress(trips, Tunnels),
@@ -1853,6 +1874,15 @@ public static partial class AchievementEngine
 
     private static double MaxDurationHours(IEnumerable<PublicTrip> trips) => trips
         .Select(trip => ValidDuration(trip).TotalHours)
+        .DefaultIfEmpty(0)
+        .Max();
+
+    private static double TotalDurationHours(IEnumerable<PublicTrip> trips) =>
+        trips.Sum(trip => ValidDuration(trip).TotalHours);
+
+    private static double MaxCalendarYearDurationHours(IEnumerable<PublicTrip> trips) => trips
+        .GroupBy(trip => Departure(trip).Year)
+        .Select(group => group.Sum(trip => ValidDuration(trip).TotalHours))
         .DefaultIfEmpty(0)
         .Max();
 
@@ -2788,6 +2818,34 @@ public static partial class AchievementEngine
         {
             spending += Math.Max(0, trip.Price);
             if (spending > target) return trip;
+        }
+        return null;
+    }
+
+    private static PublicTrip? FirstCumulativeDurationCompletion(
+        List<PublicTrip> trips,
+        double targetHours)
+    {
+        var duration = 0d;
+        foreach (var trip in trips)
+        {
+            duration += ValidDuration(trip).TotalHours;
+            if (duration > targetHours) return trip;
+        }
+        return null;
+    }
+
+    private static PublicTrip? FirstCalendarYearDurationCompletion(
+        List<PublicTrip> trips,
+        double targetHours)
+    {
+        var durations = new Dictionary<int, double>();
+        foreach (var trip in trips)
+        {
+            var year = Departure(trip).Year;
+            var duration = durations.GetValueOrDefault(year) + ValidDuration(trip).TotalHours;
+            durations[year] = duration;
+            if (duration > targetHours) return trip;
         }
         return null;
     }
