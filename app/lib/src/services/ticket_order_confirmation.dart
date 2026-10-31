@@ -35,9 +35,7 @@ Future<bool> showTicketImportConfirmationDialog(
     builder: (context) => AlertDialog(
       icon: const Icon(Icons.fact_check_outlined),
       title: const Text('逐条确认行程'),
-      content: Text(
-        '接下来将依次确认 $count 条行程，并自动补全担当公司、车型和经由线路。每次确认后保存当前一条。',
-      ),
+      content: Text('接下来将依次确认 $count 条行程，并自动补全担当公司、车型和经由线路。每次确认后保存当前一条。'),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
@@ -151,6 +149,79 @@ Future<int> confirmTicketOrderImport({
   }
   onPreparing(null);
   return importedCount;
+}
+
+/// 一次批量导入的执行结果。
+class TicketImportRun {
+  const TicketImportRun({
+    required this.importedCount,
+    required this.total,
+    this.cancelled = false,
+  });
+
+  final int importedCount;
+  final int total;
+
+  /// 用户在整批确认对话框里点了取消。
+  final bool cancelled;
+
+  bool get completed => total > 0 && importedCount == total;
+}
+
+/// 三个导入入口共用的执行流程：多条时先确认整批操作，再逐条打开行程表单；
+/// 单条直接进入确认，不再弹整批确认框。
+Future<TicketImportRun> runTicketImport({
+  required BuildContext context,
+  required List<Ticket12306Order> orders,
+  required ValueChanged<int?> onPreparing,
+  required ValueChanged<Ticket12306Order> onImported,
+}) async {
+  if (orders.isEmpty) {
+    return const TicketImportRun(importedCount: 0, total: 0);
+  }
+
+  if (orders.length > 1) {
+    final confirmed = await showTicketImportConfirmationDialog(
+      context,
+      orders.length,
+    );
+    if (!confirmed || !context.mounted) {
+      return TicketImportRun(
+        importedCount: 0,
+        total: orders.length,
+        cancelled: true,
+      );
+    }
+  }
+
+  // 版本列表只取一次：service 内部有缓存，但空结果不缓存，
+  // 逐单重复调会在服务端没配时刻表库时白白打一遍网络。
+  final versions = await TrainService.fetchTimetableVersions();
+  if (!context.mounted) {
+    return TicketImportRun(
+      importedCount: 0,
+      total: orders.length,
+      cancelled: true,
+    );
+  }
+
+  final importedCount = await confirmTicketOrderImport(
+    context: context,
+    orders: orders,
+    versions: versions,
+    onPreparing: onPreparing,
+    onImported: onImported,
+  );
+  return TicketImportRun(importedCount: importedCount, total: orders.length);
+}
+
+/// 三个导入入口共用的结果提示文案。
+String ticketImportOutcomeMessage(TicketImportRun run) {
+  if (run.cancelled || run.importedCount == 0) {
+    return '已取消导入，行程仍保留在待确认列表中';
+  }
+  if (run.completed) return '已确认并导入 ${run.importedCount} 条行程';
+  return '已导入 ${run.importedCount} 条，其余行程尚未确认';
 }
 
 PreparedTicketOrder _fallbackPreparedOrder(

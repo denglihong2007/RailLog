@@ -4,9 +4,9 @@ import 'package:raillog/src/pages/settings/email_connection_settings_page.dart';
 import 'package:raillog/src/services/mail_account_settings.dart';
 import 'package:raillog/src/services/mail_import_service.dart';
 import 'package:raillog/src/services/ticket_order_confirmation.dart';
-import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/ticket_order_selection.dart';
 
 class ImportEmailPage extends StatefulWidget {
   const ImportEmailPage({super.key, this.service});
@@ -171,12 +171,6 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
         .toList(growable: false);
     if (selected.isEmpty) return;
 
-    final confirmed = await showTicketImportConfirmationDialog(
-      context,
-      selected.length,
-    );
-    if (!confirmed || !mounted) return;
-
     setState(() {
       _importing = true;
       _message = null;
@@ -184,15 +178,9 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
     });
 
     try {
-      // 版本列表只取一次：service 内部有缓存，但空结果不缓存，
-      // 逐单重复调会在服务端没配时刻表库时白白打一遍网络。
-      final versions = await TrainService.fetchTimetableVersions();
-      if (!mounted) return;
-
-      final importedCount = await confirmTicketOrderImport(
+      final result = await runTicketImport(
         context: context,
         orders: selected,
-        versions: versions,
         onPreparing: (position) {
           if (!mounted) return;
           setState(() => _preparingPosition = position);
@@ -207,18 +195,16 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
       );
       if (!mounted) return;
 
-      if (importedCount == selected.length) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('已确认并导入 $importedCount 条行程')));
+      if (result.completed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ticketImportOutcomeMessage(result))),
+        );
         Navigator.of(context).pop(true);
         return;
       }
       setState(() {
         _messageIsError = false;
-        _message = importedCount == 0
-            ? '已取消导入，车票仍保留在待确认列表中'
-            : '已导入 $importedCount 条，其余车票尚未确认';
+        _message = ticketImportOutcomeMessage(result);
       });
     } catch (error) {
       if (!mounted) return;
@@ -249,7 +235,7 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
         selectable.every((order) => _selectedKeys.contains(order.dedupKey));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('邮箱导入'), scrolledUnderElevation: 0),
+      appBar: AppBar(title: const Text('从邮箱导入'), scrolledUnderElevation: 0),
       body: _loadingConfig
           ? const Center(child: CircularProgressIndicator())
           : !_isConfigured
@@ -266,10 +252,22 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
                 children: [
                   _AccountCard(config: _config!, onOpenSettings: _openSettings),
                   const SizedBox(height: 20),
-                  _StepHeader(
+                  TicketImportStepHeader(
                     step: 1,
                     icon: Icons.train_outlined,
                     title: '选择待导入车票',
+                    trailing: IconButton.filledTonal(
+                      tooltip: '重新读取',
+                      onPressed: _loadingTickets || _importing
+                          ? null
+                          : _loadTickets,
+                      icon: _loadingTickets
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -279,42 +277,28 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
                   ),
                   const SizedBox(height: 12),
                   if (_message != null) ...[
-                    _MessageBanner(
+                    TicketImportMessageBanner(
                       message: _message!,
                       isError: _messageIsError,
                     ),
                     const SizedBox(height: 12),
                   ],
                   if (selectable.isNotEmpty) ...[
-                    Row(
-                      children: [
-                        Checkbox(
-                          value: allSelected,
-                          tristate: _selectedKeys.isNotEmpty && !allSelected,
-                          onChanged: _importing || _loadingTickets
-                              ? null
-                              : _toggleAll,
-                        ),
-                        TextButton(
-                          onPressed: _importing || _loadingTickets
-                              ? null
-                              : () => _toggleAll(!allSelected),
-                          child: const Text('全选'),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '已选择 ${_selectedKeys.length} / ${selectable.length}',
-                          style: TextStyle(color: colors.onSurfaceVariant),
-                        ),
-                      ],
+                    TicketOrderSelectionToolbar(
+                      selectedCount: _selectedKeys.length,
+                      selectableCount: selectable.length,
+                      allSelected: allSelected,
+                      enabled: !_importing && !_loadingTickets,
+                      onToggleAll: _toggleAll,
                     ),
                   ],
                   for (final order in _orders) ...[
-                    _OrderTile(
+                    TicketOrderSelectionTile(
                       order: order,
                       selected: _selectedKeys.contains(order.dedupKey),
                       imported: _importedKeys.contains(order.dedupKey),
                       enabled: !_importing && !_loadingTickets,
+                      hideStatusWhenImportable: true,
                       onChanged: order.canImport
                           ? (value) => _toggleOrder(order, value)
                           : null,
@@ -327,55 +311,23 @@ class _ImportEmailPageState extends State<ImportEmailPage> {
                       child: Center(child: CircularProgressIndicator()),
                     ),
                   if (_orders.isEmpty && !_loadingTickets)
-                    _EmptyTickets(onRefresh: _loadTickets),
+                    TicketImportEmptyState(
+                      title: '暂无可导入车票',
+                      hint: '仅读取近两年内 12306 发件人或带转发标记的通知邮件',
+                      actionLabel: '重新读取',
+                      onAction: _loadTickets,
+                    ),
                 ],
               ),
             ),
       bottomNavigationBar: _selectedKeys.isEmpty
           ? null
-          : Material(
-              color: colors.surfaceContainer,
-              child: SafeArea(
-                minimum: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  12,
-                  horizontalPadding,
-                  12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _preparingPosition == null
-                                ? '逐条确认后写入'
-                                : '正在准备第 $_preparingPosition/${_selectedKeys.length} 条',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          Text(
-                            '共 ${_selectedKeys.length} 条待确认',
-                            style: TextStyle(color: colors.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      onPressed: _importing ? null : _importSelected,
-                      icon: _importing
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.arrow_forward),
-                      label: const Text('开始确认'),
-                    ),
-                  ],
-                ),
-              ),
+          : TicketImportActionBar(
+              selectedCount: _selectedKeys.length,
+              preparingPosition: _preparingPosition,
+              isImporting: _importing,
+              onStart: _importSelected,
+              horizontalPadding: horizontalPadding,
             ),
     );
   }
@@ -405,220 +357,6 @@ class _AccountCard extends StatelessWidget {
           label: const Text('设置'),
         ),
       ),
-    );
-  }
-}
-
-class _OrderTile extends StatelessWidget {
-  const _OrderTile({
-    required this.order,
-    required this.selected,
-    required this.imported,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final Ticket12306Order order;
-  final bool selected;
-  final bool imported;
-  final bool enabled;
-  final ValueChanged<bool?>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    // 「邮件导入」是来源说明，不必每张卡片都重复；只提示退票、改签这类异常。
-    final status = imported
-        ? '已导入'
-        : order.canImport
-        ? ''
-        : order.statusText;
-    final canToggle = enabled && !imported && onChanged != null;
-    return AppCard.filled(
-      color: selected ? colors.primaryContainer : colors.surfaceContainerLow,
-      padding: EdgeInsets.zero,
-      onTap: canToggle ? () => onChanged!(!selected) : null,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 14, 16, 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Checkbox(value: selected, onChanged: canToggle ? onChanged : null),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        order.trainCode,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          '${order.fromStation} → ${order.toStation}',
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 14,
-                    runSpacing: 6,
-                    children: [
-                      _OrderFact(
-                        icon: Icons.schedule,
-                        label: _formatDateTime(order.startTime),
-                      ),
-                      if (order.passengerName.isNotEmpty)
-                        _OrderFact(
-                          icon: Icons.person_outline,
-                          label: order.passengerName,
-                        ),
-                      if (order.seatDisplay.isNotEmpty)
-                        _OrderFact(
-                          icon: Icons.event_seat_outlined,
-                          label: order.seatDisplay,
-                        ),
-                      if (order.price > 0)
-                        _OrderFact(
-                          icon: Icons.payments_outlined,
-                          label: '¥${_formatNumber(order.price)}',
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (status.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Text(
-                status,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: order.canImport ? colors.primary : colors.error,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OrderFact extends StatelessWidget {
-  const _OrderFact({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: color),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MessageBanner extends StatelessWidget {
-  const _MessageBanner({required this.message, required this.isError});
-
-  final String message;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: isError ? colors.errorContainer : colors.secondaryContainer,
-      borderRadius: BorderRadius.circular(AppRadius.small),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.info_outline,
-              color: isError
-                  ? colors.onErrorContainer
-                  : colors.onSecondaryContainer,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  color: isError
-                      ? colors.onErrorContainer
-                      : colors.onSecondaryContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StepHeader extends StatelessWidget {
-  const _StepHeader({
-    required this.step,
-    required this.icon,
-    required this.title,
-  });
-
-  final int step;
-  final IconData icon;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        SizedBox.square(
-          dimension: 40,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.secondaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: colors.onSecondaryContainer, size: 21),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '步骤 $step',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: colors.primary),
-              ),
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -663,55 +401,3 @@ class _NotConfigured extends StatelessWidget {
     );
   }
 }
-
-class _EmptyTickets extends StatelessWidget {
-  const _EmptyTickets({required this.onRefresh});
-
-  final Future<void> Function() onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Column(
-        children: [
-          Icon(
-            Icons.confirmation_number_outlined,
-            size: 48,
-            color: colors.outline,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '暂无可导入车票',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '仅读取近两年内 12306 发件人或带转发标记的通知邮件',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh),
-            label: const Text('重新读取'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _formatDateTime(DateTime value) =>
-    '${value.month.toString().padLeft(2, '0')}-'
-    '${value.day.toString().padLeft(2, '0')} '
-    '${value.hour.toString().padLeft(2, '0')}:'
-    '${value.minute.toString().padLeft(2, '0')}';
-
-String _formatNumber(double value) => value == value.roundToDouble()
-    ? value.toInt().toString()
-    : value.toStringAsFixed(2);

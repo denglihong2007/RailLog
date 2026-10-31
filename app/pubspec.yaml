@@ -55,6 +55,9 @@ dependencies:
   fl_chart: ^1.1.1
   cached_network_image: ^3.4.1
   excel: ^4.0.6
+  # 电子发票导入：OFD 是 ZIP 包，PDF 内嵌的 XBRL 附件需要解压后按 XML 读取。
+  archive: ^3.6.1
+  xml: ^6.6.1
   # 手账 PDF 在客户端本地排版。不能用 pdf 3.13：它要求 xml >=7.0.1，
   # 而 excel 4.0.6 要求 xml >=5.0.0 <7.0.0，两者区间无交集。
   pdf: ^3.12.0
