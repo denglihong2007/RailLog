@@ -94,6 +94,11 @@ public sealed record CreateTicketPdfKeyRequest(
     bool ShowNewAirConditioned);
 
 public sealed record CreateTicketPdfKeyResponse(string Key, DateTime ExpiresAt);
+
+/// <summary>App 启动时拉取的用户等级分界线（后台可覆盖）。</summary>
+public sealed record UserLevelThresholdsResponse(
+    IReadOnlyList<int> Thresholds,
+    DateTime? UpdatedAt);
 public sealed record DownloadTicketPdfRequest(
     string Key,
     string Password,

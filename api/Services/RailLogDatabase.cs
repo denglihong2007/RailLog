@@ -11,7 +11,7 @@ using RailLog.API.Models;
 
 namespace RailLog.API.Services;
 
-public sealed class RailLogDatabase
+public sealed partial class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
     // 均速上限：超过它的行程说明里程或时长填错，不参与速度排行。
@@ -203,6 +203,29 @@ public sealed class RailLogDatabase
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_TripId ON EntityReviews(TripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_SecondTripId ON EntityReviews(SecondTripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviewReactions_ReviewId ON EntityReviewReactions(ReviewId);
+            CREATE TABLE IF NOT EXISTS Announcements (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Text TEXT NOT NULL,
+                Weight INTEGER NOT NULL DEFAULT 10,
+                IsActive INTEGER NOT NULL DEFAULT 1,
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS AppSettings (
+                Key TEXT NOT NULL PRIMARY KEY,
+                Value TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS AdminAuditLogs (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                AdminUserId TEXT NOT NULL,
+                AdminName TEXT NOT NULL,
+                Action TEXT NOT NULL,
+                Target TEXT NULL,
+                Detail TEXT NULL,
+                CreatedAt TEXT NOT NULL
+            );
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -258,6 +281,8 @@ public sealed class RailLogDatabase
                 ON TicketPdfDownloads (ExpiresAt);
             CREATE INDEX IF NOT EXISTS IX_UserAchievements_AchievementId
                 ON UserAchievements (AchievementId);
+            CREATE INDEX IF NOT EXISTS IX_AdminAuditLogs_CreatedAt
+                ON AdminAuditLogs (CreatedAt DESC);
             """);
     }
 
@@ -2307,6 +2332,17 @@ public sealed class RailLogDatabase
 
     private static string StatisticsCacheKey(string userId) => $"statistics:{userId}";
 
+    /// <summary>
+    /// 排行榜缓存按「查询者」分键：普通 App 请求带自己的用户 ID，
+    /// 管理后台用空字符串取全局榜。任何一次行程变动都会改变全局榜，
+    /// 所以两个键要一起失效。
+    /// </summary>
+    private void InvalidateStatisticsCache(string? userId)
+    {
+        if (!string.IsNullOrEmpty(userId)) _cache.Remove(StatisticsCacheKey(userId));
+        _cache.Remove(StatisticsCacheKey(string.Empty));
+    }
+
     private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(
         SqliteConnection connection,
         string userId,
@@ -2783,6 +2819,7 @@ public sealed class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
+        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
         var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
@@ -2796,7 +2833,8 @@ public sealed class RailLogDatabase
         var totalExperience = 0;
         for (var pass = 0; pass < 8; pass++)
         {
-            var context = new AchievementContext(totalExperience, totalReviewReactions);
+            var context = new AchievementContext(
+                totalExperience, totalReviewReactions, levelThresholds);
             unlocked = AchievementEngine.Evaluate(trips, reviews, context)
                 .Where(item => item.TriggerTripId.HasValue)
                 .ToList();
@@ -2857,8 +2895,8 @@ public sealed class RailLogDatabase
             _writeLock.Release();
         }
 
-        // 统计缓存从不主动失效；同步者自己的排行榜没必要等满整个 TTL。
-        _cache.Remove(StatisticsCacheKey(userId));
+        // 同步者自己的排行榜没必要等满整个 TTL；全局榜也会因这次同步变化。
+        InvalidateStatisticsCache(userId);
     }
 
     /// <summary>
@@ -2962,10 +3000,12 @@ public sealed class RailLogDatabase
         var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
             connection,
             userId);
+        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         var definitions = AchievementEngine.Evaluate(
             trips,
             reviews,
-            new AchievementContext(totalExperience, totalReviewReactions));
+            new AchievementContext(
+                totalExperience, totalReviewReactions, levelThresholds));
         var items = definitions
             .Select((definition, index) => new
             {

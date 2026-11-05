@@ -1,7 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-const _levelMinimumExperience = [0, 1, 50, 125, 250, 450, 800];
+/// App 内置默认值。服务端（管理后台）可以下发新的分界线覆盖它。
+const _defaultLevelMinimumExperience = [0, 1, 50, 125, 250, 450, 800];
+
+List<int> _levelMinimumExperience = _defaultLevelMinimumExperience;
+
+List<int> get defaultLevelMinimumExperience => _defaultLevelMinimumExperience;
+
+List<int> get levelMinimumExperience => _levelMinimumExperience;
+
+/// 由 [UserLevelSettings] 在启动读取缓存和拉取服务端配置后调用。
+/// 数据不合法时保持原值，避免把界面变成异常状态。
+void applyUserLevelThresholds(List<int> thresholds) {
+  if (thresholds.length < 2 || thresholds[0] != 0) return;
+  for (var level = 1; level < thresholds.length; level++) {
+    if (thresholds[level] <= thresholds[level - 1]) return;
+  }
+  _levelMinimumExperience = List.unmodifiable(thresholds);
+}
 
 int userLevelForExperience(int experience) {
   final normalized = experience < 0 ? 0 : experience;

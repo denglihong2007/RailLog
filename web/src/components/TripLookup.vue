@@ -13,6 +13,7 @@ import {
   Search,
   TrainFront,
 } from '@lucide/vue'
+import { ensureUserLevels, userLevelForExperience } from '../userLevels'
 
 interface PublicUser {
   id: string
@@ -83,6 +84,7 @@ const ownerInitial = computed(() => details.value?.user.displayName.trim().charA
 
 onMounted(() => {
   document.title = '行程查询 - RailLog 轨记'
+  void ensureUserLevels(props.apiBase)
   if (/^[1-9]\d*$/.test(initialId)) void queryTrip(initialId)
 })
 
@@ -179,13 +181,7 @@ function formatNumber(value: number): string {
 }
 
 function userLevel(experience: number): number {
-  if (experience >= 800) return 6
-  if (experience >= 450) return 5
-  if (experience >= 250) return 4
-  if (experience >= 125) return 3
-  if (experience >= 50) return 2
-  if (experience >= 1) return 1
-  return 0
+  return userLevelForExperience(experience)
 }
 </script>
 

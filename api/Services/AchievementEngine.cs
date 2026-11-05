@@ -29,7 +29,15 @@ public sealed record AchievementRequirement(string Key, string Label, PublicTrip
     public bool Completed => Trip is not null;
 }
 public sealed record AchievementReview(string EntityType, string EntityKey);
-public sealed record AchievementContext(int TotalExperience, int TotalReviewReactions);
+/// <summary>
+/// 成就计算上下文。<c>LevelThresholds</c> 为空时使用内置默认等级门槛；
+/// 管理后台调整等级分界线后，计算侧需把新门槛传进来，让「达到 N 级」
+/// 与 App 显示的等级保持一致。
+/// </summary>
+public sealed record AchievementContext(
+    int TotalExperience,
+    int TotalReviewReactions,
+    IReadOnlyList<int>? LevelThresholds = null);
 
 public static partial class AchievementEngine
 {
@@ -1076,13 +1084,13 @@ public static partial class AchievementEngine
             Trigger: i => ContextTrigger(i, (i.Context?.TotalReviewReactions ?? 0) >= 5000)),
         new("reachLevel3", Milestones, "stairs_outlined", "初出茅庐", "达到 3 级", 10,
             NarrativeNote: "期待有朝一日也能升到6级",
-            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context?.TotalExperience ?? 0, 125))),
+            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context, 3))),
         new("reachLevel5", Milestones, "trending_up_outlined", "卓尔不群", "达到 5 级", 25,
             NarrativeNote: "到这里你已经超过大部分人了",
-            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context?.TotalExperience ?? 0, 450))),
+            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context, 5))),
         new("reachLevel6", Milestones, "leaderboard_outlined", "百里挑一", "达到 6 级", 40,
             NarrativeNote: "不畏浮云遮望眼，自缘身在最高层",
-            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context?.TotalExperience ?? 0, 800))),
+            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context, 6))),
         new("fourThousandKmInDay", ExtremeChallenges, "calendar_view_day_outlined", "日行万里",
             "24 小时内的总移动里程超过 4,000 公里", 30,
             NarrativeNote: "早上坐最快的高铁出发，晚上再坐动卧回来……",
@@ -1525,8 +1533,15 @@ public static partial class AchievementEngine
         return Math.Max(0, (int)Math.Floor((14 - days) / 2)) * 5;
     }
 
-    private static bool ReachedLevel(int totalExperience, int requiredExperience) =>
-        totalExperience >= requiredExperience;
+    private static bool ReachedLevel(AchievementContext? context, int level) =>
+        (context?.TotalExperience ?? 0) >= LevelThreshold(context, level);
+
+    private static int LevelThreshold(AchievementContext? context, int level)
+    {
+        var thresholds = context?.LevelThresholds ?? UserLevels.DefaultThresholds;
+        var index = Math.Clamp(level, 0, thresholds.Count - 1);
+        return thresholds[index];
+    }
 
     private static int FourExtremesWindowBonus(List<PublicTrip> trips)
     {
@@ -1576,9 +1591,9 @@ public static partial class AchievementEngine
         "reviewedTrainNumbers" => P(reviews.Count, 200),
         "reviewReplies5000" => P(context?.TotalReviewReactions ?? 0, 5000),
         "reviewReplies100000" => P(context?.TotalReviewReactions ?? 0, 100000),
-        "reachLevel3" => P(context?.TotalExperience ?? 0, 125),
-        "reachLevel5" => P(context?.TotalExperience ?? 0, 450),
-        "reachLevel6" => P(context?.TotalExperience ?? 0, 800),
+        "reachLevel3" => P(context?.TotalExperience ?? 0, LevelThreshold(context, 3)),
+        "reachLevel5" => P(context?.TotalExperience ?? 0, LevelThreshold(context, 5)),
+        "reachLevel6" => P(context?.TotalExperience ?? 0, LevelThreshold(context, 6)),
         "reach2500Experience" => P(context?.TotalExperience ?? 0, 2500),
         "archaeologyTeam" => P(OldestTripAgeYears(trips, today, fifteenYearsAgo), 15),
         "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),

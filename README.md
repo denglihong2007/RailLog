@@ -105,6 +105,66 @@ The directory must contain `CODE1.OTF`, `PAPERTICKETS.OTF`, `red.png`,
 `blue.png`, and `District.json`. These files are intentionally excluded from
 Git and must never be deployed with the web or Flutter client.
 
+## Web admin console
+
+The web project doubles as the admin console at `/admin` (in development,
+`http://localhost:55634/admin`). Administrators log in with their normal
+RailLog account (email and password). Admin permission is granted only to the
+account IDs listed in `appsettings.json`:
+
+```json
+"Admin": {
+  "UserIds": [
+    "632e229a-5801-4f08-b700-ea4dc44600af",
+    "e6550bc3b5a345209f34a7520995d2cb"
+  ]
+}
+```
+
+GUID formatting is normalized before comparison, so hyphenated GUIDs and the
+32-character form both work. The console reuses the account's normal 30-day
+token; deleting or revoking that token also ends admin access. Login attempts
+are rate-limited to five per minute per IP, and a non-admin account receives
+403 with the freshly issued token revoked.
+
+The console also turns the leaderboards into a correction tool: selecting a
+user opens all of their trips, selecting a trip opens its editor directly, and
+selecting a station, route, train, rolling-stock type or company jumps to the
+reviews for that entity. Reviews themselves can be searched, inspected and
+deleted from the console; deleting a review also removes the reactions on it
+and triggers a recompute of the author's achievements.
+
+Beyond data correction, the console covers day-to-day operations:
+
+- duplicate detection (same user, train, travel date, origin/destination, fare
+  and mileage) with per-trip deletion or "keep the earliest entry";
+- user profile editing and user deletion;
+- levels and achievements in one page: per-level user counts derived from each
+  user's unlocked-achievement experience, editable LV1–LV6 experience floors,
+  and a read-only achievement table with unlock records. Clicking a level opens
+  the user list filtered to that level, and users can also be filtered by level
+  or searched by email, nickname or ID. Saving new floors starts a single
+  background recompute of all achievements — repeated saves while one is
+  running are folded into it — and the page shows its progress and refreshes
+  the counts when it finishes. The app and the public website pick up the new
+  floors from the public `GET /api/user-levels` endpoint;
+- PDF download management — the download password plus the 24-hour request keys
+  issued by the website, which can be searched by passenger or masked ID,
+  inspected and revoked;
+- database backups — generate and download a fresh snapshot, download any
+  retained backup, or delete one after typing its file name;
+- audit log — an append-only record of destructive and configuration-changing
+  operations (deletions, profile edits, level floors, password and request-key
+  changes, backup downloads and deletions, manual timetable syncs) with the
+  operator name captured at the time;
+- historical timetable sync — local versions, schedule, a manual trigger and a
+  diff against the GitHub Release upstream.
+
+Announcements entered in the console are stored in the `Announcements` table
+and served to clients through the existing advertisement endpoint. Only when
+the table has no rows at all does the server fall back to the `Announcements`
+section in `appsettings.json`; disabling every row means no announcements.
+
 ## Run the client
 
 ```powershell
