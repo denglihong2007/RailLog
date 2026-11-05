@@ -3601,9 +3601,12 @@ public static partial class AchievementEngine
         bool spansLines)
     {
         if (!RouteNameMatches(segment.RouteName, routeName)) return false;
-        var stations = spansLines
-            ? FamilyChain(routeName)
-            : RouteStations.Value.GetValueOrDefault(routeName) ??
+        // RouteSpans 会把同族的相邻分段并成一段（宁蓉线宁渝段+成渝段 → 汉口→成都东），
+        // 合并段的终点可能落在另一条族内线上，单线站序里查不到。族内各线能首尾相接时
+        // 统一用整族站序，分段和区段才在同一套序号上比较。
+        var stations = FamilyChain(routeName);
+        if (stations is null && !spansLines)
+            stations = RouteStations.Value.GetValueOrDefault(routeName) ??
                 RouteStations.Value.FirstOrDefault(item =>
                     item.Key.Contains(routeName, StringComparison.Ordinal) ||
                     RouteNameMatches(routeName, item.Key)).Value;
