@@ -9,7 +9,21 @@ npm install
 npm run dev
 ```
 
+`npm run dev` 会同时启动官网（`http://localhost:55634`）与 API 文档（`http://localhost:5173/api-docs/`）；官网开发服务器把 `/api-docs` 代理到文档服务器，因此从官网导航进入文档也能正常工作。只调试官网时可以运行 `npm run dev:web`。
+
 开发服务器会将 `/api` 代理到 `http://localhost:5149`。
+
+## API 文档
+
+API 文档使用 [VitePress](https://vitepress.dev/) 编写，源码位于 `docs`，构建产物输出到 `dist/api-docs`，对外访问路径为 `/api-docs/`。
+
+```sh
+npm run docs:dev      # 只启动文档开发服务器（端口 5173）
+npm run docs:build    # 只构建文档
+npm run docs:preview  # 预览文档构建产物（端口 5174）
+```
+
+页面内容在 `docs/*.md`，导航与侧边栏在 `docs/.vitepress/config.ts`，品牌样式与站尾在 `docs/.vitepress/theme/`。
 
 ## 生产构建
 
@@ -17,7 +31,13 @@ npm run dev
 npm run build
 ```
 
-生产构建通过 `.env.production` 请求 `https://api.raillog.top`。构建结果位于 `dist`，部署时应确保 `/download` 能访问 `dist/download/index.html`。
+构建按 `type-check` → `vite build` → `vitepress build` 的顺序执行：先由 Vite 生成官网的 `dist`，再向 `dist/api-docs` 写入文档，避免文档产物被 Vite 的清空行为覆盖。生产构建通过 `.env.production` 请求 `https://api.raillog.top`。
+
+构建结果位于 `dist`，部署时应确保：
+
+- `/download` 能访问 `dist/download/index.html`
+- `/api-docs/` 能访问 `dist/api-docs/index.html`
+- `/api-docs/xxx.html` 这类文档深链能直接返回对应静态文件（文档启用了 `cleanUrls: false`，不依赖服务端重写；裸 `/api-docs` 由官网前端重定向到 `/api-docs/`）
 
 ## 管理后台
 

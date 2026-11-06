@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Apple, ArrowRight, BookOpen, CheckCircle2, Code2, Download, Laptop, Monitor, Route, Search, Smartphone, Terminal, TrainFront, TriangleAlert, UserRound } from '@lucide/vue'
-import ApiDocs from './components/ApiDocs.vue'
 import TripLookup from './components/TripLookup.vue'
 import TicketPdfDownloader from './components/TicketPdfDownloader.vue'
 import UserLookup from './components/UserLookup.vue'
@@ -29,11 +28,17 @@ const downloadLinks = ref<DownloadLinks | null>(null)
 const releaseState = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
 const pageParams = new URLSearchParams(window.location.search)
+// API 文档已迁到独立静态站 /api-docs/。兼容旧链接：
+// 带 ?api-docs=1 的地址与不带结尾斜杠的 /api-docs 都重定向过去。
+if (pageParams.has('api-docs')) {
+  window.location.replace(`/api-docs/${window.location.hash}`)
+} else if (window.location.pathname === '/api-docs') {
+  window.location.replace('/api-docs/')
+}
 const tripLanding = window.location.pathname.startsWith('/trip') || pageParams.has('trip')
 const ticketPdfLanding = window.location.pathname.startsWith('/ticket-pdf') || pageParams.has('ticket-pdf')
 const userLanding = window.location.pathname.startsWith('/user') || pageParams.has('user')
-const apiLanding = window.location.pathname.startsWith('/api-docs') || pageParams.has('api-docs')
-const utilityLanding = tripLanding || ticketPdfLanding || userLanding || apiLanding
+const utilityLanding = tripLanding || ticketPdfLanding || userLanding
 const downloadLanding = !utilityLanding && (window.location.pathname.startsWith('/download') || pageParams.has('download'))
 const releaseAsset = (name: string) => release.value
   ? `https://github.com/denglihong2007/RailLog/releases/download/v${release.value.version.replace(/^v/, '')}/${name}`
@@ -71,7 +76,7 @@ onMounted(async () => {
     <nav aria-label="主导航">
       <a href="/trip"><Search :size="19" /><span>行程查询</span></a>
       <a href="/user"><UserRound :size="19" /><span>用户查询</span></a>
-      <a href="/api-docs"><BookOpen :size="19" /><span>开放 API</span></a>
+      <a href="/api-docs/"><BookOpen :size="19" /><span>开放 API</span></a>
       <a class="download-nav" :href="utilityLanding ? '/download' : '#download'">下载</a>
       <a class="source-nav" href="https://github.com/denglihong2007/RailLog" target="_blank" rel="noreferrer" aria-label="GitHub"><Code2 :size="19" /><span>GitHub</span></a>
     </nav>
@@ -81,7 +86,6 @@ onMounted(async () => {
     <TicketPdfDownloader v-if="ticketPdfLanding" :api-base="apiBase" />
     <TripLookup v-else-if="tripLanding" :api-base="apiBase" />
     <UserLookup v-else-if="userLanding" :api-base="apiBase" />
-    <ApiDocs v-else-if="apiLanding" :api-base="apiBase" />
     <template v-else>
     <section v-if="!downloadLanding" class="intro" aria-labelledby="page-title">
       <div class="intro-watermark" aria-hidden="true"></div>

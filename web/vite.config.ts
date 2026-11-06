@@ -35,7 +35,18 @@ export default defineConfig({
         port: 55634,
         proxy: {
             '^/api/': 'http://localhost:5149',
+            // API 文档由 VitePress 单独提供（npm run docs:dev），
+            // 这里把 /api-docs 转发过去，官网开发服务器上也能直接访问文档。
+            // 注意必须用 localhost：VitePress 开发服务器只监听 IPv6 回环（::1）。
+            '^/api-docs': {
+                target: 'http://localhost:5173',
+            },
         },
+    },
+    // 生产预览时直接使用 dist 中已构建好的静态文档，
+    // 不要沿用开发服务器的 /api-docs 代理（否则会转发到未启动的 VitePress）。
+    preview: {
+        proxy: {},
     },
     build: {
         rollupOptions: {

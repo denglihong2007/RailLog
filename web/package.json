@@ -4,11 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" --",
+    "dev": "run-p dev:web docs:dev",
+    "dev:web": "vite",
+    "build": "run-s type-check build-only docs:build",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
+    "docs:dev": "vitepress dev docs --port 5173",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs --port 5174",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache"
@@ -32,6 +36,7 @@
     "typescript": "~6.0.0",
     "vite": "^8.0.16",
     "vite-plugin-vue-devtools": "^8.1.2",
+    "vitepress": "^1.6.4",
     "vue-eslint-parser": "^10.4.1",
     "vue-tsc": "^3.3.5"
   },
