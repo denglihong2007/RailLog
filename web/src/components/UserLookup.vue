@@ -225,6 +225,11 @@ const achievementIconCodepoints: Record<string, number> = {
   military_tech: 0xe3e7,
   numbers: 0xf0542,
   person_outline: 0xe497,
+  filter_drama_outlined: 0xf06b,
+  fork_left_outlined: 0xf0604,
+  tram_outlined: 0xf459,
+  brightness_7_outlined: 0xeefa,
+  restart_alt_outlined: 0xf314,
 }
 
 const userInitial = computed(() => dashboard.value?.user.displayName.trim().charAt(0) || '旅')
