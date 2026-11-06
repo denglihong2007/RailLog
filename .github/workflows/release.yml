@@ -271,6 +271,7 @@ jobs:
       # 脚本解析失败或连接中断时，服务端的 finally 不会执行，补一步兜底清理。
       - name: Remove temporary server files
         if: always()
+        continue-on-error: true
         env:
           SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
         run: |
@@ -279,7 +280,7 @@ jobs:
           sshpass -e ssh -p 22 \
             -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
             Administrator@156.254.6.59 \
-            'powershell -NoProfile -Command "Remove-Item -LiteralPath C:/Users/Administrator/raillog-assets.zip,C:/Users/Administrator/AWSCLIV2.msi,C:/Users/Administrator/s3-upload.env -Force -ErrorAction SilentlyContinue"'
+            'powershell -NoProfile -Command "Remove-Item -LiteralPath C:/Users/Administrator/raillog-assets.zip,C:/Users/Administrator/AWSCLIV2.msi,C:/Users/Administrator/s3-upload.env -Force -ErrorAction SilentlyContinue; exit 0"'
 
   deploy-api:
     name: Deploy API to IIS
