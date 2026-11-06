@@ -362,14 +362,15 @@ abstract final class AppTheme {
 ///
 /// 七档对应「不霁何虹」要求集齐的七种初始经验值（10/15/20/25/30/40/50），色相
 /// 沿用设置页里那七种有名字的主题色：石榴、珊瑚、金黄、松绿、翡翠、湖蓝、紫罗兰。
-/// 每一档都取 M3 的填充角色对 —— 浅色主题用 primary / onPrimary（tone 40 底色配
-/// tone 100 文字），深色主题同样用 primary / onPrimary（tone 80 底色配 tone 20
-/// 文字）。同一组色相在明暗主题里各自由算法给出成对的深浅：对比度跟着主题走，
-/// 也不必在明暗两套里各挑一个「看着好看」的十六进制值。
+/// 每一档都取 M3 的容器角色对 —— 浅色主题用 primaryContainer / onPrimaryContainer
+/// （tone 90 底色配 tone 10 文字），深色主题是同一对角色在深色下的取值（tone 30
+/// 底色配 tone 90 文字）。对比度跟着主题走，也不必在明暗两套里各挑一个「看着好看」
+/// 的十六进制值。
 ///
-/// 生成时用 [DynamicSchemeVariant.fidelity]：色相本身就是这七档携带的信息，默认
-/// 的 tonalSpot 会把石榴和珊瑚压成同一个灰玫瑰色，彩虹就断了；fidelity 保留种子
-/// 色的彩度，七档在浅色主题下仍能分辨。
+/// 胶囊很小，又是贴在解锁后已经很柔和的卡片上，所以取容器角色而不是 primary：
+/// primary 在浅色主题里是 tone 40 的饱和色块，七个并排像一排贴纸，和周围的淡色
+/// 卡片落差太大；容器角色的底色与卡片落在同一档明度（浅色同为高明度、深色同为
+/// 低明度），色相仍然是七档区分的信息，重量却退回到背景层。
 @immutable
 class AchievementTierColors extends ThemeExtension<AchievementTierColors> {
   const AchievementTierColors({required this.filled, required this.onFilled})
@@ -394,7 +395,7 @@ class AchievementTierColors extends ThemeExtension<AchievementTierColors> {
 
   static final Map<Brightness, AchievementTierColors> _cache = {};
 
-  /// 按主题明暗生成七对 M3 填充角色；结果缓存，主题重建时不必反复跑算法。
+  /// 按主题明暗生成七对 M3 容器角色；结果缓存，主题重建时不必反复跑算法。
   factory AchievementTierColors.of(Brightness brightness) {
     final cached = _cache[brightness];
     if (cached != null) return cached;
@@ -404,10 +405,9 @@ class AchievementTierColors extends ThemeExtension<AchievementTierColors> {
       final scheme = ColorScheme.fromSeed(
         seedColor: seed,
         brightness: brightness,
-        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
       );
-      filled.add(scheme.primary);
-      onFilled.add(scheme.onPrimary);
+      filled.add(scheme.primaryContainer);
+      onFilled.add(scheme.onPrimaryContainer);
     }
     return _cache[brightness] = AchievementTierColors(
       filled: filled,
