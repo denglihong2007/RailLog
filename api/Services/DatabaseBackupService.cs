@@ -6,6 +6,7 @@ namespace RailLog.API.Services;
 public sealed class DatabaseBackupService(
     RailLogDatabase database,
     IOptions<DatabaseBackupOptions> options,
+    BackupStorageService storage,
     IWebHostEnvironment environment,
     ILogger<DatabaseBackupService> logger) : BackgroundService
 {
@@ -27,12 +28,10 @@ public sealed class DatabaseBackupService(
         }
 
         var interval = TimeSpan.FromDays(Math.Max(1, settings.IntervalDays));
-        var configuredDirectory = string.IsNullOrWhiteSpace(settings.Directory)
-            ? "backups"
-            : settings.Directory;
-        var directory = Path.IsPathRooted(configuredDirectory)
-            ? configuredDirectory
-            : Path.Combine(environment.ContentRootPath, configuredDirectory);
+        var keepCount = Math.Max(1, settings.KeepCount);
+        var directory = ResolveDirectory(settings);
+        var destination = storage.IsEnabled ? storage.Location : directory;
+        logger.LogInformation("Database backup destination: {Destination}.", destination);
 
         using var timer = new PeriodicTimer(CheckInterval);
         try
@@ -41,7 +40,15 @@ public sealed class DatabaseBackupService(
             {
                 try
                 {
-                    await BackupIfDueAsync(directory, interval, settings.KeepCount, stoppingToken);
+                    if (storage.IsEnabled)
+                    {
+                        await BackupToStorageIfDueAsync(interval, keepCount, stoppingToken);
+                    }
+                    else
+                    {
+                        await BackupToLocalIfDueAsync(
+                            directory, interval, keepCount, stoppingToken);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -60,7 +67,70 @@ public sealed class DatabaseBackupService(
         }
     }
 
-    private async Task BackupIfDueAsync(
+    private async Task BackupToStorageIfDueAsync(
+        TimeSpan interval, int keepCount, CancellationToken cancellationToken)
+    {
+        var existing = await storage.ListAsync(cancellationToken);
+        var lastBackupUtc = existing.Count == 0
+            ? (DateTime?)null
+            : existing.Max(item => item.CreatedAt);
+        if (lastBackupUtc is { } last &&
+            last != DateTime.MinValue &&
+            DateTime.UtcNow - last < interval)
+            return;
+
+        var name = NewBackupName();
+        var plaintextPath = Path.Combine(
+            Path.GetTempPath(), $"{Guid.NewGuid():N}-{name}");
+
+        try
+        {
+            await database.BackupToAsync(plaintextPath, cancellationToken);
+            await storage.UploadAsync(name, plaintextPath, cancellationToken);
+        }
+        finally
+        {
+            TryDeleteFile(plaintextPath);
+        }
+
+        logger.LogInformation(
+            "Database backup uploaded to {Location}/{Name}.enc.", storage.Location, name);
+
+        await PruneRemoteBackupsAsync(keepCount, cancellationToken);
+    }
+
+    private async Task PruneRemoteBackupsAsync(
+        int keepCount, CancellationToken cancellationToken)
+    {
+        var backups = await storage.ListAsync(cancellationToken);
+        var expired = backups
+            .OrderByDescending(item => item.CreatedAt)
+            .ThenByDescending(item => item.Name, StringComparer.Ordinal)
+            .Skip(keepCount);
+        foreach (var backup in expired)
+        {
+            try
+            {
+                await storage.DeleteAsync(backup.Name, cancellationToken);
+                logger.LogInformation(
+                    "Removed old database backup {Name} from {Location}.",
+                    backup.Name, storage.Location);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Failed to remove old database backup {Name} from {Location}.",
+                    backup.Name, storage.Location);
+            }
+        }
+    }
+
+    private async Task BackupToLocalIfDueAsync(
         string directory, TimeSpan interval, int keepCount, CancellationToken cancellationToken)
     {
         System.IO.Directory.CreateDirectory(directory);
@@ -71,9 +141,7 @@ public sealed class DatabaseBackupService(
             .Max();
         if (lastBackupUtc is { } last && DateTime.UtcNow - last < interval) return;
 
-        var timestamp = DateTime.UtcNow.ToString(
-            "yyyyMMdd-HHmmssfff'Z'", CultureInfo.InvariantCulture);
-        var path = Path.Combine(directory, $"{BackupPrefix}{timestamp}{BackupSuffix}");
+        var path = Path.Combine(directory, NewBackupName());
         var tempPath = path + ".tmp";
 
         try
@@ -109,6 +177,23 @@ public sealed class DatabaseBackupService(
                 logger.LogWarning(exception, "Failed to remove old database backup {Path}.", file.FullName);
             }
         }
+    }
+
+    private static string NewBackupName()
+    {
+        var timestamp = DateTime.UtcNow.ToString(
+            "yyyyMMdd-HHmmssfff'Z'", CultureInfo.InvariantCulture);
+        return $"{BackupPrefix}{timestamp}{BackupSuffix}";
+    }
+
+    private string ResolveDirectory(DatabaseBackupOptions settings)
+    {
+        var configuredDirectory = string.IsNullOrWhiteSpace(settings.Directory)
+            ? "backups"
+            : settings.Directory;
+        return Path.IsPathRooted(configuredDirectory)
+            ? configuredDirectory
+            : Path.Combine(environment.ContentRootPath, configuredDirectory);
     }
 
     private static IEnumerable<FileInfo> EnumerateBackups(string directory) =>

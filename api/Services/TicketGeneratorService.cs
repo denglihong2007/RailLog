@@ -78,7 +78,7 @@ public sealed partial class TicketGeneratorService(
         DownloadTicketPdfRequest request,
         CancellationToken cancellationToken)
     {
-        ValidatePdfPassword(request.Password);
+        await ValidatePdfPasswordAsync(request.Password);
         var normalizedKey = NormalizeDownloadKey(request.Key);
         var requestJson = await database.GetTicketPdfDownloadAsync(HashDownloadKey(normalizedKey));
         if (requestJson is null) throw new TicketPdfKeyException();
@@ -240,14 +240,29 @@ public sealed partial class TicketGeneratorService(
         return value;
     }
 
-    private void ValidatePdfPassword(string? supplied)
+    /// <summary>
+    /// 下载密码优先取管理后台写入数据库的覆盖值，其次回退到
+    /// appsettings 的 TicketPdf:DownloadPassword。后台只存哈希，
+    /// 所以这里拿到的覆盖值本身就是要比对的摘要。
+    /// </summary>
+    private async Task ValidatePdfPasswordAsync(string? supplied)
     {
-        var configured = pdfOptions.Value.DownloadPassword;
-        if (string.IsNullOrWhiteSpace(configured))
-            throw new TicketAssetException("服务端未配置 TicketPdf:DownloadPassword");
+        byte[] expectedHash;
+        var stored = await database.GetTicketPasswordHashAsync();
+        if (stored is not null)
+        {
+            expectedHash = Convert.FromHexString(stored.Value.Hash);
+        }
+        else
+        {
+            var configured = pdfOptions.Value.DownloadPassword;
+            if (string.IsNullOrWhiteSpace(configured))
+                throw new TicketAssetException("服务端未配置 TicketPdf:DownloadPassword");
+            expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(configured));
+        }
+
         if (string.IsNullOrEmpty(supplied) || supplied.Length > 256)
             throw new TicketPdfPasswordException();
-        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(configured));
         var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(supplied));
         if (!CryptographicOperations.FixedTimeEquals(expectedHash, suppliedHash))
             throw new TicketPdfPasswordException();

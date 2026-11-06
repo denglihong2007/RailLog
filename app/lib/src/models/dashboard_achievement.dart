@@ -180,6 +180,28 @@ class AchievementRequirementTrip {
   DateTime get occurredAt => departureTime ?? createdAt;
 }
 
+/// 按「最新解锁」重排：解锁时间取触发行程的发生时间，与解锁行程页同一口径；
+/// 时间未知的已解锁成就排在它们之后，尚未解锁的保持服务端给的顺序排最后。
+List<DashboardAchievement> sortAchievementsByLatestUnlock(
+  List<DashboardAchievement> achievements,
+) {
+  final entries = achievements.indexed.toList(growable: false);
+  int rank(DashboardAchievement item) =>
+      item.unlockedBy != null ? 0 : (item.isUnlocked ? 1 : 2);
+  entries.sort((first, second) {
+    final rankOrder = rank(first.$2).compareTo(rank(second.$2));
+    if (rankOrder != 0) return rankOrder;
+    final firstAt = first.$2.unlockedBy?.departureTime;
+    final secondAt = second.$2.unlockedBy?.departureTime;
+    if (firstAt != null && secondAt != null) {
+      final timeOrder = secondAt.compareTo(firstAt);
+      if (timeOrder != 0) return timeOrder;
+    }
+    return first.$1.compareTo(second.$1);
+  });
+  return [for (final entry in entries) entry.$2];
+}
+
 List<DashboardAchievement> dashboardAchievementsFromJson(
   Map<String, dynamic> json,
   Iterable<DashboardTripEntry> trips,

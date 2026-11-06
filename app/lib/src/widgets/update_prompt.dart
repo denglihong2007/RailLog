@@ -49,14 +49,14 @@ Future<void> showUpdatePrompt(
           TextButton.icon(
             onPressed: () => Navigator.of(context).pop(githubUrl),
             icon: const Icon(Icons.open_in_new),
-            label: const Text('GitHub'),
+            label: const Text('GitHub 下载'),
           ),
-        if (UpdateService.domesticUrlForCurrentPlatform(result.latest)
-            case final domesticUrl?)
+        if (UpdateService.officialDownloadUrlForCurrentPlatform(result.latest)
+            case final officialUrl?)
           FilledButton.icon(
-            onPressed: () => Navigator.of(context).pop(domesticUrl),
-            icon: const Icon(Icons.cloud_download_outlined),
-            label: Text(result.latest.domesticDownloadName),
+            onPressed: () => Navigator.of(context).pop(officialUrl),
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('官方下载'),
           ),
       ],
     ),

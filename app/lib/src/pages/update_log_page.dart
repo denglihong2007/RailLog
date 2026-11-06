@@ -64,21 +64,21 @@ class _UpdateLogPageState extends State<UpdateLogPage> {
                         spacing: 12,
                         runSpacing: 8,
                         children: [
-                          if (UpdateService.githubUrlForCurrentPlatform(release)
-                              case final githubUrl?)
-                            FilledButton.icon(
-                              onPressed: () => _open(githubUrl),
-                              icon: const Icon(Icons.open_in_new),
-                              label: const Text('GitHub'),
-                            ),
-                          if (UpdateService.domesticUrlForCurrentPlatform(
+                          if (UpdateService.officialDownloadUrlForCurrentPlatform(
                                 release,
                               )
-                              case final domesticUrl?)
+                              case final officialUrl?)
+                            FilledButton.icon(
+                              onPressed: () => _open(officialUrl),
+                              icon: const Icon(Icons.download_outlined),
+                              label: const Text('官方下载'),
+                            ),
+                          if (UpdateService.githubUrlForCurrentPlatform(release)
+                              case final githubUrl?)
                             OutlinedButton.icon(
-                              onPressed: () => _open(domesticUrl),
-                              icon: const Icon(Icons.cloud_download_outlined),
-                              label: Text(release.domesticDownloadName),
+                              onPressed: () => _open(githubUrl),
+                              icon: const Icon(Icons.open_in_new),
+                              label: const Text('GitHub 下载'),
                             ),
                         ],
                       ),

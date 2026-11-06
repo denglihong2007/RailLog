@@ -1,59 +1,51 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Apple, ArrowRight, BookOpen, CheckCircle2, Code2, Download, Laptop, Monitor, Route, Search, Smartphone, Terminal, TrainFront, TriangleAlert, UserRound } from '@lucide/vue'
-import ApiDocs from './components/ApiDocs.vue'
 import TripLookup from './components/TripLookup.vue'
 import TicketPdfDownloader from './components/TicketPdfDownloader.vue'
 import UserLookup from './components/UserLookup.vue'
 
 interface LatestRelease {
   version: string
-  name: string
-  releaseUrl: string
-  windowsDownloadUrl: string | null
-  androidDownloadUrl: string | null
-  domesticDownloadName: string
-  windowsDomesticDownloadUrl: string | null
-  androidDomesticDownloadUrl: string | null
-}
-
-interface DownloadLinks {
-  domesticDownloadName: string
-  windowsDomesticDownloadUrl: string | null
-  androidDomesticDownloadUrl: string | null
 }
 
 const fallbackReleaseUrl = 'https://github.com/denglihong2007/RailLog/releases/latest'
+const storageBaseUrl = 'https://raillog.cn-nb2.rains3.com'
+const githubBaseUrl = 'https://github.com/denglihong2007/RailLog/releases/download'
+const microsoftStoreUrl = 'https://apps.microsoft.com/detail/9P2XGJRHLZXS'
 const release = ref<LatestRelease | null>(null)
-const downloadLinks = ref<DownloadLinks | null>(null)
 const releaseState = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const apiBase = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
 const pageParams = new URLSearchParams(window.location.search)
+// API 文档已迁到独立静态站 /api-docs/。兼容旧链接：
+// 带 ?api-docs=1 的地址与不带结尾斜杠的 /api-docs 都重定向过去。
+if (pageParams.has('api-docs')) {
+  window.location.replace(`/api-docs/${window.location.hash}`)
+} else if (window.location.pathname === '/api-docs') {
+  window.location.replace('/api-docs/')
+}
 const tripLanding = window.location.pathname.startsWith('/trip') || pageParams.has('trip')
 const ticketPdfLanding = window.location.pathname.startsWith('/ticket-pdf') || pageParams.has('ticket-pdf')
 const userLanding = window.location.pathname.startsWith('/user') || pageParams.has('user')
-const apiLanding = window.location.pathname.startsWith('/api-docs') || pageParams.has('api-docs')
-const utilityLanding = tripLanding || ticketPdfLanding || userLanding || apiLanding
+const utilityLanding = tripLanding || ticketPdfLanding || userLanding
 const downloadLanding = !utilityLanding && (window.location.pathname.startsWith('/download') || pageParams.has('download'))
-const releaseAsset = (name: string) => release.value
-  ? `https://github.com/denglihong2007/RailLog/releases/download/v${release.value.version.replace(/^v/, '')}/${name}`
-  : fallbackReleaseUrl
 const releaseVersion = computed(() => release.value?.version.replace(/^v/, '') ?? '')
-const windowsUrl = computed(() => release.value ? releaseAsset(`raillog-v${releaseVersion.value}-windows-x64.zip`) : fallbackReleaseUrl)
-const androidUrl = computed(() => release.value ? releaseAsset(`raillog-v${releaseVersion.value}-android-arm64-v8a.apk`) : fallbackReleaseUrl)
-const macosUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-macos-arm64.zip`))
-const linuxUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-linux-x64.tar.gz`))
-const iosUrl = computed(() => releaseAsset(`raillog-v${releaseVersion.value}-ios.ipa`))
+const assetName = (suffix: string) => `raillog-v${releaseVersion.value}-${suffix}`
+// 官方下载默认走对象存储，GitHub Releases 作为备用入口保留。
+const storageUrl = (suffix: string) => release.value
+  ? `${storageBaseUrl}/v${releaseVersion.value}/${assetName(suffix)}`
+  : fallbackReleaseUrl
+const githubUrl = (suffix: string) => release.value
+  ? `${githubBaseUrl}/v${releaseVersion.value}/${assetName(suffix)}`
+  : fallbackReleaseUrl
+const androidUrl = computed(() => storageUrl('android-arm64-v8a.apk'))
+const macosUrl = computed(() => storageUrl('macos-arm64.zip'))
+const linuxUrl = computed(() => storageUrl('linux-x64.tar.gz'))
+const iosUrl = computed(() => storageUrl('ios.ipa'))
 const versionLabel = computed(() => release.value ? `最新版本 ${release.value.version}` : 'GitHub Releases')
 
 onMounted(async () => {
   if (utilityLanding) return
-  try {
-    const response = await fetch(`${apiBase}/api/updates/downloads`)
-    if (response.ok) downloadLinks.value = (await response.json()) as DownloadLinks
-  } catch {
-    downloadLinks.value = null
-  }
   try {
     const response = await fetch(`${apiBase}/api/updates/latest`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -71,7 +63,7 @@ onMounted(async () => {
     <nav aria-label="主导航">
       <a href="/trip"><Search :size="19" /><span>行程查询</span></a>
       <a href="/user"><UserRound :size="19" /><span>用户查询</span></a>
-      <a href="/api-docs"><BookOpen :size="19" /><span>开放 API</span></a>
+      <a href="/api-docs/"><BookOpen :size="19" /><span>开放 API</span></a>
       <a class="download-nav" :href="utilityLanding ? '/download' : '#download'">下载</a>
       <a class="source-nav" href="https://github.com/denglihong2007/RailLog" target="_blank" rel="noreferrer" aria-label="GitHub"><Code2 :size="19" /><span>GitHub</span></a>
     </nav>
@@ -81,7 +73,6 @@ onMounted(async () => {
     <TicketPdfDownloader v-if="ticketPdfLanding" :api-base="apiBase" />
     <TripLookup v-else-if="tripLanding" :api-base="apiBase" />
     <UserLookup v-else-if="userLanding" :api-base="apiBase" />
-    <ApiDocs v-else-if="apiLanding" :api-base="apiBase" />
     <template v-else>
     <section v-if="!downloadLanding" class="intro" aria-labelledby="page-title">
       <div class="intro-watermark" aria-hidden="true"></div>
@@ -109,29 +100,28 @@ onMounted(async () => {
         <article class="download-card windows-card">
           <Monitor :size="34" /><div><h3>Windows</h3><p>适用于 Windows 10 与 Windows 11</p></div>
           <div class="download-actions">
-            <a :href="windowsUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a>
-            <a class="secondary-download" href="https://apps.microsoft.com/detail/9P2XGJRHLZXS" target="_blank" rel="noopener noreferrer"><Download :size="19" />微软商店</a>
+            <a :href="microsoftStoreUrl" target="_blank" rel="noopener noreferrer"><Download :size="19" />官方下载</a>
+            <a class="secondary-download" :href="githubUrl('windows-x64.zip')" target="_blank" rel="noreferrer"><Code2 :size="19" />GitHub</a>
           </div>
         </article>
         <article class="download-card android-card">
           <Smartphone :size="34" /><div><h3>Android</h3><p>下载 APK 安装包</p></div>
           <div class="download-actions">
             <a :href="androidUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a>
-            <a v-if="downloadLinks?.androidDomesticDownloadUrl" class="secondary-download" :href="downloadLinks.androidDomesticDownloadUrl" target="_blank" rel="noreferrer"><Download :size="19" />{{ downloadLinks.domesticDownloadName }}</a>
-            <span v-else class="disabled-download"><Download :size="19" />国内网盘待更新</span>
+            <a class="secondary-download" :href="githubUrl('android-arm64-v8a.apk')" target="_blank" rel="noreferrer"><Code2 :size="19" />GitHub</a>
           </div>
         </article>
         <article class="download-card">
           <Apple :size="34" /><div><h3>macOS</h3><p>适用于 Apple Silicon</p></div>
-          <div class="download-actions"><a :href="macosUrl" target="_blank" rel="noreferrer"><Download :size="19" />Apple Silicon 下载</a></div>
+          <div class="download-actions"><a :href="macosUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a><a class="secondary-download" :href="githubUrl('macos-arm64.zip')" target="_blank" rel="noreferrer"><Code2 :size="19" />GitHub</a></div>
         </article>
         <article class="download-card">
           <Terminal :size="34" /><div><h3>Linux</h3><p>x64 桌面版，下载后解压运行</p></div>
-          <div class="download-actions"><a :href="linuxUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a></div>
+          <div class="download-actions"><a :href="linuxUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a><a class="secondary-download" :href="githubUrl('linux-x64.tar.gz')" target="_blank" rel="noreferrer"><Code2 :size="19" />GitHub</a></div>
         </article>
         <article class="download-card">
           <Laptop :size="34" /><div><h3>iOS</h3><p>未签名 IPA，适合开发者部署</p></div>
-          <div class="download-actions"><a :href="iosUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a></div>
+          <div class="download-actions"><a :href="iosUrl" target="_blank" rel="noreferrer"><Download :size="19" />官方下载</a><a class="secondary-download" :href="githubUrl('ios.ipa')" target="_blank" rel="noreferrer"><Code2 :size="19" />GitHub</a></div>
         </article>
       </div>
       <p v-if="releaseState === 'unavailable'" class="release-fallback">暂时无法读取版本信息，官方下载将前往开源发布页。</p>

@@ -11,7 +11,7 @@ using RailLog.API.Models;
 
 namespace RailLog.API.Services;
 
-public sealed class RailLogDatabase
+public sealed partial class RailLogDatabase
 {
     private const int LeaderboardSize = 20;
     // 均速上限：超过它的行程说明里程或时长填错，不参与速度排行。
@@ -203,6 +203,29 @@ public sealed class RailLogDatabase
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_TripId ON EntityReviews(TripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_SecondTripId ON EntityReviews(SecondTripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviewReactions_ReviewId ON EntityReviewReactions(ReviewId);
+            CREATE TABLE IF NOT EXISTS Announcements (
+                Id TEXT NOT NULL PRIMARY KEY,
+                Text TEXT NOT NULL,
+                Weight INTEGER NOT NULL DEFAULT 10,
+                IsActive INTEGER NOT NULL DEFAULT 1,
+                SortOrder INTEGER NOT NULL DEFAULT 0,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS AppSettings (
+                Key TEXT NOT NULL PRIMARY KEY,
+                Value TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS AdminAuditLogs (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                AdminUserId TEXT NOT NULL,
+                AdminName TEXT NOT NULL,
+                Action TEXT NOT NULL,
+                Target TEXT NULL,
+                Detail TEXT NULL,
+                CreatedAt TEXT NOT NULL
+            );
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -258,6 +281,8 @@ public sealed class RailLogDatabase
                 ON TicketPdfDownloads (ExpiresAt);
             CREATE INDEX IF NOT EXISTS IX_UserAchievements_AchievementId
                 ON UserAchievements (AchievementId);
+            CREATE INDEX IF NOT EXISTS IX_AdminAuditLogs_CreatedAt
+                ON AdminAuditLogs (CreatedAt DESC);
             """);
     }
 
@@ -1763,6 +1788,8 @@ public sealed class RailLogDatabase
         var id = Convert.ToInt64(await command.ExecuteScalarAsync());
         // 评价列表是成就的输入之一，发表后要让本人成就跟上（此前只在下次同步才会更新）。
         EnqueueAchievementRecompute(userId);
+        // 评分会显示在要素排行榜上，不能让缓存继续发旧的平均分。
+        InvalidateStatisticsCache(userId);
         return (await GetEntityReviewsAsync(request.EntityType, request.EntityKey)).First(r => r.Id == id);
     }
 
@@ -1786,7 +1813,11 @@ public sealed class RailLogDatabase
         var affected = await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
         // 删评价会连带删掉它收到的 reaction，两者都是成就输入。
-        if (affected > 0) EnqueueAchievementRecompute(userId);
+        if (affected > 0)
+        {
+            EnqueueAchievementRecompute(userId);
+            InvalidateStatisticsCache(userId);
+        }
         return affected > 0;
     }
 
@@ -1859,7 +1890,12 @@ public sealed class RailLogDatabase
         // 与其它四条评价写路径保持一致：评价是成就输入之一。引擎目前只消费 Reviews.Count，
         // 而本方法改不动 EntityType/EntityKey，所以今天不会改变成就 —— 留着是为了日后
         // 成就要用到评分/内容时，这里不会成为静默的漏网之鱼。
-        if (affected) EnqueueAchievementRecompute(userId);
+        if (affected)
+        {
+            EnqueueAchievementRecompute(userId);
+            // 评分是要素排行榜的展示字段，修改后要立即失效缓存。
+            InvalidateStatisticsCache(userId);
+        }
         return affected;
     }
 
@@ -2299,13 +2335,28 @@ public sealed class RailLogDatabase
                 Increment(rollingStockCounts, model);
             Increment(companyCounts, trip.Trip.CompanyName?.Trim() ?? string.Empty);
         }
+        var elementRatings = await GetEntityRatingAggregatesAsync(connection);
         var elementBoards = new ElementLeaderboards(
-            RankElements(stationCounts), RankElements(routeCounts), RankElements(trainCounts),
-            RankElements(rollingStockCounts), RankElements(companyCounts));
+            RankElements(stationCounts, elementRatings, "station"),
+            RankElements(routeCounts, elementRatings, "route"),
+            RankElements(trainCounts, elementRatings, "train"),
+            RankElements(rollingStockCounts, elementRatings, "rollingstock"),
+            RankElements(companyCounts, elementRatings, "company"));
         return new StatisticsResponse(site, userBoards, tripBoards, elementBoards);
     }
 
     private static string StatisticsCacheKey(string userId) => $"statistics:{userId}";
+
+    /// <summary>
+    /// 排行榜缓存按「查询者」分键：普通 App 请求带自己的用户 ID，
+    /// 管理后台用空字符串取全局榜。任何一次行程变动都会改变全局榜，
+    /// 所以两个键要一起失效。
+    /// </summary>
+    private void InvalidateStatisticsCache(string? userId)
+    {
+        if (!string.IsNullOrEmpty(userId)) _cache.Remove(StatisticsCacheKey(userId));
+        _cache.Remove(StatisticsCacheKey(string.Empty));
+    }
 
     private async Task<IReadOnlyList<SyncTrip>> GetTripsAsync(
         SqliteConnection connection,
@@ -2783,6 +2834,7 @@ public sealed class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
+        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
         var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
@@ -2796,7 +2848,8 @@ public sealed class RailLogDatabase
         var totalExperience = 0;
         for (var pass = 0; pass < 8; pass++)
         {
-            var context = new AchievementContext(totalExperience, totalReviewReactions);
+            var context = new AchievementContext(
+                totalExperience, totalReviewReactions, levelThresholds);
             unlocked = AchievementEngine.Evaluate(trips, reviews, context)
                 .Where(item => item.TriggerTripId.HasValue)
                 .ToList();
@@ -2857,8 +2910,8 @@ public sealed class RailLogDatabase
             _writeLock.Release();
         }
 
-        // 统计缓存从不主动失效；同步者自己的排行榜没必要等满整个 TTL。
-        _cache.Remove(StatisticsCacheKey(userId));
+        // 同步者自己的排行榜没必要等满整个 TTL；全局榜也会因这次同步变化。
+        InvalidateStatisticsCache(userId);
     }
 
     /// <summary>
@@ -2962,10 +3015,12 @@ public sealed class RailLogDatabase
         var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
             connection,
             userId);
+        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         var definitions = AchievementEngine.Evaluate(
             trips,
             reviews,
-            new AchievementContext(totalExperience, totalReviewReactions));
+            new AchievementContext(
+                totalExperience, totalReviewReactions, levelThresholds));
         var items = definitions
             .Select((definition, index) => new
             {
@@ -3063,12 +3118,68 @@ public sealed class RailLogDatabase
         return reviews;
     }
 
+    /// <summary>某个要素在全站评价里的评分合计与条数。</summary>
+    private readonly record struct EntityRatingAggregate(int Sum, int Count)
+    {
+        public double Average => (double)Sum / Count;
+    }
+
+    /// <summary>
+    /// 按「要素类别 + 归一化名称」汇总评价评分。EntityKey 是评价时页面传入的
+    /// 原始名称，大小写与空白可能和排行榜里的写法不同，因此两侧都归一化后再匹配。
+    /// </summary>
+    private static async Task<Dictionary<string, EntityRatingAggregate>> GetEntityRatingAggregatesAsync(
+        SqliteConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT lower(EntityType), EntityKey, SUM(Rating), COUNT(*)
+            FROM EntityReviews
+            GROUP BY lower(EntityType), EntityKey;
+            """;
+        var aggregates = new Dictionary<string, EntityRatingAggregate>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var type = reader.GetString(0);
+            if (!IsRatedElementType(type)) continue;
+            var lookupKey = RatingLookupKey(type, reader.GetString(1));
+            if (lookupKey is null) continue;
+            var count = reader.GetInt32(3);
+            if (count <= 0) continue;
+            var sum = reader.GetInt32(2);
+            aggregates[lookupKey] = aggregates.TryGetValue(lookupKey, out var existing)
+                ? new EntityRatingAggregate(existing.Sum + sum, existing.Count + count)
+                : new EntityRatingAggregate(sum, count);
+        }
+        return aggregates;
+    }
+
+    private static bool IsRatedElementType(string type) =>
+        type is "station" or "route" or "train" or "rollingstock" or "company";
+
+    private static string? RatingLookupKey(string type, string name)
+    {
+        var normalized = NormalizeEntity(name);
+        return normalized.Length == 0 ? null : $"{type}\u001f{normalized}";
+    }
+
     private static IReadOnlyList<ElementRankingEntry> RankElements(
-        IReadOnlyDictionary<string, int> counts) => counts
+        IReadOnlyDictionary<string, int> counts,
+        IReadOnlyDictionary<string, EntityRatingAggregate> ratings,
+        string entityType) => counts
         .OrderByDescending(item => item.Value)
         .ThenBy(item => item.Key, StringComparer.Ordinal)
         .Take(LeaderboardSize)
-        .Select((item, index) => new ElementRankingEntry(index + 1, item.Key, item.Value))
+        .Select((item, index) =>
+        {
+            var lookupKey = RatingLookupKey(entityType, item.Key);
+            var average = lookupKey is not null &&
+                          ratings.TryGetValue(lookupKey, out var aggregate)
+                ? aggregate.Average
+                : (double?)null;
+            return new ElementRankingEntry(index + 1, item.Key, item.Value, average);
+        })
         .ToList();
 
     private static void Increment(IDictionary<string, int> counts, string name)

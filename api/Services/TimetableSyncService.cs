@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using RailLog.API.Models;
 
 namespace RailLog.API.Services;
 
@@ -30,6 +31,167 @@ public sealed class TimetableSyncService(
     private readonly string _timetablesDirectory =
         TimetableDatabasePath.ResolveDirectory(environment);
 
+    // 定时同步与后台「立即同步」共用同一个闸门，避免并发写同一批文件。
+    private readonly SemaphoreSlim _runGate = new(1, 1);
+    private readonly object _stateGate = new();
+    private bool _running;
+    private DateTime? _lastStartedAt;
+    private DateTime? _lastFinishedAt;
+    private string? _lastError;
+    private int _lastSyncedCount;
+    private int _lastMissingCount;
+    private string? _lastTrigger;
+    private DateTime? _nextRunAt;
+
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_stateGate) return _running;
+        }
+    }
+
+    /// <summary>
+    /// 执行一轮同步（定时或手动）。已经有同步在跑时立即返回 false。
+    /// 异常已在本方法内记录到状态里，不会向外抛（取消除外）。
+    /// </summary>
+    public async Task<bool> TryRunAsync(string trigger, CancellationToken cancellationToken)
+    {
+        if (!await _runGate.WaitAsync(0, cancellationToken)) return false;
+        lock (_stateGate)
+        {
+            _running = true;
+            _lastStartedAt = DateTime.Now;
+            _lastTrigger = trigger;
+            _lastError = null;
+        }
+
+        try
+        {
+            var (synced, missing) = await SyncOnceAsync(_options.Sync, cancellationToken);
+            lock (_stateGate)
+            {
+                _lastSyncedCount = synced;
+                _lastMissingCount = missing;
+                _lastFinishedAt = DateTime.Now;
+            }
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is not OperationCanceledException ||
+            !cancellationToken.IsCancellationRequested)
+        {
+            lock (_stateGate)
+            {
+                _lastError = exception.Message.Length > 500
+                    ? exception.Message[..500]
+                    : exception.Message;
+                _lastFinishedAt = DateTime.Now;
+            }
+            logger.LogError(exception, "Historical timetable sync failed.");
+            return true;
+        }
+        finally
+        {
+            lock (_stateGate) _running = false;
+            _runGate.Release();
+        }
+    }
+
+    /// <summary>后台管理页用的同步状态：配置、本地快照与最近一次运行结果。</summary>
+    public AdminTimetableSyncStatus GetStatus()
+    {
+        var settings = _options.Sync;
+        var versions = ListLocalVersions();
+
+        bool running;
+        DateTime? startedAt;
+        DateTime? finishedAt;
+        DateTime? nextRunAt;
+        string? lastError;
+        string? lastTrigger;
+        int synced;
+        int missing;
+        lock (_stateGate)
+        {
+            running = _running;
+            startedAt = _lastStartedAt;
+            finishedAt = _lastFinishedAt;
+            nextRunAt = _nextRunAt;
+            lastError = _lastError;
+            lastTrigger = _lastTrigger;
+            synced = _lastSyncedCount;
+            missing = _lastMissingCount;
+        }
+
+        return new AdminTimetableSyncStatus(
+            settings.Enabled,
+            running,
+            !string.IsNullOrWhiteSpace(settings.GitHubToken),
+            settings.Owner,
+            settings.Repository,
+            settings.AssetName,
+            settings.Hour,
+            settings.Minute,
+            settings.TimeZone,
+            _timetablesDirectory,
+            versions.Count,
+            versions.Sum(item => item.SizeBytes),
+            versions.FirstOrDefault()?.Version,
+            versions.LastOrDefault()?.Version,
+            startedAt,
+            finishedAt,
+            nextRunAt,
+            lastError,
+            synced,
+            missing,
+            lastTrigger,
+            versions);
+    }
+
+    /// <summary>
+    /// 只读地列出 GitHub 上的版本并与本地快照比对，不下载任何文件。
+    /// 用于后台的「检查上游更新」。
+    /// </summary>
+    public async Task<AdminTimetableUpstream> CheckUpstreamAsync(
+        CancellationToken cancellationToken)
+    {
+        var settings = _options.Sync;
+        var local = ReadExistingVersions();
+        try
+        {
+            var releases = await ListReleasesAsync(settings, cancellationToken);
+            var upstream = releases
+                .Select(release => release.Version)
+                .ToHashSet(StringComparer.Ordinal);
+            var missing = upstream
+                .Where(version => !local.Contains(version))
+                .OrderByDescending(version => version, StringComparer.Ordinal)
+                .ToList();
+            return new AdminTimetableUpstream(
+                settings.Repository, local.Count, upstream.Count, missing, null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Failed to check upstream timetable releases.");
+            return new AdminTimetableUpstream(
+                settings.Repository, local.Count, 0, [], exception.Message);
+        }
+    }
+
+    private List<AdminTimetableVersion> ListLocalVersions()
+    {
+        if (!Directory.Exists(_timetablesDirectory)) return [];
+        return new DirectoryInfo(_timetablesDirectory)
+            .EnumerateFiles("*.db", SearchOption.TopDirectoryOnly)
+            .Select(file => (File: file, Version: Path.GetFileNameWithoutExtension(file.Name)))
+            .Where(item => TrainTimetableService.IsValidVersion(item.Version))
+            .Select(item => new AdminTimetableVersion(
+                item.Version, item.File.Length, item.File.LastWriteTime))
+            .OrderByDescending(item => item.Version, StringComparer.Ordinal)
+            .ToList();
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // 先让 Web 主机开始监听；首次同步可能很久，不能挡住启动。
@@ -48,20 +210,11 @@ public sealed class TimetableSyncService(
         {
             do
             {
-                try
-                {
-                    await SyncOnceAsync(settings, stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception exception)
-                {
-                    logger.LogError(exception, "Historical timetable sync failed.");
-                }
+                // 手动同步正在进行时跳过本轮，下一轮按原定时间继续。
+                await TryRunAsync("scheduled", stoppingToken);
 
                 var delay = GetDelayUntilNextRun(settings, timeZone);
+                lock (_stateGate) _nextRunAt = DateTime.Now + delay;
                 logger.LogInformation(
                     "Next historical timetable sync in {Delay} (daily at {Hour:00}:{Minute:00} {TimeZone}).",
                     delay,
@@ -78,7 +231,7 @@ public sealed class TimetableSyncService(
         }
     }
 
-    private async Task SyncOnceAsync(
+    private async Task<(int Synced, int Missing)> SyncOnceAsync(
         TimetableSyncOptions settings,
         CancellationToken cancellationToken)
     {
@@ -94,7 +247,7 @@ public sealed class TimetableSyncService(
             logger.LogInformation(
                 "Historical timetable database is up to date ({Count} versions).",
                 existing.Count);
-            return;
+            return (0, 0);
         }
 
         logger.LogInformation(
@@ -131,21 +284,13 @@ public sealed class TimetableSyncService(
             "Historical timetable sync finished: {Synced}/{Total} version(s) synced.",
             synced,
             missing.Count);
+        return (synced, missing.Count);
     }
 
-    private HashSet<string> ReadExistingVersions()
-    {
-        var versions = new HashSet<string>(StringComparer.Ordinal);
-        if (!Directory.Exists(_timetablesDirectory)) return versions;
-
-        foreach (var path in Directory.EnumerateFiles(_timetablesDirectory, "*.db"))
-        {
-            var version = Path.GetFileNameWithoutExtension(path);
-            if (TrainTimetableService.IsValidVersion(version)) versions.Add(version);
-        }
-
-        return versions;
-    }
+    private HashSet<string> ReadExistingVersions() =>
+        ListLocalVersions()
+            .Select(item => item.Version)
+            .ToHashSet(StringComparer.Ordinal);
 
     private async Task<List<ReleaseVersion>> ListReleasesAsync(
         TimetableSyncOptions settings,

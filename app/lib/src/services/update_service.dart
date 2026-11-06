@@ -3,6 +3,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:raillog/src/models/app_update_info.dart';
 import 'package:raillog/src/services/api_client.dart';
 
+const _storageBaseUrl = 'https://raillog.cn-nb2.rains3.com';
+const _githubReleaseBaseUrl =
+    'https://github.com/denglihong2007/RailLog/releases/download';
+const _windowsStoreUrl = 'https://apps.microsoft.com/detail/9P2XGJRHLZXS';
+
 class UpdateCheckResult {
   const UpdateCheckResult({required this.currentVersion, required this.latest});
 
@@ -46,32 +51,54 @@ class UpdateService {
     }
   }
 
+  /// GitHub 下载：优先用 API 给出的当前平台产物，其余平台按 Release 文件名拼接。
   static String? githubUrlForCurrentPlatform(AppUpdateInfo update) {
     final preferred = switch (defaultTargetPlatform) {
       TargetPlatform.windows => update.windowsDownloadUrl,
       TargetPlatform.android => update.androidDownloadUrl,
       _ => null,
     };
-    return _firstNonEmpty([
-      preferred,
-      update.releaseUrl,
-      update.windowsDownloadUrl,
-      update.androidDownloadUrl,
-    ]);
+    final suffix = _assetSuffixForCurrentPlatform();
+    final version = _versionNumber(update);
+    final constructed = suffix == null
+        ? null
+        : '$_githubReleaseBaseUrl/v$version/${_assetName(version, suffix)}';
+    return _firstNonEmpty([preferred, constructed, update.releaseUrl]);
   }
 
-  static String? domesticUrlForCurrentPlatform(AppUpdateInfo update) {
-    final preferred = switch (defaultTargetPlatform) {
-      TargetPlatform.windows => update.windowsDomesticDownloadUrl,
-      TargetPlatform.android => update.androidDomesticDownloadUrl,
-      _ => null,
-    };
-    return _firstNonEmpty([
-      preferred,
-      update.windowsDomesticDownloadUrl,
-      update.androidDomesticDownloadUrl,
-    ]);
+  /// 官方下载：Windows 走微软商店，其余平台走对象存储里的构建产物。
+  static String? officialDownloadUrlForCurrentPlatform(AppUpdateInfo update) {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return _firstNonEmpty([
+        update.windowsDomesticDownloadUrl,
+        _windowsStoreUrl,
+      ]);
+    }
+    final suffix = _assetSuffixForCurrentPlatform();
+    if (suffix == null) return _firstNonEmpty([update.downloadPageUrl]);
+    final version = _versionNumber(update);
+    return '$_storageBaseUrl/v$version/${_assetName(version, suffix)}';
   }
+
+  static String? _assetSuffixForCurrentPlatform() =>
+      switch (defaultTargetPlatform) {
+        TargetPlatform.windows => 'windows-x64.zip',
+        TargetPlatform.android => 'android-arm64-v8a.apk',
+        TargetPlatform.macOS => 'macos-arm64.zip',
+        TargetPlatform.linux => 'linux-x64.tar.gz',
+        TargetPlatform.iOS => 'ios.ipa',
+        _ => null,
+      };
+
+  static String _versionNumber(AppUpdateInfo update) {
+    final value = update.version.trim();
+    return value.startsWith('v') || value.startsWith('V')
+        ? value.substring(1)
+        : value;
+  }
+
+  static String _assetName(String version, String suffix) =>
+      'raillog-v$version-$suffix';
 
   static String? _firstNonEmpty(Iterable<String?> values) {
     for (final value in values) {

@@ -13,6 +13,7 @@ import {
   TrainFront,
   WalletCards,
 } from '@lucide/vue'
+import { ensureUserLevels, userLevelForExperience } from '../userLevels'
 
 interface PublicUser {
   id: string
@@ -224,6 +225,11 @@ const achievementIconCodepoints: Record<string, number> = {
   military_tech: 0xe3e7,
   numbers: 0xf0542,
   person_outline: 0xe497,
+  filter_drama_outlined: 0xf06b,
+  fork_left_outlined: 0xf0604,
+  tram_outlined: 0xf459,
+  brightness_7_outlined: 0xeefa,
+  restart_alt_outlined: 0xf314,
 }
 
 const userInitial = computed(() => dashboard.value?.user.displayName.trim().charAt(0) || '旅')
@@ -234,6 +240,7 @@ const unlockedAchievements = computed(() => dashboard.value?.achievements.achiev
 
 onMounted(() => {
   document.title = '用户查询 - RailLog 轨记'
+  void ensureUserLevels(props.apiBase)
   if (initialId.trim()) void queryUser(initialId.trim())
 })
 
@@ -280,13 +287,7 @@ function achievementIcon(key: string): string {
 }
 
 function userLevel(experience: number): number {
-  if (experience >= 800) return 6
-  if (experience >= 450) return 5
-  if (experience >= 250) return 4
-  if (experience >= 125) return 3
-  if (experience >= 50) return 2
-  if (experience >= 1) return 1
-  return 0
+  return userLevelForExperience(experience)
 }
 
 function parseDate(value: string | null): Date | null {

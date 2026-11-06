@@ -11,6 +11,7 @@ namespace RailLog.API.Controllers;
 [EnableCors("public-api")]
 public sealed class PartnersController(
     IWebHostEnvironment environment,
+    RailLogDatabase database,
     IOptions<AnnouncementOptions> announcementOptions) : ControllerBase
 {
     private const int HiddenAdvertisementWeight = 0;
@@ -65,14 +66,21 @@ public sealed class PartnersController(
     }
 
     [HttpGet("advertisements")]
-    public ActionResult<PartnerAdvertisementConfigResponse> GetAdvertisements()
+    public async Task<ActionResult<PartnerAdvertisementConfigResponse>> GetAdvertisements()
     {
-        var announcementWeight = Math.Max(0, _announcements.Weight);
-        var announcements = _announcements.Items
-            .Select(text => text?.Trim() ?? string.Empty)
-            .Where(text => text.Length > 0)
-            .Select(text => new SystemAnnouncementResponse(text, announcementWeight))
-            .ToArray();
+        // 公告以管理员后台维护的数据库记录为准；只有表里一条记录都没有时
+        // 才回退到 appsettings，避免升级瞬间丢掉已有公告。若管理员把所有
+        // 公告都下线，数据库仍算「已接管」，不会再回退。
+        var stored = await database.GetActiveAnnouncementsAsync();
+        var useStored = stored.Count > 0 || await database.HasAnnouncementsAsync();
+        var announcements = useStored
+            ? stored.ToArray()
+            : _announcements.Items
+                .Select(text => text?.Trim() ?? string.Empty)
+                .Where(text => text.Length > 0)
+                .Select(text => new SystemAnnouncementResponse(
+                    text, Math.Max(0, _announcements.Weight)))
+                .ToArray();
         return Ok(new PartnerAdvertisementConfigResponse(
             HiddenAdvertisementWeight,
             Partners.Select(partner => new PartnerAdvertisementResponse(

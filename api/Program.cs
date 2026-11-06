@@ -7,11 +7,23 @@ builder.Configuration
     .AddUserSecrets<Program>(optional: true)
     .AddEnvironmentVariables();
 
+// Windows 上默认日志会带上 EventLog provider，而写 ".NET Runtime" 事件源需要管理员权限。
+// 非管理员运行（VSCode 调试、普通终端）时，任何 Warning 级别以上的日志都会抛
+// AggregateException: Cannot open log for source '.NET Runtime'. You may not have write access.
+// 这会直接打断请求与后台任务（例如敏感词目录缺失时的 LogWarning 会让首页接口 500），
+// 所以本地/非管理员场景直接屏蔽该 provider，日志仍由 Console/Debug 输出。
+builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>(
+    category: null, level: LogLevel.None);
+
 builder.Services.AddSingleton<RailLogDatabase>();
 builder.Services.Configure<DatabaseBackupOptions>(
     builder.Configuration.GetSection("DatabaseBackup"));
+builder.Services.Configure<BackupStorageOptions>(
+    builder.Configuration.GetSection("DatabaseBackup:Storage"));
+builder.Services.AddSingleton<BackupStorageService>();
 builder.Services.AddHostedService<DatabaseBackupService>();
 builder.Services.AddHostedService<AchievementBackfillService>();
+builder.Services.AddSingleton<AchievementRecomputeService>();
 builder.Services.Configure<TrainTimetablesOptions>(
     builder.Configuration.GetSection("TrainTimetables"));
 builder.Services.AddSingleton<TrainTimetableService>();
@@ -21,7 +33,11 @@ builder.Services.AddHttpClient("timetable-sync", client =>
     client.Timeout = TimeSpan.FromMinutes(10);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("RailLog-Timetable-Sync/1.0");
 });
-builder.Services.AddHostedService<TimetableSyncService>();
+// 同步服务既要后台定时跑，也要给管理后台提供状态与手动触发，所以注册成
+// 单例再以同一个实例充当 HostedService。
+builder.Services.AddSingleton<TimetableSyncService>();
+builder.Services.AddHostedService(provider =>
+    provider.GetRequiredService<TimetableSyncService>());
 builder.Services.Configure<ContentModerationOptions>(
     builder.Configuration.GetSection("ContentModeration"));
 builder.Services.AddSingleton<SensitiveWordService>();
@@ -35,6 +51,7 @@ builder.Services.AddResponseCompression(options =>
 });
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection("Updates"));
 builder.Services.Configure<AnnouncementOptions>(builder.Configuration.GetSection("Announcements"));
+builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.Configure<TicketAssetsOptions>(builder.Configuration.GetSection("TicketAssets"));
 builder.Services.Configure<TicketPdfOptions>(builder.Configuration.GetSection("TicketPdf"));
 builder.Services.Configure<AmapOptions>(builder.Configuration.GetSection("Amap"));
@@ -71,6 +88,9 @@ builder.Services
     .AddAuthentication(TokenAuthenticationHandler.SchemeName)
     .AddScheme<TokenAuthenticationOptions, TokenAuthenticationHandler>(
         TokenAuthenticationHandler.SchemeName,
+        _ => { })
+    .AddScheme<AdminAuthenticationOptions, AdminAuthenticationHandler>(
+        AdminAuthenticationHandler.SchemeName,
         _ => { });
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options => options.AddPolicy("ticket-pdf", context =>
@@ -91,6 +111,19 @@ builder.Services.AddRateLimiter(options => options.AddPolicy("amap-proxy", conte
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         })));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("admin-login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 {
     if (builder.Environment.IsDevelopment())

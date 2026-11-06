@@ -1,0 +1,250 @@
+/* 与官网 web/src/assets/base.css 保持一致的品牌色与字体 */
+:root {
+    --rl-ink: #202124;
+    --rl-muted: #62676f;
+    --rl-surface: #fff;
+    --rl-surface-low: #f5f6f7;
+    --rl-line: #dfe2e5;
+    --rl-brand: #b3261e;
+    --rl-brand-dark: #7f1711;
+    --rl-blue: #2867a8;
+
+    --vp-font-family-base: Inter, 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --vp-font-family-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+    --vp-c-bg: var(--rl-surface);
+    --vp-c-bg-alt: var(--rl-surface-low);
+    --vp-c-bg-soft: var(--rl-surface-low);
+    --vp-c-text-1: var(--rl-ink);
+    --vp-c-text-2: var(--rl-muted);
+    --vp-c-divider: var(--rl-line);
+    --vp-c-border: var(--rl-line);
+    --vp-c-gutter: var(--rl-line);
+    --vp-c-brand-1: var(--rl-brand);
+    --vp-c-brand-2: var(--rl-brand-dark);
+    --vp-c-brand-3: var(--rl-brand);
+    --vp-c-brand-soft: color-mix(in srgb, var(--rl-brand) 14%, transparent);
+    --vp-button-brand-border: var(--rl-brand);
+    --vp-button-brand-text: #fff;
+    --vp-button-brand-bg: var(--rl-brand);
+    --vp-button-brand-hover-border: var(--rl-brand-dark);
+    --vp-button-brand-hover-text: #fff;
+    --vp-button-brand-hover-bg: var(--rl-brand-dark);
+    --vp-button-brand-active-border: var(--rl-brand-dark);
+    --vp-button-brand-active-text: #fff;
+    --vp-button-brand-active-bg: var(--rl-brand-dark);
+    --vp-nav-height: 68px;
+    --vp-nav-logo-height: 30px;
+    --vp-layout-max-width: 1180px;
+    --vp-sidebar-width: 248px;
+    --vp-sidebar-bg-color: var(--rl-surface);
+}
+
+html.dark {
+    --rl-ink: #e4e2e3;
+    --rl-muted: #b8b6ba;
+    --rl-surface: #111315;
+    --rl-surface-low: #1b1d20;
+    --rl-line: #3d4146;
+    --rl-brand: #ffb4ab;
+    --rl-brand-dark: #ffdad6;
+    --rl-blue: #a8c8f0;
+
+    --vp-c-brand-1: var(--rl-brand);
+    --vp-c-brand-2: var(--rl-brand-dark);
+    --vp-c-brand-3: var(--rl-brand);
+    --vp-c-brand-soft: color-mix(in srgb, var(--rl-brand) 16%, transparent);
+    --vp-button-brand-text: #5c0a05;
+    --vp-button-brand-hover-text: #5c0a05;
+    --vp-button-brand-active-text: #5c0a05;
+}
+
+/* 顶部导航尽量贴近官网 header：68px、品牌图标、毛玻璃背景 */
+.VPNavBar {
+    background-color: color-mix(in srgb, var(--rl-surface) 92%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--rl-line);
+}
+
+.VPNavBar .divider-line {
+    display: none;
+}
+
+.VPNavBarTitle .title {
+    font-weight: 750;
+}
+
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text {
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+.VPNavBarMenuLink:hover,
+.VPNavBarMenuGroup .text:hover {
+    background-color: var(--rl-surface-low);
+}
+
+.VPSidebar {
+    border-right: 1px solid var(--rl-line);
+}
+
+/* 文档正文里的方法徽标与代码更贴近原文档风格 */
+.vp-doc h1 {
+    letter-spacing: 0;
+}
+
+.vp-doc h2 {
+    margin-top: 44px;
+}
+
+.vp-doc td:first-child code {
+    white-space: nowrap;
+}
+
+/* 窄屏表格适配：两列表格让徽标换行；三/四列字段与参数表改为纵向卡片，
+   避免横向滚动或说明列被挤成单字换行 */
+@media (max-width: 767px) {
+    .vp-doc table .VPBadge {
+        white-space: normal;
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))),
+    .vp-doc table:has(thead th:nth-child(4)) {
+        display: block;
+        width: 100%;
+        border-top: 1px solid var(--vp-c-divider);
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) thead,
+    .vp-doc table:has(thead th:nth-child(4)) thead {
+        display: none;
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) tbody,
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) tr,
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) td,
+    .vp-doc table:has(thead th:nth-child(4)) tbody,
+    .vp-doc table:has(thead th:nth-child(4)) tr,
+    .vp-doc table:has(thead th:nth-child(4)) td {
+        display: block;
+        width: auto;
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) tr,
+    .vp-doc table:has(thead th:nth-child(4)) tr {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--vp-c-divider);
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) td,
+    .vp-doc table:has(thead th:nth-child(4)) td {
+        padding: 2px 0;
+        border: 0;
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) td::before,
+    .vp-doc table:has(thead th:nth-child(4)) td::before {
+        display: inline-block;
+        min-width: 3.2em;
+        color: var(--vp-c-text-3);
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) td:nth-child(1)::before {
+        content: '字段';
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) td:nth-child(2)::before {
+        content: '类型';
+    }
+
+    .vp-doc table:has(thead th:nth-child(3)):not(:has(thead th:nth-child(4))) td:nth-child(3)::before {
+        content: '说明';
+    }
+
+    .vp-doc table:has(thead th:nth-child(4)) td:nth-child(1)::before {
+        content: '参数';
+    }
+
+    .vp-doc table:has(thead th:nth-child(4)) td:nth-child(2)::before {
+        content: '类型';
+    }
+
+    .vp-doc table:has(thead th:nth-child(4)) td:nth-child(3)::before {
+        content: '必填';
+    }
+
+    .vp-doc table:has(thead th:nth-child(4)) td:nth-child(4)::before {
+        content: '说明';
+    }
+}
+
+/* 站尾：复用官网 footer 的布局 */
+.rl-site-footer {
+    padding: 28px max(24px, calc((100vw - var(--vp-layout-max-width)) / 2));
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    border-top: 1px solid var(--rl-line);
+    color: var(--rl-muted);
+    font-size: 14px;
+}
+
+.rl-site-footer p {
+    flex: 1;
+    margin: 0;
+}
+
+.rl-site-footer a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--rl-ink);
+}
+
+.rl-footer-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--rl-ink);
+    font-weight: 750;
+}
+
+.rl-footer-brand img {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+}
+
+@media (min-width: 960px) {
+    .rl-site-footer {
+        padding-left: calc(var(--vp-sidebar-width) + 32px);
+        padding-right: 32px;
+    }
+}
+
+@media (min-width: 1440px) {
+    .rl-site-footer {
+        padding-left: calc((100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width) + 32px);
+        padding-right: calc((100vw - var(--vp-layout-max-width)) / 2 + 32px);
+    }
+}
+
+@media (max-width: 700px) {
+    .rl-site-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .rl-site-footer p {
+        margin: 6px 0;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .rl-site-footer {
+        color: var(--rl-muted);
+    }
+}

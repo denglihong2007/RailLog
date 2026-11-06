@@ -16,6 +16,7 @@ import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/trip_detail_settings.dart';
 import 'package:raillog/src/services/trip_list_settings.dart';
+import 'package:raillog/src/services/user_level_settings.dart';
 import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
@@ -44,6 +45,7 @@ void main() async {
     await TripDetailSettings.instance.initialize();
     await TripListSettings.instance.initialize();
     await JournalSettings.instance.initialize();
+    await UserLevelSettings.instance.initialize();
     await TrainService.initializeStationCodes();
     await SessionService.instance.initialize();
     await CloudSyncService.instance.initialize();

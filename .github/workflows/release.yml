@@ -206,3 +206,146 @@ jobs:
           body: ''
           files: dist/*
           generate_release_notes: false
+
+  upload-storage:
+    name: Upload builds to object storage
+    needs: [prepare, release]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # 官网的「官方下载」按钮直接指向这里，路径与文件名要和
+      # web/src/App.vue 里拼出来的一致：v<version>/raillog-v<version>-<平台>。
+      # 桶已开放匿名读，不需要额外设置 ACL。
+      # Windows 从微软商店分发，zip 只留在 GitHub Release，不占对象存储。
+      - name: Upload to RainS3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+          AWS_DEFAULT_REGION: cn-nb2
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          aws --version
+          aws s3 cp dist "s3://raillog/${{ needs.prepare.outputs.tag }}/" \
+            --recursive \
+            --exclude '*-windows-*' \
+            --endpoint-url https://cn-nb2.rains3.com \
+            --cache-control 'public, max-age=31536000, immutable' \
+            --no-progress
+
+  deploy-api:
+    name: Deploy API to IIS
+    needs: [prepare, release]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    # 两个部署作业共用这个组，避免同时往服务器传同名脚本、同时写站点目录
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # 指定 win-x64 只带 Windows 的原生库；不加 RID 会连 Linux/macOS 的
+      # SkiaSharp 一起打进来，光 PDB 就 270 MB。
+      - name: Publish API
+        run: dotnet publish api/RailLog.API.csproj -c Release -r win-x64 --self-contained false -o out
+
+      # - web.config：服务器上的那份存着 SMTP、GitHub token 等环境变量，
+      #   发布包自带的只有一行 aspNetCore handler，覆盖过去会丢配置。
+      # - libSkiaSharp.pdb：91 MB，生产环境用不上。
+      - name: Strip web.config and PDBs
+        run: |
+          set -euo pipefail
+          rm -f out/web.config
+          find out -name '*.pdb' ! -name 'RailLog.API.pdb' -delete
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          cd out
+          zip -qry ../raillog-api.zip .
+
+      - name: Configure SSH known hosts
+        run: |
+          mkdir -p ~/.ssh
+          cp .github/known_hosts ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload package and deploy
+        env:
+          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          sshpass -e scp -P 22 -q \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            raillog-api.zip tools/deploy/deploy-iis.ps1 \
+            Administrator@156.254.6.59:
+          sshpass -e ssh -p 22 \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            Administrator@156.254.6.59 \
+            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/deploy-iis.ps1 -ZipPath C:/Users/Administrator/raillog-api.zip -Profile api'
+
+  deploy-web:
+    name: Deploy website to IIS
+    # 官网把官方下载指向对象存储，等上传成功再发布，避免短时间里链接 404
+    needs: [prepare, release, upload-storage]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm run build = vue-tsc 类型检查 + vite build + vitepress build
+      # 产物在 web/dist，api-docs 会落在 web/dist/api-docs
+      - name: Build website
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          cd web/dist
+          zip -qry ../../raillog-web.zip .
+
+      - name: Configure SSH known hosts
+        run: |
+          mkdir -p ~/.ssh
+          cp .github/known_hosts ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload package and deploy
+        env:
+          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          sshpass -e scp -P 22 -q \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            raillog-web.zip tools/deploy/deploy-iis.ps1 \
+            Administrator@156.254.6.59:
+          sshpass -e ssh -p 22 \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            Administrator@156.254.6.59 \
+            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/deploy-iis.ps1 -ZipPath C:/Users/Administrator/raillog-web.zip -Profile web'

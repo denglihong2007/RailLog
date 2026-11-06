@@ -14,6 +14,7 @@ import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
 import 'package:raillog/src/pages/partner_applications_page.dart';
+import 'package:raillog/src/pages/travel_guide_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/pages/trip_chart_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
@@ -34,15 +35,49 @@ import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _dashboardMaxWidth = 1200.0;
 const _dashboardPreviewLimit = 6;
-const _cloudSignInMessage = '登录并同步行程后即可查看。';
+
+/// 页面左右留白的分档（逻辑像素，指本页内容区的宽度）。数值与主导航的
+/// 600 / 840 对齐：侧栏形态切到哪一档，内容留白就在同一宽度跟上，不会出现
+/// 「侧栏已经变成手机底栏、正文还按桌面留 32」的错位。
+const _homeCompactBreakpoint = 600.0;
+const _homeMediumBreakpoint = 840.0;
+
+/// 网格里一张卡的最小可读宽度。足迹卡取 150：360dp 的手机页宽 311，正好排
+/// 两列；再往上一点点，最常见的手机就会掉回单列。成就卡还要放徽章、标题、
+/// 说明和底栏，因此下限高得多。
+const _achievementCardMinWidth = 265.0;
+const _metricCardMinWidth = 150.0;
+const _dashboardGridSpacing = 12.0;
+
+/// 足迹卡窄到这个宽度（正好是手机上并排两列时的一格），左右内边距从 16 收到
+/// 12，让「同一线路只算一次」这类八字段说明不被省略号截断。
+const _metricCardTightBreakpoint = 170.0;
+
+/// 概览卡片里的三项累计：一项里最长的是「419 时 29 分」这类数值，约 110 宽，
+/// 留出余量取 146；两条竖分隔线各占 16。三项放得下就并排，放不下改三行表格。
+const _overviewMetricMinWidth = 146.0;
+const _overviewMetricDividerWidth = 16.0;
+
+/// 概览卡片窄到这个宽度，标题行与分隔线的上下留白收紧一档。
+const _overviewCardTightBreakpoint = 380.0;
+
+/// 区块标题行放不下三个「图标 + 文字」入口时，收成只有图标的按钮。
+const _sectionActionsCompactBreakpoint = 420.0;
+
+const _travelGuidePreviewLimit = 5;
+const _dismissedBannerKey = 'home.dismissedBanner';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, this.refreshToken = 0});
+  const HomePage({super.key, this.refreshToken = 0, this.onAddTrip});
 
   final int refreshToken;
+
+  /// 首次使用时的「添加第一段行程」入口，由主导航切到「添加行程」页。
+  final VoidCallback? onAddTrip;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -55,16 +90,10 @@ class _HomePageState extends State<HomePage> {
   TripDashboardStats? _lastStats;
   bool _isResetting = false;
 
-  // 「出行指南」的排序方式与分页游标。两类共用一个页码游标，
-  // 切换排序方式时整段重来。
-  TravelGuideMode _travelGuideMode = TravelGuideMode.hot;
-  final List<EntityReview> _travelGuideReviews = [];
+  /// 主页只展示出行指南的少量预览，完整列表在 [TravelGuidePage]。
+  final List<EntityReview> _travelGuidePreview = [];
   bool _travelGuideLoading = false;
-  bool _travelGuideLoadingMore = false;
-  bool _travelGuideLoaded = false;
-  bool _travelGuideHasMore = true;
   Object? _travelGuideError;
-  int _travelGuideOffset = 0;
   int _travelGuideRequestId = 0;
 
   @override
@@ -74,7 +103,7 @@ class _HomePageState extends State<HomePage> {
     _advertisementFuture = _loadAdvertisement();
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
-      _loadTravelGuide();
+      _loadTravelGuidePreview();
     }
   }
 
@@ -96,14 +125,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 重新取「出行指南」的第一页。切换排序方式、下拉刷新、登录状态变化都走这里。
-  Future<void> _loadTravelGuide() async {
+  /// 取「出行指南」的第一页，只留前几条做预览。完整列表在 [TravelGuidePage]。
+  Future<void> _loadTravelGuidePreview() async {
     final requestId = ++_travelGuideRequestId;
     if (!SessionService.instance.isSignedIn) {
       setState(() {
-        _travelGuideReviews.clear();
-        _travelGuideOffset = 0;
-        _travelGuideLoaded = false;
+        _travelGuidePreview.clear();
         _travelGuideLoading = false;
         _travelGuideError = null;
       });
@@ -111,22 +138,18 @@ class _HomePageState extends State<HomePage> {
     }
     setState(() {
       _travelGuideLoading = true;
-      _travelGuideLoaded = false;
       _travelGuideError = null;
     });
     try {
       final page = await EntityReviewService.fetchTravelGuidePage(
-        mode: _travelGuideMode,
+        mode: TravelGuideMode.hot,
       );
       if (!mounted || requestId != _travelGuideRequestId) return;
       setState(() {
-        _travelGuideReviews
+        _travelGuidePreview
           ..clear()
-          ..addAll(page);
-        _travelGuideOffset = page.length;
-        _travelGuideHasMore = page.length >= EntityReviewService.pageSize;
+          ..addAll(page.take(_travelGuidePreviewLimit));
         _travelGuideLoading = false;
-        _travelGuideLoaded = true;
       });
     } catch (error) {
       if (!mounted || requestId != _travelGuideRequestId) return;
@@ -137,82 +160,28 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 主页滚到底时追加下一页。热门排序按反应数衰减打分，跨请求可能有细微抖动，
-  /// 所以这里按 id 去重，避免同一条被追加两次。
-  Future<void> _loadMoreTravelGuide() async {
-    if (!SessionService.instance.isSignedIn ||
-        _travelGuideLoading ||
-        _travelGuideLoadingMore ||
-        !_travelGuideLoaded ||
-        !_travelGuideHasMore ||
-        _travelGuideError != null) {
-      return;
-    }
-    final requestId = _travelGuideRequestId;
-    setState(() => _travelGuideLoadingMore = true);
-    try {
-      final page = await EntityReviewService.fetchTravelGuidePage(
-        mode: _travelGuideMode,
-        offset: _travelGuideOffset,
-      );
-      if (!mounted || requestId != _travelGuideRequestId) return;
-      final seen = _travelGuideReviews.map((review) => review.id).toSet();
-      setState(() {
-        _travelGuideOffset += page.length;
-        _travelGuideReviews.addAll(
-          page.where((review) => seen.add(review.id)),
-        );
-        _travelGuideHasMore = page.length >= EntityReviewService.pageSize;
-        _travelGuideLoadingMore = false;
-      });
-    } catch (_) {
-      if (!mounted || requestId != _travelGuideRequestId) return;
-      // 翻页失败不清空已有内容，滚动到底可以再试。
-      setState(() => _travelGuideLoadingMore = false);
-    }
-  }
-
-  void _changeTravelGuideMode(TravelGuideMode mode) {
-    if (mode == _travelGuideMode) return;
-    setState(() {
-      _travelGuideMode = mode;
-      // 两种排序的内容互不相干，换挡时先清掉，免得旧排序的条目留在新排序下面。
-      _travelGuideReviews.clear();
-      _travelGuideOffset = 0;
-      _travelGuideHasMore = true;
-    });
-    _loadTravelGuide();
-  }
-
   /// 只替换被回应的那一条，不重拉列表。回应接口不返回新状态，本地按后端的
   /// 「每人每条评价至多一个表情」规则推算；列表长度不变，滚动位置也就不会跳。
   void _updateTravelGuideReactions(
     int reviewId,
     List<EntityReviewReaction> reactions,
   ) {
-    final index = _travelGuideReviews.indexWhere(
+    final index = _travelGuidePreview.indexWhere(
       (review) => review.id == reviewId,
     );
     if (index < 0) return;
     setState(() {
-      _travelGuideReviews[index] = _travelGuideReviews[index].withReactions(
+      _travelGuidePreview[index] = _travelGuidePreview[index].withReactions(
         reactions,
       );
     });
   }
 
-  bool _handleDashboardScroll(ScrollNotification notification) {
-    if (notification.metrics.axis == Axis.vertical &&
-        notification.metrics.extentAfter < 320) {
-      _loadMoreTravelGuide();
-    }
-    return false;
-  }
-
   Future<void> _refresh() async {
     final statsFuture = DbHelper.instance.getDashboardStats();
     final advertisementFuture = _loadAdvertisement();
-    final achievementsFuture = SessionService.instance.isSignedIn
+    final signedIn = SessionService.instance.isSignedIn;
+    final achievementsFuture = signedIn
         ? AchievementService.fetchCurrent()
         : null;
     setState(() {
@@ -220,7 +189,9 @@ class _HomePageState extends State<HomePage> {
       _advertisementFuture = advertisementFuture;
       _achievementsFuture = achievementsFuture;
     });
-    final travelGuideFuture = _loadTravelGuide();
+    final travelGuideFuture = signedIn
+        ? _loadTravelGuidePreview()
+        : Future<void>.value();
     await statsFuture;
     await advertisementFuture;
     if (achievementsFuture != null) {
@@ -265,6 +236,45 @@ class _HomePageState extends State<HomePage> {
     );
     if (confirmed != true || !mounted) return;
     await _resetLocalDatabase();
+  }
+
+  /// 读取失败时，「重置数据库」不再和「重试」并排出现，而是收进这个高级入口。
+  Future<void> _showAdvancedRecoveryOptions() async {
+    final colors = Theme.of(context).colorScheme;
+    final shouldReset = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('高级选项'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('重试后仍无法读取数据时，可以重置本地数据库。'),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.settings_backup_restore,
+                color: colors.error,
+              ),
+              title: Text(
+                '重置本地数据库',
+                style: TextStyle(color: colors.error),
+              ),
+              subtitle: const Text('清空本机缓存与设置'),
+              onTap: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+    if (shouldReset == true && mounted) await _confirmResetDatabase();
   }
 
   Future<void> _resetLocalDatabase() async {
@@ -318,14 +328,11 @@ class _HomePageState extends State<HomePage> {
         if (snapshot.hasError) {
           return _HomeStatus(
             icon: Icons.error_outline,
-            message: '读取行程数据失败',
-            hint: SessionService.instance.isSignedIn
-                ? '本地数据库可能已损坏。行程已同步到云端，重置后会自动拉回。'
-                : '本地数据库可能已损坏。未同步到云端的行程会永久丢失。',
+            message: '读取本地行程失败',
+            hint: '可能有其他程序正在占用数据库，请稍后重试。',
             actionLabel: '重试',
             onAction: _refresh,
-            secondaryActionLabel: '重置本地数据库',
-            onSecondaryAction: _confirmResetDatabase,
+            onAdvancedAction: _showAdvancedRecoveryOptions,
             isBusy: _isResetting,
           );
         }
@@ -335,29 +342,31 @@ class _HomePageState extends State<HomePage> {
 
         final stats = snapshot.data!;
         _lastStats = stats;
+        final signedIn = SessionService.instance.isSignedIn;
+        final isFirstRun = stats.tripCount == 0;
         return RefreshIndicator(
           onRefresh: _refresh,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _handleDashboardScroll,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return _DashboardScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: _dashboardPadding(constraints),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Column(
-                        children: [
-                          _PartnerAdvertisementLoader(
-                            future: _advertisementFuture,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return _DashboardScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: _dashboardPadding(constraints),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        M3AnimatedVisibility(
+                          visible: !signedIn,
+                          child: const Padding(
+                            padding: EdgeInsets.only(bottom: 16),
+                            child: M3Reveal(child: _SignInBanner()),
                           ),
-                          M3AnimatedVisibility(
-                            visible: !SessionService.instance.isSignedIn,
-                            child: const Padding(
-                              padding: EdgeInsets.only(bottom: 16),
-                              child: M3Reveal(child: _SignInBanner()),
-                            ),
-                          ),
+                        ),
+                        if (isFirstRun)
+                          M3Reveal(
+                            child: _FirstRunCard(onAddTrip: widget.onAddTrip),
+                          )
+                        else ...[
                           M3Reveal(
                             child: _OverviewSection(
                               stats: stats,
@@ -367,43 +376,46 @@ class _HomePageState extends State<HomePage> {
                           const SizedBox(height: 24),
                           _StatsGrid(stats: stats, onChanged: _refresh),
                           const SizedBox(height: 24),
-                          _AchievementsLoader(
-                            future: _achievementsFuture,
-                            signedIn: SessionService.instance.isSignedIn,
-                            onRetry: _refresh,
-                            onChanged: _refresh,
+                          if (signedIn) ...[
+                            _AchievementsLoader(
+                              future: _achievementsFuture,
+                              signedIn: signedIn,
+                              onRetry: _refresh,
+                              onChanged: _refresh,
+                            ),
+                            const SizedBox(height: 24),
+                            _HomeTravelGuideSection(
+                              reviews: _travelGuidePreview,
+                              loading: _travelGuideLoading,
+                              error: _travelGuideError,
+                              onRetry: _loadTravelGuidePreview,
+                              onReactionsChanged: _updateTravelGuideReactions,
+                              onOpenAll: _openTravelGuide,
+                            ),
+                            const SizedBox(height: 24),
+                          ],
+                          _PartnerAdvertisementLoader(
+                            future: _advertisementFuture,
                           ),
-                          const SizedBox(height: 24),
                         ],
-                      ),
+                      ],
                     ),
-                    _HomeTravelGuideSection(
-                      signedIn: SessionService.instance.isSignedIn,
-                      mode: _travelGuideMode,
-                      reviews: _travelGuideReviews,
-                      loading: _travelGuideLoading,
-                      loadingMore: _travelGuideLoadingMore,
-                      hasMore: _travelGuideHasMore,
-                      error: _travelGuideError,
-                      onModeChanged: _changeTravelGuideMode,
-                      onRetry: _loadTravelGuide,
-                      onReactionsChanged: _updateTravelGuideReactions,
-                    ),
-                    if (stats.tripCount == 0)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: 24),
-                          child: M3Reveal(child: _EmptyStateCard()),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
     );
+  }
+
+  Future<void> _openTravelGuide() async {
+    await Navigator.of(
+      context,
+    ).push<void>(m3PageRoute(builder: (_) => const TravelGuidePage()));
+    if (!mounted) return;
+    await _loadTravelGuidePreview();
   }
 }
 
@@ -419,22 +431,63 @@ class _PartnerAdvertisementLoader extends StatefulWidget {
 
 class _PartnerAdvertisementLoaderState
     extends State<_PartnerAdvertisementLoader> {
-  bool _dismissed = false;
+  /// 关闭过的那一条横幅的签名。同一广告/公告在下次启动时不再出现。
+  String? _dismissedSignature;
+  bool _preferencesLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDismissedSignature();
+  }
+
+  Future<void> _loadDismissedSignature() async {
+    String? saved;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      saved = preferences.getString(_dismissedBannerKey);
+    } catch (_) {
+      // 读取失败就当作没关闭过，不能因此挡住横幅。
+    }
+    if (!mounted) return;
+    setState(() {
+      _dismissedSignature = saved;
+      _preferencesLoaded = true;
+    });
+  }
+
+  String _signature(PartnerAdvertisement advertisement) =>
+      '${advertisement.isAnnouncement ? 'announcement' : 'partner'}:'
+      '${advertisement.partnerId}:${advertisement.text}';
+
+  Future<void> _dismiss(PartnerAdvertisement advertisement) async {
+    final signature = _signature(advertisement);
+    setState(() => _dismissedSignature = signature);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_dismissedBannerKey, signature);
+    } catch (_) {
+      // 只影响下次启动是否重现，忽略即可。
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_dismissed) return const SizedBox.shrink();
+    if (!_preferencesLoaded) return const SizedBox.shrink();
     return FutureBuilder<PartnerAdvertisement?>(
       future: widget.future,
       builder: (context, snapshot) {
         final advertisement = snapshot.data;
         if (advertisement == null) return const SizedBox.shrink();
+        if (_signature(advertisement) == _dismissedSignature) {
+          return const SizedBox.shrink();
+        }
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: M3Reveal(
             child: _PartnerAdvertisementBanner(
               advertisement: advertisement,
-              onClose: () => setState(() => _dismissed = true),
+              onClose: () => _dismiss(advertisement),
             ),
           ),
         );
@@ -634,7 +687,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                           ),
                           if (stats.tripCount == 0) ...[
                             const SizedBox(height: 24),
-                            const _EmptyStateCard(),
+                            const _PublicEmptyStateCard(),
                           ],
                         ],
                       ),
@@ -669,8 +722,8 @@ class _PublicUserPageState extends State<PublicUserPage> {
 /// 「多出来的宽度」折算进内边距，否则每个条目都要单独包一层居中。
 EdgeInsets _dashboardPadding(BoxConstraints constraints) {
   final pagePadding = switch (constraints.maxWidth) {
-    < 600 => 16.0,
-    < 840 => 24.0,
+    < _homeCompactBreakpoint => 16.0,
+    < _homeMediumBreakpoint => 24.0,
     _ => 32.0,
   };
   final horizontal = constraints.maxWidth - pagePadding * 2 > _dashboardMaxWidth
@@ -810,11 +863,9 @@ class _AchievementsLoader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final achievementsFuture = future;
+    // 未登录时整段隐藏：登录提示只在页面顶部的横幅出现一次。
     if (!signedIn || achievementsFuture == null) {
-      return const _AchievementServerStatus(
-        icon: Icons.cloud_off_outlined,
-        message: _cloudSignInMessage,
-      );
+      return const SizedBox.shrink();
     }
     return FutureBuilder<List<DashboardAchievement>>(
       future: achievementsFuture,
@@ -828,7 +879,7 @@ class _AchievementsLoader extends StatelessWidget {
         if (snapshot.hasError) {
           return _AchievementServerStatus(
             icon: Icons.cloud_off_outlined,
-            message: '当前无法获取成就。请联网并完成行程同步后重试。',
+            message: '当前无法获取成就，请检查网络后重试。',
             onRetry: onRetry,
           );
         }
@@ -895,6 +946,9 @@ class _AchievementsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 预览只露前几张，所以按最近解锁排序：把「刚点亮的那几张」放在最前面。
+    // 「查看全部」里仍是完整的分类视图，顺序不受影响。
+    final ordered = sortAchievementsByLatestUnlock(achievements);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -905,42 +959,41 @@ class _AchievementsSection extends StatelessWidget {
               onPressed: () => _openAllAchievements(context),
               icon: const Icon(Icons.arrow_forward, size: 18),
               iconAlignment: IconAlignment.end,
-              label: const Text('查看更多'),
+              label: const Text('查看全部'),
             ),
           ],
         ),
         const SizedBox(height: 12),
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = switch (constraints.maxWidth) {
-              < 600 => 1,
-              < 960 => 2,
-              _ => 3,
-            };
+            final columns = _dashboardGridColumns(
+              constraints.maxWidth,
+              minCardWidth: _achievementCardMinWidth,
+            );
             return GridView.builder(
               shrinkWrap: true,
               padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
+                mainAxisSpacing: _dashboardGridSpacing,
+                crossAxisSpacing: _dashboardGridSpacing,
                 mainAxisExtent: 132,
               ),
-              itemCount: achievements.length > _dashboardPreviewLimit
+              itemCount: ordered.length > _dashboardPreviewLimit
                   ? _dashboardPreviewLimit
-                  : achievements.length,
+                  : ordered.length,
               itemBuilder: (context, index) => M3Reveal(
                 delay: m3RevealDelay(index),
                 distance: 8,
                 child: DashboardAchievementCard(
-                  key: ValueKey(achievements[index].id),
-                  achievement: achievements[index],
+                  key: ValueKey(ordered[index].id),
+                  achievement: ordered[index],
                   // 与成就页保持一致：有子项先看达成要求，其余已解锁的进解锁行程。
-                  onTap: achievements[index].hasRequirements
-                      ? () => _openRequirements(context, achievements[index])
-                      : achievements[index].unlockedBy != null
-                      ? () => _openAchievement(context, achievements[index])
+                  onTap: ordered[index].hasRequirements
+                      ? () => _openRequirements(context, ordered[index])
+                      : ordered[index].unlockedBy != null
+                      ? () => _openAchievement(context, ordered[index])
                       : null,
                 ),
               ),
@@ -984,116 +1037,82 @@ class _AchievementsSection extends StatelessWidget {
   }
 }
 
+/// 主页上的出行指南只做少量预览，排序切换与翻页都在 [TravelGuidePage] 里。
 class _HomeTravelGuideSection extends StatelessWidget {
   const _HomeTravelGuideSection({
-    required this.signedIn,
-    required this.mode,
     required this.reviews,
     required this.loading,
-    required this.loadingMore,
-    required this.hasMore,
     required this.error,
-    required this.onModeChanged,
     required this.onRetry,
     required this.onReactionsChanged,
+    required this.onOpenAll,
   });
 
-  final bool signedIn;
-  final TravelGuideMode mode;
   final List<EntityReview> reviews;
   final bool loading;
-  final bool loadingMore;
-  final bool hasMore;
   final Object? error;
-  final ValueChanged<TravelGuideMode> onModeChanged;
   final Future<void> Function() onRetry;
   final void Function(int reviewId, List<EntityReviewReaction> reactions)
       onReactionsChanged;
-
-  bool get _showList => signedIn && reviews.isNotEmpty;
+  final VoidCallback onOpenAll;
 
   @override
   Widget build(BuildContext context) {
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverToBoxAdapter(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _TravelGuideHeader(mode: mode, onModeChanged: onModeChanged),
-              const SizedBox(height: 12),
-              if (!_showList) _buildStatus(context),
-            ],
-          ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(child: _SectionHeading(title: '出行指南')),
+            TextButton(
+              onPressed: reviews.isEmpty ? null : onOpenAll,
+              child: const Text('查看全部'),
+            ),
+          ],
         ),
-        if (_showList) ...[
-          // 分页会一直往下追加。铺成一个 Column 时所有条目都留在树上，
-          // 越往下滑要布局/绘制的内容越多，所以这里必须用懒构建的 SliverList。
-          SliverList.builder(
-            itemCount: reviews.length,
-            itemBuilder: (context, index) {
-              final review = reviews[index];
-              final isLast = index == reviews.length - 1;
-              return EntityReviewCard(
-                key: ValueKey(review.id),
-                review: review,
-                showTarget: true,
-                showTripLinks: true,
-                showDivider: !isLast,
-                contentPadding: EdgeInsets.fromLTRB(
-                  0,
-                  index == 0 ? 0 : 12,
-                  0,
-                  isLast ? 4 : 14,
-                ),
-                onChanged: onRetry,
-                onReactionChanged: (reactions) =>
-                    onReactionsChanged(review.id, reactions),
-                onTargetTap: () => openEntityReviewTarget(context, review),
-                onTripTap: (trip) => _openTrip(context, review, trip),
-              );
-            },
-          ),
-          SliverToBoxAdapter(child: _buildFooter(context)),
-        ],
+        const SizedBox(height: 12),
+        if (reviews.isEmpty)
+          _buildStatus(context)
+        else
+          for (var index = 0; index < reviews.length; index++)
+            _buildCard(context, reviews[index], index),
       ],
     );
   }
 
+  Widget _buildCard(BuildContext context, EntityReview review, int index) {
+    final isLast = index == reviews.length - 1;
+    return EntityReviewCard(
+      key: ValueKey(review.id),
+      review: review,
+      showTarget: true,
+      showTripLinks: true,
+      showDivider: !isLast,
+      contentPadding: EdgeInsets.fromLTRB(
+        0,
+        index == 0 ? 0 : 12,
+        0,
+        isLast ? 0 : 14,
+      ),
+      onChanged: onRetry,
+      onReactionChanged: (reactions) =>
+          onReactionsChanged(review.id, reactions),
+      onTargetTap: () => openEntityReviewTarget(context, review),
+      onTripTap: (trip) => _openTrip(context, review, trip),
+    );
+  }
+
   Widget _buildStatus(BuildContext context) {
-    if (!signedIn) {
-      return const _HomeTravelGuideStatus(
-        icon: Icons.cloud_off_outlined,
-        message: _cloudSignInMessage,
-      );
-    }
     // 已经有内容时不因为刷新而清空，重载进度由下拉刷新自己的指示器表达。
     if (loading) return const LinearProgressIndicator();
     if (error != null) {
-      return _HomeTravelGuideStatus(message: '当前无法获取出行指南', onRetry: onRetry);
-    }
-    return const _HomeTravelGuideStatus(message: '暂无出行指南');
-  }
-
-  Widget _buildFooter(BuildContext context) {
-    if (loadingMore) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator()),
+      return _HomeTravelGuideStatus(
+        icon: Icons.cloud_off_outlined,
+        message: '当前无法获取出行指南',
+        onRetry: onRetry,
       );
     }
-    if (hasMore) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: Text(
-          '没有更多了',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ),
-    );
+    return const _HomeTravelGuideStatus(message: '暂无出行指南');
   }
 
   void _openTrip(BuildContext context, EntityReview review, TripRecord trip) {
@@ -1110,46 +1129,7 @@ class _HomeTravelGuideSection extends StatelessWidget {
   }
 }
 
-/// 「出行指南」的小标题与排序方式切换，两者并排一行。
-/// 切换器右对齐，窄屏放不下时自己横向滚动，不会顶破标题。
-class _TravelGuideHeader extends StatelessWidget {
-  const _TravelGuideHeader({required this.mode, required this.onModeChanged});
-
-  final TravelGuideMode mode;
-  final ValueChanged<TravelGuideMode> onModeChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const _SectionHeading(title: '出行指南'),
-        const SizedBox(width: 12),
-        // 标题按内容宽度，剩下的宽度全给切换器；reverse 让它在放得下时靠右。
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            reverse: true,
-            child: SegmentedButton<TravelGuideMode>(
-              showSelectedIcon: false,
-              segments: [
-                for (final option in TravelGuideMode.values)
-                  ButtonSegment<TravelGuideMode>(
-                    value: option,
-                    label: Text(option.label),
-                  ),
-              ],
-              selected: {mode},
-              onSelectionChanged: (selection) =>
-                  onModeChanged(selection.first),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 出行指南的「没有内容 / 出错 / 未登录」提示条。标题行由 [_TravelGuideHeader] 负责。
+/// 出行指南的「没有内容 / 出错」提示条。
 class _HomeTravelGuideStatus extends StatelessWidget {
   const _HomeTravelGuideStatus({
     required this.message,
@@ -1194,7 +1174,7 @@ class _SignInBanner extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              '尚未登录，当前行程仅保存在本机',
+              '尚未登录，行程仅保存在本机。登录后可同步并查看成就与出行指南。',
               style: TextStyle(color: colors.onSecondaryContainer),
             ),
           ),
@@ -1250,41 +1230,53 @@ class _OverviewSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            const Expanded(child: _SectionHeading(title: '铁路行程总览')),
-            TextButton.icon(
-              onPressed: stats.allTrips.isEmpty
-                  ? null
-                  : () => Navigator.of(context).push(
-                      m3PageRoute(
-                        builder: (_) => TripChartPage(
-                          trips: stats.allTrips,
-                          openTrip: openTrip,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact =
+                constraints.maxWidth < _sectionActionsCompactBreakpoint;
+            return Row(
+              children: [
+                const Expanded(child: _SectionHeading(title: '铁路行程总览')),
+                _SectionAction(
+                  compact: compact,
+                  icon: Icons.show_chart,
+                  label: '趋势',
+                  tooltip: '里程趋势',
+                  onPressed: stats.allTrips.isEmpty
+                      ? null
+                      : () => Navigator.of(context).push(
+                          m3PageRoute(
+                            builder: (_) => TripChartPage(
+                              trips: stats.allTrips,
+                              openTrip: openTrip,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-              icon: const Icon(Icons.show_chart, size: 18),
-              label: const Text('趋势'),
-            ),
-            if (enableTripManagement || mapTrips != null)
-              TextButton.icon(
-                onPressed: stats.tripCount == 0
-                    ? null
-                    : () => Navigator.of(context).push<void>(
-                        m3PageRoute(
-                          builder: (_) => TripMapPage(trips: mapTrips),
-                        ),
-                      ),
-                icon: const Icon(Icons.map_outlined, size: 18),
-                label: const Text('地图'),
-              ),
-            TextButton.icon(
-              onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
-              icon: const Icon(Icons.format_list_bulleted, size: 18),
-              label: const Text('全部'),
-            ),
-          ],
+                ),
+                if (enableTripManagement || mapTrips != null)
+                  _SectionAction(
+                    compact: compact,
+                    icon: Icons.map_outlined,
+                    label: '地图',
+                    tooltip: '行程地图',
+                    onPressed: stats.tripCount == 0
+                        ? null
+                        : () => Navigator.of(context).push<void>(
+                            m3PageRoute(
+                              builder: (_) => TripMapPage(trips: mapTrips),
+                            ),
+                          ),
+                  ),
+                _SectionAction(
+                  compact: compact,
+                  icon: Icons.format_list_bulleted,
+                  label: '全部',
+                  tooltip: '全部行程',
+                  onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 12),
         _OverviewCard(stats: stats, subject: subject),
@@ -1312,7 +1304,7 @@ class _OverviewCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '$subject已累计出发 ${stats.tripCount} 次',
+            '$subject已累计出发 ${_group('${stats.tripCount}')} 次',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: colors.onPrimaryContainer,
             ),
@@ -1324,7 +1316,8 @@ class _OverviewCard extends StatelessWidget {
           ),
           LayoutBuilder(
             builder: (context, constraints) {
-              final isCompact = constraints.maxWidth < 380;
+              final isCompact =
+                  constraints.maxWidth < _overviewCardTightBreakpoint;
               return Column(
                 children: [
                   SizedBox(height: isCompact ? 12 : 20),
@@ -1375,7 +1368,8 @@ class _OverviewMetrics extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 560) {
+        if (constraints.maxWidth <
+            _overviewMetricMinWidth * 3 + _overviewMetricDividerWidth * 2) {
           return _CompactOverviewMetrics(metrics: metrics);
         }
         return Row(
@@ -1529,7 +1523,10 @@ class _OverviewMetricDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 64,
-      child: VerticalDivider(color: color.withValues(alpha: 0.24)),
+      child: VerticalDivider(
+        width: _overviewMetricDividerWidth,
+        color: color.withValues(alpha: 0.24),
+      ),
     );
   }
 }
@@ -1548,13 +1545,13 @@ class _StatsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final footprintCards = [
       _Metric(
-        '走过线路',
+        '乘坐线路',
         '${stats.routeCount}',
-        '按经由线路去重',
+        '同一线路只算一次',
         Icons.route_outlined,
         onTap: () => _showUnlocks(
           context,
-          title: '走过线路',
+          title: '乘坐线路',
           icon: Icons.route_outlined,
           entries: stats.routeUnlocks,
           allTrips: stats.allTrips,
@@ -1563,13 +1560,13 @@ class _StatsGrid extends StatelessWidget {
         ),
       ),
       _Metric(
-        '坐过车次',
+        '乘坐车次',
         '${stats.trainCount}',
-        '按坐过车次去重',
+        '同一车次只算一次',
         Icons.confirmation_number_outlined,
         onTap: () => _showUnlocks(
           context,
-          title: '坐过车次',
+          title: '乘坐车次',
           icon: Icons.confirmation_number_outlined,
           entries: stats.trainUnlocks,
           allTrips: stats.allTrips,
@@ -1580,7 +1577,7 @@ class _StatsGrid extends StatelessWidget {
       _Metric(
         '车型种类',
         '${stats.rollingStockCount}',
-        '已记录的不同车型',
+        '记录过的不同车型',
         Icons.train_outlined,
         onTap: () => _showUnlocks(
           context,
@@ -1594,7 +1591,7 @@ class _StatsGrid extends StatelessWidget {
       _Metric(
         '承运单位',
         '${stats.companyCount}',
-        '按担当公司去重',
+        '不同的担当单位',
         Icons.business_outlined,
         onTap: () => _showUnlocks(
           context,
@@ -1613,7 +1610,7 @@ class _StatsGrid extends StatelessWidget {
       _Metric(
         '到访车站',
         '${stats.stationCount}',
-        '始发、终到站去重',
+        '始发、终到站',
         Icons.location_on_outlined,
         onTap: () => _showUnlocks(
           context,
@@ -1626,13 +1623,13 @@ class _StatsGrid extends StatelessWidget {
         ),
       ),
       _Metric(
-        '坐过路线',
+        '乘车区间',
         '${stats.routePairCount}',
-        '按始发、终到站组合去重',
+        '始发、终到组合',
         Icons.alt_route_outlined,
         onTap: () => _showUnlocks(
           context,
-          title: '坐过路线',
+          title: '乘车区间',
           icon: Icons.alt_route_outlined,
           entries: stats.routePairUnlocks,
           allTrips: stats.allTrips,
@@ -1641,7 +1638,7 @@ class _StatsGrid extends StatelessWidget {
       _Metric(
         '到访城市',
         '${stats.cityCount}',
-        '按车站对应城市去重',
+        '车站所在城市',
         Icons.location_city_outlined,
         onTap: () => _showUnlocks(
           context,
@@ -1695,7 +1692,44 @@ class _SectionHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(title, style: Theme.of(context).textTheme.titleMedium);
+    return Semantics(
+      header: true,
+      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+}
+
+/// 区块标题行右侧的入口。放得下时是「图标 + 文字」，放不下时只留图标，
+/// 含义交给 tooltip —— 三个带文字的按钮在 360 宽的屏上会把标题行挤爆。
+class _SectionAction extends StatelessWidget {
+  const _SectionAction({
+    required this.compact,
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final bool compact;
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (compact) {
+      return IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+      );
+    }
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+    );
   }
 }
 
@@ -1708,15 +1742,21 @@ class _MetricGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = _dashboardGridColumns(constraints.maxWidth);
+        final columns = _dashboardGridColumns(
+          constraints.maxWidth,
+          minCardWidth: _metricCardMinWidth,
+        );
+        final compact =
+            _dashboardCellWidth(constraints.maxWidth, columns) <
+            _metricCardTightBreakpoint;
         return GridView.builder(
           shrinkWrap: true,
           padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
+            mainAxisSpacing: _dashboardGridSpacing,
+            crossAxisSpacing: _dashboardGridSpacing,
             mainAxisExtent: 120,
           ),
           itemCount: cards.length,
@@ -1724,7 +1764,7 @@ class _MetricGrid extends StatelessWidget {
             return M3Reveal(
               delay: m3RevealDelay(index),
               distance: 8,
-              child: _MetricCard(metric: cards[index]),
+              child: _MetricCard(metric: cards[index], compact: compact),
             );
           },
         );
@@ -1733,23 +1773,34 @@ class _MetricGrid extends StatelessWidget {
   }
 }
 
-int _dashboardGridColumns(double width) => switch (width) {
-  < 295 => 1,
-  < 840 => 2,
-  < 1120 => 3,
-  _ => 4,
-};
+/// 主页两张网格共用的列数规则：一张卡至少要 [minCardWidth] 宽才排得下，
+/// 宽度每多放得下一张卡就加一列。阈值不在两处各写一套死数字，而是由卡片的
+/// 最小可读宽度推出来，信息更密的成就卡自然比足迹卡更早止步于少列。
+int _dashboardGridColumns(double width, {required double minCardWidth}) {
+  final columns =
+      ((width + _dashboardGridSpacing) / (minCardWidth + _dashboardGridSpacing))
+          .floor();
+  return columns.clamp(1, 4);
+}
+
+/// 网格里一格算上间距后的宽度，卡片据此决定内边距收不收。
+double _dashboardCellWidth(double width, int columns) =>
+    (width - _dashboardGridSpacing * (columns - 1)) / columns;
 
 class _MetricCard extends StatelessWidget {
-  const _MetricCard({required this.metric});
+  const _MetricCard({required this.metric, this.compact = false});
+
   final _Metric metric;
+
+  /// 一格里放不下常规内边距时收紧到 12，说明文字才不会被省略号吃掉。
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
     final content = Padding(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 12 : 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1812,8 +1863,68 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _EmptyStateCard extends StatelessWidget {
-  const _EmptyStateCard();
+/// 没有任何铁路行程时的首屏。只保留一件事：去添加第一段行程。
+class _FirstRunCard extends StatelessWidget {
+  const _FirstRunCard({this.onAddTrip});
+
+  final VoidCallback? onAddTrip;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AppCard.filled(
+      color: colors.surfaceContainerLow,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.train_outlined,
+                size: 32,
+                color: colors.onPrimaryContainer,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            '还没有铁路行程记录',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '添加第一段行程后，里程、车站、车次和成就会自动汇总在这里。',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+          ),
+          if (onAddTrip != null) ...[
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: onAddTrip,
+                icon: const Icon(Icons.add),
+                label: const Text('添加第一段行程'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 别人主页上「没有行程」的提示，不给出添加入口。
+class _PublicEmptyStateCard extends StatelessWidget {
+  const _PublicEmptyStateCard();
 
   @override
   Widget build(BuildContext context) {
@@ -1825,7 +1936,7 @@ class _EmptyStateCard extends StatelessWidget {
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(width: 8),
-          const Expanded(child: Text('还没有铁路行程记录。添加后，数据会自动汇总在这里。')),
+          const Expanded(child: Text('TA 还没有铁路行程记录。')),
         ],
       ),
     );
@@ -1840,8 +1951,7 @@ class _HomeStatus extends StatelessWidget {
     this.actionLabel,
     this.onAction,
     this.hint,
-    this.secondaryActionLabel,
-    this.onSecondaryAction,
+    this.onAdvancedAction,
     this.isBusy = false,
   });
 
@@ -1851,10 +1961,11 @@ class _HomeStatus extends StatelessWidget {
   final String? actionLabel;
   final Future<void> Function()? onAction;
   final String? hint;
-  final String? secondaryActionLabel;
-  final VoidCallback? onSecondaryAction;
 
-  /// Disables both actions and turns the secondary one into a progress spinner.
+  /// 破坏性/低频的恢复手段收在这一层后面，不和「重试」并列。
+  final VoidCallback? onAdvancedAction;
+
+  /// Disables both actions while a recovery operation is running.
   final bool isBusy;
 
   @override
@@ -1889,17 +2000,11 @@ class _HomeStatus extends StatelessWidget {
                 child: Text(actionLabel!),
               ),
             ],
-            if (secondaryActionLabel != null && onSecondaryAction != null) ...[
+            if (onAdvancedAction != null) ...[
               const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: isBusy ? null : onSecondaryAction,
-                icon: isBusy
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.settings_backup_restore),
-                label: Text(secondaryActionLabel!),
+              TextButton(
+                onPressed: isBusy ? null : onAdvancedAction,
+                child: const Text('高级选项'),
               ),
             ],
           ],
@@ -1954,22 +2059,27 @@ Future<bool?> _openUnlocks(
 String _formatDate(DateTime date) =>
     '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
-String _km(double value) => '${value.round()} km';
+String _km(double value) => '${_group(value.round().toString())} km';
 String _money(double value) => '¥${_number(value)}';
 
 String _duration(Duration value) {
   final hours = value.inHours;
   final minutes = value.inMinutes.remainder(60);
-  if (hours == 0) return '$minutes分';
-  return minutes == 0 ? '$hours时' : '$hours时$minutes分';
+  if (hours == 0) return '$minutes 分';
+  return minutes == 0 ? '$hours 时' : '$hours 时 $minutes 分';
 }
 
 String _number(double value) {
-  final fixed = value.toStringAsFixed(2);
-  final parts = fixed.split('.');
-  final whole = parts.first.replaceAllMapped(
-    RegExp(r'(?=(\\d{3})+(?!\\d))'),
-    (_) => ',',
-  );
-  return '$whole.${parts.last}';
+  final parts = value.toStringAsFixed(2).split('.');
+  return '${_group(parts.first)}.${parts.last}';
+}
+
+/// 千分位。数字一长，「48039」和「15140.50」都要眯眼数位数。
+String _group(String digits) {
+  final buffer = StringBuffer();
+  for (var index = 0; index < digits.length; index++) {
+    if (index > 0 && (digits.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(digits[index]);
+  }
+  return buffer.toString();
 }
