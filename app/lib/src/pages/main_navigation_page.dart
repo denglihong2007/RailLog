@@ -50,7 +50,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   void initState() {
     super.initState();
     _pages = [
-      const HomePage(),
+      HomePage(onAddTrip: _openAddTrip),
       AddTripPage(onTripSaved: _showHomeAfterSave),
       const StatisticsPage(),
       const SettingsPage(),
@@ -75,14 +75,26 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       // Keep HomePage's state (and its currently rendered data) while asking
       // it to refresh. Replacing it with a UniqueKey causes a second full
       // loading screen during the startup cloud sync.
-      _pages[0] = HomePage(refreshToken: ++_homeRefreshToken);
+      _pages[0] = HomePage(
+        onAddTrip: _openAddTrip,
+        refreshToken: ++_homeRefreshToken,
+      );
       _pages[2] = StatisticsPage(key: UniqueKey());
     });
   }
 
+  /// 主页首屏没有行程时，用「添加第一段行程」直接切到录入页。
+  void _openAddTrip() {
+    if (_currentIdx == 1) return;
+    setState(() => _currentIdx = 1);
+  }
+
   void _showHomeAfterSave() {
     setState(() {
-      _pages[0] = HomePage(refreshToken: ++_homeRefreshToken);
+      _pages[0] = HomePage(
+        onAddTrip: _openAddTrip,
+        refreshToken: ++_homeRefreshToken,
+      );
       _currentIdx = 0;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
