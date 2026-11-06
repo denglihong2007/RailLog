@@ -35,13 +35,12 @@ h2 { margin:0; font-size:clamp(28px,4vw,42px); letter-spacing:0; }
 .download-card h3 { margin:0 0 6px; font-size:23px; }
 .download-card p { margin:0; color:var(--muted); }
 .download-actions { grid-column:1/-1; align-self:end; display:flex; flex-wrap:wrap; gap:8px; }
-.download-card a,.disabled-download { min-height:44px; padding:0 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:7px; font-weight:700; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, transform .18s ease; }
+.download-card a { min-height:44px; padding:0 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:7px; font-weight:700; border:1px solid transparent; transition:background .18s ease, border-color .18s ease, transform .18s ease; }
 .download-card a:hover { transform:translateY(-1px); }
 .download-card .secondary-download { background:var(--surface-low); color:var(--ink); border-color:var(--line); }
 .download-card .secondary-download:hover { background:var(--surface); border-color:var(--brand); }
 .download-card a:not(.secondary-download) { background:var(--brand); color:#202124; border-color:var(--brand); }
 .download-card a:not(.secondary-download):hover { background:var(--brand-dark); }
-.disabled-download { color:var(--muted); border:1px dashed var(--line); cursor:not-allowed; }
 .release-fallback { max-width:100%; margin:16px 0 0; color:var(--muted); overflow-wrap:anywhere; word-break:break-all; }
 .product-band { max-width:1180px; margin:0 auto; padding:64px 24px; display:grid; grid-template-columns:repeat(3,1fr); gap:32px; }
 .product-band div { display:grid; grid-template-columns:auto 1fr; column-gap:12px; row-gap:4px; align-items:center; }

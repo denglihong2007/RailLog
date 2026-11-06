@@ -57,7 +57,10 @@ npm run build
 - 审计日志：追加记录删除、资料修改、等级门槛、下载密码与请求 Key、备份下载/删除、手动时刻表同步等操作，并保存操作时的管理员名称
 - 历史时刻表同步：查看本地版本、上次/下次同步时间，手动触发同步并检查 GitHub Release 上缺失的版本
 
-国内网盘链接由 API 服务端配置维护：
+## 下载地址
 
-- `Updates__AndroidDomesticDownloadUrl`
-- `Updates__DomesticDownloadName`
+官网的「官方下载」按钮指向对象存储 `https://raillog.cn-nb2.rains3.com`，路径为
+`v<version>/raillog-v<version>-<平台>.<扩展名>`，与 Release 工作流上传的产物一一对应；
+Windows 例外：官方下载走微软商店，构建产物只上传到 GitHub Release，不进对象存储。
+GitHub Releases 作为备用入口保留。版本号来自 API 的 `/api/updates/latest`，
+URL 在 `src/App.vue` 的 `storageUrl()` / `githubUrl()` 里拼接。
