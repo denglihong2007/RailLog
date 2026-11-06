@@ -324,12 +324,14 @@ public sealed record AdminBackupFile(
     long SizeBytes,
     DateTime CreatedAt);
 
+// Directory 是本地目录或 s3://bucket/prefix，由服务端决定。
 public sealed record AdminBackupOverview(
     bool Enabled,
     string Directory,
     int IntervalDays,
     int KeepCount,
-    IReadOnlyList<AdminBackupFile> Items);
+    IReadOnlyList<AdminBackupFile> Items,
+    bool Encrypted);
 
 // ---- 历史时刻表同步 ----
 

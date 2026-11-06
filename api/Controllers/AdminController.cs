@@ -16,10 +16,12 @@ public sealed class AdminController(
     IOptions<AdminOptions> options,
     IOptions<TicketPdfOptions> pdfOptions,
     IOptions<DatabaseBackupOptions> backupOptions,
+    BackupStorageService backupStorage,
     TimetableSyncService timetableSync,
     AchievementRecomputeService achievementRecompute,
     IWebHostEnvironment environment,
-    IHostApplicationLifetime lifetime) : ControllerBase
+    IHostApplicationLifetime lifetime,
+    ILogger<AdminController> logger) : ControllerBase
 {
     private readonly AdminOptions _options = options.Value;
     private readonly TicketPdfOptions _pdfOptions = pdfOptions.Value;
@@ -336,8 +338,40 @@ public sealed class AdminController(
     // ---- 数据备份 ----
 
     [HttpGet("backups")]
-    public ActionResult<AdminBackupOverview> GetBackups()
+    public async Task<ActionResult<AdminBackupOverview>> GetBackups(
+        CancellationToken cancellationToken)
     {
+        if (backupStorage.IsEnabled)
+        {
+            try
+            {
+                var remote = await backupStorage.ListAsync(cancellationToken);
+                var remoteFiles = remote
+                    .OrderByDescending(item => item.CreatedAt)
+                    .Select(item => new AdminBackupFile(
+                        item.Name, item.SizeBytes, item.CreatedAt))
+                    .ToList();
+                return Ok(new AdminBackupOverview(
+                    _backupOptions.Enabled,
+                    backupStorage.Location,
+                    _backupOptions.IntervalDays,
+                    _backupOptions.KeepCount,
+                    remoteFiles,
+                    Encrypted: true));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Failed to list database backups in object storage.");
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    new MessageResponse("无法读取对象存储中的备份，请稍后重试"));
+            }
+        }
+
         var directory = ResolveBackupDirectory();
         var files = Directory.Exists(directory)
             ? new DirectoryInfo(directory)
@@ -354,7 +388,8 @@ public sealed class AdminController(
                 : _backupOptions.Directory,
             _backupOptions.IntervalDays,
             _backupOptions.KeepCount,
-            files));
+            files,
+            Encrypted: false));
     }
 
     /// <summary>
@@ -389,10 +424,57 @@ public sealed class AdminController(
     }
 
     [HttpGet("backups/{name}/download")]
-    public async Task<IActionResult> DownloadBackupFile(string name)
+    public async Task<IActionResult> DownloadBackupFile(
+        string name, CancellationToken cancellationToken)
     {
         if (!IsBackupFileName(name))
             return BadRequest(new MessageResponse("备份文件名无效"));
+
+        if (backupStorage.IsEnabled)
+        {
+            if (!await backupStorage.ExistsAsync(name, cancellationToken))
+                return NotFound();
+
+            var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}-{name}");
+            try
+            {
+                await backupStorage.DownloadDecryptedAsync(
+                    name, tempPath, cancellationToken);
+            }
+            catch (InvalidDataException exception)
+            {
+                TryDeleteFile(tempPath);
+                logger.LogError(exception, "Failed to decrypt database backup {Name}.", name);
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new MessageResponse("备份文件无法解密，请检查对象存储的加密口令配置"));
+            }
+            catch
+            {
+                TryDeleteFile(tempPath);
+                throw;
+            }
+
+            try
+            {
+                var stream = new FileStream(
+                    tempPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 64 * 1024,
+                    options: FileOptions.Asynchronous | FileOptions.SequentialScan |
+                             FileOptions.DeleteOnClose);
+                await AuditAsync("backup.download-file", name);
+                return File(stream, "application/octet-stream", name);
+            }
+            catch
+            {
+                TryDeleteFile(tempPath);
+                throw;
+            }
+        }
+
         var path = Path.Combine(ResolveBackupDirectory(), name);
         if (!System.IO.File.Exists(path)) return NotFound();
         await AuditAsync("backup.download-file", name);
@@ -404,10 +486,21 @@ public sealed class AdminController(
     /// 定时备份服务只会在下一轮按保留策略补新文件，不会恢复被删的版本。
     /// </summary>
     [HttpDelete("backups/{name}")]
-    public async Task<IActionResult> DeleteBackup(string name)
+    public async Task<IActionResult> DeleteBackup(
+        string name, CancellationToken cancellationToken)
     {
         if (!IsBackupFileName(name))
             return BadRequest(new MessageResponse("备份文件名无效"));
+
+        if (backupStorage.IsEnabled)
+        {
+            if (!await backupStorage.ExistsAsync(name, cancellationToken))
+                return NotFound();
+            await backupStorage.DeleteAsync(name, cancellationToken);
+            await AuditAsync("backup.delete", name);
+            return NoContent();
+        }
+
         var path = Path.Combine(ResolveBackupDirectory(), name);
         if (!System.IO.File.Exists(path)) return NotFound();
         try

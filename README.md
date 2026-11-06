@@ -23,21 +23,42 @@ Legacy `AspNetUsers` and `TripRecords` tables are migrated in place on startup.
 Back up a production database before its first migration.
 
 While the API is running it backs up the database every other day via the
-SQLite online backup API. Backups are written to `api\backups` by default and
-the newest seven are kept. Configure the behavior in `appsettings.json`:
+SQLite online backup API. When object storage is configured, each snapshot is
+encrypted and uploaded to the bucket, and older objects are pruned by
+`KeepCount`; otherwise backups are written to `api\backups` as before.
+Configure the behavior in `appsettings.json`:
 
 ```json
 "DatabaseBackup": {
   "Enabled": true,
   "Directory": "backups",
   "IntervalDays": 2,
-  "KeepCount": 7
+  "KeepCount": 7,
+  "Storage": {
+    "Endpoint": "https://cn-nb2.rains3.com",
+    "Region": "cn-nb2",
+    "Bucket": "raillog",
+    "Prefix": "backups",
+    "AccessKey": "",
+    "SecretKey": "",
+    "Passphrase": ""
+  }
 }
 ```
 
-`Directory` may be absolute. The interval is measured from the newest existing
-backup, so restarting the process does not create a duplicate, and a missed
-window is caught up on the next hourly check.
+`Directory` may be absolute and is only used when the storage secrets are not
+configured. Supply `AccessKey`, `SecretKey`, and `Passphrase` through
+environment variables (for example `DatabaseBackup__Storage__Passphrase`) or
+user-secrets; never commit them. The interval is measured from the newest
+existing backup, so restarting the process does not create a duplicate, and a
+missed window is caught up on the next hourly check.
+
+The bucket may allow public reads, so backups are encrypted with AES-256-CBC
+and authenticated with HMAC-SHA256 before upload; the passphrase stays on the
+API host. `tools/decrypt-backup.py` decrypts an object outside the server
+(requires `pip install cryptography`; the passphrase is read from
+`RAILLOG_BACKUP_PASSPHRASE`). Keep a copy of the passphrase somewhere other
+than the server disk: without it the uploaded backups cannot be recovered.
 
 The historical timetables (about 860MB in total) are not included in the
 repository. The API syncs them from the private `denglihong2007/Timetable-Results`

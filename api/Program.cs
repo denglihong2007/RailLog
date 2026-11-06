@@ -18,6 +18,9 @@ builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerPr
 builder.Services.AddSingleton<RailLogDatabase>();
 builder.Services.Configure<DatabaseBackupOptions>(
     builder.Configuration.GetSection("DatabaseBackup"));
+builder.Services.Configure<BackupStorageOptions>(
+    builder.Configuration.GetSection("DatabaseBackup:Storage"));
+builder.Services.AddSingleton<BackupStorageService>();
 builder.Services.AddHostedService<DatabaseBackupService>();
 builder.Services.AddHostedService<AchievementBackfillService>();
 builder.Services.AddSingleton<AchievementRecomputeService>();

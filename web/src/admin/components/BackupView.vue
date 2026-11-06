@@ -126,8 +126,8 @@ onMounted(load)
           <div>
             <h2><Database :size="17" /> 数据库备份</h2>
             <p>
-              服务端用 SQLite 在线备份接口生成一致性快照。定时备份只保留最近几份，
-              随时可以在这里生成一份最新的快照直接下载。
+              服务端用 SQLite 在线备份接口生成一致性快照，加密后上传到对象存储。
+              定时备份只保留最近几份，随时可以在这里生成一份最新的快照直接下载。
             </p>
           </div>
           <div class="panel-head-actions">
@@ -167,9 +167,11 @@ onMounted(load)
           <article class="stat-card">
             <span class="stat-icon green"><ShieldCheck :size="20" /></span>
             <div>
-              <p class="stat-label">备份目录</p>
+              <p class="stat-label">备份位置</p>
               <strong class="stat-value mono-path">{{ data.directory }}</strong>
-              <p class="stat-hint">可在 DatabaseBackup:Directory 中调整</p>
+              <p class="stat-hint">
+                {{ data.encrypted ? '加密后上传到对象存储' : '可在 DatabaseBackup:Directory 中调整' }}
+              </p>
             </div>
           </article>
         </div>
@@ -178,7 +180,7 @@ onMounted(load)
           <ShieldCheck :size="15" />
           <span>
             备份包含用户、行程、评价、成就与系统设置的全部数据，请妥善保管，
-            不要通过公开渠道分享。
+            不要通过公开渠道分享。{{ data.encrypted ? '对象存储中的备份文件使用 AES-256 加密，下载时会自动解密。' : '' }}
           </span>
         </div>
       </section>
