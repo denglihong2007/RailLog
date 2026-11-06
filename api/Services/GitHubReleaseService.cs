@@ -34,8 +34,9 @@ public sealed class GitHubReleaseService(
         var assets = root.TryGetProperty("assets", out var assetsElement)
             ? assetsElement.EnumerateArray().Select(ParseAsset).ToList()
             : [];
+        var version = NormalizeVersion(tagName);
         var result = new LatestReleaseResponse(
-            NormalizeVersion(tagName),
+            version,
             tagName,
             OptionalString(root, "name") ?? tagName,
             DateTime.Parse(RequiredString(root, "published_at")),
@@ -45,7 +46,7 @@ public sealed class GitHubReleaseService(
             SelectAndroidAsset(assets)?.Url,
             _options.DomesticDownloadName,
             UpdateOptions.WindowsDomesticDownloadUrl,
-            NormalizeOptionalUrl(_options.AndroidDomesticDownloadUrl),
+            AndroidDomesticUrl(version),
             _options.DownloadPageUrl);
         cache.Set(
             CacheKey,
@@ -87,6 +88,23 @@ public sealed class GitHubReleaseService(
 
     private static string? NormalizeOptionalUrl(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    // ≤2.7.1 的 App 在 Android 上取不到这个地址时会回退到 Windows 的微软商店
+    // 链接，点「国内网盘」直接跳应用商店。没有显式配置时，按发布产物的命名规则
+    // 给出对象存储里的通用 APK，让旧客户端也能拿到官方下载。
+    // 2.7.2 起客户端已不再读取该字段。
+    private string? AndroidDomesticUrl(string version)
+    {
+        var configured = NormalizeOptionalUrl(_options.AndroidDomesticDownloadUrl);
+        if (configured is not null)
+            return configured;
+
+        var storageBaseUrl = NormalizeOptionalUrl(_options.StorageBaseUrl);
+        if (storageBaseUrl is null)
+            return null;
+
+        return $"{storageBaseUrl.TrimEnd('/')}/v{version}/raillog-v{version}-android-arm64-v8a.apk";
+    }
 
     private static string RequiredString(JsonElement element, string property) =>
         element.GetProperty(property).GetString()
