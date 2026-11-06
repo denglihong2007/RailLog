@@ -331,6 +331,12 @@ export interface AdminDuplicateGroupPage {
   items: AdminDuplicateGroup[]
 }
 
+export interface AdminDuplicateResolveResult {
+  groups: number
+  deletedTrips: number
+  affectedUsers: number
+}
+
 export interface AdminOverview {
   counts: AdminOverviewCounts
   overspeedTripCount: number
@@ -703,6 +709,11 @@ export const api = {
       limit: String(limit),
     })
     return request<AdminDuplicateGroupPage>(`/api/admin/duplicates?${params}`)
+  },
+  resolveDuplicates() {
+    return request<AdminDuplicateResolveResult>('/api/admin/duplicates/resolve', {
+      method: 'POST',
+    })
   },
   ticketPasswordStatus() {
     return request<AdminTicketPasswordStatus>('/api/admin/ticket-password')

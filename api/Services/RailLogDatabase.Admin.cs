@@ -1381,6 +1381,129 @@ public sealed partial class RailLogDatabase
         return new AdminDuplicateGroupPage(totalGroups, totalTrips, items);
     }
 
+    /// <summary>
+    /// 一键处理全站疑似重复行程：每组按「录入时间、ID」保留最早的一条，
+    /// 其余软删除。整批在同一个写事务里完成，避免处理到一半留下新的重复。
+    /// </summary>
+    public async Task<AdminDuplicateResolveResult> ResolveAdminDuplicateGroupsAsync()
+    {
+        long totalGroups;
+        long deletedTrips = 0;
+        var affectedUsers = new HashSet<string>(StringComparer.Ordinal);
+
+        await _writeLock.WaitAsync();
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync();
+            await using var transaction = await BeginTransactionWithRetryAsync(connection);
+
+            await using (var count = connection.CreateCommand())
+            {
+                count.Transaction = transaction;
+                count.CommandText = """
+                    SELECT COUNT(*), COALESCE(SUM(cnt), 0)
+                    FROM (
+                        SELECT COUNT(*) AS cnt
+                        FROM TripRecords
+                        WHERE IsRailTrip = 1 AND DeletedAt IS NULL
+                        GROUP BY UserId, TrainNumber, date(TravelDate),
+                                 FromStation, ToStation, MileageKm, Price
+                        HAVING COUNT(*) > 1
+                    );
+                    """;
+                await using var reader = await count.ExecuteReaderAsync();
+                await reader.ReadAsync();
+                totalGroups = reader.GetInt64(0);
+            }
+
+            // 组内按与列表页一致的顺序排名，rn = 1 的那条就是「保留最早录入」。
+            var victims = new Dictionary<string, List<long>>(StringComparer.Ordinal);
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = $"""
+                    WITH duplicate AS ({DuplicateGroupKey}),
+                         ranked AS (
+                             SELECT trip.Id, trip.UserId,
+                                    ROW_NUMBER() OVER (
+                                        PARTITION BY duplicate.UserId, duplicate.TrainNumber,
+                                                     duplicate.Day, duplicate.FromStation,
+                                                     duplicate.ToStation, duplicate.MileageKm,
+                                                     duplicate.Price
+                                        ORDER BY trip.CreatedAt, trip.Id) AS rn
+                             FROM duplicate
+                             JOIN TripRecords trip ON trip.UserId = duplicate.UserId
+                              AND trip.TrainNumber = duplicate.TrainNumber
+                              AND date(trip.TravelDate) = duplicate.Day
+                              AND trip.FromStation = duplicate.FromStation
+                              AND trip.ToStation = duplicate.ToStation
+                              AND trip.MileageKm = duplicate.MileageKm
+                              AND trip.Price = duplicate.Price
+                             WHERE trip.IsRailTrip = 1 AND trip.DeletedAt IS NULL
+                         )
+                    SELECT Id, UserId FROM ranked WHERE rn > 1 ORDER BY UserId, Id;
+                    """;
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var id = reader.GetInt64(0);
+                    var userId = reader.GetString(1);
+                    if (!victims.TryGetValue(userId, out var ids))
+                    {
+                        ids = [];
+                        victims[userId] = ids;
+                    }
+                    ids.Add(id);
+                }
+            }
+
+            var deletedAt = ToDb(DateTime.Now);
+            var serverUpdatedAt = ToDbUtc(DateTime.UtcNow);
+            foreach (var (userId, ids) in victims)
+            {
+                // 同一用户的整批删除共用一个同步版本，客户端只需拉取一次。
+                var version = await AllocateSyncVersionAsync(
+                    connection, userId, (SqliteTransaction)transaction);
+                var idParameters = new StringBuilder();
+                await using var update = connection.CreateCommand();
+                update.Transaction = transaction;
+                for (var index = 0; index < ids.Count; index++)
+                {
+                    if (index > 0) idParameters.Append(", ");
+                    idParameters.Append('$').Append("id").Append(index);
+                    update.Parameters.AddWithValue($"$id{index}", ids[index]);
+                }
+                update.CommandText = $"""
+                    UPDATE TripRecords
+                    SET DeletedAt = $deletedAt, UpdatedAt = $deletedAt,
+                        ServerUpdatedAt = $serverUpdatedAt, SyncVersion = $syncVersion
+                    WHERE Id IN ({idParameters});
+                    """;
+                update.Parameters.AddWithValue("$deletedAt", deletedAt);
+                update.Parameters.AddWithValue("$serverUpdatedAt", serverUpdatedAt);
+                update.Parameters.AddWithValue("$syncVersion", version);
+                deletedTrips += await update.ExecuteNonQueryAsync();
+                affectedUsers.Add(userId);
+            }
+
+            await transaction.CommitAsync();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+
+        // 行程数量变了，成就与统计数据要跟着重算；重算本身有并发上限，这里逐个入队即可。
+        foreach (var userId in affectedUsers)
+        {
+            EnqueueAchievementRecompute(userId);
+            InvalidateStatisticsCache(userId);
+        }
+
+        return new AdminDuplicateResolveResult(totalGroups, deletedTrips, affectedUsers.Count);
+    }
+
     private static async Task<List<AdminDuplicateGroup>> ReadDuplicateGroupsAsync(
         SqliteConnection connection,
         int offset,

@@ -602,6 +602,20 @@ public sealed class AdminController(
         [FromQuery] int limit = 20) =>
         Ok(await database.GetAdminDuplicateGroupsAsync(offset, limit));
 
+    /// <summary>
+    /// 一键处理全部疑似重复行程：每组保留最早录入的一条，其余软删除。
+    /// </summary>
+    [HttpPost("duplicates/resolve")]
+    public async Task<ActionResult<AdminDuplicateResolveResult>> ResolveDuplicates()
+    {
+        var result = await database.ResolveAdminDuplicateGroupsAsync();
+        await AuditAsync(
+            "duplicate.resolve",
+            detail: $"处理 {result.Groups} 组，删除 {result.DeletedTrips} 条，" +
+                    $"涉及 {result.AffectedUsers} 名用户");
+        return Ok(result);
+    }
+
     // ---- 排行榜 ----
 
     [HttpGet("leaderboards")]

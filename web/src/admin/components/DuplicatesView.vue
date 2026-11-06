@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   RefreshCw,
   TriangleAlert,
+  Wrench,
 } from '@lucide/vue'
 import {
   api,
@@ -17,7 +18,11 @@ import {
   type AdminDuplicateGroupPage,
   type AdminDuplicateTrip,
 } from '../api'
-import { confirmDeleteDuplicateTrips, deleteDuplicateTrips } from '../duplicates'
+import {
+  confirmDeleteDuplicateTrips,
+  confirmResolveAllDuplicateGroups,
+  deleteDuplicateTrips,
+} from '../duplicates'
 import { formatNumber } from '../format'
 import { toast } from '../toast'
 import DuplicateGroups from './DuplicateGroups.vue'
@@ -33,6 +38,7 @@ const loading = ref(true)
 const error = ref('')
 const offset = ref(0)
 const busy = ref(false)
+const resolving = ref(false)
 
 const pageStart = computed(() => (data.value && data.value.totalGroups > 0 ? offset.value + 1 : 0))
 const pageEnd = computed(() =>
@@ -77,6 +83,30 @@ async function deleteTrip(trip: AdminDuplicateTrip): Promise<void> {
     await load(true)
   } finally {
     busy.value = false
+  }
+}
+
+async function resolveAll(): Promise<void> {
+  if (!data.value) return
+  if (!confirmResolveAllDuplicateGroups(data.value.totalGroups, data.value.totalTrips)) return
+  resolving.value = true
+  try {
+    const result = await api.resolveDuplicates()
+    if (result.deletedTrips === 0) {
+      toast('没有需要处理的重复行程', 'info')
+    } else {
+      toast(
+        `已处理 ${formatNumber(result.groups)} 组重复行程，保留每组最早录入的一条，` +
+          `共删除 ${formatNumber(result.deletedTrips)} 条`,
+        'info',
+      )
+    }
+    offset.value = 0
+    await load(true)
+  } catch (exception) {
+    toast(exception instanceof ApiError ? exception.message : '一键处理失败', 'error')
+  } finally {
+    resolving.value = false
   }
 }
 
@@ -134,9 +164,22 @@ onMounted(() => {
             删除为软删除，可在对应用户的「行程管理」中恢复。
           </p>
         </div>
-        <button type="button" class="button ghost small" :disabled="loading" @click="load()">
-          <RefreshCw :size="15" /> 刷新
-        </button>
+        <div class="panel-head-actions">
+          <button type="button" class="button ghost small" :disabled="loading || resolving" @click="load()">
+            <RefreshCw :size="15" /> 刷新
+          </button>
+          <button
+            type="button"
+            class="button danger small"
+            title="全站每组保留最早录入的一条，删除其余重复记录"
+            :disabled="busy || resolving || loading || data.totalGroups === 0"
+            @click="resolveAll"
+          >
+            <LoaderCircle v-if="resolving" :size="15" class="spin" />
+            <Wrench v-else :size="15" />
+            {{ resolving ? '处理中…' : '一键处理全部' }}
+          </button>
+        </div>
       </div>
 
       <div v-if="data.items.length === 0" class="empty-state">
@@ -148,7 +191,7 @@ onMounted(() => {
       <template v-else>
         <DuplicateGroups
           :groups="data.items"
-          :busy="busy"
+          :busy="busy || resolving"
           @delete-trip="deleteTrip"
           @keep-earliest="keepEarliest"
           @open-trip="(userId, ticketId) => emit('open-trip', userId, ticketId)"

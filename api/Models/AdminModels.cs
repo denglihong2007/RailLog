@@ -249,6 +249,14 @@ public sealed record AdminDuplicateGroupPage(
     IReadOnlyList<AdminDuplicateGroup> Items);
 
 /// <summary>
+/// 一键处理重复行程的结果：每组保留录入时间最早的一条，其余全部软删除。
+/// </summary>
+public sealed record AdminDuplicateResolveResult(
+    long Groups,
+    long DeletedTrips,
+    long AffectedUsers);
+
+/// <summary>
 /// 网页端 PDF 下载的「请求 Key」：用户先选票生成 Key，再凭 Key + 下载密码
 /// 换取 PDF。后台只能看到摘要、行程与有效期，无法还原 Key 本身。
 /// </summary>
