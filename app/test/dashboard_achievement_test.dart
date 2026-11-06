@@ -456,23 +456,177 @@ void main() {
     expect(find.text('2026-09-02 · G1 · 北京南 → 上海虹桥'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('unlocked experience chip walks the seven-colour scale', (
+    tester,
+  ) async {
+    // 七种初始经验值（10/15/20/25/30/40/50）各占一色，「不霁何虹」要求集齐
+    // 这七档，所以颜色本身就是这七档的索引：经验值越高，色相越靠后。
+    const tierExperiences = [10, 15, 20, 25, 30, 40, 50];
+    final tierBackgrounds = <int, int>{};
+    for (final experience in tierExperiences) {
+      await _pumpCard(tester, experience: experience);
+      tierBackgrounds[experience] = _chipBackground(tester, experience);
+    }
+
+    expect(tierBackgrounds.values.toSet(), hasLength(tierExperiences.length));
+
+    // 80 分的大成就没有第八种颜色，并入最高一档。
+    await _pumpCard(tester, experience: 80);
+    expect(_chipBackground(tester, 80), tierBackgrounds[50]);
+
+    // 加成里的零头落在最近的一档上，不会退化成没有颜色。
+    await _pumpCard(tester, experience: 35);
+    expect(_chipBackground(tester, 35), tierBackgrounds[40]);
+    await _pumpCard(tester, experience: 12);
+    expect(_chipBackground(tester, 12), tierBackgrounds[15]);
+  });
+
+  testWidgets('locked experience chip keeps the neutral surface colour', (
+    tester,
+  ) async {
+    await _pumpCard(tester, experience: 40, unlocked: false);
+    final neutral = AppTheme.build(
+      ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+    ).colorScheme.surfaceContainerHighest;
+    expect(_chipBackground(tester, 40), neutral.toARGB32());
+
+    // 同一经验值：解锁前中性、解锁后有颜色，色阶只奖励已点亮的成就。
+    await _pumpCard(tester, experience: 40);
+    expect(_chipBackground(tester, 40), isNot(neutral.toARGB32()));
+  });
+
+  testWidgets('seven-colour experience scale stays legible in both themes', (
+    tester,
+  ) async {
+    const tierExperiences = [10, 15, 20, 25, 30, 40, 50];
+    for (final brightness in Brightness.values) {
+      for (final experience in tierExperiences) {
+        await _pumpCard(tester, experience: experience, brightness: brightness);
+        final ratio = _contrastRatio(
+          _chipBackground(tester, experience),
+          _chipForeground(tester, experience),
+        );
+        expect(
+          ratio,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              '$experience XP 的胶囊在 $brightness 下对比度只有 '
+              '${ratio.toStringAsFixed(2)}:1',
+        );
+      }
+    }
+  });
+
+  test('experience tiers are M3 custom colour roles on the theme', () {
+    // 七档色阶不是界面里的硬编码颜色，而是挂在主题上的 M3「自定义色彩角色」，
+    // 明暗主题各生成一套成对的填充色，界面只按档位取色。
+    final light = AppTheme.build(
+      ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+    ).extension<AchievementTierColors>();
+    final dark = AppTheme.build(
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1565C0),
+        brightness: Brightness.dark,
+      ),
+    ).extension<AchievementTierColors>();
+
+    expect(light, isNotNull);
+    expect(dark, isNotNull);
+    expect(light!.filled, hasLength(7));
+    expect(light.onFilled, hasLength(7));
+    expect(dark!.filled, hasLength(7));
+    expect(dark.onFilled, hasLength(7));
+
+    // 同一档在明暗主题下是同一色相的两个深浅，而不是同一个十六进制值。
+    expect(light.filled, isNot(equals(dark.filled)));
+  });
+}
+
+/// 渲染一张固定尺寸的成就卡，卡片里的经验胶囊显示 `experience`。
+Future<void> _pumpCard(
+  WidgetTester tester, {
+  required int experience,
+  bool unlocked = true,
+  Brightness brightness = Brightness.light,
+}) async {
+  final theme = AppTheme.build(
+    ColorScheme.fromSeed(
+      seedColor: const Color(0xFF1565C0),
+      brightness: brightness,
+    ),
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: theme,
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 420,
+            height: 132,
+            child: DashboardAchievementCard(
+              achievement: _achievementWithExperience(
+                experience: experience,
+                unlocked: unlocked,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 经验胶囊当前的填充色。
+int _chipBackground(WidgetTester tester, int experience) {
+  final container = tester.widget<Container>(
+    find
+        .ancestor(
+          of: find.text('$experience XP'),
+          matching: find.byType(Container),
+        )
+        .first,
+  );
+  return (container.decoration! as BoxDecoration).color!.toARGB32();
+}
+
+/// 经验胶囊里文字的颜色。
+int _chipForeground(WidgetTester tester, int experience) =>
+    tester.widget<Text>(find.text('$experience XP')).style!.color!.toARGB32();
+
+double _contrastRatio(int first, int second) {
+  final firstLuminance = Color(first).computeLuminance();
+  final secondLuminance = Color(second).computeLuminance();
+  final lighter = firstLuminance > secondLuminance
+      ? firstLuminance
+      : secondLuminance;
+  final darker = firstLuminance > secondLuminance
+      ? secondLuminance
+      : firstLuminance;
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 /// 卡片当前渲染出来的填充色。
 int _fillOf(WidgetTester tester) =>
     tester.widget<Card>(find.byType(Card)).color!.toARGB32();
 
-DashboardAchievement _unlockedAchievement() => DashboardAchievement(
+DashboardAchievement _unlockedAchievement() =>
+    _achievementWithExperience(experience: 40, unlocked: true);
+
+DashboardAchievement _achievementWithExperience({
+  required int experience,
+  required bool unlocked,
+}) => DashboardAchievement(
   id: 'allSeatTypes',
   category: AchievementCategory.railwayCatalog,
   iconKey: 'checklist_outlined',
   title: '我全都要',
   requirement: '分别乘坐全部常规席别',
-  unlocked: true,
-  triggerTripId: 42,
+  unlocked: unlocked,
+  triggerTripId: unlocked ? 42 : null,
   unlockedUserCount: 12,
   totalUserCount: 100,
-  experience: 40,
+  experience: experience,
   hidden: false,
   note: null,
   narrativeNote: null,

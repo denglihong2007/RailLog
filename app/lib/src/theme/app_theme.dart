@@ -52,6 +52,7 @@ abstract final class AppTheme {
     return base.copyWith(
       scaffoldBackgroundColor: colorScheme.surfaceContainerLowest,
       textTheme: textTheme,
+      extensions: [AchievementTierColors.of(colorScheme.brightness)],
       cardTheme: CardThemeData(
         color: colorScheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
@@ -352,6 +353,91 @@ abstract final class AppTheme {
         fontWeight: FontWeight.w500,
         letterSpacing: 0,
       ),
+    );
+  }
+}
+
+/// 成就经验七档的色阶，按 Material 3 的「自定义色彩角色」（custom color roles）
+/// 挂在主题上，而不是散在各个界面里的硬编码颜色。
+///
+/// 七档对应「不霁何虹」要求集齐的七种初始经验值（10/15/20/25/30/40/50），色相
+/// 沿用设置页里那七种有名字的主题色：石榴、珊瑚、金黄、松绿、翡翠、湖蓝、紫罗兰。
+/// 每一档都取 M3 的填充角色对 —— 浅色主题用 primary / onPrimary（tone 40 底色配
+/// tone 100 文字），深色主题同样用 primary / onPrimary（tone 80 底色配 tone 20
+/// 文字）。同一组色相在明暗主题里各自由算法给出成对的深浅：对比度跟着主题走，
+/// 也不必在明暗两套里各挑一个「看着好看」的十六进制值。
+///
+/// 生成时用 [DynamicSchemeVariant.fidelity]：色相本身就是这七档携带的信息，默认
+/// 的 tonalSpot 会把石榴和珊瑚压成同一个灰玫瑰色，彩虹就断了；fidelity 保留种子
+/// 色的彩度，七档在浅色主题下仍能分辨。
+@immutable
+class AchievementTierColors extends ThemeExtension<AchievementTierColors> {
+  const AchievementTierColors({required this.filled, required this.onFilled})
+    : assert(filled.length == onFilled.length);
+
+  /// 七档的底色，索引就是档位（0 = 10 XP，6 = 50 XP）。
+  final List<Color> filled;
+
+  /// 与底色成对的文字色，即 M3 的 on-color。
+  final List<Color> onFilled;
+
+  /// 七个色相，顺序就是经验值从低到高；取的是设置页里的七种主题色。
+  static const List<Color> tierSeeds = [
+    Color(0xFFC62828), // 石榴
+    Color(0xFFE64A19), // 珊瑚
+    Color(0xFFF9A825), // 金黄
+    Color(0xFF2E7D32), // 松绿
+    Color(0xFF00897B), // 翡翠
+    Color(0xFF1565C0), // 湖蓝
+    Color(0xFF7B1FA2), // 紫罗兰
+  ];
+
+  static final Map<Brightness, AchievementTierColors> _cache = {};
+
+  /// 按主题明暗生成七对 M3 填充角色；结果缓存，主题重建时不必反复跑算法。
+  factory AchievementTierColors.of(Brightness brightness) {
+    final cached = _cache[brightness];
+    if (cached != null) return cached;
+    final filled = <Color>[];
+    final onFilled = <Color>[];
+    for (final seed in tierSeeds) {
+      final scheme = ColorScheme.fromSeed(
+        seedColor: seed,
+        brightness: brightness,
+        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+      );
+      filled.add(scheme.primary);
+      onFilled.add(scheme.onPrimary);
+    }
+    return _cache[brightness] = AchievementTierColors(
+      filled: filled,
+      onFilled: onFilled,
+    );
+  }
+
+  /// 第 [tier] 档的（底色, 文字色）。
+  (Color, Color) at(int tier) => (filled[tier], onFilled[tier]);
+
+  @override
+  AchievementTierColors copyWith({List<Color>? filled, List<Color>? onFilled}) {
+    return AchievementTierColors(
+      filled: filled ?? this.filled,
+      onFilled: onFilled ?? this.onFilled,
+    );
+  }
+
+  @override
+  AchievementTierColors lerp(AchievementTierColors? other, double t) {
+    if (other == null) return this;
+    return AchievementTierColors(
+      filled: [
+        for (var index = 0; index < filled.length; index++)
+          Color.lerp(filled[index], other.filled[index], t)!,
+      ],
+      onFilled: [
+        for (var index = 0; index < onFilled.length; index++)
+          Color.lerp(onFilled[index], other.onFilled[index], t)!,
+      ],
     );
   }
 }

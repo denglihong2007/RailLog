@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
+import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
@@ -225,6 +226,10 @@ class _AchievementMedallion extends StatelessWidget {
 }
 
 /// 经验值做成一个小胶囊：它是卡片里唯一带「奖励」意味的数字，值得有自己的形状。
+///
+/// 已解锁的成就按经验值取七档色阶里的一色（色阶是主题里的
+/// [AchievementTierColors]，M3 的自定义色彩角色），未解锁的保持中性灰 ——
+/// 颜色只属于解锁之后的世界。
 class _AchievementExperienceChip extends StatelessWidget {
   const _AchievementExperienceChip({
     required this.experience,
@@ -238,23 +243,39 @@ class _AchievementExperienceChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final tierColors = theme.extension<AchievementTierColors>();
+    final (background, foreground) = unlocked && tierColors != null
+        ? tierColors.at(_experienceTierIndex(experience))
+        : (colors.surfaceContainerHighest, colors.secondary);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: unlocked
-            ? colors.surface.withValues(alpha: 0.55)
-            : colors.surfaceContainerHighest,
+        color: background,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
         '$experience XP',
         style: theme.textTheme.labelSmall?.copyWith(
-          color: unlocked ? colors.onTertiaryContainer : colors.secondary,
+          color: foreground,
           fontWeight: FontWeight.w700,
         ),
       ),
     );
   }
+}
+
+/// 七档的分界线 —— 也就是「不霁何虹」要求集齐的那七种初始经验值。
+///
+/// 用区间而不是等值匹配，是因为解锁加成会把经验值抬成 35、45 这样表里没有的
+/// 数；超过 50 的一律并入最高档，现在只有 80 分的那几个大成就走这条。
+const List<int> _experienceTierCaps = [10, 15, 20, 25, 30, 40, 50];
+
+/// 经验值落在第几档：10 及以下算第一档，往上逐档收窄到 50。
+int _experienceTierIndex(int experience) {
+  for (var index = 0; index < _experienceTierCaps.length; index++) {
+    if (experience <= _experienceTierCaps[index]) return index;
+  }
+  return _experienceTierCaps.length - 1;
 }
 
 /// 技术性说明（如席别清单、时段范围）只在存在时出现，点一下看全文。
@@ -567,6 +588,11 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'military_tech' => Icons.military_tech,
   'numbers' => Icons.numbers,
   'person_outline' => Icons.person_outline,
+  'filter_drama_outlined' => Icons.filter_drama_outlined,
+  'fork_left_outlined' => Icons.fork_left_outlined,
+  'tram_outlined' => Icons.tram_outlined,
+  'brightness_7_outlined' => Icons.brightness_7_outlined,
+  'restart_alt_outlined' => Icons.restart_alt_outlined,
   _ => Icons.emoji_events_outlined,
 };
 
