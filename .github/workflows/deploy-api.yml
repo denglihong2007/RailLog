@@ -1,0 +1,67 @@
+name: Deploy API
+
+# 只发布后端：不重建安装包、不动 GitHub Release。
+# release.yml 只在 app/pubspec.yaml 变化时触发，后端改动推送后不会自动上线，
+# 需要上线时手动运行本工作流。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-api:
+    name: Deploy API to IIS
+    runs-on: ubuntu-latest
+    # 与 release.yml 的两个部署作业共用一个组，避免同时往服务器传同名脚本、同时写站点目录
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # 指定 win-x64 只带 Windows 的原生库；不加 RID 会连 Linux/macOS 的
+      # SkiaSharp 一起打进来，光 PDB 就 270 MB。
+      - name: Publish API
+        run: dotnet publish api/RailLog.API.csproj -c Release -r win-x64 --self-contained false -o out
+
+      # - web.config：服务器上的那份存着 SMTP、GitHub token 等环境变量，
+      #   发布包自带的只有一行 aspNetCore handler，覆盖过去会丢配置。
+      # - libSkiaSharp.pdb：91 MB，生产环境用不上。
+      - name: Strip web.config and PDBs
+        run: |
+          set -euo pipefail
+          rm -f out/web.config
+          find out -name '*.pdb' ! -name 'RailLog.API.pdb' -delete
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          cd out
+          zip -qry ../raillog-api.zip .
+
+      - name: Configure SSH known hosts
+        run: |
+          mkdir -p ~/.ssh
+          cp .github/known_hosts ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload package and deploy
+        env:
+          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          sshpass -e scp -P 22 -q \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            raillog-api.zip tools/deploy/deploy-iis.ps1 \
+            Administrator@156.254.6.59:
+          sshpass -e ssh -p 22 \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            Administrator@156.254.6.59 \
+            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/deploy-iis.ps1 -ZipPath C:/Users/Administrator/raillog-api.zip -Profile api'
