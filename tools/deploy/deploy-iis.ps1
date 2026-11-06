@@ -60,6 +60,28 @@ function Write-Step {
     Write-Host "==> $Message"
 }
 
+# 应用池刚停止后立刻启动，偶尔会撞上 W3SVC 的状态切换，报
+# 0x80070425「服务无法接受控制消息」；等一两秒重试即可。
+function Start-AppPoolWithRetry {
+    param(
+        [string]$Name,
+        [int]$TimeoutSeconds = 60
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ($true) {
+        try {
+            Start-WebAppPool -Name $Name
+            return
+        }
+        catch {
+            if ((Get-Date) -gt $deadline) {
+                throw
+            }
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 # 每个站点的部署参数。
 #   ProtectedFiles/ProtectedDirectories  服务器上手工维护或运行期生成，发布包不得覆盖
 #   RequireWebConfig                    站点根目录必须有 web.config 才允许部署
@@ -195,7 +217,7 @@ try {
 finally {
     if ($poolStopped) {
         Write-Step "启动应用池 $AppPool"
-        Start-WebAppPool -Name $AppPool
+        Start-AppPoolWithRetry -Name $AppPool
     }
 }
 
