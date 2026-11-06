@@ -213,6 +213,8 @@ jobs:
     if: needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -222,21 +224,49 @@ jobs:
       # web/src/App.vue 里拼出来的一致：v<version>/raillog-v<version>-<平台>。
       # 桶已开放匿名读，不需要额外设置 ACL。
       # Windows 从微软商店分发，zip 只留在 GitHub Release，不占对象存储。
-      - name: Upload to RainS3
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
-          AWS_DEFAULT_REGION: cn-nb2
-          AWS_EC2_METADATA_DISABLED: 'true'
+      #
+      # GitHub runner 直连 RainS3 跨境只有约 100 B/s，aws s3 cp 传不完；
+      # 改为先 SCP 到 IIS 服务器，再由服务器上传。runner → 服务器的链路是通的。
+      - name: Package assets
         run: |
           set -euo pipefail
-          aws --version
-          aws s3 cp dist "s3://raillog/${{ needs.prepare.outputs.tag }}/" \
-            --recursive \
-            --exclude '*-windows-*' \
-            --endpoint-url https://cn-nb2.rains3.com \
-            --cache-control 'public, max-age=31536000, immutable' \
-            --no-progress
+          cd dist
+          zip -qry ../raillog-assets.zip . -x '*-windows-*'
+
+      # 服务器上没有 AWS CLI 时用它安装；从 runner 下载，避免服务器访问境外站点。
+      - name: Download AWS CLI installer
+        run: curl -fsSL https://awscli.amazonaws.com/AWSCLIV2.msi -o AWSCLIV2.msi
+
+      - name: Configure SSH known hosts
+        run: |
+          mkdir -p ~/.ssh
+          cp .github/known_hosts ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload through IIS server
+        env:
+          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+
+          umask 077
+          printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
+            "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" > s3-upload.env
+
+          sshpass -e scp -P 22 -q \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            raillog-assets.zip AWSCLIV2.msi s3-upload.env \
+            tools/deploy/upload-storage.ps1 \
+            Administrator@156.254.6.59:
+
+          sshpass -e ssh -p 22 \
+            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
+            Administrator@156.254.6.59 \
+            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/upload-storage.ps1 -ZipPath C:/Users/Administrator/raillog-assets.zip -InstallerPath C:/Users/Administrator/AWSCLIV2.msi -CredentialsPath C:/Users/Administrator/s3-upload.env -Tag ${{ needs.prepare.outputs.tag }}'
 
   deploy-api:
     name: Deploy API to IIS
