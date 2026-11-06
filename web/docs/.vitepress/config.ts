@@ -6,7 +6,7 @@ const repoUrl = 'https://github.com/denglihong2007/RailLog'
 export default defineConfig({
     lang: 'zh-CN',
     title: 'RailLog 开放 API',
-    description: 'RailLog 开放 API v1 文档：铁路时刻表、公开行程与用户信息。',
+    description: 'RailLog 开放 API v1 文档：铁路时刻表、搜索、评价、公开行程与用户信息。',
     base: '/api-docs/',
     outDir: '../dist/api-docs',
     cleanUrls: false,
@@ -22,6 +22,8 @@ export default defineConfig({
         nav: [
             { text: '概览', link: '/' },
             { text: '铁路时刻表', link: '/timetable' },
+            { text: '搜索', link: '/search' },
+            { text: '评价', link: '/reviews' },
             { text: '行程详情', link: '/trips' },
             { text: '用户信息', link: '/users' },
             {
@@ -43,6 +45,8 @@ export default defineConfig({
                 text: '公开接口',
                 items: [
                     { text: '铁路时刻表', link: '/timetable' },
+                    { text: '搜索', link: '/search' },
+                    { text: '评价', link: '/reviews' },
                     { text: '行程详情', link: '/trips' },
                     { text: '用户信息', link: '/users' },
                 ],

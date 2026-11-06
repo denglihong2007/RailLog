@@ -86,3 +86,24 @@ curl "https://api.raillog.top/api/users/USER_ID"
 | `achievements[].requirements[].label` | string | 要求项的中文展示名称。 |
 | `achievements[].requirements[].completed` | boolean | 该要求项是否已经完成。 |
 | `achievements[].requirements[].trip` | `object \| null` | 首次完成该要求项的行程摘要；尚未完成时为 `null`。 |
+
+## 用户等级门槛
+
+<Badge type="tip" text="GET" /> `/api/user-levels`
+
+返回全站统一的用户等级经验门槛，不包含任何用户数据。调用方可用它把 `achievementExperience` 换算为公开等级。
+
+### 请求示例
+
+```bash
+curl "https://api.raillog.top/api/user-levels"
+```
+
+### 响应字段
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `thresholds` | `array<integer>` | 各等级的最低累计成就经验值。第 `i` 项对应 `LVi`，第 0 项恒为 `0`，值严格递增；数组长度等于最高等级加 1。 |
+| `updatedAt` | `string<date-time> \| null` | 门槛最近一次更新时间；尚未通过管理后台调整时为 `null`。 |
+
+响应带 `Cache-Control: public, max-age=60`，调用方可缓存一分钟。

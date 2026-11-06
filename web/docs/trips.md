@@ -58,3 +58,25 @@ curl "https://api.raillog.top/api/trips/123"
 | `price` | number | 票价或行程花费，单位人民币元；保留位数由原始记录决定。 |
 | `notes` | `string \| null` | 用户公开备注；未填写时为 `null`。 |
 | `isRailTrip` | boolean | 是否为铁路行程；`false` 表示用户记录的其他交通行程。 |
+
+## 行程评价
+
+<Badge type="tip" text="GET" /> `/api/trips/{ticketId}/reviews`
+
+返回与该行程关联的全部公开评价，包括该行程作为第一行程或第二行程的记录，按创建时间降序排列。行程不存在、已删除或不是铁路行程时返回空数组，而不是 `404`。
+
+### 路径参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `ticketId` | integer | 是 | 行程的公开数字 ID。 |
+
+### 请求示例
+
+```bash
+curl "https://api.raillog.top/api/trips/123/reviews"
+```
+
+### 响应字段
+
+响应正文是 `array<object>`，元素字段与[评价对象](./reviews.md#评价对象)完全一致。
