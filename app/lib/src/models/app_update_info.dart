@@ -8,9 +8,7 @@ class AppUpdateInfo {
     required this.releaseUrl,
     required this.windowsDownloadUrl,
     required this.androidDownloadUrl,
-    required this.domesticDownloadName,
     required this.windowsDomesticDownloadUrl,
-    required this.androidDomesticDownloadUrl,
     required this.downloadPageUrl,
   });
 
@@ -23,9 +21,7 @@ class AppUpdateInfo {
     releaseUrl: json['releaseUrl'] as String,
     windowsDownloadUrl: json['windowsDownloadUrl'] as String?,
     androidDownloadUrl: json['androidDownloadUrl'] as String?,
-    domesticDownloadName: json['domesticDownloadName'] as String? ?? '国内网盘',
     windowsDomesticDownloadUrl: json['windowsDomesticDownloadUrl'] as String?,
-    androidDomesticDownloadUrl: json['androidDomesticDownloadUrl'] as String?,
     downloadPageUrl: json['downloadPageUrl'] as String,
   );
 
@@ -37,8 +33,6 @@ class AppUpdateInfo {
   final String releaseUrl;
   final String? windowsDownloadUrl;
   final String? androidDownloadUrl;
-  final String domesticDownloadName;
   final String? windowsDomesticDownloadUrl;
-  final String? androidDomesticDownloadUrl;
   final String downloadPageUrl;
 }
