@@ -57,9 +57,15 @@ class _SingleTripEntry extends _TripListEntry {
 }
 
 class _GroupTripEntry extends _TripListEntry {
-  const _GroupTripEntry(this.group);
+  const _GroupTripEntry(this.group, {required this.members});
 
   final TripGroupSummary group;
+
+  /// 展开后组内成员的显示顺序，与列表当前排序方式一致。
+  ///
+  /// 与 [TripGroupSummary.trips] 不同：那里固定按出发时间升序，
+  /// 供聚合计算使用；这里只影响展开后的卡片顺序。
+  final List<DashboardTripEntry> members;
 
   @override
   DateTime get sortTime => group.latestDeparture;
@@ -224,11 +230,21 @@ class _AllTripsPageState extends State<AllTripsPage> {
     }
     for (final group in grouped.entries) {
       entries.add(
-        _GroupTripEntry(TripGroupSummary.fromTrips(group.key, group.value)),
+        _GroupTripEntry(
+          TripGroupSummary.fromTrips(group.key, group.value),
+          members: _sortGroupMembers(group.value),
+        ),
       );
     }
     entries.sort(_compareEntries);
     return entries;
+  }
+
+  /// 组内成员按列表当前的排序方式排，与条目排序共用同一套比较规则。
+  List<DashboardTripEntry> _sortGroupMembers(List<DashboardTripEntry> members) {
+    final sorted = [for (final trip in members) _SingleTripEntry(trip)]
+      ..sort(_compareEntries);
+    return [for (final entry in sorted) entry.trip];
   }
 
   void _toggleSelection(DashboardTripEntry trip) {
@@ -1171,10 +1187,10 @@ class _ResponsiveTripsList extends StatelessWidget {
       switch (entry) {
         case _SingleTripEntry(:final trip):
           cards.add(_tripCard(trip, colors));
-        case _GroupTripEntry(:final group):
+        case _GroupTripEntry(:final group, :final members):
           cards.add(_groupCard(group, colors));
           if (expandedGroupNames.contains(group.name)) {
-            for (final trip in group.trips) {
+            for (final trip in members) {
               cards.add(_tripCard(trip, colors));
             }
           }

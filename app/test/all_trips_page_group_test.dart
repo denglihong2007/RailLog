@@ -193,6 +193,69 @@ void main() {
     expect(groupTop, lessThan(singleTop));
   });
 
+  testWidgets('展开分组后成员跟随列表当前的排序方式', (tester) async {
+    await _pump(
+      tester,
+      size: const Size(400, 1000),
+      trips: [
+        _entry(
+          id: 1,
+          trainNumber: 'G1',
+          from: '北京南',
+          to: '济南西',
+          departure: DateTime(2026, 1, 1, 8),
+          price: 300,
+        ),
+        _entry(
+          id: 2,
+          trainNumber: 'G2',
+          from: '济南西',
+          to: '上海虹桥',
+          departure: DateTime(2026, 1, 1, 10),
+          price: 100,
+        ),
+        _entry(
+          id: 3,
+          trainNumber: 'G3',
+          from: '上海虹桥',
+          to: '杭州东',
+          departure: DateTime(2026, 1, 1, 9),
+          price: 200,
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('京沪往返'));
+    await tester.pumpAndSettle();
+
+    // 默认按出发时间降序：最晚出发的一趟排最前。
+    expect(
+      _topOf(tester, 'G2'),
+      lessThan(_topOf(tester, 'G3')),
+      reason: '默认降序，G2（10 时）应排在 G3（9 时）前',
+    );
+    expect(_topOf(tester, 'G3'), lessThan(_topOf(tester, 'G1')));
+
+    // 换成按票价升序后，组内成员也跟着按票价排。
+    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('出发时间'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('票价').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('升序'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
+
+    expect(
+      _topOf(tester, 'G2'),
+      lessThan(_topOf(tester, 'G3')),
+      reason: '票价升序，G2（¥100）应排在 G3（¥200）前',
+    );
+    expect(_topOf(tester, 'G3'), lessThan(_topOf(tester, 'G1')));
+  });
+
   testWidgets('往返分组用折返站作为终到站并显示双向箭头', (tester) async {
     await _pump(
       tester,
@@ -242,6 +305,10 @@ void main() {
     expect(find.byIcon(Icons.swap_horiz), findsOneWidget);
   });
 }
+
+/// 卡片标题里车次文字的纵坐标，用来比较卡片上下顺序。
+double _topOf(WidgetTester tester, String trainNumber) =>
+    tester.getTopLeft(find.text(trainNumber)).dy;
 
 /// 取卡片标题区的底色（卡片里第一个包裹文字的 Container）。
 Color? _headerColor(WidgetTester tester, String text) {
