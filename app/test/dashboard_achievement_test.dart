@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
+import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/theme/app_theme.dart';
@@ -60,6 +61,26 @@ void main() {
     expect(achievement.requirements.first.trip?.trainNumber, 'G1');
     expect(achievement.requirements.last.completed, isFalse);
     expect(achievement.requirements.last.trip, isNull);
+  });
+
+  test('latest unlock comes first and locked entries keep their order', () {
+    final ordered = sortAchievementsByLatestUnlock([
+      _unlocked('早期', DateTime(2024, 1, 1)),
+      _locked('未解锁 A'),
+      _unlocked('时间未知'),
+      _unlocked('最近', DateTime(2026, 1, 1)),
+      _locked('未解锁 B'),
+      _unlocked('中间', DateTime(2025, 1, 1)),
+    ]);
+
+    expect(ordered.map((item) => item.id), [
+      '最近',
+      '中间',
+      '早期',
+      '时间未知',
+      '未解锁 A',
+      '未解锁 B',
+    ]);
   });
 
   testWidgets('achievement card has one tap target and shows a chevron', (
@@ -609,6 +630,54 @@ double _contrastRatio(int first, int second) {
 /// 卡片当前渲染出来的填充色。
 int _fillOf(WidgetTester tester) =>
     tester.widget<Card>(find.byType(Card)).color!.toARGB32();
+
+/// 已解锁成就；传 [departureTime] 表示触发行程已知，不传则本地缺这条行程。
+DashboardAchievement _unlocked(String id, [DateTime? departureTime]) =>
+    DashboardAchievement(
+      id: id,
+      category: AchievementCategory.milestones,
+      iconKey: 'checklist_outlined',
+      title: id,
+      requirement: '达成条件',
+      unlocked: true,
+      triggerTripId: 1,
+      unlockedBy: departureTime == null
+          ? null
+          : DashboardTripEntry(
+              id: -1,
+              ticketId: 1,
+              trainNumber: 'G1',
+              fromStation: '北京南',
+              toStation: '上海虹桥',
+              departureTime: departureTime,
+              arrivalTime: null,
+              mileageKm: 1318,
+              seatType: null,
+              seatNumber: null,
+              price: 662,
+              isRailTrip: true,
+            ),
+      unlockedUserCount: 1,
+      totalUserCount: 10,
+      experience: 10,
+      hidden: false,
+      narrativeNote: null,
+    );
+
+DashboardAchievement _locked(String id) => DashboardAchievement(
+  id: id,
+  category: AchievementCategory.milestones,
+  iconKey: 'checklist_outlined',
+  title: id,
+  requirement: '达成条件',
+  unlocked: false,
+  triggerTripId: null,
+  unlockedUserCount: 0,
+  totalUserCount: 10,
+  experience: 10,
+  hidden: false,
+  narrativeNote: null,
+);
 
 DashboardAchievement _unlockedAchievement() =>
     _achievementWithExperience(experience: 40, unlocked: true);

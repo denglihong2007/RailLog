@@ -895,6 +895,9 @@ class _AchievementsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 预览只露前几张，所以按最近解锁排序：把「刚点亮的那几张」放在最前面。
+    // 「查看更多」里仍是完整的分类视图，顺序不受影响。
+    final ordered = sortAchievementsByLatestUnlock(achievements);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -927,20 +930,20 @@ class _AchievementsSection extends StatelessWidget {
                 crossAxisSpacing: 12,
                 mainAxisExtent: 132,
               ),
-              itemCount: achievements.length > _dashboardPreviewLimit
+              itemCount: ordered.length > _dashboardPreviewLimit
                   ? _dashboardPreviewLimit
-                  : achievements.length,
+                  : ordered.length,
               itemBuilder: (context, index) => M3Reveal(
                 delay: m3RevealDelay(index),
                 distance: 8,
                 child: DashboardAchievementCard(
-                  key: ValueKey(achievements[index].id),
-                  achievement: achievements[index],
+                  key: ValueKey(ordered[index].id),
+                  achievement: ordered[index],
                   // 与成就页保持一致：有子项先看达成要求，其余已解锁的进解锁行程。
-                  onTap: achievements[index].hasRequirements
-                      ? () => _openRequirements(context, achievements[index])
-                      : achievements[index].unlockedBy != null
-                      ? () => _openAchievement(context, achievements[index])
+                  onTap: ordered[index].hasRequirements
+                      ? () => _openRequirements(context, ordered[index])
+                      : ordered[index].unlockedBy != null
+                      ? () => _openAchievement(context, ordered[index])
                       : null,
                 ),
               ),
