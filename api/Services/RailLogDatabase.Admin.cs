@@ -1015,7 +1015,12 @@ public sealed partial class RailLogDatabase
         }
 
         // 删除评价会改变作者的「评价数」和「收到回应的次数」，两者都是成就输入。
-        if (deleted && userId is not null) EnqueueAchievementRecompute(userId);
+        if (deleted && userId is not null)
+        {
+            EnqueueAchievementRecompute(userId);
+            // 评分同时是要素排行榜的输入，后台删除也要让缓存失效。
+            InvalidateStatisticsCache(userId);
+        }
         return deleted;
     }
 

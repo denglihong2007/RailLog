@@ -199,6 +199,7 @@ class ElementRankingEntry {
     required this.rank,
     required this.name,
     required this.value,
+    this.averageRating,
   });
 
   factory ElementRankingEntry.fromJson(Map<String, dynamic> json) =>
@@ -206,11 +207,15 @@ class ElementRankingEntry {
         rank: (json['rank'] as num).toInt(),
         name: json['name'] as String,
         value: (json['value'] as num).toInt(),
+        averageRating: (json['averageRating'] as num?)?.toDouble(),
       );
 
   final int rank;
   final String name;
   final int value;
+
+  /// 该要素在全站评价里的平均星级；没有评价时为空。
+  final double? averageRating;
 }
 
 class ElementLeaderboards {

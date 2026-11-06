@@ -669,10 +669,12 @@ class _ElementRankingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rating = entry.averageRating;
     return _RankingRow(
       rank: entry.rank,
       title: entry.name,
       value: '${entry.value} 次',
+      valueDetail: rating == null ? '暂无评分' : '★ ${rating.toStringAsFixed(1)}',
       onTap: () => openEntityPage(context, switch (metric) {
         _ElementMetric.stations => EntityType.station,
         _ElementMetric.routes => EntityType.route,
@@ -689,6 +691,7 @@ class _RankingRow extends StatelessWidget {
     required this.rank,
     required this.title,
     required this.value,
+    this.valueDetail,
     this.avatar,
     this.subtitle,
     this.onTap,
@@ -699,6 +702,9 @@ class _RankingRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final String value;
+
+  /// 数值下方的补充说明（要素排行榜用来看平均评分）。
+  final String? valueDetail;
   final VoidCallback? onTap;
 
   @override
@@ -756,12 +762,10 @@ class _RankingRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: emphasized ? colors.onSurface : colors.primary,
-              fontWeight: FontWeight.w700,
-            ),
+          _RankingValue(
+            value: value,
+            detail: valueDetail,
+            emphasized: emphasized,
           ),
           if (onTap != null) ...[
             const SizedBox(width: 4),
@@ -777,6 +781,48 @@ class _RankingRow extends StatelessWidget {
       padding: EdgeInsets.zero,
       onTap: onTap,
       child: content,
+    );
+  }
+}
+
+class _RankingValue extends StatelessWidget {
+  const _RankingValue({
+    required this.value,
+    required this.detail,
+    required this.emphasized,
+  });
+
+  final String value;
+  final String? detail;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final valueText = Text(
+      value,
+      style: textTheme.titleSmall?.copyWith(
+        color: emphasized ? colors.onSurface : colors.primary,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    final secondary = detail;
+    if (secondary == null) return valueText;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        valueText,
+        const SizedBox(height: 2),
+        Text(
+          secondary,
+          style: textTheme.labelSmall?.copyWith(
+            color: colors.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

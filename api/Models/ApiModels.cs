@@ -292,7 +292,9 @@ public sealed record TripLeaderboards(
 public sealed record ElementRankingEntry(
     int Rank,
     string Name,
-    int Value);
+    int Value,
+    // 该要素的全站平均评分（1–5），没有评价时为 null。
+    double? AverageRating = null);
 
 public sealed record ElementLeaderboards(
     IReadOnlyList<ElementRankingEntry> Stations,
