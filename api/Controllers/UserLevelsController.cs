@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using RailLog.API.Models;
 using RailLog.API.Services;
@@ -15,6 +16,7 @@ namespace RailLog.API.Controllers;
 public sealed class UserLevelsController(RailLogDatabase database) : ControllerBase
 {
     [HttpGet]
+    [EnableCors("public-api")]
     public async Task<ActionResult<UserLevelThresholdsResponse>> Get()
     {
         var (thresholds, updatedAt) = await database.GetUserLevelThresholdsAsync();

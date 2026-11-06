@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using RailLog.API.Models;
 using RailLog.API.Services;
@@ -17,10 +18,12 @@ public sealed class EntityReviewsController(
 
     [HttpGet("{type}/{key}/count")]
     [AllowAnonymous]
+    [EnableCors("public-api")]
     public async Task<ActionResult<EntityCountResponse>> Count(string type, string key) => Ok(new EntityCountResponse(type, key, await database.GetEntityCountAsync(type, key)));
 
     [HttpGet("{type}/{key}/reviews")]
     [AllowAnonymous]
+    [EnableCors("public-api")]
     public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> Get(string type, string key) =>
         Ok(await database.GetEntityReviewsAsync(
             type,
