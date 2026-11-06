@@ -127,6 +127,11 @@ function Read-Credentials {
     return $values
 }
 
+# msiexec 不接受正斜杠路径，会报 1619「安装包打不开」；统一转成 Windows 分隔符。
+$ZipPath = [System.IO.Path]::GetFullPath($ZipPath)
+$InstallerPath = [System.IO.Path]::GetFullPath($InstallerPath)
+$CredentialsPath = [System.IO.Path]::GetFullPath($CredentialsPath)
+
 $work = Join-Path $env:TEMP "raillog-upload-$Tag"
 
 try {

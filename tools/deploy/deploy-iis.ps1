@@ -173,8 +173,15 @@ try {
     }
 
     if (-not $DryRun -and $AppPool) {
-        Write-Step "停止应用池 $AppPool"
-        Stop-WebAppPool -Name $AppPool
+        # 应用池可能因为上一次部署失败已经处于 Stopped；此时再调
+        # Stop-WebAppPool 会抛「目标路径上的对象已停止」，整个部署直接中断。
+        if ((Get-WebAppPoolState -Name $AppPool).Value -ne 'Stopped') {
+            Write-Step "停止应用池 $AppPool"
+            Stop-WebAppPool -Name $AppPool
+        }
+        else {
+            Write-Step "应用池 $AppPool 已经是停止状态"
+        }
         $poolStopped = $true
 
         $deadline = (Get-Date).AddSeconds(30)
