@@ -7,6 +7,14 @@ builder.Configuration
     .AddUserSecrets<Program>(optional: true)
     .AddEnvironmentVariables();
 
+// Windows 上默认日志会带上 EventLog provider，而写 ".NET Runtime" 事件源需要管理员权限。
+// 非管理员运行（VSCode 调试、普通终端）时，任何 Warning 级别以上的日志都会抛
+// AggregateException: Cannot open log for source '.NET Runtime'. You may not have write access.
+// 这会直接打断请求与后台任务（例如敏感词目录缺失时的 LogWarning 会让首页接口 500），
+// 所以本地/非管理员场景直接屏蔽该 provider，日志仍由 Console/Debug 输出。
+builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>(
+    category: null, level: LogLevel.None);
+
 builder.Services.AddSingleton<RailLogDatabase>();
 builder.Services.Configure<DatabaseBackupOptions>(
     builder.Configuration.GetSection("DatabaseBackup"));
