@@ -24,11 +24,30 @@ class TripMapRouteEntry {
     required this.trainNumber,
     required this.departureDate,
     required this.direction,
+    this.tripId,
+    this.ticketId,
   });
 
   final String trainNumber;
   final DateTime departureDate;
   final TripMapDirection direction;
+
+  /// 行程在本地库里的 id；他人主页的公开行程是负数（`-ticketId`）。
+  final int? tripId;
+
+  /// 已同步到服务端的票据 id，本机尚未同步的行程为 null。
+  final int? ticketId;
+}
+
+/// 地图弹窗里点中的那一趟行程。
+///
+/// 两个 id 至少有一个非空：自己主页的行程用 [tripId] 打开本地详情，他人主页的
+/// 公开行程用 [ticketId] 打开只读详情。
+class TripMapTripRef {
+  const TripMapTripRef({this.tripId, this.ticketId});
+
+  final int? tripId;
+  final int? ticketId;
 }
 
 class TripMapEndpoint {
@@ -285,6 +304,8 @@ class TripMapService {
           trip.departureTime,
           from.routeName,
           from.coordinate,
+          tripId: trip.id,
+          ticketId: trip.ticketId,
         );
       }
     }
@@ -370,6 +391,8 @@ String buildAmapHtml(
                     'trainNumber': entry.trainNumber,
                     'departureDate': _dateOnly(entry.departureDate),
                     'direction': entry.direction.name,
+                    'tripId': entry.tripId,
+                    'ticketId': entry.ticketId,
                   },
                 )
                 .toList(),
@@ -404,22 +427,50 @@ String buildAmapHtml(
     html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: $backgroundColor; }
     .amap-logo, .amap-copyright { opacity: .62; }
     .amap-marker-label { pointer-events: none; padding: 3px 6px; border: 1px solid rgba(255,255,255,.28); border-radius: 3px; background: rgba(10,16,22,.9); color: #FFF; font: 12px/1.25 sans-serif; box-shadow: 0 1px 4px rgba(0,0,0,.45); white-space: nowrap; }
-    .route-popup { width: 248px; max-width: calc(100vw - 32px); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid rgba(255,255,255,.24); border-radius: 4px; background: rgba(10,16,22,.94); color: #FFF; font: 12px/1.35 sans-serif; box-shadow: 0 3px 12px rgba(0,0,0,.32); }
+    .route-popup { width: 268px; max-width: calc(100vw - 32px); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid rgba(255,255,255,.24); border-radius: 4px; background: rgba(10,16,22,.94); color: #FFF; font: 12px/1.35 sans-serif; box-shadow: 0 3px 12px rgba(0,0,0,.32); }
+    .route-popup-summary { padding: 3px 5px 5px; margin-bottom: 2px; border-bottom: 1px solid rgba(255,255,255,.14); color: rgba(255,255,255,.62); font-size: 11px; }
     .route-popup-list { display: flex; flex-direction: column; gap: 1px; }
-    .route-popup-row { display: grid; grid-template-columns: minmax(48px, 1fr) 86px; align-items: center; gap: 5px; padding: 4px 5px; border-bottom: 1px solid rgba(255,255,255,.1); white-space: nowrap; }
+    .route-popup-row { display: grid; grid-template-columns: minmax(48px, 1fr) 86px 10px; align-items: center; gap: 5px; padding: 4px 5px; border-bottom: 1px solid rgba(255,255,255,.1); white-space: nowrap; }
     .route-popup-row:last-child { border-bottom: 0; }
+    .route-popup-row.is-link { cursor: pointer; border-radius: 3px; }
+    .route-popup-row.is-link:hover, .route-popup-row.is-link:focus-visible { background: rgba(255,255,255,.14); outline: none; }
     .route-popup-row strong { overflow: hidden; text-overflow: ellipsis; }
     .route-popup-row span { color: rgba(255,255,255,.76); }
+    .route-popup-row .open-hint { color: rgba(255,255,255,.5); text-align: right; font-size: 14px; line-height: 1; }
+    .map-legend { position: absolute; top: 12px; left: 12px; z-index: 30; display: flex; align-items: center; gap: 10px; padding: 5px 9px; border-radius: 4px; box-shadow: 0 1px 6px rgba(0,0,0,.25); font: 11px/1.2 sans-serif; pointer-events: none; background: ${darkMode ? 'rgba(10,16,22,.74)' : 'rgba(255,255,255,.9)'}; color: ${darkMode ? '#FFF' : 'rgba(10,16,22,.78)'}; }
+    .map-legend-title { opacity: .72; }
+    .map-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+    .map-legend-sample { display: inline-block; border-radius: 999px; background: ${darkMode ? '#ECFFB1' : '#7A4B00'}; }
+    .map-legend-sample.sample-low { width: 14px; height: 3px; opacity: .55; }
+    .map-legend-sample.sample-high { width: 24px; height: 7px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div class="map-legend" aria-hidden="true">
+    <span class="map-legend-title">经过次数</span>
+    <span class="map-legend-item"><i class="map-legend-sample sample-low"></i>少</span>
+    <span class="map-legend-item"><i class="map-legend-sample sample-high"></i>多</span>
+  </div>
   <script src="$apiBaseUrl/api/amap/sdk/maps.js"></script>
   <script src="$apiBaseUrl/api/amap/sdk/loca.js"></script>
   <script>
     const routes = $routeJson;
     const directionColor = (direction) =>
       direction === 'direction1' ? '#7DD3FC' : '#FDBA74';
+
+    // 弹窗里的点击要送回宿主（Flutter）才能跳进行程详情。
+    // iOS/Android 走 WebViewController 的 JavaScriptChannel，Windows 的
+    // WebView2 走 chrome.webview。两边都收到同一段 JSON 文本。
+    const postToHost = (message) => {
+      const payload = JSON.stringify(message);
+      if (window.TripMapBridge && typeof window.TripMapBridge.postMessage === 'function') {
+        window.TripMapBridge.postMessage(payload);
+      } else if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(payload);
+      }
+    };
+
     const map = new AMap.Map('map', {
       zoom: 4.5,
       center: [104.2, 35.7],
@@ -439,19 +490,35 @@ String buildAmapHtml(
     map.addControl(new AMap.ToolBar({ position: 'RB' }));
 
     // 一段路要画几条线、各自什么走向：单向一条，双向就把同一条中心线画正反两遍。
+    // frequency 是该方向上的行程次数——双向段的两条线各算各的。
     const routeLines = (route) => {
       const forward = route.coordinates;
       const back = forward.slice().reverse();
-      if (route.direction === 'direction2') return [back];
-      if (route.direction === 'bidirectional') return [forward, back];
-      return [forward];
+      const forwardFrequency = route.entries.filter(
+        (entry) => entry.direction === 'direction1').length;
+      const backwardFrequency = route.entries.filter(
+        (entry) => entry.direction === 'direction2').length;
+      if (route.direction === 'direction2') {
+        return [{ coordinates: back, frequency: backwardFrequency }];
+      }
+      if (route.direction === 'bidirectional') {
+        return [
+          { coordinates: forward, frequency: forwardFrequency },
+          { coordinates: back, frequency: backwardFrequency }
+        ];
+      }
+      return [{ coordinates: forward, frequency: forwardFrequency }];
     };
 
     if (routes.length) {
-      const features = routes.flatMap((route) => routeLines(route).map((coordinates) => ({
+      const features = routes.flatMap((route) => routeLines(route).map((line) => ({
         type: 'Feature',
-        properties: { name: route.name, direction: route.direction },
-        geometry: { type: 'LineString', coordinates }
+        properties: {
+          name: route.name,
+          direction: route.direction,
+          frequency: line.frequency
+        },
+        geometry: { type: 'LineString', coordinates: line.coordinates }
       })));
       const source = new Loca.GeoJSONSource({
         data: { type: 'FeatureCollection', features }
@@ -464,11 +531,36 @@ String buildAmapHtml(
         zooms: [2, 22]
       });
       lines.setSource(source);
+
+      // 经过次数决定线宽与亮度：按对数拉开差距，常走的线又粗又亮，只走过一次的
+      // 线仍看得见。Loca 的 style 支持按 feature 取值的函数（属性级样式）。
+      const maxFrequency = features.reduce(
+        (max, feature) => Math.max(max, feature.properties.frequency), 1);
+      // 只有一趟行程时所有线一样粗，图例没有意义。
+      if (maxFrequency <= 1) {
+        const legend = document.querySelector('.map-legend');
+        if (legend) legend.style.display = 'none';
+      }
+      const frequencyOf = (feature) => {
+        const value = feature && feature.properties && feature.properties.frequency;
+        return typeof value === 'number' && value > 0 ? value : 1;
+      };
+      const intensityOf = (feature) => maxFrequency <= 1
+        ? 1
+        : Math.log(frequencyOf(feature)) / Math.log(maxFrequency);
+      const lineWidthOf = (source, feature) => maxFrequency <= 1
+        ? 4
+        : 3 + 8 * intensityOf(feature);
+      const headColorOf = (source, feature) => 'rgba(${darkMode ? '236,255,177' : '122,75,0'},' +
+        (${darkMode ? '0.62' : '0.55'} + ${darkMode ? '0.38' : '0.45'} * intensityOf(feature)) + ')';
+      const trailColorOf = (source, feature) => 'rgba(${darkMode ? '255,178,6' : '180,72,0'},' +
+        (${darkMode ? '0.10' : '0.36'} + ${darkMode ? '0.24' : '0.42'} * intensityOf(feature)) + ')';
+
       lines.setStyle({
         altitude: 0,
-        lineWidth: 4,
-        headColor: '${darkMode ? '#ECFFB1' : '#7A4B00'}',
-        trailColor: '${darkMode ? 'rgba(255,178,6,0.2)' : 'rgba(180,72,0,0.68)'}',
+        lineWidth: lineWidthOf,
+        headColor: headColorOf,
+        trailColor: trailColorOf,
         interval: 0.45,
         duration: 3200
       });
@@ -478,9 +570,9 @@ String buildAmapHtml(
       // Loca renders the animated line but does not expose a consistent hit
       // target across WebView platforms. Add a transparent, wider AMap
       // polyline for reliable click handling.
-      const hitLines = routes.flatMap((route) => routeLines(route).map((coordinates) => {
+      const hitLines = routes.flatMap((route) => routeLines(route).map((line) => {
         const hitLine = new AMap.Polyline({
-          path: coordinates,
+          path: line.coordinates,
           strokeColor: '#000000',
           strokeOpacity: 0,
           strokeWeight: 16,
@@ -492,11 +584,20 @@ String buildAmapHtml(
         hitLine.on('click', (event) => {
           const content = document.createElement('div');
           content.className = 'route-popup';
+          if (route.entries.length) {
+            const summary = document.createElement('div');
+            summary.className = 'route-popup-summary';
+            summary.textContent = route.entries.length + ' 次经过';
+            content.append(summary);
+          }
           const list = document.createElement('div');
           list.className = 'route-popup-list';
           route.entries.forEach((entry) => {
             const row = document.createElement('div');
-            row.className = 'route-popup-row';
+            // 有 id 才能跳到行程详情：自己的行程用本地 id，他人主页的公开行程用
+            // 票据 id，由 Flutter 那侧按来源决定打开哪一种详情页。
+            const canOpen = entry.tripId != null || entry.ticketId != null;
+            row.className = canOpen ? 'route-popup-row is-link' : 'route-popup-row';
             const train = document.createElement('strong');
             train.textContent = entry.trainNumber || '未填写车次';
             const date = document.createElement('span');
@@ -504,6 +605,28 @@ String buildAmapHtml(
             date.style.color = directionColor(entry.direction);
             train.style.color = directionColor(entry.direction);
             row.append(train, date);
+            if (canOpen) {
+              row.tabIndex = 0;
+              const hint = document.createElement('span');
+              hint.className = 'open-hint';
+              hint.textContent = '›';
+              row.append(hint);
+              const openTrip = () => postToHost({
+                type: 'openTrip',
+                tripId: entry.tripId,
+                ticketId: entry.ticketId
+              });
+              row.addEventListener('click', (clickEvent) => {
+                clickEvent.stopPropagation();
+                openTrip();
+              });
+              row.addEventListener('keydown', (keyEvent) => {
+                if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+                  keyEvent.preventDefault();
+                  openTrip();
+                }
+              });
+            }
             list.append(row);
           });
           list.addEventListener('wheel', (wheelEvent) => wheelEvent.stopPropagation(), { passive: true });
@@ -546,8 +669,8 @@ String buildAmapHtml(
       const firstPoint = routes[0].coordinates[0];
       const firstLngLat = new AMap.LngLat(firstPoint[0], firstPoint[1]);
       const bounds = new AMap.Bounds(firstLngLat, firstLngLat);
-      routes.forEach((route) => routeLines(route).forEach((coordinates) =>
-        coordinates.forEach((point) =>
+      routes.forEach((route) => routeLines(route).forEach((line) =>
+        line.coordinates.forEach((point) =>
           bounds.extend(new AMap.LngLat(point[0], point[1])))));
       map.setBounds(bounds, false, [48, 48, 48, 48]);
     }
@@ -587,8 +710,10 @@ class _TripMapRouteGroup {
     String trainNumber,
     DateTime departureDate,
     String routeName,
-    StationCoordinate origin,
-  ) {
+    StationCoordinate origin, {
+    int? tripId,
+    int? ticketId,
+  }) {
     final trimmed = routeName.trim();
     if (trimmed.isNotEmpty && !_routeNames.contains(trimmed)) {
       _routeNames.add(trimmed);
@@ -603,6 +728,8 @@ class _TripMapRouteGroup {
         direction: isDirection1
             ? TripMapDirection.direction1
             : TripMapDirection.direction2,
+        tripId: tripId,
+        ticketId: ticketId,
       ),
     );
   }
@@ -754,6 +881,8 @@ TripMapRouteEntry _flipEntry(TripMapRouteEntry entry, bool flipped) {
     direction: entry.direction == TripMapDirection.direction1
         ? TripMapDirection.direction2
         : TripMapDirection.direction1,
+    tripId: entry.tripId,
+    ticketId: entry.ticketId,
   );
 }
 

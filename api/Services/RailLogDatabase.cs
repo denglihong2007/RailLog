@@ -1076,38 +1076,40 @@ public sealed partial class RailLogDatabase
             .ToList();
     }
 
+    /// <summary>
+    /// 首页「出行指南」的无 mode 混排：前几条取全站热门，其余用「与我相关」
+    /// 的排序补齐。两种排序都走 <see cref="GetTravelGuideFeedAsync"/>，与带
+    /// mode 的分页接口共用同一套取数与排序。老客户端仍在调用。
+    /// </summary>
     public async Task<IReadOnlyList<EntityReviewResponse>> GetHomeTravelGuideReviewsAsync(
         string currentUserId)
     {
-        await using var connection = OpenConnection();
-        await connection.OpenAsync();
-
-        var popular = await GetPopularEntityReviewsAsync(
-            connection,
+        var result = (await GetTravelGuideFeedAsync(
             currentUserId,
-            HomeTravelGuideHotLimit);
-        var result = popular.ToList();
-        var includedIds = result.Select(review => review.Id).ToHashSet();
+            "hot",
+            0,
+            HomeTravelGuideHotLimit)).ToList();
         if (result.Count >= HomeTravelGuideLimit) return result;
 
-        var tripIds = await GetUserTripIdsAsync(connection, currentUserId);
-        foreach (var ticketId in tripIds)
+        var includedIds = result.Select(review => review.Id).ToHashSet();
+        var related = await GetTravelGuideFeedAsync(
+            currentUserId,
+            "related",
+            0,
+            HomeTravelGuideLimit);
+        foreach (var review in related)
         {
-            var related = await GetTravelGuideReviewsAsync(ticketId, currentUserId);
-            if (related is null) continue;
-            foreach (var review in related)
-            {
-                if (!includedIds.Add(review.Id)) continue;
-                result.Add(review);
-                if (result.Count >= HomeTravelGuideLimit) return result;
-            }
+            if (result.Count >= HomeTravelGuideLimit) break;
+            if (includedIds.Add(review.Id)) result.Add(review);
         }
         return result;
     }
 
     /// <summary>
-    /// 「出行指南」拆开排序方式后的分页取数：热门按反应数的时间衰减分排序，
-    /// 与我相关按「行程由新到旧、同行程内评价由新到旧」排序（即原来混排里的相关段顺序）。
+    /// 「出行指南」拆开排序方式后的分页取数：热门按反应数的时间衰减分排序；
+    /// 与我相关以「实体覆盖了我多大比例的行程」衡量特异性，车站/车次/单位
+    /// 的类型权重略高，车型和线路较低；再按我最近乘坐时间、评价新鲜度和
+    /// 多样性惩罚排序。
     /// 返回条数少于 <paramref name="limit"/> 就表示没有下一页。
     /// </summary>
     public async Task<IReadOnlyList<EntityReviewResponse>> GetTravelGuideFeedAsync(
@@ -1131,43 +1133,25 @@ public sealed partial class RailLogDatabase
                 offset);
         }
 
-        // 相关段的顺序由「行程新鲜度」决定，所以只能沿行程逐条铺开；
-        // 跳过前 offset 条后取满 limit 条即可提前返回，代价与 offset 同阶。
-        var tripIds = await GetUserTripIdsAsync(connection, currentUserId);
-        var seen = new HashSet<long>();
-        var result = new List<EntityReviewResponse>();
-        foreach (var ticketId in tripIds)
-        {
-            var related = await GetTravelGuideReviewsAsync(ticketId, currentUserId);
-            if (related is null) continue;
-            foreach (var review in related)
+        // 相关段按「我的实体画像」整体打分：车站/车次/承运单位优先，车型最低，
+        // 再按实体使用次数、我最近乘坐时间、评价新鲜度调整，并对同实体/同作者/
+        // 同类型做多样性惩罚。只算到 offset+limit 条，前缀与完整排序一致。
+        var candidates = await GetRelatedReviewCandidatesAsync(connection, currentUserId);
+        if (candidates.Count == 0 || offset >= candidates.Count) return [];
+        var take = (int)Math.Min((long)offset + limit, candidates.Count);
+        var ranked = RankRelatedReviewCandidates(candidates, take);
+        if (offset >= ranked.Count) return [];
+        var page = ranked.Skip(offset).Take(limit).ToList();
+        var reactions = await GetReviewReactionSummariesAsync(
+            connection,
+            page.Select(review => review.Id).ToList(),
+            currentUserId);
+        return page
+            .Select(review => review with
             {
-                if (!seen.Add(review.Id)) continue;
-                if (seen.Count <= offset) continue;
-                result.Add(review);
-                if (result.Count >= limit) return result;
-            }
-        }
-        return result;
-    }
-
-    private static async Task<List<long>> GetUserTripIdsAsync(
-        SqliteConnection connection,
-        string currentUserId)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id
-            FROM TripRecords
-            WHERE UserId=$userId AND DeletedAt IS NULL AND IsRailTrip=1
-            ORDER BY COALESCE(DepartureTime, TravelDate) DESC, Id DESC;
-            """;
-        command.Parameters.AddWithValue("$userId", currentUserId);
-        var tripIds = new List<long>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-            tripIds.Add(reader.GetInt64(0));
-        return tripIds;
+                Reactions = reactions.GetValueOrDefault(review.Id, []),
+            })
+            .ToList();
     }
 
     /// <summary>当前用户自己发表的评价，最新在前。「我的评价」页面的数据源。</summary>
@@ -2834,7 +2818,6 @@ public sealed partial class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
-        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
         var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
@@ -2848,8 +2831,7 @@ public sealed partial class RailLogDatabase
         var totalExperience = 0;
         for (var pass = 0; pass < 8; pass++)
         {
-            var context = new AchievementContext(
-                totalExperience, totalReviewReactions, levelThresholds);
+            var context = new AchievementContext(totalExperience, totalReviewReactions);
             unlocked = AchievementEngine.Evaluate(trips, reviews, context)
                 .Where(item => item.TriggerTripId.HasValue)
                 .ToList();
@@ -3015,12 +2997,10 @@ public sealed partial class RailLogDatabase
         var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
             connection,
             userId);
-        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         var definitions = AchievementEngine.Evaluate(
             trips,
             reviews,
-            new AchievementContext(
-                totalExperience, totalReviewReactions, levelThresholds));
+            new AchievementContext(totalExperience, totalReviewReactions));
         var items = definitions
             .Select((definition, index) => new
             {

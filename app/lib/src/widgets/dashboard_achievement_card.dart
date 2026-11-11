@@ -524,6 +524,7 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'beach_access_outlined' => Icons.beach_access_outlined,
   'call_split_outlined' => Icons.call_split_outlined,
   'campaign_outlined' => Icons.campaign_outlined,
+  'cloud_outlined' => Icons.cloud_outlined,
   'confirmation_number_outlined' => Icons.confirmation_number_outlined,
   'departure_board_outlined' => Icons.departure_board_outlined,
   'diamond_outlined' => Icons.diamond_outlined,

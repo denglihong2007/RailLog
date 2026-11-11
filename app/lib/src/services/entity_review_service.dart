@@ -239,6 +239,17 @@ class EntityReviewService {
     return _parseReviews(response.data);
   }
 
+  /// 首页「出行指南」预览。不传 mode，后端返回「热门 + 相关」混排。
+  static Future<List<EntityReview>> fetchHomeTravelGuide() async {
+    final token = SessionService.instance.token;
+    if (token == null) throw StateError('请先登录');
+    final response = await ApiClient.instance.dio.get(
+      '/api/trips/travel-guide',
+      options: ApiClient.instance.authorized(token),
+    );
+    return _parseReviews(response.data);
+  }
+
   /// 当前用户自己发表的评价，最新在前。设置里「我的评价」的数据源。
   static Future<List<EntityReview>> fetchMine({
     int offset = 0,

@@ -10,10 +10,19 @@ import 'package:raillog/src/widgets/trip_map_webview.dart';
 
 enum _DatePreset { all, thisYear, recentYear, custom }
 
+/// 打开地图弹窗里的某趟行程。返回 `true` 表示行程被改动过（例如删除），
+/// 地图需要重新读取数据。
+typedef TripMapTripOpener =
+    Future<bool?> Function(BuildContext context, TripMapTripRef trip);
+
 class TripMapPage extends StatefulWidget {
-  const TripMapPage({super.key, this.trips});
+  const TripMapPage({super.key, this.trips, this.openTrip});
 
   final List<TripRecord>? trips;
+
+  /// 弹窗行点击后的跳转方式。自己的地图打开本地详情，他人主页的地图打开
+  /// 只读的公开详情——要不要区分的决定权在调用方。为空时弹窗行不可点。
+  final TripMapTripOpener? openTrip;
 
   @override
   State<TripMapPage> createState() => _TripMapPageState();
@@ -60,6 +69,15 @@ class _TripMapPageState extends State<TripMapPage> {
     final future = _loadSource();
     setState(() => _sourceFuture = future);
     await future;
+  }
+
+  Future<void> _openTrip(TripMapTripRef trip) async {
+    final opener = widget.openTrip;
+    if (opener == null || !mounted) return;
+    final changed = await opener(context, trip);
+    // 行程被删掉后地图还拿着旧数据，重新读一遍；只是看了一眼就不用刷新，
+    // 免得每次返回都闪一次加载态。
+    if (changed == true && mounted) await _retry();
   }
 
   @override
@@ -119,6 +137,7 @@ class _TripMapPageState extends State<TripMapPage> {
                     )
                   : TripMapWebView(
                       backgroundColor: theme.colorScheme.surface,
+                      onOpenTrip: _openTrip,
                       html: buildAmapHtml(
                         data.routes,
                         darkMode: isDark,

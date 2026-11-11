@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:raillog/src/models/historical_schedule_lookup.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/rolling_stock_record.dart';
@@ -34,7 +36,6 @@ class TrainService {
   );
   static Map<String, String> _stationCodes = const {};
   static Map<String, String> _stationCities = const {};
-  static String _lastStationScript = '';
   static Map<String, String> get stationCities => _stationCities;
 
   static Future<List<String>> getCityNames() async {
@@ -42,7 +43,16 @@ class TrainService {
     return _stationCities.values.toSet().toList()..sort();
   }
 
-  static Future<Map<String, String>>? _stationCodeRequest;
+  /// 12306 车站字典的内置副本（站名 → 电报码 / 站名 → 城市）。
+  ///
+  /// 启动和「到访城市」不再依赖 12306 是否可达；网络可用时仍会在后台拉一份
+  /// 新字典覆盖，保持与线上一致。更新副本用 tools/fetch_station_names.py。
+  static const String _bundledStationNamesAsset = 'assets/db/station_name.js';
+  static const Duration _remoteRefreshCooldown = Duration(minutes: 15);
+
+  static Future<void>? _bundledLoadRequest;
+  static Future<void>? _remoteRefreshRequest;
+  static DateTime? _lastRemoteRefreshAt;
   static List<String>? _timetableVersions;
   static Future<List<String>>? _timetableVersionsRequest;
   static final Map<String, String> _ticketCookies = {};
@@ -53,39 +63,83 @@ class TrainService {
   TrainService._();
 
   static Future<Map<String, String>> initializeStationCodes() async {
-    if (_stationCodes.isNotEmpty) return _stationCodes;
-    final existingRequest = _stationCodeRequest;
-    if (existingRequest != null) return existingRequest;
-
-    final request = _loadStationCodesAndSession();
-    _stationCodeRequest = request;
-    final result = await request;
-    if (result.isNotEmpty) {
-      _stationCodes = Map.unmodifiable(result);
-      _stationCities = Map.unmodifiable(parseStationCities(_lastStationScript));
-    } else {
-      _stationCodeRequest = null;
+    await _loadBundledStationCodes();
+    if (_stationCodes.isNotEmpty) {
+      // 内置字典已经能用，网络刷新放到后台，不再拖住启动。
+      unawaited(_refreshStationCodes());
+      return _stationCodes;
     }
+    // 内置副本读不出来（缺资源、格式变了）时才退回阻塞式拉取。
+    await _refreshStationCodes();
     return _stationCodes;
   }
 
-  static Future<Map<String, String>> _loadStationCodesAndSession() async {
-    final stationCodes = await _fetchStationCodes();
-    await _ensureTicketSession();
-    return stationCodes;
+  static Future<void> _loadBundledStationCodes() {
+    if (_stationCodes.isNotEmpty) return Future.value();
+    final existingRequest = _bundledLoadRequest;
+    if (existingRequest != null) return existingRequest;
+
+    final request = _readBundledStationCodes();
+    _bundledLoadRequest = request;
+    return request;
   }
 
-  static Future<Map<String, String>> _fetchStationCodes() async {
+  static Future<void> _readBundledStationCodes() async {
+    try {
+      _applyStationScript(
+        await rootBundle.loadString(_bundledStationNamesAsset),
+      );
+    } catch (error) {
+      debugPrint('内置车站字典读取失败：$error');
+      _bundledLoadRequest = null;
+    }
+  }
+
+  static Future<void> _refreshStationCodes() {
+    final existingRequest = _remoteRefreshRequest;
+    if (existingRequest != null) return existingRequest;
+    final lastAttempt = _lastRemoteRefreshAt;
+    if (lastAttempt != null &&
+        DateTime.now().difference(lastAttempt) < _remoteRefreshCooldown) {
+      return Future.value();
+    }
+
+    _lastRemoteRefreshAt = DateTime.now();
+    final request = _refreshStationCodesFromRemote();
+    _remoteRefreshRequest = request;
+    return request;
+  }
+
+  static Future<void> _refreshStationCodesFromRemote() async {
+    try {
+      _applyStationScript(await _fetchStationScript());
+      await _ensureTicketSession();
+    } catch (error) {
+      debugPrint('12306 车站字典刷新失败，继续使用内置副本：$error');
+    } finally {
+      _remoteRefreshRequest = null;
+    }
+  }
+
+  /// 解析并替换两张表；空脚本或解析不出条目时保留现有字典。
+  static void _applyStationScript(String script) {
+    if (script.isEmpty) return;
+    final codes = parseStationCodes(script);
+    if (codes.isEmpty) return;
+    _stationCodes = Map.unmodifiable(codes);
+    _stationCities = Map.unmodifiable(parseStationCities(script));
+  }
+
+  static Future<String> _fetchStationScript() async {
     try {
       final response = await _ticketDio.get<String>(
         'https://kyfw.12306.cn/otn/resources/js/framework/station_name.js',
         options: _ticketRequestOptions(),
       );
-      if (response.statusCode != 200) return const {};
-      _lastStationScript = response.data ?? '';
-      return parseStationCodes(_lastStationScript);
+      if (response.statusCode != 200) return '';
+      return response.data ?? '';
     } on DioException {
-      return const {};
+      return '';
     }
   }
 
@@ -179,6 +233,9 @@ class TrainService {
     final fromCode = stationCodes[fromStation.trim()];
     final toCode = stationCodes[toStation.trim()];
     if (fromCode == null || toCode == null) return null;
+
+    // 字典可能来自内置副本，12306 的会话（JSESSIONID）就在这里补。
+    await _ensureTicketSession();
 
     final lookupDates = ticketPriceLookupDates(DateTime.now());
     for (final lookupDate in lookupDates) {
