@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/map_payload_store.dart';
+import 'package:raillog/src/services/trip_map_service.dart';
 import 'package:webview_flutter/webview_flutter.dart' as mobile;
 import 'package:webview_windows/webview_windows.dart' as windows;
 
@@ -10,28 +13,45 @@ class TripMapWebView extends StatelessWidget {
     super.key,
     required this.html,
     required this.backgroundColor,
+    this.onOpenTrip,
   });
 
   final String html;
   final Color backgroundColor;
 
+  /// 弹窗里点了某趟行程时回调；为空时弹窗行不可点。
+  final ValueChanged<TripMapTripRef>? onOpenTrip;
+
   @override
   Widget build(BuildContext context) {
     if (Platform.isWindows) {
-      return _WindowsWebView(html: html, backgroundColor: backgroundColor);
+      return _WindowsWebView(
+        html: html,
+        backgroundColor: backgroundColor,
+        onOpenTrip: onOpenTrip,
+      );
     }
     if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
-      return _MobileWebView(html: html, backgroundColor: backgroundColor);
+      return _MobileWebView(
+        html: html,
+        backgroundColor: backgroundColor,
+        onOpenTrip: onOpenTrip,
+      );
     }
     return const _WebViewError(message: '当前平台暂不支持地图视图');
   }
 }
 
 class _WindowsWebView extends StatefulWidget {
-  const _WindowsWebView({required this.html, required this.backgroundColor});
+  const _WindowsWebView({
+    required this.html,
+    required this.backgroundColor,
+    this.onOpenTrip,
+  });
 
   final String html;
   final Color backgroundColor;
+  final ValueChanged<TripMapTripRef>? onOpenTrip;
 
   @override
   State<_WindowsWebView> createState() => _WindowsWebViewState();
@@ -40,6 +60,7 @@ class _WindowsWebView extends StatefulWidget {
 class _WindowsWebViewState extends State<_WindowsWebView> {
   final windows.WebviewController _controller = windows.WebviewController();
   final MapPayloadStore _payloads = MapPayloadStore();
+  StreamSubscription<dynamic>? _messageSubscription;
   Object? _error;
 
   @override
@@ -55,6 +76,7 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
         throw StateError('未安装 Microsoft Edge WebView2 Runtime');
       }
       await _controller.initialize();
+      _messageSubscription = _controller.webMessage.listen(_onWebMessage);
       await _controller.setBackgroundColor(widget.backgroundColor);
       await _controller.setPopupWindowPolicy(
         windows.WebviewPopupWindowPolicy.deny,
@@ -65,6 +87,11 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
     } catch (error) {
       if (mounted) setState(() => _error = error);
     }
+  }
+
+  void _onWebMessage(dynamic message) {
+    final trip = _tripFromMessage(message);
+    if (trip != null) widget.onOpenTrip?.call(trip);
   }
 
   Future<void> _reload() async {
@@ -111,6 +138,7 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
 
   @override
   void dispose() {
+    _messageSubscription?.cancel();
     _controller.dispose();
     _payloads.dispose();
     super.dispose();
@@ -118,10 +146,15 @@ class _WindowsWebViewState extends State<_WindowsWebView> {
 }
 
 class _MobileWebView extends StatefulWidget {
-  const _MobileWebView({required this.html, required this.backgroundColor});
+  const _MobileWebView({
+    required this.html,
+    required this.backgroundColor,
+    this.onOpenTrip,
+  });
 
   final String html;
   final Color backgroundColor;
+  final ValueChanged<TripMapTripRef>? onOpenTrip;
 
   @override
   State<_MobileWebView> createState() => _MobileWebViewState();
@@ -147,7 +180,23 @@ class _MobileWebViewState extends State<_MobileWebView> {
         ),
       );
     }
-    _load();
+    _initialize();
+  }
+
+  /// 频道要在装载页面前注册，否则脚本里 `window.TripMapBridge` 不存在。
+  Future<void> _initialize() async {
+    try {
+      await _controller.addJavaScriptChannel(
+        'TripMapBridge',
+        onMessageReceived: (message) {
+          final trip = _tripFromMessage(message.message);
+          if (trip != null) widget.onOpenTrip?.call(trip);
+        },
+      );
+    } catch (_) {
+      // 注册失败也照常显示地图，只是弹窗行点不动。
+    }
+    await _load();
   }
 
   /// 安卓落盘后用 `file://` 加载：`loadHtmlString` 会退化成 data URL 走 Binder，
@@ -193,6 +242,26 @@ class _MobileWebViewState extends State<_MobileWebView> {
     controller: _controller,
     gestureRecognizers: const {},
   );
+}
+
+/// WebView 两侧传来的都是同一段 JSON 文本：移动端走 JavaScriptChannel，
+/// Windows 走 WebView2 的 web 消息（插件已解一层 JSON）。解析不了一律忽略，
+/// 地图不该因为一条坏消息而崩。
+TripMapTripRef? _tripFromMessage(Object? message) {
+  Object? decoded = message;
+  if (decoded is String) {
+    try {
+      decoded = jsonDecode(decoded);
+    } catch (_) {
+      return null;
+    }
+  }
+  if (decoded is! Map) return null;
+  if (decoded['type'] != 'openTrip') return null;
+  final tripId = (decoded['tripId'] as num?)?.toInt();
+  final ticketId = (decoded['ticketId'] as num?)?.toInt();
+  if (tripId == null && ticketId == null) return null;
+  return TripMapTripRef(tripId: tripId, ticketId: ticketId);
 }
 
 class _WebViewError extends StatelessWidget {

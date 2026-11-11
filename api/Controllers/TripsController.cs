@@ -41,8 +41,9 @@ public sealed class TripsController(
     }
 
     /// <summary>
-    /// 首页「出行指南」。不带 mode 时保持旧的「热门 + 相关」混排（老客户端仍在用）；
-    /// 带 mode=hot|related 时按分页返回单一排序方式，供无限滚动取下一页。
+    /// 首页「出行指南」。不带 mode 时保持「热门 + 相关」混排（老客户端仍在用），
+    /// 相关段已改用与 mode=related 相同的实体覆盖率排序；带 mode=hot|related
+    /// 时按分页返回单一排序方式，供无限滚动取下一页。
     /// </summary>
     [HttpGet("travel-guide")]
     public async Task<ActionResult<IReadOnlyList<EntityReviewResponse>>> GetHomeTravelGuide(

@@ -417,7 +417,15 @@ class _TripDetailsContent extends StatelessWidget {
                           tooltip: '查看单次行程轨迹',
                           onPressed: () => Navigator.of(context).push(
                             m3PageRoute(
-                              builder: (_) => TripMapPage(trips: [trip]),
+                              builder: (_) => TripMapPage(
+                                trips: [trip],
+                                // 这张地图只有当前这一趟；点弹窗里的车次就是
+                                // 回到行程详情，关掉地图即可。
+                                openTrip: (mapContext, _) async {
+                                  Navigator.of(mapContext).maybePop();
+                                  return null;
+                                },
+                              ),
                             ),
                           ),
                           icon: const Icon(Icons.map_outlined),
