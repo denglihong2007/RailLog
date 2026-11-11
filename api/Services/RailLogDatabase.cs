@@ -2834,7 +2834,6 @@ public sealed partial class RailLogDatabase
         await using var connection = OpenConnection();
         await connection.OpenAsync();
         await ExecuteAsync(connection, "PRAGMA busy_timeout = 30000;");
-        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var trips = await GetAchievementTripsAsync(connection, userId, transaction);
         var reviews = await GetAchievementReviewsAsync(connection, userId, transaction);
@@ -2848,8 +2847,7 @@ public sealed partial class RailLogDatabase
         var totalExperience = 0;
         for (var pass = 0; pass < 8; pass++)
         {
-            var context = new AchievementContext(
-                totalExperience, totalReviewReactions, levelThresholds);
+            var context = new AchievementContext(totalExperience, totalReviewReactions);
             unlocked = AchievementEngine.Evaluate(trips, reviews, context)
                 .Where(item => item.TriggerTripId.HasValue)
                 .ToList();
@@ -3015,12 +3013,10 @@ public sealed partial class RailLogDatabase
         var totalReviewReactions = await GetAchievementReviewReactionCountAsync(
             connection,
             userId);
-        var levelThresholds = await ReadUserLevelThresholdsAsync(connection);
         var definitions = AchievementEngine.Evaluate(
             trips,
             reviews,
-            new AchievementContext(
-                totalExperience, totalReviewReactions, levelThresholds));
+            new AchievementContext(totalExperience, totalReviewReactions));
         var items = definitions
             .Select((definition, index) => new
             {

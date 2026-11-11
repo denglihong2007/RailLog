@@ -136,6 +136,7 @@ const achievementIconCodepoints: Record<string, number> = {
   call_split_outlined: 0xef1c,
   flag_outlined: 0xf07b,
   celebration_outlined: 0xef38,
+  cloud_outlined: 0xef62,
   repeat_outlined: 0xf305,
   downhill_skiing_outlined: 0xefef,
   water_drop_outlined: 0xf0695,
