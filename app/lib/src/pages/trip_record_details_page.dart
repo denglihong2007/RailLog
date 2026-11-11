@@ -10,6 +10,7 @@ import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
+import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
 import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
@@ -914,7 +915,8 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
         : 'ready';
     final image = bytes == null
         ? AspectRatio(aspectRatio: 1800 / 1120, child: _buildState(colors))
-        : Stack(
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Image.memory(
                 bytes,
@@ -924,44 +926,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
                 gaplessPlayback: true,
                 filterQuality: FilterQuality.high,
               ),
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Material(
-                  elevation: 3,
-                  color: colors.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.small),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: '下载车票图片',
-                        onPressed: _savingImage ? null : _saveImage,
-                        icon: _savingImage
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.download_outlined),
-                      ),
-                      IconButton(
-                        tooltip: '购买实体纪念票',
-                        onPressed: _buying ? null : _buy,
-                        icon: _buying
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.shopping_bag_outlined),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _buildActions(),
             ],
           );
     return Material(
@@ -977,6 +942,75 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
         ),
       ),
     );
+  }
+
+  /// 车票图片下方的动作控制条：下载、订票、设置三等分。
+  ///
+  /// 贴住图片下沿、上方直角、只给底部圆角，读起来像车票自带的一条控制栏；
+  /// 离图片留一点小间距，但不至于断开。
+  Widget _buildActions() {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: Material(
+        color: colors.surfaceContainerLow,
+        surfaceTintColor: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            bottom: Radius.circular(AppRadius.card),
+          ),
+        ),
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _TicketAction(
+                  icon: Icons.download_outlined,
+                  label: '下载',
+                  busy: _savingImage,
+                  onPressed: _saveImage,
+                ),
+              ),
+              _actionDivider(colors),
+              Expanded(
+                child: _TicketAction(
+                  icon: Icons.shopping_bag_outlined,
+                  label: '订票',
+                  busy: _buying,
+                  onPressed: _buy,
+                ),
+              ),
+              _actionDivider(colors),
+              Expanded(
+                child: _TicketAction(
+                  icon: Icons.settings_outlined,
+                  label: '设置',
+                  onPressed: _openSettings,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionDivider(ColorScheme colors) => Container(
+    width: 1,
+    margin: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+    color: colors.outlineVariant,
+  );
+
+  /// 打开车票生成器设置。返回后不必手动刷新：设置一改，
+  /// [TicketGeneratorSettings.cacheKey] 就会变，父级据此用新 key 重建
+  /// 本组件，新实例在 initState 里按新设置重新请求车票图片。
+  Future<void> _openSettings() async {
+    await Navigator.of(
+      context,
+    ).push(m3PageRoute(builder: (_) => const TicketGeneratorSettingsPage()));
   }
 
   Widget _buildState(ColorScheme colors) {
@@ -1006,6 +1040,58 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 动作板块里的单个动作：图标在上、标签在下，等分占位。
+class _TicketAction extends StatelessWidget {
+  const _TicketAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return TextButton(
+      onPressed: busy ? null : onPressed,
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const RoundedRectangleBorder(),
+        foregroundColor: colors.primary,
+      ),
+      child: Builder(
+        builder: (context) {
+          // 取按钮自己的 DefaultTextStyle：标签会连同图标一起变成禁用色。
+          final labelStyle = DefaultTextStyle.of(
+            context,
+          ).style.copyWith(fontSize: 12);
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              busy
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(icon, size: 20),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(label, maxLines: 1, style: labelStyle),
+            ],
+          );
+        },
       ),
     );
   }
