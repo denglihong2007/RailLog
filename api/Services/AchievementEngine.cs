@@ -2110,6 +2110,8 @@ public static partial class AchievementEngine
 
     private static DateTime Departure(PublicTrip trip) => trip.DepartureTime ?? trip.CreatedAt;
 
+    private static DateTime Arrival(PublicTrip trip) => Departure(trip) + ValidDuration(trip);
+
     private static bool IsRomanticDate(DateTime value) =>
         value is { Month: 5, Day: 20 } or { Month: 2, Day: 14 } || IsQixi(value);
 
@@ -2944,13 +2946,15 @@ public static partial class AchievementEngine
         double target)
     {
         var ordered = trips.OrderBy(Departure).ThenBy(trip => trip.TicketId).ToList();
+        var window = TimeSpan.FromHours(24);
         for (var start = 0; start < ordered.Count; start++)
         {
             var startTime = Departure(ordered[start]);
             var mileage = 0d;
             for (var end = start; end < ordered.Count; end++)
             {
-                if (Departure(ordered[end]) - startTime > TimeSpan.FromHours(24)) break;
+                if (Departure(ordered[end]) - startTime > window) break;
+                if (Arrival(ordered[end]) - startTime > window) continue;
                 mileage += Math.Max(0, ordered[end].MileageKm);
                 if (mileage > target) return ordered[end];
             }
@@ -2961,6 +2965,7 @@ public static partial class AchievementEngine
     private static double MaxRolling24HourMileage(List<PublicTrip> trips)
     {
         var ordered = trips.OrderBy(Departure).ThenBy(trip => trip.TicketId).ToList();
+        var window = TimeSpan.FromHours(24);
         var maximum = 0d;
         for (var start = 0; start < ordered.Count; start++)
         {
@@ -2968,7 +2973,8 @@ public static partial class AchievementEngine
             var mileage = 0d;
             for (var end = start; end < ordered.Count; end++)
             {
-                if (Departure(ordered[end]) - startTime > TimeSpan.FromHours(24)) break;
+                if (Departure(ordered[end]) - startTime > window) break;
+                if (Arrival(ordered[end]) - startTime > window) continue;
                 mileage += Math.Max(0, ordered[end].MileageKm);
                 maximum = Math.Max(maximum, mileage);
             }
