@@ -29,6 +29,7 @@ import 'package:raillog/src/services/public_user_service.dart';
 import 'package:raillog/src/services/route_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
+import 'package:raillog/src/services/trip_map_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
@@ -175,6 +176,15 @@ class _HomePageState extends State<HomePage> {
         reactions,
       );
     });
+  }
+
+  /// 地图弹窗里点自己的行程：打开本地详情页，自己可以编辑/删除。
+  Future<bool?> _openTripFromMap(BuildContext context, TripMapTripRef trip) {
+    final tripId = trip.tripId;
+    if (tripId == null) return Future.value(null);
+    return Navigator.of(context).push<bool>(
+      m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: tripId)),
+    );
   }
 
   Future<void> _refresh() async {
@@ -371,6 +381,7 @@ class _HomePageState extends State<HomePage> {
                             child: _OverviewSection(
                               stats: stats,
                               onChanged: _refresh,
+                              openMapTrip: _openTripFromMap,
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -627,6 +638,17 @@ class _PublicUserPageState extends State<PublicUserPage> {
     await future;
   }
 
+  /// 地图弹窗里点 TA 的行程：只读的公开详情，不能编辑/删除。
+  Future<bool?> _openTripFromMap(BuildContext context, TripMapTripRef trip) {
+    final ticketId = trip.ticketId;
+    if (ticketId == null) return Future.value(null);
+    return Navigator.of(context).push<bool>(
+      m3PageRoute(
+        builder: (_) => TripRecordDetailsPage.public(ticketId: ticketId),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -669,6 +691,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
                             stats: stats,
                             onChanged: _refresh,
                             openTrip: openTrip,
+                            openMapTrip: _openTripFromMap,
                             mapTrips: dashboard.trips,
                             subject: 'TA',
                             enableTripManagement: false,
@@ -1201,6 +1224,7 @@ class _OverviewSection extends StatelessWidget {
     required this.stats,
     required this.onChanged,
     this.openTrip,
+    this.openMapTrip,
     this.mapTrips,
     this.subject = '你',
     this.enableTripManagement = true,
@@ -1209,6 +1233,7 @@ class _OverviewSection extends StatelessWidget {
   final TripDashboardStats stats;
   final Future<void> Function() onChanged;
   final TripEntryOpener? openTrip;
+  final TripMapTripOpener? openMapTrip;
   final List<TripRecord>? mapTrips;
   final String subject;
   final bool enableTripManagement;
@@ -1265,7 +1290,10 @@ class _OverviewSection extends StatelessWidget {
                         ? null
                         : () => Navigator.of(context).push<void>(
                             m3PageRoute(
-                              builder: (_) => TripMapPage(trips: mapTrips),
+                              builder: (_) => TripMapPage(
+                                trips: mapTrips,
+                                openTrip: openMapTrip,
+                              ),
                             ),
                           ),
                   ),

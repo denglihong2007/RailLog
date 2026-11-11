@@ -227,6 +227,33 @@ void main() {
       expect(data.routes.single.points, hasLength(3));
     });
 
+    test('keeps trip ids on the segment entries', () {
+      final index = StationCoordinateIndex.fromCsv(csv);
+      final local = _trip(id: 11, date: DateTime(2026, 1, 1));
+      final synced = _trip(id: 12, date: DateTime(2026, 1, 2), ticketId: 77);
+
+      final data = TripMapService.buildData(
+        [local, synced],
+        index,
+        journeyStations: {
+          local.clientId: const JourneyStations.of(['北京站', '济南西站']),
+          synced.clientId: const JourneyStations.of(['北京站', '济南西站']),
+        },
+      );
+
+      // 同一段路上的两趟车并成一条轨迹，弹窗里的每一行仍要带着自己的行程 id，
+      // 否则点击后无法区分是哪一趟。
+      final route = data.routes.single;
+      expect(route.entries, hasLength(2));
+      final byTrain = {
+        for (final entry in route.entries) entry.trainNumber: entry,
+      };
+      expect(byTrain['G11']!.tripId, 11);
+      expect(byTrain['G11']!.ticketId, isNull);
+      expect(byTrain['G12']!.tripId, 12);
+      expect(byTrain['G12']!.ticketId, 77);
+    });
+
     test('reports missing stations while retaining a drawable route', () {
       final index = StationCoordinateIndex.fromCsv(csv);
       final trip = _trip(
@@ -896,7 +923,12 @@ void main() {
     expect(html, isNot(contains('/api/amap/service')));
     expect(html, isNot(contains('key=')));
     expect(html, contains("mapStyle: 'amap://styles/dark'"));
-    expect(html, contains("headColor: '#ECFFB1'"));
+    // 频率样式：线宽与颜色都按每段轨迹的经过次数取值（Loca 的属性级样式）。
+    expect(html, contains("'rgba(236,255,177,'"));
+    expect(html, contains("'rgba(255,178,6,'"));
+    expect(html, contains('lineWidth: lineWidthOf'));
+    expect(html, contains('frequency: line.frequency'));
+    expect(html, contains('map-legend-sample'));
     expect(html, isNot(contains('const routes = [{"name":"</script>')));
     expect(html, contains(r'\u003c/script>'));
     expect(html, contains(r'G1\u003cscript>'));
@@ -910,7 +942,13 @@ void main() {
     expect(html, contains('touchZoomCenter: 1'));
     expect(html, contains("hitLine.on('click'"));
     expect(html, contains('route-popup-row'));
+    expect(html, contains('route-popup-summary'));
     expect(html, contains('entry.departureDate'));
+    // 弹窗行把行程 id 送回宿主：移动端走 JavaScriptChannel，Windows 走
+    // WebView2 的 chrome.webview。
+    expect(html, contains("type: 'openTrip'"));
+    expect(html, contains('window.TripMapBridge'));
+    expect(html, contains('window.chrome.webview'));
     expect(
       html,
       contains('train.style.color = directionColor(entry.direction)'),
@@ -931,8 +969,8 @@ void main() {
       showStationMarkers: false,
     );
     expect(lightHtml, contains("mapStyle: 'amap://styles/whitesmoke'"));
-    expect(lightHtml, contains("headColor: '#7A4B00'"));
-    expect(lightHtml, contains("trailColor: 'rgba(180,72,0,0.68)'"));
+    expect(lightHtml, contains("'rgba(122,75,0,'"));
+    expect(lightHtml, contains("'rgba(180,72,0,'"));
     expect(lightHtml, isNot(contains('new AMap.Marker')));
   });
 
@@ -1188,8 +1226,10 @@ TripRecord _trip({
   String fromStation = '北京站',
   String toStation = '上海虹桥站',
   List<ViaRouteSegment>? segments,
+  int? ticketId,
 }) => TripRecord(
   id: id,
+  ticketId: ticketId,
   trainNumber: 'G$id',
   fromStation: fromStation,
   toStation: toStation,
