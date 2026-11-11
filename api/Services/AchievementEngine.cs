@@ -29,15 +29,10 @@ public sealed record AchievementRequirement(string Key, string Label, PublicTrip
     public bool Completed => Trip is not null;
 }
 public sealed record AchievementReview(string EntityType, string EntityKey);
-/// <summary>
-/// 成就计算上下文。<c>LevelThresholds</c> 为空时使用内置默认等级门槛；
-/// 管理后台调整等级分界线后，计算侧需把新门槛传进来，让「达到 N 级」
-/// 与 App 显示的等级保持一致。
-/// </summary>
+/// <summary>成就计算上下文。</summary>
 public sealed record AchievementContext(
     int TotalExperience,
-    int TotalReviewReactions,
-    IReadOnlyList<int>? LevelThresholds = null);
+    int TotalReviewReactions);
 
 public static partial class AchievementEngine
 {
@@ -459,6 +454,21 @@ public static partial class AchievementEngine
         new("武西高速线", "武西高铁云十段", "十堰东", "蓝田")
     ];
 
+    // 「飞云之上」：海拔高于 3000 米的客运铁路区间，行经其中任意一段即可。
+    // 站名按 routes.db 的写法：兰新客专线只有「大通西」；川藏铁路拉林段在库里
+    // 只到协荣，拉萨—协荣那一段由拉日线覆盖。判定用交集，不必走完整段。
+    private static readonly IReadOnlyList<RailwaySection> HighAltitudeSections =
+    [
+        new("青藏线德令哈—拉萨", "青藏线", "德令哈", "拉萨"),
+        new("川藏线林芝—拉萨", "川藏铁路拉林段", "林芝", "协荣"),
+        new("拉日线全线", "拉日线", "拉萨", "日喀则"),
+        new("兰新客专线大通—民乐", "兰新客专线", "大通西", "民乐"),
+        new("格库线全线", "格库线", "格尔木河所", "库尔勒"),
+        new("滇藏线拉市海—香格里拉", "滇藏铁路", "拉市海", "香格里拉"),
+        new("川青线黄胜关—镇江关", "川青铁路青黄段", "黄胜关", "镇江关"),
+        new("敦煌线肃北—饮马峡", "敦煌线", "肃北", "饮马峡")
+    ];
+
     private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> RouteStations = new(LoadRouteStations);
     private static readonly Lazy<IReadOnlySet<string>> KnownStations = new(() =>
         RouteStations.Value.Values
@@ -791,6 +801,10 @@ public static partial class AchievementEngine
         new("lonelyPlanet", Touring, "travel_explore_outlined", "孤独星球", "分别乘坐经由和若线与格库线的列车", 30,
             NarrativeNote: "21世纪工程奇迹之环塔克拉玛干沙漠铁路",
             Trigger: i => FirstRouteCollectionCompletion(i.Trips, ["若和铁路", "格库线"])),
+        new("aboveTheClouds", Touring, "cloud_outlined", "飞云之上",
+            "行经任意海拔高于 3000 米的铁路区间", 25,
+            NarrativeNote: "不敢高声语，恐惊天上人",
+            Trigger: i => First(i.Trips, UnlocksAboveTheClouds)),
         new("hundredThousandKilometers", Milestones, "route_outlined", "轻车熟路", "累计乘车里程至少 100,000 公里", 25,
             NarrativeNote: "你对哪里的印象最深刻呢",
             Trigger: i => FirstCumulativeMileageCompletion(i.Trips, 100000)),
@@ -1108,15 +1122,6 @@ public static partial class AchievementEngine
         new("reviewReplies5000", Milestones, "forum_outlined", "交口称赞", "全部评论累计获得 5,000 次回复", 20,
             NarrativeNote: "先生所言极是",
             Trigger: i => ContextTrigger(i, (i.Context?.TotalReviewReactions ?? 0) >= 5000)),
-        new("reachLevel3", Milestones, "stairs_outlined", "初出茅庐", "达到 3 级", 10,
-            NarrativeNote: "期待有朝一日也能升到6级",
-            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context, 3))),
-        new("reachLevel5", Milestones, "trending_up_outlined", "卓尔不群", "达到 5 级", 25,
-            NarrativeNote: "到这里你已经超过大部分人了",
-            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context, 5))),
-        new("reachLevel6", Milestones, "leaderboard_outlined", "百里挑一", "达到 6 级", 40,
-            NarrativeNote: "不畏浮云遮望眼，自缘身在最高层",
-            Trigger: i => ContextTrigger(i, ReachedLevel(i.Context, 6))),
         new("fourThousandKmInDay", ExtremeChallenges, "calendar_view_day_outlined", "日行万里",
             "24 小时内的总移动里程超过 4,000 公里", 30,
             NarrativeNote: "早上坐最快的高铁出发，晚上再坐动卧回来……",
@@ -1367,8 +1372,8 @@ public static partial class AchievementEngine
         var aggregateIds = new HashSet<string>(
             [
                 "oneStoneThreeBirds", "unknownTerritory", "careerRecord", "nonOrdinary",
-                "reviewReplies5000", "reachLevel3", "reachLevel5", "reachLevel6",
-                "reviewReplies100000", "reach2500Experience", "sevenExperienceTiers"
+                "reviewReplies5000", "reviewReplies100000", "reach2500Experience",
+                "sevenExperienceTiers"
             ],
             StringComparer.Ordinal);
         // 不霁何虹：七种初始经验档位各至少有一项成就已取得。取各档最早触发
@@ -1581,16 +1586,6 @@ public static partial class AchievementEngine
         return Math.Max(0, (int)Math.Floor((14 - days) / 2)) * 5;
     }
 
-    private static bool ReachedLevel(AchievementContext? context, int level) =>
-        (context?.TotalExperience ?? 0) >= LevelThreshold(context, level);
-
-    private static int LevelThreshold(AchievementContext? context, int level)
-    {
-        var thresholds = context?.LevelThresholds ?? UserLevels.DefaultThresholds;
-        var index = Math.Clamp(level, 0, thresholds.Count - 1);
-        return thresholds[index];
-    }
-
     private static int FourExtremesWindowBonus(List<PublicTrip> trips)
     {
         var days = ShortestFourExtremesWindowDays(trips);
@@ -1638,11 +1633,7 @@ public static partial class AchievementEngine
         "reviewedTrainNumbers" => P(reviews.Count, 200),
         "reviewReplies5000" => P(context?.TotalReviewReactions ?? 0, 5000),
         "reviewReplies100000" => P(context?.TotalReviewReactions ?? 0, 100000),
-        "reachLevel3" => P(context?.TotalExperience ?? 0, LevelThreshold(context, 3)),
-        "reachLevel5" => P(context?.TotalExperience ?? 0, LevelThreshold(context, 5)),
-        "reachLevel6" => P(context?.TotalExperience ?? 0, LevelThreshold(context, 6)),
         "reach2500Experience" => P(context?.TotalExperience ?? 0, 2500),
-        "archaeologyTeam" => P(trips.Any(trip => Departure(trip) < new DateTime(2010, 1, 1)) ? 1 : 0, 1),
         "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
         "tripleTransfer" => P(MaxTransferCount(trips), 2),
         "grandSlam" => P(RailwayBureauCount(trips), RailwayBureaus.Count),
@@ -1668,7 +1659,6 @@ public static partial class AchievementEngine
         "mistyVastWaters" => SectionProgress(trips, SeaBayBridges),
         "qinlingPassage" => SectionProgress(trips, QinlingPassages, 5),
         "tunnelCollection" => SectionProgress(trips, Tunnels),
-        "completeEmuFleet" => P(CompleteEmuFamilyCount(trips), 1),
         "dreamExpress" => P(
             CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels)),
             DistributedSleeperEmuModels.Count),
@@ -1704,20 +1694,16 @@ public static partial class AchievementEngine
         "multipleLocomotives" => P(MaxLocomotiveCount(trips), 2),
         "relayLocomotives" => P(MaxLocomotiveChangeCount(trips), 3),
         "substituteSeats" => P(trips.Count(trip => IsSubstituteSeat(trip.SeatType)), 3),
-        "extraCarriage" => P(trips.Count(trip => HasExtraCarriage(trip.SeatNumber)), 1),
-        "specialGift" => P(trips.Count(UnlocksSpecialGift), 1),
         "pitchDark" => P(MaxDurationHours(trips.Where(trip => IsBoxcarSeat(trip.SeatType))) * 60, 30),
         "drippingStone" => P(MaxThirtyDayRedemptionCount(trips), 10),
-        "fourOfAKind" => P(trips.Count(trip => HasQuadrupleSetNumber(trip.RollingStock)), 1),
-        "allAlone" => P(trips.Count(UnlocksAllAlone), 1),
         "misfortuneTwice" => P(MaxEmuFormationChangeCount(trips), 2),
         "roamFreely" => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
+        "aboveTheClouds" => P(trips.Any(UnlocksAboveTheClouds) ? 1 : 0, 1),
         "complexPath" => P(MaxComplexPathChangeCount(trips), 4),
         "repeatTrainTen" => P(MaxRepeatedTrainCount(trips), 10),
         "unifiedCoachFleet" => P(
             CollectedCount(trips, trip => UnifiedCoachMatches(trip.RollingStock)),
             UnifiedCoachModels.Count),
-        "lanxiVisit" => P(VisitedStationCount(trips, ["兰溪"]), 1),
         _ => null
     };
 
@@ -1756,7 +1742,7 @@ public static partial class AchievementEngine
             trips,
             ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
         "eastRedSunRises" => StationRequirements(trips, ["东方红", "太阳升"]),
-        "lanxiVisit" => StationRequirements(trips, ["兰溪"]),
+        "aboveTheClouds" => AboveTheCloudsRequirements(trips),
         "acrossTheRealm" => CollectionRequirements(
             trips,
             CapitalCityNames.Select(city => (Key: city, Label: city)),
@@ -1927,6 +1913,25 @@ public static partial class AchievementEngine
                 var segments = RouteSpans(trip);
                 return availableSections
                     .Where(section => segments.Any(segment => CoversRouteSection(segment, section)))
+                    .Select(section => section.Name);
+            });
+    }
+
+    private static IReadOnlyList<AchievementRequirement> AboveTheCloudsRequirements(
+        List<PublicTrip> trips)
+    {
+        // 与触发判定用同一套「正长度交集」语义：不必完整走完一段高海拔区间。
+        var available = AvailableSections(HighAltitudeSections);
+        return CollectionRequirements(
+            trips,
+            available
+                .GroupBy(section => section.Name, StringComparer.Ordinal)
+                .Select(group => (Key: group.Key, Label: group.Key)),
+            trip =>
+            {
+                var segments = RouteSegments(trip);
+                return available
+                    .Where(section => segments.Any(segment => IntersectsRouteSection(segment, section)))
                     .Select(section => section.Name);
             });
     }
@@ -3966,7 +3971,9 @@ public static partial class AchievementEngine
     }
 
     /// <summary>一趟行程里连续换线的最多次数：相邻两段首尾相接、线路不同，即在中间站换线一次；
-    /// 同族线路（库把同一条物理线拆成的几条）不算换线。复杂路径要求单程连续换线至少四次。</summary>
+    /// 同族线路（库把同一条物理线拆成的几条）不算换线。换线站还必须在线路表上彼此相邻：
+    /// 连接两个换线站的那一段在线路表里必须是相邻站对，长区间换线会打断连续计数。
+    /// 复杂路径要求单程连续换线至少四次。</summary>
     private static int MaxComplexPathChangeCount(IEnumerable<PublicTrip> trips) =>
         trips.Select(ComplexPathChangeCount).DefaultIfEmpty(0).Max();
 
@@ -3988,11 +3995,58 @@ public static partial class AchievementEngine
                 current = 0;
                 continue;
             }
-            current++;
+            // previous 的起终点就是上一处换线站与当前换线站；它们在线路表上相邻时，
+            // 当前换线才能接着上一段连续计数，否则从这里重新起一段。
+            current = current > 0 &&
+                AreAdjacentStationsOnRoute(previous.RouteName, previous.FromStation, previous.ToStation)
+                ? current + 1
+                : 1;
             longest = Math.Max(longest, current);
         }
         return longest;
     }
+
+    /// <summary>两个站名是否在线路 <paramref name="routeName"/> 的站序里紧挨着。
+    /// 线路名按与区段判定相同的归一化解析，解析不出来或站不在表里都算不相邻。</summary>
+    private static bool AreAdjacentStationsOnRoute(
+        string routeName,
+        string firstStation,
+        string secondStation)
+    {
+        IReadOnlyList<string> candidates = RouteStations.Value.ContainsKey(routeName.Trim())
+            ? [routeName.Trim()]
+            : CatalogRoutesFor(routeName);
+        foreach (var candidate in candidates)
+        {
+            if (!RouteStations.Value.TryGetValue(candidate, out var stations)) continue;
+            if (!TryRouteStation(stations, firstStation, out var first) ||
+                !TryRouteStation(stations, secondStation, out var second)) continue;
+            if (Math.Abs(first - second) == 1) return true;
+        }
+        return false;
+    }
+
+    /// <summary>行程行经的某一段与高海拔区段有交集（共用不止一个端点站）。</summary>
+    private static bool IntersectsRouteSection(RouteSegment segment, RailwaySection section)
+    {
+        if (!RouteNameMatches(segment.RouteName, section.RouteName)) return false;
+        var stations = FamilyChain(section.RouteName) ??
+            RouteStations.Value.GetValueOrDefault(section.RouteName);
+        if (stations is null) return false;
+        if (!TryRouteStation(stations, segment.FromStation, out var from) ||
+            !TryRouteStation(stations, segment.ToStation, out var to) ||
+            !TryRouteStation(stations, section.FromStation, out var start) ||
+            !TryRouteStation(stations, section.ToStation, out var end)) return false;
+        var segmentLow = Math.Min(from, to);
+        var segmentHigh = Math.Max(from, to);
+        var sectionLow = Math.Min(start, end);
+        var sectionHigh = Math.Max(start, end);
+        return segmentLow < sectionHigh && sectionLow < segmentHigh;
+    }
+
+    private static bool UnlocksAboveTheClouds(PublicTrip trip) =>
+        RouteSegments(trip).Any(segment =>
+            HighAltitudeSections.Any(section => IntersectsRouteSection(segment, section)));
 
     private static bool SameRouteFamily(string first, string second) =>
         RouteNameFamilyIndex.Value.TryGetValue(first.Trim(), out var family) &&
