@@ -7,9 +7,15 @@ on:
     paths:
       - app/pubspec.yaml
   workflow_dispatch:
+    inputs:
+      publish_store:
+        description: 同时提交微软商店（重复发布同一版本号时请关闭）
+        type: boolean
+        default: true
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   prepare:
@@ -19,6 +25,7 @@ jobs:
       changed: ${{ steps.version.outputs.changed }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      notes: ${{ steps.notes.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,6 +51,44 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      # 发布说明默认取「改版本号的那个提交所在的 PR」正文。
+      # 这样 release body 与商店的「此版本新增内容」都跟着 PR 走，不用另外维护。
+      # workflow_dispatch 重跑时也能回到当时那个 PR，而不是当前 master 的 HEAD。
+      - id: notes
+        name: Resolve release notes from pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body=""
+          for commit in \
+            "$(git log -1 --format=%H -- app/pubspec.yaml)" \
+            "$(git rev-parse HEAD)"; do
+            [[ -n "$commit" ]] || continue
+            pr=$(gh api "repos/${{ github.repository }}/commits/$commit/pulls" \
+              --jq '.[0].number // empty' 2>/dev/null || true)
+            if [[ -n "$pr" ]]; then
+              body=$(gh pr view "$pr" --repo "${{ github.repository }}" --json body --jq .body)
+              echo "Using the body of pull request #$pr for the release notes." >&2
+              break
+            fi
+          done
+
+          if [[ -z "$body" ]]; then
+            echo "::warning::No pull request was found for the version commit; the release notes will be empty."
+          fi
+
+          delimiter="RLLOG_RELEASE_NOTES_EOF"
+          while grep -qxF "$delimiter" <<< "$body"; do
+            delimiter="${delimiter}_X"
+          done
+          {
+            echo "notes<<$delimiter"
+            printf '%s\n' "$body"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
 
   build-android:
     name: Android (all ABIs)
@@ -138,6 +183,120 @@ jobs:
           name: windows
           path: '*.zip'
 
+  # 商店包单独构建并直接提交，不经过 upload-artifact：
+  # release 作业会把所有 artifact 合并进 dist，MSIX 不该出现在 GitHub Release
+  # 和对象存储里；单独成作业也让商店凭证与普通构建隔离。
+  # msix_config.store = true 时不本地签名，由商店重新签名。
+  publish-store:
+    name: Publish to Microsoft Store
+    # 等 GitHub Release 落定再提交商店，避免某个平台构建失败时商店先上线
+    needs: [prepare, release]
+    if: >-
+      needs.prepare.outputs.changed == 'true' &&
+      (github.event_name != 'workflow_dispatch' || inputs.publish_store)
+    runs-on: windows-latest
+    # 同一时间只允许一个商店提交，避免两次发布会话互相覆盖草稿
+    concurrency:
+      group: microsoft-store
+      cancel-in-progress: false
+    env:
+      MSSTORE_PRODUCT_ID: 9P2XGJRHLZXS
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build Windows
+        working-directory: app
+        shell: pwsh
+        run: |
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --release
+
+      - name: Build MSIX for Store
+        working-directory: app
+        shell: pwsh
+        run: dart run msix:create
+
+      - name: Setup Microsoft Store Developer CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.4
+        with:
+          # 固定 CLI 版本：--payload / --inputDirectory 这些参数名按此版本写的
+          version: v0.4.4
+
+      - name: Configure Microsoft Store Developer CLI
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+        run: |
+          if (-not $env:TENANT_ID -or -not $env:SELLER_ID -or
+              -not $env:CLIENT_ID -or -not $env:CLIENT_SECRET) {
+            throw 'Microsoft Store credentials are missing. Add AZURE_AD_TENANT_ID, SELLER_ID, AZURE_AD_APPLICATION_CLIENT_ID and AZURE_AD_APPLICATION_SECRET to the repository secrets.'
+          }
+          msstore reconfigure `
+            --tenantId $env:TENANT_ID `
+            --sellerId $env:SELLER_ID `
+            --clientId $env:CLIENT_ID `
+            --clientSecret $env:CLIENT_SECRET
+
+      # msstore publish 会删掉已有草稿、从上一个已发布版本重建，
+      # 所以必须先上传包，再去改「此版本新增内容」，顺序反过来改动会丢。
+      - name: Upload package to a draft submission
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          $app = Join-Path $env:GITHUB_WORKSPACE 'app'
+          # msstore 的 --inputDirectory 收的是目录，会在里面找 .msix/.msixupload
+          $msixDir = Join-Path $app 'build/windows/x64/runner/Release'
+          if (-not (Test-Path (Join-Path $msixDir 'raillog.msix'))) {
+            throw "MSIX not found in $msixDir"
+          }
+          msstore publish "$app" `
+            --appId $env:MSSTORE_PRODUCT_ID `
+            --inputDirectory "$msixDir" `
+            --noCommit
+
+      - name: Stage release notes
+        shell: pwsh
+        env:
+          RELEASE_NOTES: ${{ needs.prepare.outputs.notes }}
+        run: |
+          $notes = $env:RELEASE_NOTES
+          if ($null -eq $notes) { $notes = '' }
+          Set-Content -LiteralPath "$env:RUNNER_TEMP/release-notes.md" `
+            -Value $notes -Encoding utf8
+
+      # 商店只收纯文本，用脚本把 Markdown 转成纯文本并截到 1500 字符，
+      # 再写回 submission JSON。--payload 走文件，避开 Windows 32767 字符的命令行上限。
+      - name: Update What's new and submit
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          # msstore 强制用 UTF-8 写 stdout；PowerShell 也要按 UTF-8 解码，
+          # 否则简体中文列表会被 OEM 代码页读成乱码再写回去。
+          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          $submission = Join-Path $env:RUNNER_TEMP 'submission.json'
+          msstore submission get $env:MSSTORE_PRODUCT_ID |
+            Set-Content -LiteralPath $submission -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the current store submission.' }
+
+          node tools/ci/store-release-notes.mjs `
+            "$env:RUNNER_TEMP/release-notes.md" $submission
+          if ($LASTEXITCODE -ne 0) { throw 'Could not write the release notes into the submission.' }
+
+          msstore submission update $env:MSSTORE_PRODUCT_ID --payload $submission
+          if ($LASTEXITCODE -ne 0) { throw 'Could not update the store submission.' }
+
+          msstore submission publish $env:MSSTORE_PRODUCT_ID
+          if ($LASTEXITCODE -ne 0) { throw 'Could not submit the store submission for certification.' }
+          # 认证是异步的，这里不 poll：商店审核可能要几天，作业不该一直挂着。
+
   build-macos:
     name: macOS (arm64)
     needs: prepare
@@ -203,7 +362,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.tag }}
-          body: ''
+          body: ${{ needs.prepare.outputs.notes }}
           files: dist/*
           generate_release_notes: false
 
