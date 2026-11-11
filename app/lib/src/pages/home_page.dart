@@ -1064,9 +1064,11 @@ class _HomeTravelGuideSection extends StatelessWidget {
         Row(
           children: [
             const Expanded(child: _SectionHeading(title: '出行指南')),
-            TextButton(
+            TextButton.icon(
               onPressed: reviews.isEmpty ? null : onOpenAll,
-              child: const Text('查看全部'),
+              icon: const Icon(Icons.arrow_forward, size: 18),
+              iconAlignment: IconAlignment.end,
+              label: const Text('查看全部'),
             ),
           ],
         ),
