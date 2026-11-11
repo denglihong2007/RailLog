@@ -126,7 +126,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 取「出行指南」的第一页，只留前几条做预览。完整列表在 [TravelGuidePage]。
+  /// 取首页「出行指南」的混排预览（热门 + 相关），只留前几条。
   Future<void> _loadTravelGuidePreview() async {
     final requestId = ++_travelGuideRequestId;
     if (!SessionService.instance.isSignedIn) {
@@ -142,9 +142,7 @@ class _HomePageState extends State<HomePage> {
       _travelGuideError = null;
     });
     try {
-      final page = await EntityReviewService.fetchTravelGuidePage(
-        mode: TravelGuideMode.hot,
-      );
+      final page = await EntityReviewService.fetchHomeTravelGuide();
       if (!mounted || requestId != _travelGuideRequestId) return;
       setState(() {
         _travelGuidePreview
