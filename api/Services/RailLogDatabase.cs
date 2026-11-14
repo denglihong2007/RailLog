@@ -1917,6 +1917,8 @@ public sealed partial class RailLogDatabase
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
+        var hasExperienceVariation =
+            AchievementEngine.HasExperienceVariation(achievementId);
         if (AchievementEngine.IsHiddenAchievement(achievementId))
         {
             await using var unlockCommand = connection.CreateCommand();
@@ -1929,20 +1931,23 @@ public sealed partial class RailLogDatabase
             unlockCommand.Parameters.AddWithValue("$userId", currentUserId);
             unlockCommand.Parameters.AddWithValue("$achievementId", achievementId);
             if (await unlockCommand.ExecuteScalarAsync() is null)
-                return new AchievementUnlockTripsResponse(achievementId, []);
+                return new AchievementUnlockTripsResponse(
+                    achievementId, hasExperienceVariation, []);
         }
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT trip.Id, user.Id, user.DisplayName, user.AvatarUrl,
                    COALESCE(trip.DepartureTime, trip.CreatedAt), trip.TrainNumber,
                    trip.FromStation, trip.ToStation,
-                   CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END
+                   CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END,
+                   achievement.Experience
             FROM UserAchievements achievement
             JOIN TripRecords trip ON trip.Id = achievement.TriggerTripId
             JOIN AspNetUsers user ON user.Id = achievement.UserId
             WHERE achievement.AchievementId = $achievementId
               AND trip.DeletedAt IS NULL
             ORDER BY CASE WHEN user.Id = $currentUserId THEN 0 ELSE 1 END,
+                     achievement.Experience DESC,
                      COALESCE(trip.DepartureTime, trip.CreatedAt) DESC,
                      trip.Id DESC;
             """;
@@ -1954,8 +1959,10 @@ public sealed partial class RailLogDatabase
             trips.Add(new AchievementUnlockTrip(
                 reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
                 NullableString(reader, 3), FromDb(reader.GetString(4)), reader.GetString(5),
-                reader.GetString(6), reader.GetString(7), reader.GetInt32(8) == 1));
-        return new AchievementUnlockTripsResponse(achievementId, trips);
+                reader.GetString(6), reader.GetString(7), reader.GetInt32(8) == 1,
+                reader.GetInt32(9)));
+        return new AchievementUnlockTripsResponse(
+            achievementId, hasExperienceVariation, trips);
     }
 
     private async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)

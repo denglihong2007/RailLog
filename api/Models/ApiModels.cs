@@ -244,10 +244,12 @@ public sealed record AchievementUnlockTrip(
     string TrainNumber,
     string FromStation,
     string ToStation,
-    bool IsCurrentUser);
+    bool IsCurrentUser,
+    int Experience);
 
 public sealed record AchievementUnlockTripsResponse(
     string AchievementId,
+    bool HasExperienceVariation,
     IReadOnlyList<AchievementUnlockTrip> Trips);
 
 public sealed record SiteStatistics(

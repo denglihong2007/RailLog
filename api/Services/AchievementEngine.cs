@@ -1680,6 +1680,11 @@ public static partial class AchievementEngine
 
     public static bool IsHiddenAchievement(string id) => IsHidden(id);
 
+    /// <summary>该成就的经验是否随进度变化（分阶加成或附加条件加成）。
+    /// 解锁行程页据此决定要不要按经验排行。</summary>
+    public static bool HasExperienceVariation(string id) =>
+        TierSpecsById.ContainsKey(id) || id is "gobiThunder" or "allAlone";
+
     private static PublicTrip? ContextTrigger(AchievementTriggerInput input, bool condition) =>
         condition ? input.LatestTrip : null;
 
