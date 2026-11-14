@@ -4,19 +4,24 @@
     把发布包部署到 IIS 站点目录，保留 web.config 与运行期数据。
 
 .DESCRIPTION
-    由 GitHub Actions 的 release.yml 调用，也可以在服务器上手动执行。
+    由 GitHub Actions 调用（release.yml / deploy-api.yml），也可以在服务器上手动执行。
+    构建产物由 runner 直接给出，不再经过 SCP；-ZipPath 保留给手动部署。
     按 -Profile 选择站点：
 
       api  C:\wwwroot\RailLog.API   ASP.NET Core，部署时停应用池
       web  C:\wwwroot\RailLog       纯静态站点，不停应用池
 
-    流程：解压 → （按需停止应用池）→ robocopy 覆盖 → （按需启动应用池）
+    流程：解压/定位产物 → （按需停止应用池）→ robocopy 覆盖 → （按需启动应用池）
           → 校验 web.config 未被改动 → 健康探测。
 
     不做镜像同步（不使用 /MIR 或 /PURGE），站点目录里其它文件保持原样。
 
 .PARAMETER ZipPath
-    发布包路径。
+    发布包路径。与 -SourceDirectory 二选一。
+
+.PARAMETER SourceDirectory
+    已经解开的发布包目录（CI 里就是 download-artifact 落地的目录）。
+    与 -ZipPath 二选一，省掉一次压缩再解压。
 
 .PARAMETER Profile
     站点配置：api 或 web。
@@ -25,15 +30,18 @@
     只列出将要复制的文件，不停止应用池，也不写入任何文件。
 
 .EXAMPLE
-    .\deploy-iis.ps1 -ZipPath C:\Users\Administrator\raillog-api.zip -Profile api -DryRun
+    .\deploy-iis.ps1 -SourceDirectory C:\actions-runner\_work\RailLog\RailLog\dist\api -Profile api
 
 .EXAMPLE
-    .\deploy-iis.ps1 -ZipPath C:\Users\Administrator\raillog-web.zip -Profile web
+    .\deploy-iis.ps1 -ZipPath C:\Users\Administrator\raillog-api.zip -Profile api -DryRun
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Zip')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Zip')]
     [string]$ZipPath,
+
+    [Parameter(Mandatory = $true, ParameterSetName = 'Directory')]
+    [string]$SourceDirectory,
 
     [Parameter(Mandatory = $true)]
     [ValidateSet('api', 'web')]
@@ -45,7 +53,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# 通过 SSH 调用时没有交互式控制台，进度条会抛 Win32 内部错误。
+# 由 CI 或 SSH 调用时没有交互式控制台，进度条会抛 Win32 内部错误。
 $ProgressPreference = 'SilentlyContinue'
 
 # GitHub Actions 的日志按 UTF-8 显示，服务器控制台默认是 GBK，不转码的话日志会乱码。
@@ -54,6 +62,8 @@ try {
 }
 catch {
 }
+
+$fromZip = $PSCmdlet.ParameterSetName -eq 'Zip'
 
 function Write-Step {
     param([string]$Message)
@@ -124,13 +134,25 @@ $ProtectedFiles = @($site.ProtectedFiles)
 $ProtectedDirectories = @($site.ProtectedDirectories)
 
 Write-Step "站点配置：$Profile（$TargetPath）"
-Write-Step "发布包：$ZipPath"
+if ($fromZip) {
+    Write-Step "发布包：$ZipPath"
+}
+else {
+    Write-Step "发布源：$SourceDirectory"
+}
 if ($AppPool) {
     Write-Step "应用池：$AppPool"
 }
 
-if (-not (Test-Path -LiteralPath $ZipPath)) {
-    throw "找不到发布包：$ZipPath"
+if ($fromZip) {
+    if (-not (Test-Path -LiteralPath $ZipPath)) {
+        throw "找不到发布包：$ZipPath"
+    }
+}
+else {
+    if (-not (Test-Path -LiteralPath $SourceDirectory -PathType Container)) {
+        throw "找不到发布目录：$SourceDirectory"
+    }
 }
 
 if (-not (Test-Path -LiteralPath $TargetPath)) {
@@ -148,22 +170,35 @@ if ($hasWebConfig) {
     $webConfigHashBefore = (Get-FileHash -LiteralPath $liveWebConfig -Algorithm SHA256).Hash
 }
 
-$staging = Join-Path ([System.IO.Path]::GetTempPath()) "raillog-deploy-$Profile"
-if (Test-Path -LiteralPath $staging) {
-    Remove-Item -LiteralPath $staging -Recurse -Force
+# 只有从 zip 部署时才自己准备临时目录；目录模式的发布源归调用方（CI 的工作区）所有
+$ownStaging = $false
+if ($fromZip) {
+    $staging = Join-Path ([System.IO.Path]::GetTempPath()) "raillog-deploy-$Profile"
+    $ownStaging = $true
+    if (Test-Path -LiteralPath $staging) {
+        Remove-Item -LiteralPath $staging -Recurse -Force
+    }
+}
+else {
+    $staging = (Resolve-Path -LiteralPath $SourceDirectory).ProviderPath
 }
 
 # 只有真的停过应用池，结束时才需要把它拉起来
 $poolStopped = $false
 
 try {
-    Write-Step '解压发布包'
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $staging)
+    if ($fromZip) {
+        Write-Step '解压发布包'
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $staging)
+    }
+    else {
+        Write-Step '使用现成的发布目录，跳过解压'
+    }
 
     $entry = Join-Path $staging $site.RequiredEntry
     if (-not (Test-Path -LiteralPath $entry)) {
-        throw "发布包里没有 $($site.RequiredEntry)，疑似打包错误：$ZipPath"
+        throw "发布内容里没有 $($site.RequiredEntry)，疑似打包错误：$staging"
     }
 
     # 双保险：CI 已经删掉了发布包里的 web.config，这里再兜一次底
@@ -225,6 +260,9 @@ finally {
     if ($poolStopped) {
         Write-Step "启动应用池 $AppPool"
         Start-AppPoolWithRetry -Name $AppPool
+    }
+    if ($ownStaging -and (Test-Path -LiteralPath $staging)) {
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
