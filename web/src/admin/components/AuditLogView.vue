@@ -23,6 +23,7 @@ const actionLabels: Record<string, string> = {
   'trip.update': '修改行程',
   'trip.delete': '删除行程',
   'review.delete': '删除评价',
+  'review-reaction.delete': '删除评价回应',
   'ticket-password.set': '设置 PDF 下载密码',
   'ticket-password.clear': '清除 PDF 下载密码',
   'pdf-request.revoke': '撤销 PDF 请求 Key',

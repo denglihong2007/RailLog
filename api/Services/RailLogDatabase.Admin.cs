@@ -868,6 +868,7 @@ public sealed partial class RailLogDatabase
     private const string AdminReviewFilter = """
         WHERE ($type = '' OR r.EntityType = $type COLLATE NOCASE)
           AND ($review = '' OR r.ReviewType = $review COLLATE NOCASE)
+          AND ($author = '' OR r.UserId = $author)
           AND ($keyword = ''
                OR r.Comment LIKE $like ESCAPE '\'
                OR r.EntityKey LIKE $like ESCAPE '\'
@@ -880,6 +881,7 @@ public sealed partial class RailLogDatabase
         string? query,
         string? entityType,
         string? reviewType,
+        string? userId,
         string? sort,
         string? order,
         int offset,
@@ -890,6 +892,7 @@ public sealed partial class RailLogDatabase
         var keyword = query?.Trim() ?? string.Empty;
         var type = entityType?.Trim() ?? string.Empty;
         var review = reviewType?.Trim() ?? string.Empty;
+        var author = userId?.Trim() ?? string.Empty;
 
         await using var connection = OpenConnection();
         await connection.OpenAsync();
@@ -902,7 +905,7 @@ public sealed partial class RailLogDatabase
             LEFT JOIN TripRecords trip ON trip.Id = r.TripId AND trip.UserId = r.UserId
             {AdminReviewFilter};
             """;
-        AddAdminReviewParameters(countCommand, keyword, type, review);
+        AddAdminReviewParameters(countCommand, keyword, type, review, author);
         var total = Convert.ToInt64(await countCommand.ExecuteScalarAsync());
 
         await using var command = connection.CreateCommand();
@@ -922,7 +925,7 @@ public sealed partial class RailLogDatabase
             ORDER BY {AdminOrderBy(sort, order, AdminReviewSortColumns, "created", "r.Id DESC")}
             LIMIT $limit OFFSET $offset;
             """;
-        AddAdminReviewParameters(command, keyword, type, review);
+        AddAdminReviewParameters(command, keyword, type, review, author);
         command.Parameters.AddWithValue("$limit", limit);
         command.Parameters.AddWithValue("$offset", offset);
 
@@ -937,7 +940,8 @@ public sealed partial class RailLogDatabase
         SqliteCommand command,
         string keyword,
         string entityType,
-        string reviewType)
+        string reviewType,
+        string author)
     {
         command.Parameters.AddWithValue("$keyword", keyword);
         command.Parameters.AddWithValue(
@@ -945,6 +949,7 @@ public sealed partial class RailLogDatabase
             $"%{keyword.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%");
         command.Parameters.AddWithValue("$type", entityType);
         command.Parameters.AddWithValue("$review", reviewType);
+        command.Parameters.AddWithValue("$author", author);
     }
 
     private static AdminReview ReadAdminReview(SqliteDataReader reader) => new(
@@ -1022,6 +1027,264 @@ public sealed partial class RailLogDatabase
             InvalidateStatisticsCache(userId);
         }
         return deleted;
+    }
+
+    public async Task<IReadOnlyList<AdminReviewReaction>> GetAdminReviewReactionsAsync(
+        long reviewId)
+    {
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT reaction.ReviewId, reaction.UserId,
+                   user.DisplayName, user.Email, user.AvatarUrl,
+                   reaction.Emoji, reaction.CreatedAt
+            FROM EntityReviewReactions reaction
+            JOIN AspNetUsers user ON user.Id = reaction.UserId
+            WHERE reaction.ReviewId = $reviewId
+            ORDER BY julianday(reaction.CreatedAt) DESC, reaction.UserId;
+            """;
+        command.Parameters.AddWithValue("$reviewId", reviewId);
+
+        var items = new List<AdminReviewReaction>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(new AdminReviewReaction(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                NullableString(reader, 3),
+                NullableString(reader, 4),
+                reader.GetString(5),
+                FromDb(reader.GetString(6))));
+        }
+        return items;
+    }
+
+    private const string AdminReactionFilter = """
+        WHERE ($emoji = '' OR reaction.Emoji = $emoji)
+          AND ($type = '' OR review.EntityType = $type COLLATE NOCASE)
+          AND ($reactor = '' OR reaction.UserId = $reactor)
+          AND ($author = '' OR review.UserId = $author)
+          AND ($keyword = ''
+               OR review.Comment LIKE $like ESCAPE '\'
+               OR review.EntityKey LIKE $like ESCAPE '\'
+               OR author.DisplayName LIKE $like ESCAPE '\'
+               OR author.Email LIKE $like ESCAPE '\'
+               OR reactor.DisplayName LIKE $like ESCAPE '\'
+               OR reactor.Email LIKE $like ESCAPE '\')
+        """;
+
+    public async Task<AdminReactionPage> GetAdminReactionsAsync(
+        string? query,
+        string? emoji,
+        string? entityType,
+        string? reactorId,
+        string? authorId,
+        string? sort,
+        string? order,
+        int offset,
+        int limit)
+    {
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, 100);
+        var keyword = query?.Trim() ?? string.Empty;
+        var emojiValue = emoji?.Trim() ?? string.Empty;
+        var type = entityType?.Trim() ?? string.Empty;
+        var reactor = reactorId?.Trim() ?? string.Empty;
+        var author = authorId?.Trim() ?? string.Empty;
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = $"""
+            SELECT COUNT(*)
+            FROM EntityReviewReactions reaction
+            JOIN EntityReviews review ON review.Id = reaction.ReviewId
+            JOIN AspNetUsers reactor ON reactor.Id = reaction.UserId
+            JOIN AspNetUsers author ON author.Id = review.UserId
+            {AdminReactionFilter};
+            """;
+        AddAdminReactionParameters(
+            countCommand, keyword, emojiValue, type, reactor, author);
+        var total = Convert.ToInt64(await countCommand.ExecuteScalarAsync());
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT reaction.ReviewId, review.EntityType, review.EntityKey,
+                   review.ReviewType, review.Rating, review.Comment,
+                   review.CreatedAt, review.UserId, author.DisplayName,
+                   author.Email, reaction.UserId, reactor.DisplayName,
+                   reactor.Email, reactor.AvatarUrl, reaction.Emoji,
+                   reaction.CreatedAt
+            FROM EntityReviewReactions reaction
+            JOIN EntityReviews review ON review.Id = reaction.ReviewId
+            JOIN AspNetUsers reactor ON reactor.Id = reaction.UserId
+            JOIN AspNetUsers author ON author.Id = review.UserId
+            {AdminReactionFilter}
+            ORDER BY {AdminOrderBy(sort, order, AdminReactionSortColumns, "created", "reaction.CreatedAt DESC, reaction.ReviewId DESC, reaction.UserId")}
+            LIMIT $limit OFFSET $offset;
+            """;
+        AddAdminReactionParameters(
+            command, keyword, emojiValue, type, reactor, author);
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+
+        var items = new List<AdminReaction>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(new AdminReaction(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetInt32(4),
+                reader.GetString(5),
+                FromDb(reader.GetString(6)),
+                reader.GetString(7),
+                reader.GetString(8),
+                NullableString(reader, 9),
+                reader.GetString(10),
+                reader.GetString(11),
+                NullableString(reader, 12),
+                NullableString(reader, 13),
+                reader.GetString(14),
+                FromDb(reader.GetString(15))));
+        }
+        return new AdminReactionPage(total, items);
+    }
+
+    private static void AddAdminReactionParameters(
+        SqliteCommand command,
+        string keyword,
+        string emoji,
+        string entityType,
+        string reactor,
+        string author)
+    {
+        command.Parameters.AddWithValue("$keyword", keyword);
+        command.Parameters.AddWithValue(
+            "$like",
+            $"%{keyword.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%");
+        command.Parameters.AddWithValue("$emoji", emoji);
+        command.Parameters.AddWithValue("$type", entityType);
+        command.Parameters.AddWithValue("$reactor", reactor);
+        command.Parameters.AddWithValue("$author", author);
+    }
+
+    /// <summary>
+    /// 评价用户聚合：只列出至少发表过评价或发出过回应的用户。
+    /// 收到的回应按评价作者汇总，发出的回应按回应者汇总。
+    /// </summary>
+    private const string AdminReviewActivityCte = """
+        WITH review_stats AS (
+            SELECT UserId,
+                   COUNT(*) AS ReviewCount,
+                   AVG(Rating) AS AverageRating,
+                   MAX(CreatedAt) AS LatestReviewAt
+            FROM EntityReviews
+            GROUP BY UserId
+        ),
+        received_stats AS (
+            SELECT review.UserId, COUNT(*) AS ReceivedCount
+            FROM EntityReviewReactions reaction
+            JOIN EntityReviews review ON review.Id = reaction.ReviewId
+            GROUP BY review.UserId
+        ),
+        given_stats AS (
+            SELECT UserId, COUNT(*) AS GivenCount
+            FROM EntityReviewReactions
+            GROUP BY UserId
+        ),
+        activity AS (
+            SELECT UserId FROM review_stats
+            UNION
+            SELECT UserId FROM received_stats
+            UNION
+            SELECT UserId FROM given_stats
+        )
+        """;
+
+    public async Task<AdminReviewUserPage> GetAdminReviewUsersAsync(
+        string? query,
+        string? sort,
+        string? order,
+        int offset,
+        int limit)
+    {
+        offset = Math.Max(0, offset);
+        limit = Math.Clamp(limit, 1, 100);
+        var keyword = query?.Trim() ?? string.Empty;
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = $"""
+            {AdminReviewActivityCte}
+            SELECT COUNT(*)
+            FROM activity
+            JOIN AspNetUsers user ON user.Id = activity.UserId
+            WHERE ($keyword = ''
+                   OR user.DisplayName LIKE $like ESCAPE '\'
+                   OR user.Email LIKE $like ESCAPE '\');
+            """;
+        AddAdminReviewUserParameters(countCommand, keyword);
+        var total = Convert.ToInt64(await countCommand.ExecuteScalarAsync());
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {AdminReviewActivityCte}
+            SELECT user.Id, user.DisplayName, user.Email, user.AvatarUrl,
+                   COALESCE(review_stats.ReviewCount, 0),
+                   COALESCE(received_stats.ReceivedCount, 0),
+                   COALESCE(given_stats.GivenCount, 0),
+                   review_stats.AverageRating,
+                   review_stats.LatestReviewAt
+            FROM activity
+            JOIN AspNetUsers user ON user.Id = activity.UserId
+            LEFT JOIN review_stats ON review_stats.UserId = activity.UserId
+            LEFT JOIN received_stats ON received_stats.UserId = activity.UserId
+            LEFT JOIN given_stats ON given_stats.UserId = activity.UserId
+            WHERE ($keyword = ''
+                   OR user.DisplayName LIKE $like ESCAPE '\'
+                   OR user.Email LIKE $like ESCAPE '\')
+            ORDER BY {AdminOrderBy(sort, order, AdminReviewUserSortColumns, "reviews", "user.DisplayName COLLATE NOCASE, user.Id")}
+            LIMIT $limit OFFSET $offset;
+            """;
+        AddAdminReviewUserParameters(command, keyword);
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+
+        var items = new List<AdminReviewUser>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(new AdminReviewUser(
+                reader.GetString(0),
+                reader.GetString(1),
+                NullableString(reader, 2),
+                NullableString(reader, 3),
+                reader.GetInt64(4),
+                reader.GetInt64(5),
+                reader.GetInt64(6),
+                reader.IsDBNull(7) ? null : reader.GetDouble(7),
+                NullableDate(reader, 8)));
+        }
+        return new AdminReviewUserPage(total, items);
+    }
+
+    private static void AddAdminReviewUserParameters(
+        SqliteCommand command,
+        string keyword)
+    {
+        command.Parameters.AddWithValue("$keyword", keyword);
+        command.Parameters.AddWithValue(
+            "$like",
+            $"%{keyword.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%");
     }
 
     // ---- 成就（只读） ----
@@ -1844,6 +2107,27 @@ public sealed partial class RailLogDatabase
                 "(SELECT COUNT(*) FROM EntityReviewReactions reaction WHERE reaction.ReviewId = r.Id)",
             ["user"] = "u.DisplayName COLLATE NOCASE",
             ["entity"] = "r.EntityKey COLLATE NOCASE",
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> AdminReactionSortColumns =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["created"] = "reaction.CreatedAt",
+            ["emoji"] = "reaction.Emoji",
+            ["user"] = "reactor.DisplayName COLLATE NOCASE",
+            ["author"] = "author.DisplayName COLLATE NOCASE",
+            ["entity"] = "review.EntityKey COLLATE NOCASE",
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> AdminReviewUserSortColumns =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["reviews"] = "COALESCE(review_stats.ReviewCount, 0)",
+            ["received"] = "COALESCE(received_stats.ReceivedCount, 0)",
+            ["given"] = "COALESCE(given_stats.GivenCount, 0)",
+            ["rating"] = "COALESCE(review_stats.AverageRating, 0)",
+            ["latest"] = "review_stats.LatestReviewAt",
+            ["user"] = "user.DisplayName COLLATE NOCASE",
         };
 
     private static readonly IReadOnlyDictionary<string, string> AdminAuditSortColumns =

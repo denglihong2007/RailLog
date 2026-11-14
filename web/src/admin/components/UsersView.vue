@@ -7,6 +7,7 @@ import {
   Copy,
   Inbox,
   LoaderCircle,
+  MessageSquareText,
   Pencil,
   RefreshCw,
   Search,
@@ -30,6 +31,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'open-user': [id: string]
   'open-trip': [userId: string, ticketId: number]
+  'view-reviews': [userId: string, displayName: string]
 }>()
 
 const LEVEL_COUNT = 7
@@ -371,6 +373,14 @@ onMounted(load)
                     </button>
                     <button type="button" class="button subtle small" @click="emit('open-user', user.id)">
                       管理行程 <ArrowRight :size="15" />
+                    </button>
+                    <button
+                      type="button"
+                      class="icon-button"
+                      title="查看该用户的评价"
+                      @click="emit('view-reviews', user.id, user.displayName)"
+                    >
+                      <MessageSquareText :size="16" />
                     </button>
                     <button
                       type="button"

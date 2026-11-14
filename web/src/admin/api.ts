@@ -256,6 +256,57 @@ export interface AdminReviewPage {
   total: number
 }
 
+export interface AdminReviewReaction {
+  reviewId: number
+  userId: string
+  displayName: string
+  email: string | null
+  avatarUrl: string | null
+  emoji: string
+  createdAt: string
+}
+
+export interface AdminReaction {
+  reviewId: number
+  entityType: string
+  entityKey: string
+  reviewType: string
+  reviewRating: number
+  reviewComment: string
+  reviewCreatedAt: string
+  reviewAuthorId: string
+  reviewAuthorName: string
+  reviewAuthorEmail: string | null
+  userId: string
+  displayName: string
+  email: string | null
+  avatarUrl: string | null
+  emoji: string
+  createdAt: string
+}
+
+export interface AdminReactionPage {
+  total: number
+  items: AdminReaction[]
+}
+
+export interface AdminReviewUser {
+  userId: string
+  displayName: string
+  email: string | null
+  avatarUrl: string | null
+  reviewCount: number
+  receivedReactionCount: number
+  givenReactionCount: number
+  averageRating: number | null
+  latestReviewAt: string | null
+}
+
+export interface AdminReviewUserPage {
+  total: number
+  items: AdminReviewUser[]
+}
+
 export interface AdminOverviewCounts {
   users: number
   newUsers: number
@@ -734,6 +785,7 @@ export const api = {
     query: string
     entityType: string
     reviewType: string
+    userId?: string
     offset: number
     limit: number
     sort?: SortState | null
@@ -743,6 +795,7 @@ export const api = {
         query: filters.query,
         entityType: filters.entityType,
         reviewType: filters.reviewType,
+        userId: filters.userId ?? '',
         offset: String(filters.offset),
         limit: String(filters.limit),
       }),
@@ -752,6 +805,55 @@ export const api = {
   },
   deleteReview(id: number) {
     return request<void>(`/api/admin/reviews/${id}`, { method: 'DELETE' })
+  },
+  reviewReactions(reviewId: number) {
+    return request<AdminReviewReaction[]>(`/api/admin/reviews/${reviewId}/reactions`)
+  },
+  deleteReviewReaction(reviewId: number, userId: string) {
+    return request<void>(
+      `/api/admin/reviews/${reviewId}/reactions/${encodeURIComponent(userId)}`,
+      { method: 'DELETE' },
+    )
+  },
+  reactions(filters: {
+    query: string
+    emoji: string
+    entityType: string
+    reactorId?: string
+    authorId?: string
+    offset: number
+    limit: number
+    sort?: SortState | null
+  }) {
+    const params = withSort(
+      new URLSearchParams({
+        query: filters.query,
+        emoji: filters.emoji,
+        entityType: filters.entityType,
+        reactorId: filters.reactorId ?? '',
+        authorId: filters.authorId ?? '',
+        offset: String(filters.offset),
+        limit: String(filters.limit),
+      }),
+      filters.sort ?? null,
+    )
+    return request<AdminReactionPage>(`/api/admin/reactions?${params}`)
+  },
+  reviewUsers(filters: {
+    query: string
+    offset: number
+    limit: number
+    sort?: SortState | null
+  }) {
+    const params = withSort(
+      new URLSearchParams({
+        query: filters.query,
+        offset: String(filters.offset),
+        limit: String(filters.limit),
+      }),
+      filters.sort ?? null,
+    )
+    return request<AdminReviewUserPage>(`/api/admin/review-users?${params}`)
   },
   achievements() {
     return request<AdminAchievementOverview>('/api/admin/achievements')

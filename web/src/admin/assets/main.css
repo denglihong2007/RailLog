@@ -3008,3 +3008,154 @@ tr.muted {
   z-index: 1;
   background: var(--surface);
 }
+
+/* ---------- 评价与回应管理 ---------- */
+.author-reviews-link {
+  display: block;
+  margin: 2px 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.reaction-count-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--brand);
+  font-size: 12.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.reaction-count-button:hover {
+  background: var(--brand-soft);
+}
+
+.reactions-table {
+  min-width: 980px;
+}
+
+.review-users-table {
+  min-width: 900px;
+}
+
+.data-table .col-emoji {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.reaction-emoji {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.reaction-emoji-large {
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.reaction-review-comment {
+  max-width: 320px;
+  margin-top: 4px;
+}
+
+.count-link {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-link:disabled {
+  color: var(--faint);
+  cursor: default;
+  text-decoration: none;
+}
+
+.reaction-list-section {
+  display: grid;
+  gap: 10px;
+}
+
+.reaction-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reaction-list-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reaction-list-meta .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reaction-list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--line);
+  list-style: none;
+}
+
+.reaction-list li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+
+.reaction-user {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.reaction-user strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reaction-user small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reaction-time {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.reaction-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 12.5px;
+}

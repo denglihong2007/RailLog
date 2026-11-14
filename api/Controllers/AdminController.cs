@@ -629,12 +629,13 @@ public sealed class AdminController(
         [FromQuery] string? query,
         [FromQuery] string? entityType,
         [FromQuery] string? reviewType,
+        [FromQuery] string? userId,
         [FromQuery] string? sort,
         [FromQuery] string? order,
         [FromQuery] int offset = 0,
         [FromQuery] int limit = 20) =>
         Ok(await database.GetAdminReviewsAsync(
-            query, entityType, reviewType, sort, order, offset, limit));
+            query, entityType, reviewType, userId, sort, order, offset, limit));
 
     [HttpDelete("reviews/{id:long}")]
     public async Task<IActionResult> DeleteReview(long id)
@@ -643,6 +644,48 @@ public sealed class AdminController(
         await AuditAsync("review.delete", id.ToString());
         return NoContent();
     }
+
+    /// <summary>某条评价收到的全部回应，供详情弹窗展开查看与逐条删除。</summary>
+    [HttpGet("reviews/{id:long}/reactions")]
+    public async Task<ActionResult<IReadOnlyList<AdminReviewReaction>>> GetReviewReactions(
+        long id) =>
+        Ok(await database.GetAdminReviewReactionsAsync(id));
+
+    /// <summary>删除单条回应。作者（评价作者）的成就随之重算。</summary>
+    [HttpDelete("reviews/{id:long}/reactions/{userId}")]
+    public async Task<IActionResult> DeleteReviewReaction(long id, string userId)
+    {
+        if (!await database.RemoveEntityReviewReactionAsync(id, userId)) return NotFound();
+        await AuditAsync("review-reaction.delete", $"{id}/{userId}");
+        return NoContent();
+    }
+
+    /// <summary>全站回应列表：支持按回应者、评价作者、表情与关键词筛选。</summary>
+    [HttpGet("reactions")]
+    public async Task<ActionResult<AdminReactionPage>> GetReactions(
+        [FromQuery] string? query,
+        [FromQuery] string? emoji,
+        [FromQuery] string? entityType,
+        [FromQuery] string? reactorId,
+        [FromQuery] string? authorId,
+        [FromQuery] string? sort,
+        [FromQuery] string? order,
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 50) =>
+        Ok(await database.GetAdminReactionsAsync(
+            query, emoji, entityType, reactorId, authorId,
+            sort, order, offset, limit));
+
+    /// <summary>评价用户聚合榜：评价数、收到回应数、发出回应数。</summary>
+    [HttpGet("review-users")]
+    public async Task<ActionResult<AdminReviewUserPage>> GetReviewUsers(
+        [FromQuery] string? query,
+        [FromQuery] string? sort,
+        [FromQuery] string? order,
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 50) =>
+        Ok(await database.GetAdminReviewUsersAsync(
+            query, sort, order, offset, limit));
 
     // ---- 成就（只读） ----
 

@@ -125,6 +125,61 @@ public sealed record AdminReviewPage(
     IReadOnlyList<AdminReview> Items,
     long Total);
 
+/// <summary>某条评价收到的单个表情回应，回应者信息供管理员核对。</summary>
+public sealed record AdminReviewReaction(
+    long ReviewId,
+    string UserId,
+    string DisplayName,
+    string? Email,
+    string? AvatarUrl,
+    string Emoji,
+    DateTime CreatedAt);
+
+/// <summary>
+/// 全站回应列表的一行：同时带回应者与被回应评价的信息，
+/// 管理员无需再跳转页面就能判断内容是否正常。
+/// </summary>
+public sealed record AdminReaction(
+    long ReviewId,
+    string EntityType,
+    string EntityKey,
+    string ReviewType,
+    int ReviewRating,
+    string ReviewComment,
+    DateTime ReviewCreatedAt,
+    string ReviewAuthorId,
+    string ReviewAuthorName,
+    string? ReviewAuthorEmail,
+    string UserId,
+    string DisplayName,
+    string? Email,
+    string? AvatarUrl,
+    string Emoji,
+    DateTime CreatedAt);
+
+public sealed record AdminReactionPage(
+    long Total,
+    IReadOnlyList<AdminReaction> Items);
+
+/// <summary>
+/// 评价用户聚合：评价数、收到的回应数、发出的回应数。
+/// 只列出至少有过评价或回应行为的用户。
+/// </summary>
+public sealed record AdminReviewUser(
+    string UserId,
+    string DisplayName,
+    string? Email,
+    string? AvatarUrl,
+    long ReviewCount,
+    long ReceivedReactionCount,
+    long GivenReactionCount,
+    double? AverageRating,
+    DateTime? LatestReviewAt);
+
+public sealed record AdminReviewUserPage(
+    long Total,
+    IReadOnlyList<AdminReviewUser> Items);
+
 public sealed record AdminOverviewCounts(
     long Users,
     long NewUsers,

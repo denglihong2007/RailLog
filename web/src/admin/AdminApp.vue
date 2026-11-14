@@ -47,12 +47,17 @@ type ViewName =
   | 'timetable-sync'
   | 'audit-logs'
 
+type ReviewTab = 'reviews' | 'reactions' | 'users'
+
 interface Route {
   view: ViewName
   userId?: string
   tripId?: number
   reviewQuery?: string
   entityType?: string
+  reviewUserId?: string
+  reviewUserName?: string
+  reviewTab?: ReviewTab
   level?: number
 }
 
@@ -106,7 +111,7 @@ const titles: Record<ViewName, { title: string; subtitle: string }> = {
   overview: { title: '概览', subtitle: '站务数据、数据健康与最近动态' },
   announcements: { title: '公告管理', subtitle: '维护 App 主页轮播的系统公告' },
   leaderboards: { title: '排行榜', subtitle: '点选排行中的用户或行程，可直接定位并修正数据' },
-  reviews: { title: '评价管理', subtitle: '检索、查看与删除用户评价' },
+  reviews: { title: '评价管理', subtitle: '检索、查看与删除用户评价及其回应，并查看评价用户排行' },
   achievements: { title: '等级与成就', subtitle: '用户等级分布与经验分界线、全站成就达成情况（成就只读）' },
   duplicates: { title: '重复行程', subtitle: '核对并清理同车次、同日期、同区间与票价的重复记录' },
   users: { title: '用户与行程', subtitle: '检索用户并管理其行程记录' },
@@ -137,10 +142,16 @@ function parseRoute(): Route {
   if (first === 'timetable-sync') return { view: 'timetable-sync' }
   if (first === 'audit-logs') return { view: 'audit-logs' }
   if (first === 'reviews') {
+    const rawTab = params.get('tab')
+    const tab: ReviewTab =
+      rawTab === 'reactions' || rawTab === 'users' ? rawTab : 'reviews'
     return {
       view: 'reviews',
       reviewQuery: params.get('query') ?? '',
       entityType: params.get('entityType') ?? '',
+      reviewUserId: params.get('userId') ?? '',
+      reviewUserName: params.get('userName') ?? '',
+      reviewTab: tab,
     }
   }
   if (first === 'users' && parts[2] === 'trips' && parts[1]) {
@@ -293,6 +304,10 @@ onBeforeUnmount(() => {
           v-else-if="route.view === 'reviews'"
           :initial-query="route.reviewQuery"
           :initial-entity-type="route.entityType"
+          :initial-user-id="route.reviewUserId"
+          :initial-user-name="route.reviewUserName"
+          :initial-tab="route.reviewTab"
+          @navigate="navigate"
           @open-user="(id) => navigate(`/users/${id}/trips`)"
           @open-trip="(userId, tripId) => navigate(`/users/${userId}/trips?trip=${tripId}`)"
         />
@@ -314,6 +329,7 @@ onBeforeUnmount(() => {
           :initial-level="route.level ?? null"
           @open-user="(id) => navigate(`/users/${id}/trips`)"
           @open-trip="(userId, tripId) => navigate(`/users/${userId}/trips?trip=${tripId}`)"
+          @view-reviews="(userId, displayName) => navigate(`/reviews?userId=${encodeURIComponent(userId)}&userName=${encodeURIComponent(displayName)}`)"
         />
         <UserTripsView
           v-else-if="route.view === 'user-trips' && route.userId"
