@@ -1949,6 +1949,12 @@ public static partial class AchievementEngine
         return count;
     }
 
+    private static bool SameTrainNumber(PublicTrip first, PublicTrip second) =>
+        string.Equals(
+            first.TrainNumber.Trim(),
+            second.TrainNumber.Trim(),
+            StringComparison.OrdinalIgnoreCase);
+
     private static double TightestTransferMinutes(List<PublicTrip> trips)
     {
         var arrivals = ArrivalsByStation(trips);
@@ -1962,6 +1968,8 @@ public static partial class AchievementEngine
             var index = LastArrivalAtOrBefore(list, departure);
             while (index >= 0 && list[index].Index >= outgoingIndex) index--;
             if (index < 0) continue;
+            // 同车换座不是换乘：到达与出发必须是不同车次。
+            if (SameTrainNumber(trips[list[index].Index], outgoing)) continue;
             var minutes = (departure - list[index].Arrival).TotalMinutes;
             if (minutes >= 0 && minutes < tightest) tightest = minutes;
         }
@@ -4627,6 +4635,8 @@ public static partial class AchievementEngine
             var index = LastArrivalAtOrBefore(list, departure);
             while (index >= 0 && list[index].Index >= outgoingIndex) index--;
             if (index < 0) continue;
+            // 同车换座不是换乘：到达与出发必须是不同车次。
+            if (SameTrainNumber(trips[list[index].Index], outgoing)) continue;
             if (departure - list[index].Arrival < TimeSpan.FromMinutes(10)) return outgoing;
         }
         return null;
