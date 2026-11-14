@@ -32,8 +32,12 @@ class DashboardAchievement {
     required this.experience,
     required this.hidden,
     required this.narrativeNote,
+    this.baseExperience,
     this.progressCurrent,
     this.progressTarget,
+    this.maxProgressCurrent,
+    this.maxProgressTarget,
+    this.maxExperienceReached = false,
     this.note,
     this.unlockedBy,
     this.requirements = const [],
@@ -59,6 +63,10 @@ class DashboardAchievement {
       progressCurrent: (json['progressCurrent'] as num?)?.toDouble(),
       progressTarget: (json['progressTarget'] as num?)?.toDouble(),
       experience: (json['experience'] as num?)?.toInt() ?? 0,
+      baseExperience: (json['baseExperience'] as num?)?.toInt(),
+      maxProgressCurrent: (json['maxProgressCurrent'] as num?)?.toDouble(),
+      maxProgressTarget: (json['maxProgressTarget'] as num?)?.toDouble(),
+      maxExperienceReached: json['maxExperienceReached'] as bool? ?? false,
       hidden: json['hidden'] as bool? ?? false,
       note: json['note'] as String?,
       narrativeNote: json['narrativeNote'] as String?,
@@ -82,17 +90,62 @@ class DashboardAchievement {
   final int unlockedUserCount;
   final int totalUserCount;
   final int experience;
+
+  /// 初始经验（不含分阶加成），经验胶囊的颜色跟随它。
+  final int? baseExperience;
   final bool hidden;
   final String? narrativeNote;
   final double? progressCurrent;
   final double? progressTarget;
+  final double? maxProgressCurrent;
+  final double? maxProgressTarget;
+
+  /// 已解锁且经验触顶；没有进度条但有加成机制的成就也靠它显示满分装饰。
+  final bool maxExperienceReached;
   final String? note;
   final DashboardTripEntry? unlockedBy;
   final List<DashboardAchievementRequirement> requirements;
 
+  int get experienceTierValue => baseExperience ?? experience;
+
   bool get isUnlocked => unlocked;
   bool get hasProgress => progressCurrent != null && progressTarget != null;
   bool get hasRequirements => requirements.isNotEmpty;
+
+  /// 0/1 本质是 true/false：只有同时具备详细进度与满分进度时才外露。
+  bool get hasVisibleProgress =>
+      hasProgress &&
+      (progressTarget! > 1 || (hasRequirements && hasMaxProgress));
+
+  bool get hasMaxProgress =>
+      maxProgressCurrent != null && maxProgressTarget != null;
+
+  /// 满分进度条只画「解锁之后」的部分：(当前 - 解锁要求) / (满分要求 - 解锁要求)。
+  double? get maxProgressValue {
+    if (!hasMaxProgress) return null;
+    final maxTarget = maxProgressTarget!;
+    if (maxTarget <= 0) return null;
+    final unlockTarget = progressTarget;
+    // 解锁要求与满分要求不在同一刻度时（如朝花夕拾按年份），直接按满分比例画。
+    if (unlockTarget == null || unlockTarget >= maxTarget) {
+      return (maxProgressCurrent! / maxTarget).clamp(0.0, 1.0);
+    }
+    return ((maxProgressCurrent! - unlockTarget) / (maxTarget - unlockTarget))
+        .clamp(0.0, 1.0);
+  }
+
+  bool get maxProgressReached =>
+      hasMaxProgress && maxProgressCurrent! >= maxProgressTarget!;
+
+  bool get isFullMark => maxProgressReached || maxExperienceReached;
+
+  /// 满分外圈的值：有进度数据时按「解锁之后」的比例；
+  /// 没有进度但经验触顶的特殊成就，直接画满一圈。
+  double? get fullMarkRingValue {
+    final progress = maxProgressValue;
+    if (progress != null) return progress;
+    return maxExperienceReached ? 1 : null;
+  }
   int get completedRequirementCount =>
       requirements.where((requirement) => requirement.completed).length;
   double get progressValue {

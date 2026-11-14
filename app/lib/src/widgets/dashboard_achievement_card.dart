@@ -48,9 +48,11 @@ class DashboardAchievementCard extends StatelessWidget {
               _AchievementMedallion(
                 icon: dashboardAchievementIconKey(achievement.iconKey),
                 unlocked: unlocked,
-                progress: achievement.hasProgress
+                progress: achievement.hasVisibleProgress
                     ? achievement.progressValue
                     : null,
+                maxProgress: unlocked ? achievement.fullMarkRingValue : null,
+                maxReached: achievement.isFullMark,
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -80,6 +82,7 @@ class DashboardAchievementCard extends StatelessWidget {
                           const SizedBox(width: AppSpacing.sm),
                           _AchievementExperienceChip(
                             experience: achievement.experience,
+                            baseExperience: achievement.experienceTierValue,
                             unlocked: unlocked,
                           ),
                         ],
@@ -158,16 +161,27 @@ class _AchievementMedallion extends StatelessWidget {
     required this.icon,
     required this.unlocked,
     required this.progress,
+    required this.maxProgress,
+    required this.maxReached,
   });
 
   final IconData icon;
   final bool unlocked;
   final double? progress;
 
+  /// 解锁之后朝满分再走的比例；为空时不画外圈。
+  final double? maxProgress;
+  final bool maxReached;
+
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    // 满分色走单独的金黄 M3 配色：卡片的 tertiaryContainer 底与 tertiary 太近，
+    // 这里用金黄色系的 primary / onPrimary，既和底色拉开又保留 M3 的对比度保证。
+    final (maxColor, maxOnColor) = FullMarkColors.of(theme.brightness);
     final value = unlocked ? 1.0 : (progress?.clamp(0.0, 1.0) ?? 0.0);
+    final showMaxRing = maxProgress != null;
     return SizedBox(
       width: 48,
       height: 48,
@@ -186,6 +200,21 @@ class _AchievementMedallion extends StatelessWidget {
               semanticsValue: '${(value * 100).round()}%',
             ),
           ),
+          // 满分进度是叠加在外围的一圈：不改动当前进度环的尺寸，只向外多画 3px。
+          if (showMaxRing)
+            SizedBox(
+              width: 54,
+              height: 54,
+              child: CircularProgressIndicator(
+                value: maxProgress,
+                strokeWidth: 2.5,
+                strokeCap: StrokeCap.round,
+                color: maxColor,
+                backgroundColor: maxColor.withValues(alpha: 0.18),
+                semanticsLabel: '满分进度',
+                semanticsValue: '${((maxProgress ?? 0) * 100).round()}%',
+              ),
+            ),
           Container(
             width: 38,
             height: 38,
@@ -211,12 +240,17 @@ class _AchievementMedallion extends StatelessWidget {
                 width: 16,
                 height: 16,
                 decoration: BoxDecoration(
-                  color: colors.primary,
+                  color: maxReached ? maxColor : colors.primary,
                   shape: BoxShape.circle,
                   // 与卡片的解锁底色隔开，徽章压在进度环上也不会糊成一团。
                   border: Border.all(color: colors.tertiaryContainer, width: 2),
                 ),
-                child: Icon(Icons.check, size: 9, color: colors.onPrimary),
+                child: Icon(
+                  // 满分用双对勾，和普通解锁的单对勾拉开层次。
+                  maxReached ? Icons.done_all : Icons.check,
+                  size: maxReached ? 10 : 9,
+                  color: maxReached ? maxOnColor : colors.onPrimary,
+                ),
               ),
             ),
         ],
@@ -233,10 +267,12 @@ class _AchievementMedallion extends StatelessWidget {
 class _AchievementExperienceChip extends StatelessWidget {
   const _AchievementExperienceChip({
     required this.experience,
+    required this.baseExperience,
     required this.unlocked,
   });
 
   final int experience;
+  final int baseExperience;
   final bool unlocked;
 
   @override
@@ -244,8 +280,9 @@ class _AchievementExperienceChip extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final tierColors = theme.extension<AchievementTierColors>();
+    // 颜色跟随「初始经验」档位，不随解锁后的加成变色；数字仍显示当前经验。
     final (background, foreground) = unlocked && tierColors != null
-        ? tierColors.at(_experienceTierIndex(experience))
+        ? tierColors.at(_experienceTierIndex(baseExperience))
         : (colors.surfaceContainerHighest, colors.secondary);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -324,7 +361,7 @@ class _AchievementFooter extends StatelessWidget {
         : secondaryColor;
 
     final String status;
-    if (!unlocked && achievement.hasProgress) {
+    if (!unlocked && achievement.hasVisibleProgress) {
       status =
           '已达成 ${_formatProgress(achievement.progressCurrent!)}/'
           '${_formatProgress(achievement.progressTarget!)}';
@@ -594,6 +631,14 @@ IconData dashboardAchievementIconKey(String key) => switch (key) {
   'tram_outlined' => Icons.tram_outlined,
   'brightness_7_outlined' => Icons.brightness_7_outlined,
   'restart_alt_outlined' => Icons.restart_alt_outlined,
+  'compare_arrows' => Icons.compare_arrows,
+  'construction_outlined' => Icons.construction_outlined,
+  'whatshot' => Icons.whatshot,
+  'event_seat' => Icons.event_seat,
+  'chair' => Icons.chair,
+  'bolt' => Icons.bolt,
+  'trending_down' => Icons.trending_down,
+  'wrong_location' => Icons.wrong_location,
   _ => Icons.emoji_events_outlined,
 };
 

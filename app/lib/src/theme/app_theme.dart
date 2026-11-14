@@ -447,3 +447,24 @@ class AchievementTierColors extends ThemeExtension<AchievementTierColors> {
     );
   }
 }
+
+/// 满分专用的 M3 强调色。
+///
+/// 卡片的解锁底色是 tertiaryContainer，满分圈如果也用 tertiary 会撞色；
+/// 这里改用七档色阶里的「金黄」作种子重新跑一次 M3 配色，取它的 primary /
+/// onPrimary：既保持 Material 3 的明暗与对比度保证，又和金/铜的「满分级」语义一致。
+class FullMarkColors {
+  const FullMarkColors._();
+
+  static final Map<Brightness, (Color color, Color onColor)> _cache = {};
+
+  static (Color color, Color onColor) of(Brightness brightness) {
+    return _cache.putIfAbsent(brightness, () {
+      final scheme = ColorScheme.fromSeed(
+        seedColor: AchievementTierColors.tierSeeds[2],
+        brightness: brightness,
+      );
+      return (scheme.primary, scheme.onPrimary);
+    });
+  }
+}
