@@ -358,7 +358,10 @@ class _HomePageState extends State<HomePage> {
             builder: (context, constraints) {
               return _DashboardScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: _dashboardPadding(constraints),
+                padding: _dashboardPadding(
+                  constraints,
+                  MediaQuery.paddingOf(context).bottom,
+                ),
                 slivers: [
                   SliverToBoxAdapter(
                     child: Column(
@@ -678,7 +681,10 @@ class _PublicUserPageState extends State<PublicUserPage> {
               builder: (context, constraints) {
                 return _DashboardScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: _dashboardPadding(constraints),
+                  padding: _dashboardPadding(
+                    constraints,
+                    MediaQuery.paddingOf(context).bottom,
+                  ),
                   slivers: [
                     SliverToBoxAdapter(
                       child: Column(
@@ -741,7 +747,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
 /// 页面内容的左右内边距：窄屏按断点留白，宽屏把内容限制在 [_dashboardMaxWidth]
 /// 以内并居中。原来靠 `Center + ConstrainedBox` 做，改成 sliver 列表后只能把
 /// 「多出来的宽度」折算进内边距，否则每个条目都要单独包一层居中。
-EdgeInsets _dashboardPadding(BoxConstraints constraints) {
+EdgeInsets _dashboardPadding(BoxConstraints constraints, double bottomInset) {
   final pagePadding = switch (constraints.maxWidth) {
     < _homeCompactBreakpoint => 16.0,
     < _homeMediumBreakpoint => 24.0,
@@ -750,7 +756,7 @@ EdgeInsets _dashboardPadding(BoxConstraints constraints) {
   final horizontal = constraints.maxWidth - pagePadding * 2 > _dashboardMaxWidth
       ? (constraints.maxWidth - _dashboardMaxWidth) / 2
       : pagePadding;
-  return EdgeInsets.fromLTRB(horizontal, 24, horizontal, 32);
+  return EdgeInsets.fromLTRB(horizontal, 24, horizontal, 32 + bottomInset);
 }
 
 class _DashboardScrollView extends StatelessWidget {

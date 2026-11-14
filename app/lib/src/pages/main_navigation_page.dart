@@ -7,6 +7,7 @@ import 'package:raillog/src/services/cloud_sync_service.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/update_service.dart';
+import 'package:raillog/src/widgets/floating_capsule_navigation_bar.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/update_prompt.dart';
@@ -161,8 +162,10 @@ class _AdaptiveNavigationScaffold extends StatelessWidget {
       builder: (context, constraints) {
         if (constraints.maxWidth < compactBreakpoint) {
           return Scaffold(
+            // 让页面内容从胶囊后面滚过，胶囊的模糊底色才有内容可透。
+            extendBody: true,
             body: body,
-            bottomNavigationBar: NavigationBar(
+            bottomNavigationBar: FloatingCapsuleNavigationBar(
               selectedIndex: selectedIndex,
               onDestinationSelected: onSelectedIndexChange,
               destinations: destinations,

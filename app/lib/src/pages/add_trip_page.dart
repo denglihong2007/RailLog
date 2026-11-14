@@ -575,7 +575,7 @@ class _AddTripPageState extends State<AddTripPage> {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: AppSpacing.page,
+      padding: AppSpacing.pageFor(context),
       children: [
         Text('添加行程', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 4),

@@ -12,6 +12,12 @@ abstract final class AppSpacing {
 
   static const EdgeInsets card = EdgeInsets.all(lg);
   static const EdgeInsets page = EdgeInsets.fromLTRB(lg, xl, lg, section);
+
+  /// 页面滚动内容的常规内边距，底部再叠加系统安全区或悬浮底栏占用的高度
+  /// （紧凑布局下 Scaffold.extendBody 会把它写进 MediaQuery）。
+  static EdgeInsets pageFor(BuildContext context) => page.copyWith(
+    bottom: page.bottom + MediaQuery.paddingOf(context).bottom,
+  );
 }
 
 abstract final class AppRadius {

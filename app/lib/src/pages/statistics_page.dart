@@ -248,7 +248,7 @@ class _SiteStatisticsView extends StatelessWidget {
           final columns = constraints.maxWidth >= 720 ? 4 : 2;
           return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: AppSpacing.page,
+            padding: AppSpacing.pageFor(context),
             children: [
               Center(
                 child: ConstrainedBox(
@@ -584,7 +584,7 @@ class _LeaderboardScrollView extends StatelessWidget {
       onRefresh: onRefresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: AppSpacing.page,
+        padding: AppSpacing.pageFor(context),
         children: [
           Center(
             child: ConstrainedBox(

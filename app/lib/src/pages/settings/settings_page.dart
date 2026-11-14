@@ -33,7 +33,7 @@ class SettingsPage extends StatelessWidget {
         return ColoredBox(
           color: Theme.of(context).colorScheme.surfaceContainerLowest,
           child: ListView(
-            padding: AppSpacing.page,
+            padding: AppSpacing.pageFor(context),
             children: [
               Center(
                 child: ConstrainedBox(
