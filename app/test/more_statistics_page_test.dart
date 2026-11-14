@@ -86,8 +86,8 @@ void main() {
     await _pumpPage(tester);
 
     expect(find.text('坐席统计'), findsOneWidget);
-    expect(find.text('靠窗户'), findsOneWidget);
-    expect(find.text('靠过道'), findsOneWidget);
+    expect(find.text('靠窗 1 次 · 50%'), findsOneWidget);
+    expect(find.text('靠过道 1 次 · 50%'), findsOneWidget);
     expect(find.text('铺位统计'), findsOneWidget);
     expect(find.text('席别统计'), findsOneWidget);
     expect(find.text('出行指标'), findsNothing);
@@ -121,7 +121,7 @@ void main() {
       },
     );
 
-    await tester.tap(find.text('靠窗户'));
+    await tester.tap(find.text('靠窗 1 次 · 50%'));
     await tester.pump();
 
     expect(opened?.id, 1);

@@ -105,22 +105,18 @@ class _SeatPositionCard extends StatelessWidget {
     final aisleSide = positions
         .where((position) => const {'D', 'F'}.contains(position.letter))
         .toList(growable: false);
-    final categories = [
-      _SeatCategoryData(
-        label: '靠窗户',
-        icon: Icons.window_outlined,
-        positions: positions
-            .where((position) => const {'A', 'F'}.contains(position.letter))
-            .toList(growable: false),
-      ),
-      _SeatCategoryData(
-        label: '靠过道',
-        icon: Icons.directions_walk,
-        positions: positions
-            .where((position) => const {'C', 'D'}.contains(position.letter))
-            .toList(growable: false),
-      ),
-    ];
+    final windowSeats = _SeatCategoryData(
+      label: '靠窗',
+      positions: positions
+          .where((position) => const {'A', 'F'}.contains(position.letter))
+          .toList(growable: false),
+    );
+    final aisleSeats = _SeatCategoryData(
+      label: '靠过道',
+      positions: positions
+          .where((position) => const {'C', 'D'}.contains(position.letter))
+          .toList(growable: false),
+    );
 
     return AppCard.filled(
       title: '坐席统计',
@@ -137,29 +133,29 @@ class _SeatPositionCard extends StatelessWidget {
         children: [
           const _CardDescription(
             '字母为动车组座位，数字为普速车厢座位（按座位号尾数归位）；'
-            '按车厢窗、过道、窗的顺序排列，并汇总靠窗与靠过道。'
+            '按车厢窗、过道、窗的顺序排列，窗与过道两行分别汇总靠窗、靠过道。'
             '百分比按全部有座行程计算。',
           ),
           if (total == 0)
             const _EmptyHint()
           else ...[
-            const _SeatMarkerRow(icon: Icons.window_outlined, label: '窗户'),
+            _SeatMarkerRow(
+              icon: Icons.window_outlined,
+              label: '窗户',
+              category: windowSeats,
+              total: total,
+              onOpenTrips: onOpenTrips,
+            ),
             _StatRowList(rows: _seatRows(windowSide, total)),
-            const _SeatMarkerRow(icon: Icons.directions_walk, label: '过道'),
+            _SeatMarkerRow(
+              icon: Icons.directions_walk,
+              label: '过道',
+              category: aisleSeats,
+              total: total,
+              onOpenTrips: onOpenTrips,
+            ),
             _StatRowList(rows: _seatRows(aisleSide, total)),
             const _SeatMarkerRow(icon: Icons.window_outlined, label: '窗户'),
-            const Divider(height: AppSpacing.xxl, thickness: 1),
-            _SeatCategoryRow(
-              data: categories[0],
-              total: total,
-              onOpenTrips: onOpenTrips,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            _SeatCategoryRow(
-              data: categories[1],
-              total: total,
-              onOpenTrips: onOpenTrips,
-            ),
           ],
         ],
       ),
@@ -179,46 +175,85 @@ class _SeatPositionCard extends StatelessWidget {
   ];
 }
 
+/// 车厢布局里的一行标记（窗户 / 过道）。靠窗与靠过道的合计直接写在对应
+/// 标记行右侧，点开可查看这一类的行程。
 class _SeatMarkerRow extends StatelessWidget {
-  const _SeatMarkerRow({required this.icon, required this.label});
+  const _SeatMarkerRow({
+    required this.icon,
+    required this.label,
+    this.category,
+    this.total = 0,
+    this.onOpenTrips,
+  });
 
   final IconData icon;
   final String label;
 
+  /// 为空时只作布局标记，不带合计。
+  final _SeatCategoryData? category;
+  final int total;
+  final _OpenTrips? onOpenTrips;
+
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: colors.onSurfaceVariant),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: colors.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final data = category;
+    final hasTrips = (data?.count ?? 0) > 0;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.small),
+        onTap: data != null && hasTrips && onOpenTrips != null
+            ? () => onOpenTrips!(data.label, data.trips)
+            : null,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            // 带合计的行可以点开，留出更宽松的点击高度。
+            vertical: data == null ? AppSpacing.xs : AppSpacing.sm,
           ),
-        ],
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: colors.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (data != null) ...[
+                const Spacer(),
+                Text(
+                  '${data.label} ${data.count} 次 · '
+                  '${_formatPercentage(data.count, total)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                if (hasTrips) ...[
+                  const SizedBox(width: AppSpacing.xxs),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _SeatCategoryData {
-  const _SeatCategoryData({
-    required this.label,
-    required this.icon,
-    required this.positions,
-  });
+  const _SeatCategoryData({required this.label, required this.positions});
 
   final String label;
-  final IconData icon;
   final List<SeatPositionStat> positions;
 
   int get count => positions.fold(0, (sum, position) => sum + position.count);
@@ -230,65 +265,6 @@ class _SeatCategoryData {
       return byTime != 0 ? byTime : b.id.compareTo(a.id);
     });
     return merged;
-  }
-}
-
-class _SeatCategoryRow extends StatelessWidget {
-  const _SeatCategoryRow({
-    required this.data,
-    required this.total,
-    required this.onOpenTrips,
-  });
-
-  final _SeatCategoryData data;
-  final int total;
-  final _OpenTrips onOpenTrips;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final hasTrips = data.count > 0;
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.small),
-        onTap: hasTrips ? () => onOpenTrips(data.label, data.trips) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xs,
-            vertical: AppSpacing.sm,
-          ),
-          child: Row(
-            children: [
-              Icon(data.icon, size: 16, color: colors.onSurfaceVariant),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                data.label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${data.count} 次 · ${_formatPercentage(data.count, total)}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-              if (hasTrips) ...[
-                const SizedBox(width: AppSpacing.xxs),
-                Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: colors.onSurfaceVariant,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
