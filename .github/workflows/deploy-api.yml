@@ -3,6 +3,9 @@ name: Deploy API
 # 只发布后端：不重建安装包、不动 GitHub Release。
 # release.yml 只在 app/pubspec.yaml 变化时触发，后端改动推送后不会自动上线，
 # 需要上线时手动运行本工作流。
+#
+# 构建仍然在 GitHub 托管的 runner 上（NuGet 在境外），落地在 156.254.6.59
+# 注册的自建 runner 上：部署目标就在本机，不需要 sshpass / SCP。
 on:
   workflow_dispatch:
 
@@ -10,13 +13,10 @@ permissions:
   contents: read
 
 jobs:
-  deploy-api:
-    name: Deploy API to IIS
+  build-api:
+    name: Build API
     runs-on: ubuntu-latest
-    # 与 release.yml 的两个部署作业共用一个组，避免同时往服务器传同名脚本、同时写站点目录
-    concurrency:
-      group: deploy-iis
-      cancel-in-progress: false
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -38,30 +38,40 @@ jobs:
           rm -f out/web.config
           find out -name '*.pdb' ! -name 'RailLog.API.pdb' -delete
 
-      - name: Package
-        run: |
-          set -euo pipefail
-          cd out
-          zip -qry ../raillog-api.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api
+          path: out
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Configure SSH known hosts
-        run: |
-          mkdir -p ~/.ssh
-          cp .github/known_hosts ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+  deploy-api:
+    name: Deploy API to IIS
+    needs: build-api
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    # 与 release.yml 的两个部署作业共用一个组，避免同时往站点目录写
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 工作区常驻在服务器上，别把 token 留在 .git/config 里
+          persist-credentials: false
 
-      - name: Upload package and deploy
-        env:
-          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: api
+          path: dist/api
+
+      # 脚本要求 Windows PowerShell 5.1（WebAdministration 是 5.1 才有的快照），
+      # 所以用 powershell.exe 调用，不能直接交给 pwsh。
+      - name: Deploy
+        shell: powershell
         run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass
-          sshpass -e scp -P 22 -q \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            raillog-api.zip tools/deploy/deploy-iis.ps1 \
-            Administrator@156.254.6.59:
-          sshpass -e ssh -p 22 \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            Administrator@156.254.6.59 \
-            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/deploy-iis.ps1 -ZipPath C:/Users/Administrator/raillog-api.zip -Profile api'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File "$env:GITHUB_WORKSPACE\tools\deploy\deploy-iis.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE\dist\api" `
+            -Profile api
+          if ($LASTEXITCODE -ne 0) { throw "deploy-iis.ps1 exited with $LASTEXITCODE" }

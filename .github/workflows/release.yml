@@ -17,10 +17,22 @@ permissions:
   contents: write
   pull-requests: read
 
+# 两个版本号挨着合并时必须排队：并发运行会抢同一个 tag、同时往 IIS 站点目录写，
+# 也会在自建 runner 上同时操作同名临时文件。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# 钉住 Flutter 版本：stable 通道推新版会让构建在没有任何代码改动时突然变红，
+# 也会让 subosito/flutter-action 的 SDK 缓存不再命中。
+env:
+  FLUTTER_VERSION: 3.44.6
+
 jobs:
   prepare:
     name: Check version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       changed: ${{ steps.version.outputs.changed }}
       version: ${{ steps.version.outputs.version }}
@@ -90,16 +102,20 @@ jobs:
             echo "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
+  # 构建全部留在 GitHub 托管的 runner 上：NuGet / npm / pub 都在境外，
+  # 自建 runner 从境内拉依赖比这里慢得多。自建 runner 只负责「落地」。
   build-android:
     name: Android (all ABIs)
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Configure Android signing
         env:
@@ -130,23 +146,29 @@ jobs:
           cp app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/raillog-${{ needs.prepare.outputs.tag }}-android-armeabi-v7a.apk"
           cp app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "dist/raillog-${{ needs.prepare.outputs.tag }}-android-arm64-v8a.apk"
           cp app/build/app/outputs/flutter-apk/app-x86_64-release.apk "dist/raillog-${{ needs.prepare.outputs.tag }}-android-x86_64.apk"
+      # APK / IPA / zip / tar.gz 本身已经压过，再让 upload-artifact 压一遍只是白烧 CPU。
       - uses: actions/upload-artifact@v4
         with:
           name: android
           path: dist/*.apk
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
 
   build-linux:
     name: Linux
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
         run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build Linux
         working-directory: app
@@ -159,17 +181,22 @@ jobs:
         with:
           name: linux
           path: dist/*.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
 
   build-windows:
     name: Windows
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build Windows
         working-directory: app
@@ -182,19 +209,91 @@ jobs:
         with:
           name: windows
           path: '*.zip'
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
 
-  # 商店包单独构建并直接提交，不经过 upload-artifact：
-  # release 作业会把所有 artifact 合并进 dist，MSIX 不该出现在 GitHub Release
-  # 和对象存储里；单独成作业也让商店凭证与普通构建隔离。
+  # 后端与官网的构建放在云端，产物作为 artifact 交给自建 runner：
+  # 部署目标（IIS）和 runner 在同一台机器上，不需要再 SCP 一圈。
+  build-api:
+    name: Build API
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # 指定 win-x64 只带 Windows 的原生库；不加 RID 会连 Linux/macOS 的
+      # SkiaSharp 一起打进来，光 PDB 就 270 MB。
+      - name: Publish API
+        run: dotnet publish api/RailLog.API.csproj -c Release -r win-x64 --self-contained false -o out
+
+      # - web.config：服务器上的那份存着 SMTP、GitHub token 等环境变量，
+      #   发布包自带的只有一行 aspNetCore handler，覆盖过去会丢配置。
+      # - libSkiaSharp.pdb：91 MB，生产环境用不上。
+      - name: Strip web.config and PDBs
+        run: |
+          set -euo pipefail
+          rm -f out/web.config
+          find out -name '*.pdb' ! -name 'RailLog.API.pdb' -delete
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api
+          path: out
+          if-no-files-found: error
+          retention-days: 3
+
+  build-web:
+    name: Build website
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm run build = vue-tsc 类型检查 + vite build + vitepress build
+      # 产物在 web/dist，api-docs 会落在 web/dist/api-docs
+      - name: Build website
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 3
+
+  # 商店包不经过 GitHub Release 的产物：MSIX 不该出现在 Release 和对象存储里；
+  # 单独成作业也让商店凭证与普通构建隔离。
   # msix_config.store = true 时不本地签名，由商店重新签名。
+  #
+  # Windows 产物直接复用 build-windows 已经构建好的 Release 目录，不再整份重编：
+  # 解开 artifact 后让 msix:create 跳过 flutter build（--build-windows false）。
   publish-store:
     name: Publish to Microsoft Store
     # 等 GitHub Release 落定再提交商店，避免某个平台构建失败时商店先上线
-    needs: [prepare, release]
+    needs: [prepare, build-windows, release]
     if: >-
       needs.prepare.outputs.changed == 'true' &&
       (github.event_name != 'workflow_dispatch' || inputs.publish_store)
     runs-on: windows-latest
+    timeout-minutes: 45
     # 同一时间只允许一个商店提交，避免两次发布会话互相覆盖草稿
     concurrency:
       group: microsoft-store
@@ -203,26 +302,42 @@ jobs:
       MSSTORE_PRODUCT_ID: 9P2XGJRHLZXS
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
-      - name: Build Windows
-        working-directory: app
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: ${{ runner.temp }}/windows-artifact
+
+      - name: Restore Windows build output
         shell: pwsh
         run: |
-          flutter config --enable-windows-desktop
-          flutter pub get
-          flutter build windows --release
+          $zip = Get-ChildItem "$env:RUNNER_TEMP/windows-artifact" -Filter '*.zip' |
+            Select-Object -First 1
+          if (-not $zip) { throw 'The windows artifact does not contain a zip.' }
+          $target = Join-Path $env:GITHUB_WORKSPACE 'app/build/windows/x64/runner/Release'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $target -Force
+          if (-not (Test-Path (Join-Path $target 'RailLog.exe'))) {
+            throw "Restored release folder has no RailLog.exe: $target"
+          }
+
+      - name: Restore pub dependencies
+        working-directory: app
+        shell: pwsh
+        run: flutter pub get
 
       - name: Build MSIX for Store
         working-directory: app
         shell: pwsh
-        run: dart run msix:create
+        run: dart run msix:create --build-windows false
 
       - name: Setup Microsoft Store Developer CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.4
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
         with:
           # 固定 CLI 版本：--payload / --inputDirectory 这些参数名按此版本写的
           version: v0.4.4
@@ -302,11 +417,13 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build macOS
         working-directory: app
@@ -320,17 +437,22 @@ jobs:
         with:
           name: macos-arm64
           path: '*.zip'
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
 
   build-ios:
     name: iOS (unsigned)
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
+          version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - name: Build iOS
         working-directory: app
@@ -346,209 +468,194 @@ jobs:
         with:
           name: ios
           path: '*.ipa'
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
 
+  # 先建草稿：产物传完、站点与对象存储都落地之后，才由 finalize-release 转正。
+  # 这样 Release 页面上不会出现「新版本已发布但下载链接 404」的窗口。
   release:
-    name: Create GitHub release
+    name: Create draft GitHub release
     needs: [prepare, build-android, build-linux, build-windows, build-macos, build-ios]
     if: needs.prepare.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+          # 只取六个安装包；api/web 是部署用的 artifact，别混进 Release 附件
+          pattern: '{android,linux,windows,macos-arm64,ios}'
+
+      # 重跑整个工作流时，tag 对应的 Release 可能已经存在（甚至已经转正）。
+      # 这时不能再按草稿重建，否则会把已发布的 Release 打回草稿。
+      - name: Detect an existing release
+        id: existing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Release $RELEASE_TAG already exists; keeping it as is." >&2
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create draft release
+        if: steps.existing.outputs.found == 'false'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.tag }}
           body: ${{ needs.prepare.outputs.notes }}
           files: dist/*
+          draft: true
           generate_release_notes: false
 
+  # 以下三个作业跑在 156.254.6.59 上注册的自建 runner 上：部署目标就在本机，
+  # 不需要 sshpass / SCP / known_hosts，也不用把 Administrator 口令放成 secret。
+  # 注意：两个脚本都要求 Windows PowerShell 5.1（WebAdministration 是 5.1 才有的快照），
+  # 所以用 powershell.exe 调用，不能直接交给 pwsh。
   upload-storage:
     name: Upload builds to object storage
     needs: [prepare, release]
     if: needs.prepare.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      # 官网的「官方下载」按钮直接指向这里，路径与文件名要和
-      # web/src/App.vue 里拼出来的一致：v<version>/raillog-v<version>-<平台>。
-      # 桶已开放匿名读，不需要额外设置 ACL。
-      # Windows 从微软商店分发，zip 只留在 GitHub Release，不占对象存储。
-      #
-      # GitHub runner 直连 RainS3 跨境只有约 100 B/s，aws s3 cp 传不完；
-      # 改为先 SCP 到 IIS 服务器，再由服务器上传。runner → 服务器的链路是通的。
-      - name: Package assets
-        run: |
-          set -euo pipefail
-          cd dist
-          zip -qry ../raillog-assets.zip . -x '*-windows-*'
-
-      # 服务器上没有 AWS CLI 时用它安装；从 runner 下载，避免服务器访问境外站点。
-      - name: Download AWS CLI installer
-        run: curl -fsSL https://awscli.amazonaws.com/AWSCLIV2.msi -o AWSCLIV2.msi
-
-      - name: Configure SSH known hosts
-        run: |
-          mkdir -p ~/.ssh
-          cp .github/known_hosts ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Upload through IIS server
-        env:
-          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass
-
-          umask 077
-          printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
-            "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" > s3-upload.env
-
-          sshpass -e scp -P 22 -q \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            raillog-assets.zip AWSCLIV2.msi s3-upload.env \
-            tools/deploy/upload-storage.ps1 \
-            Administrator@156.254.6.59:
-
-          sshpass -e ssh -p 22 \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            Administrator@156.254.6.59 \
-            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/upload-storage.ps1 -ZipPath C:/Users/Administrator/raillog-assets.zip -InstallerPath C:/Users/Administrator/AWSCLIV2.msi -CredentialsPath C:/Users/Administrator/s3-upload.env -Tag ${{ needs.prepare.outputs.tag }}'
-
-      # 脚本解析失败或连接中断时，服务端的 finally 不会执行，补一步兜底清理。
-      - name: Remove temporary server files
-        if: always()
-        continue-on-error: true
-        env:
-          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          command -v sshpass >/dev/null 2>&1 || exit 0
-          sshpass -e ssh -p 22 \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            Administrator@156.254.6.59 \
-            'powershell -NoProfile -Command "Remove-Item -LiteralPath C:/Users/Administrator/raillog-assets.zip,C:/Users/Administrator/AWSCLIV2.msi,C:/Users/Administrator/s3-upload.env -Force -ErrorAction SilentlyContinue; exit 0"'
-
-  deploy-api:
-    name: Deploy API to IIS
-    needs: [prepare, release]
-    if: needs.prepare.outputs.changed == 'true'
-    runs-on: ubuntu-latest
-    # 两个部署作业共用这个组，避免同时往服务器传同名脚本、同时写站点目录
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+    # 与两个站点部署共用一个组：runner 上一次只跑一个作业，但组名跨工作流生效，
+    # 手动触发的 Deploy API 不会和发布流程抢服务器
     concurrency:
       group: deploy-iis
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          # 工作区常驻在服务器上，别把 token 留在 .git/config 里
+          persist-credentials: false
 
-      # 指定 win-x64 只带 Windows 的原生库；不加 RID 会连 Linux/macOS 的
-      # SkiaSharp 一起打进来，光 PDB 就 270 MB。
-      - name: Publish API
-        run: dotnet publish api/RailLog.API.csproj -c Release -r win-x64 --self-contained false -o out
+      # 官网的「官方下载」按钮直接指向这里，路径与文件名要和
+      # web/src/App.vue 里拼出来的一致：v<version>/raillog-v<version>-<平台>。
+      # 桶已开放匿名读，不需要额外设置 ACL。
+      # Windows 从微软商店分发，zip 只留在 GitHub Release，不占对象存储。
+      - uses: actions/download-artifact@v4
+        with:
+          # 落在工作区而不是 runner.temp：checkout 每次都会 git clean，
+          # 上一轮残留的旧版本产物不会被当成本轮的内容传上去。
+          path: dist
+          merge-multiple: true
+          # 只下要发对象存储的四个产物；windows 走微软商店，不必拉下来。
+          # download-artifact 用 minimatch 匹配，花括号展开一次写全。
+          pattern: '{android,linux,macos-arm64,ios}'
 
-      # - web.config：服务器上的那份存着 SMTP、GitHub token 等环境变量，
-      #   发布包自带的只有一行 aspNetCore handler，覆盖过去会丢配置。
-      # - libSkiaSharp.pdb：91 MB，生产环境用不上。
-      - name: Strip web.config and PDBs
+      # AWS CLI 装一次就够，之后复用；只有缺失时才下载安装包。
+      # 这里用 shell: powershell 而不是 pwsh：自建 runner 所在的 Windows Server
+      # 不一定装了 PowerShell 7，显式指定 pwsh 会直接找不到解释器。
+      - name: Ensure AWS CLI
+        shell: powershell
         run: |
-          set -euo pipefail
-          rm -f out/web.config
-          find out -name '*.pdb' ! -name 'RailLog.API.pdb' -delete
+          $ProgressPreference = 'SilentlyContinue'
+          $aws = (Get-Command aws.exe -ErrorAction SilentlyContinue).Source
+          if (-not $aws) {
+            $default = Join-Path $env:ProgramFiles 'Amazon\AWSCLIV2\aws.exe'
+            if (Test-Path -LiteralPath $default) { $aws = $default }
+          }
+          if ($aws) {
+            Write-Host "AWS CLI already installed: $aws"
+            exit 0
+          }
+          Write-Host 'AWS CLI is missing; installing it now (one-time).'
+          $msi = Join-Path $env:RUNNER_TEMP 'AWSCLIV2.msi'
+          Invoke-WebRequest -Uri 'https://awscli.amazonaws.com/AWSCLIV2.msi' -OutFile $msi -UseBasicParsing
+          $process = Start-Process msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') -Wait -PassThru
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "AWS CLI installation failed with exit code $($process.ExitCode)."
+          }
+          Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue
 
-      - name: Package
-        run: |
-          set -euo pipefail
-          cd out
-          zip -qry ../raillog-api.zip .
-
-      - name: Configure SSH known hosts
-        run: |
-          mkdir -p ~/.ssh
-          cp .github/known_hosts ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Upload package and deploy
+      - name: Upload to RainS3
+        shell: powershell
         env:
-          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass
-          sshpass -e scp -P 22 -q \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            raillog-api.zip tools/deploy/deploy-iis.ps1 \
-            Administrator@156.254.6.59:
-          sshpass -e ssh -p 22 \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            Administrator@156.254.6.59 \
-            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/deploy-iis.ps1 -ZipPath C:/Users/Administrator/raillog-api.zip -Profile api'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File "$env:GITHUB_WORKSPACE\tools\deploy\upload-storage.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE\dist" `
+            -Tag $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw "upload-storage.ps1 exited with $LASTEXITCODE" }
+
+  deploy-api:
+    name: Deploy API to IIS
+    needs: [prepare, build-api, release]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: api
+          path: dist/api
+
+      - name: Deploy
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File "$env:GITHUB_WORKSPACE\tools\deploy\deploy-iis.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE\dist\api" `
+            -Profile api
+          if ($LASTEXITCODE -ne 0) { throw "deploy-iis.ps1 exited with $LASTEXITCODE" }
 
   deploy-web:
     name: Deploy website to IIS
     # 官网把官方下载指向对象存储，等上传成功再发布，避免短时间里链接 404
     needs: [prepare, release, upload-storage]
     if: needs.prepare.outputs.changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
     concurrency:
       group: deploy-iis
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          persist-credentials: false
 
-      # npm run build = vue-tsc 类型检查 + vite build + vitepress build
-      # 产物在 web/dist，api-docs 会落在 web/dist/api-docs
-      - name: Build website
-        working-directory: web
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: dist/web
+
+      - name: Deploy
+        shell: powershell
         run: |
-          npm ci
-          npm run build
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File "$env:GITHUB_WORKSPACE\tools\deploy\deploy-iis.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE\dist\web" `
+            -Profile web
+          if ($LASTEXITCODE -ne 0) { throw "deploy-iis.ps1 exited with $LASTEXITCODE" }
 
-      - name: Package
-        run: |
-          set -euo pipefail
-          cd web/dist
-          zip -qry ../../raillog-web.zip .
-
-      - name: Configure SSH known hosts
-        run: |
-          mkdir -p ~/.ssh
-          cp .github/known_hosts ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      - name: Upload package and deploy
+  # 全部落地成功后才把草稿转正；任何一步失败，Release 就停在草稿状态。
+  finalize-release:
+    name: Publish GitHub release
+    needs: [prepare, release, upload-storage, deploy-api, deploy-web]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish the draft release
         env:
-          SSHPASS: ${{ secrets.IIS_SSH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass
-          sshpass -e scp -P 22 -q \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            raillog-web.zip tools/deploy/deploy-iis.ps1 \
-            Administrator@156.254.6.59:
-          sshpass -e ssh -p 22 \
-            -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 \
-            Administrator@156.254.6.59 \
-            'powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Administrator/deploy-iis.ps1 -ZipPath C:/Users/Administrator/raillog-web.zip -Profile web'
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false
