@@ -38,6 +38,8 @@ class IntersectionTrip {
     required this.occurredAt,
     required this.isStrict,
     required this.trainNumber,
+    required this.fromStation,
+    required this.toStation,
   });
 
   factory IntersectionTrip.fromJson(Map<String, dynamic> json) {
@@ -49,6 +51,8 @@ class IntersectionTrip {
       occurredAt: _date(json['occurredAt'])!,
       isStrict: json['isStrict'] as bool? ?? false,
       trainNumber: json['trainNumber'] as String,
+      fromStation: json['fromStation'] as String? ?? '',
+      toStation: json['toStation'] as String? ?? '',
     );
   }
 
@@ -59,6 +63,8 @@ class IntersectionTrip {
   final DateTime occurredAt;
   final bool isStrict;
   final String trainNumber;
+  final String fromStation;
+  final String toStation;
 }
 
 DateTime? _date(Object? value) {

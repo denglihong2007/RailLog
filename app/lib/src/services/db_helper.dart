@@ -361,6 +361,21 @@ class DbHelper {
     return maps.isEmpty ? null : TripRecord.fromMap(maps.first);
   }
 
+  /// 服务端的行程 ID（`ticketId`）对应的本地行程。
+  Future<TripRecord?> getTripByTicketId(int ticketId) async {
+    final db = await database;
+    final userId = activeUserId?.call();
+    final maps = await db.query(
+      'trip_records',
+      where: userId == null
+          ? 'ticket_id = ? AND deleted_at IS NULL AND owner_user_id IS NULL'
+          : 'ticket_id = ? AND deleted_at IS NULL AND (owner_user_id IS NULL OR owner_user_id = ?)',
+      whereArgs: userId == null ? [ticketId] : [ticketId, userId],
+      limit: 1,
+    );
+    return maps.isEmpty ? null : TripRecord.fromMap(maps.first);
+  }
+
   Future<TripDashboardStats> getDashboardStats() async {
     final trips = await getAllTrips();
     return TripDashboardStats.fromTrips(trips);

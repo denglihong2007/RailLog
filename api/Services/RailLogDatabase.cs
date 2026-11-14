@@ -1917,6 +1917,8 @@ public sealed partial class RailLogDatabase
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
+        var hasExperienceVariation =
+            AchievementEngine.HasExperienceVariation(achievementId);
         if (AchievementEngine.IsHiddenAchievement(achievementId))
         {
             await using var unlockCommand = connection.CreateCommand();
@@ -1929,20 +1931,23 @@ public sealed partial class RailLogDatabase
             unlockCommand.Parameters.AddWithValue("$userId", currentUserId);
             unlockCommand.Parameters.AddWithValue("$achievementId", achievementId);
             if (await unlockCommand.ExecuteScalarAsync() is null)
-                return new AchievementUnlockTripsResponse(achievementId, []);
+                return new AchievementUnlockTripsResponse(
+                    achievementId, hasExperienceVariation, []);
         }
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT trip.Id, user.Id, user.DisplayName, user.AvatarUrl,
                    COALESCE(trip.DepartureTime, trip.CreatedAt), trip.TrainNumber,
                    trip.FromStation, trip.ToStation,
-                   CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END
+                   CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END,
+                   achievement.Experience
             FROM UserAchievements achievement
             JOIN TripRecords trip ON trip.Id = achievement.TriggerTripId
             JOIN AspNetUsers user ON user.Id = achievement.UserId
             WHERE achievement.AchievementId = $achievementId
               AND trip.DeletedAt IS NULL
             ORDER BY CASE WHEN user.Id = $currentUserId THEN 0 ELSE 1 END,
+                     achievement.Experience DESC,
                      COALESCE(trip.DepartureTime, trip.CreatedAt) DESC,
                      trip.Id DESC;
             """;
@@ -1954,8 +1959,10 @@ public sealed partial class RailLogDatabase
             trips.Add(new AchievementUnlockTrip(
                 reader.GetInt64(0), reader.GetString(1), reader.GetString(2),
                 NullableString(reader, 3), FromDb(reader.GetString(4)), reader.GetString(5),
-                reader.GetString(6), reader.GetString(7), reader.GetInt32(8) == 1));
-        return new AchievementUnlockTripsResponse(achievementId, trips);
+                reader.GetString(6), reader.GetString(7), reader.GetInt32(8) == 1,
+                reader.GetInt32(9)));
+        return new AchievementUnlockTripsResponse(
+            achievementId, hasExperienceVariation, trips);
     }
 
     private async Task<IReadOnlyList<IntersectionGroup>> GetIntersectionsAsync(string userId)
@@ -2005,7 +2012,7 @@ public sealed partial class RailLogDatabase
                        WHERE exact.Location = other.Location
                          AND exact.EventDay = other.EventDay
                    ) THEN 1 ELSE 0 END) AS IsStrict,
-                   trip.TrainNumber
+                   trip.TrainNumber, trip.FromStation, trip.ToStation
             FROM MineLocations mine
             JOIN VisitEvents other
               ON other.Location = mine.Location AND other.UserId <> $userId
@@ -2023,7 +2030,7 @@ public sealed partial class RailLogDatabase
                        WHERE exact.TrainKey = upper(trim(trip.TrainNumber))
                          AND exact.EventDay = date(trip.DepartureTime)
                    ) THEN 1 ELSE 0 END,
-                   trip.TrainNumber
+                   trip.TrainNumber, trip.FromStation, trip.ToStation
             FROM MineTrainKeys mine
             JOIN ActiveTrips trip
               ON upper(trim(trip.TrainNumber)) = mine.TrainKey
@@ -2043,7 +2050,8 @@ public sealed partial class RailLogDatabase
             var trip = new IntersectionTrip(
                 reader.GetInt64(2), reader.GetString(3), reader.GetString(4),
                 NullableString(reader, 5), FromDb(reader.GetString(6)),
-                reader.GetInt32(7) == 1, reader.GetString(8));
+                reader.GetInt32(7) == 1, reader.GetString(8),
+                reader.GetString(9), reader.GetString(10));
             var key = (kind, location);
             if (!grouped.TryGetValue(key, out var trips))
             {
@@ -3025,7 +3033,11 @@ public sealed partial class RailLogDatabase
                     item.Definition.Hidden ? 0 : counts.GetValueOrDefault(item.Definition.Id),
                     hiddenLocked ? null : item.Definition.Progress?.Current,
                     hiddenLocked ? null : item.Definition.Progress?.Target,
+                    hiddenLocked ? null : item.Definition.MaxProgress?.Current,
+                    hiddenLocked ? null : item.Definition.MaxProgress?.Target,
                     hiddenLocked ? 0 : item.Definition.Experience,
+                    hiddenLocked ? 0 : item.Definition.BaseExperience,
+                    hiddenLocked ? false : item.Definition.MaxExperienceReached,
                     item.Definition.Hidden,
                     hiddenLocked ? null : item.Definition.Note,
                     hiddenLocked ? null : item.Definition.NarrativeNote,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
+import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
@@ -201,14 +202,27 @@ class AchievementRequirementRow extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         trailing: trip == null ? null : const Icon(Icons.chevron_right),
-        onTap: trip == null
-            ? null
-            : () => Navigator.of(context).push(
-                m3PageRoute(
-                  builder: (_) =>
-                      TripRecordDetailsPage.public(ticketId: trip.ticketId),
-                ),
-              ),
+        onTap: trip == null ? null : () => _openTrip(context, trip),
+      ),
+    );
+  }
+
+  /// 达成要求里的行程都是自己的，有本地副本时走可编辑的详情页。
+  Future<void> _openTrip(
+    BuildContext context,
+    AchievementRequirementTrip trip,
+  ) async {
+    final navigator = Navigator.of(context);
+    final local = await DbHelper.instance.getTripByTicketId(trip.ticketId);
+    if (local != null) {
+      navigator.push(
+        m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: local.id)),
+      );
+      return;
+    }
+    navigator.push(
+      m3PageRoute(
+        builder: (_) => TripRecordDetailsPage.public(ticketId: trip.ticketId),
       ),
     );
   }

@@ -562,6 +562,151 @@ void main() {
     // 同一档在明暗主题下是同一色相的两个深浅，而不是同一个十六进制值。
     expect(light.filled, isNot(equals(dark.filled)));
   });
+
+  test('full-mark colour contrasts with the unlocked card surface', () {
+    for (final brightness in Brightness.values) {
+      final (color, onColor) = FullMarkColors.of(brightness);
+      for (final seed in AchievementTierColors.tierSeeds) {
+        final scheme = ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: brightness,
+        );
+        // 图形元素至少 3:1；对勾图形与它自己的底色至少 4.5:1。
+        expect(
+          _contrastRatio(color.toARGB32(), scheme.tertiaryContainer.toARGB32()),
+          greaterThanOrEqualTo(3.0),
+          reason: '$brightness $seed 满分圈与卡片底色对比不足',
+        );
+      }
+      expect(
+        _contrastRatio(onColor.toARGB32(), color.toARGB32()),
+        greaterThanOrEqualTo(4.5),
+        reason: '$brightness 对勾与满分底色对比不足',
+      );
+    }
+  });
+
+  test('max progress only counts the part beyond the unlock requirement', () {
+    const achievement = DashboardAchievement(
+      id: 'goddessYangtzeBridges',
+      category: AchievementCategory.touring,
+      iconKey: 'architecture_outlined',
+      title: '神女无恙',
+      requirement: '行经至少 10 座承担客运的铁路长江大桥',
+      unlocked: true,
+      triggerTripId: 1,
+      unlockedUserCount: 1,
+      totalUserCount: 2,
+      experience: 30,
+      baseExperience: 20,
+      hidden: false,
+      note: null,
+      narrativeNote: null,
+      progressCurrent: 10,
+      progressTarget: 10,
+      maxProgressCurrent: 12,
+      maxProgressTarget: 27,
+    );
+
+    expect(achievement.hasVisibleProgress, isTrue);
+    expect(achievement.maxProgressValue, closeTo(2 / 17, 1e-9));
+    expect(achievement.maxProgressReached, isFalse);
+    expect(achievement.experienceTierValue, 20);
+  });
+
+  test('max experience without progress still decorates as full mark', () {
+    const achievement = DashboardAchievement(
+      id: 'gobiThunder',
+      category: AchievementCategory.touring,
+      iconKey: 'bolt',
+      title: '戈壁惊雷',
+      requirement: '到访低窝铺站',
+      unlocked: true,
+      triggerTripId: 1,
+      unlockedUserCount: 1,
+      totalUserCount: 2,
+      experience: 50,
+      baseExperience: 20,
+      maxExperienceReached: true,
+      hidden: false,
+      note: null,
+      narrativeNote: null,
+    );
+
+    expect(achievement.maxProgressValue, isNull);
+    expect(achievement.isFullMark, isTrue);
+    // 没有进度数据时满分外圈画满一圈。
+    expect(achievement.fullMarkRingValue, 1);
+  });
+
+  test('max progress uses the full ratio when the scales differ', () {
+    const achievement = DashboardAchievement(
+      id: 'archaeologyTeam',
+      category: AchievementCategory.milestones,
+      iconKey: 'history_edu_outlined',
+      title: '朝花夕拾',
+      requirement: '录入 2010 年以前的行程',
+      unlocked: true,
+      triggerTripId: 1,
+      unlockedUserCount: 1,
+      totalUserCount: 2,
+      experience: 40,
+      baseExperience: 25,
+      hidden: false,
+      note: null,
+      narrativeNote: null,
+      progressCurrent: 17,
+      progressTarget: 17,
+      maxProgressCurrent: 4,
+      maxProgressTarget: 9,
+    );
+
+    // 解锁进度按「当前年份」算（17 年），满分进度按「离 2010 年多少年」算（0–9），
+    // 两者刻度不同时，外圈直接取满分比例 4/9。
+    expect(achievement.maxProgressValue, closeTo(4 / 9, 1e-9));
+  });
+
+  test('0/1 progress stays hidden without detail and max progress', () {
+    DashboardAchievement build({
+      bool withRequirement = false,
+      bool withMaxProgress = false,
+    }) => DashboardAchievement(
+      id: 'deadEnd',
+      category: AchievementCategory.touring,
+      iconKey: 'wrong_location',
+      title: '走投无路',
+      requirement: '到访任意永久尽头式车站',
+      unlocked: false,
+      triggerTripId: null,
+      unlockedUserCount: 0,
+      totalUserCount: 2,
+      experience: 10,
+      hidden: false,
+      note: null,
+      narrativeNote: null,
+      progressCurrent: 0,
+      progressTarget: 1,
+      maxProgressCurrent: withMaxProgress ? 0 : null,
+      maxProgressTarget: withMaxProgress ? 17 : null,
+      requirements: withRequirement
+          ? const [
+              DashboardAchievementRequirement(
+                key: '北京北',
+                label: '北京北站',
+                completed: false,
+              ),
+            ]
+          : const [],
+    );
+
+    expect(build().hasVisibleProgress, isFalse);
+    expect(build(withMaxProgress: true).hasVisibleProgress, isFalse);
+    expect(build(withRequirement: true).hasVisibleProgress, isFalse);
+    expect(
+      build(withRequirement: true, withMaxProgress: true).hasVisibleProgress,
+      isTrue,
+    );
+  });
 }
 
 /// 渲染一张固定尺寸的成就卡，卡片里的经验胶囊显示 `experience`。

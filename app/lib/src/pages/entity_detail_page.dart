@@ -488,8 +488,8 @@ AchievementUnlockTrip _toAchievementTrip(IntersectionTrip t) =>
       avatarUrl: t.avatarUrl,
       occurredAt: t.occurredAt,
       trainNumber: t.trainNumber,
-      fromStation: '',
-      toStation: '',
+      fromStation: t.fromStation,
+      toStation: t.toStation,
       isCurrentUser: false,
     );
 

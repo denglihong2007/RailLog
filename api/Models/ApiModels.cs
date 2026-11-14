@@ -147,7 +147,9 @@ public sealed record IntersectionTrip(
     string? AvatarUrl,
     DateTime OccurredAt,
     bool IsStrict,
-    string TrainNumber);
+    string TrainNumber,
+    string FromStation,
+    string ToStation);
 
 public sealed record IntersectionGroup(
     string Kind,
@@ -215,7 +217,11 @@ public sealed record AchievementResponse(
     int UnlockedUserCount,
     double? ProgressCurrent,
     double? ProgressTarget,
+    double? MaxProgressCurrent,
+    double? MaxProgressTarget,
     int Experience,
+    int BaseExperience,
+    bool MaxExperienceReached,
     bool Hidden,
     string? Note,
     string? NarrativeNote,
@@ -240,10 +246,12 @@ public sealed record AchievementUnlockTrip(
     string TrainNumber,
     string FromStation,
     string ToStation,
-    bool IsCurrentUser);
+    bool IsCurrentUser,
+    int Experience);
 
 public sealed record AchievementUnlockTripsResponse(
     string AchievementId,
+    bool HasExperienceVariation,
     IReadOnlyList<AchievementUnlockTrip> Trips);
 
 public sealed record SiteStatistics(
