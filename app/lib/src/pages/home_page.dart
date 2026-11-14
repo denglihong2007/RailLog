@@ -983,11 +983,9 @@ class _AchievementsSection extends StatelessWidget {
         Row(
           children: [
             const Expanded(child: _SectionHeading(title: '成就')),
-            TextButton.icon(
+            _SectionLink(
+              label: '查看全部',
               onPressed: () => _openAllAchievements(context),
-              icon: const Icon(Icons.arrow_forward, size: 18),
-              iconAlignment: IconAlignment.end,
-              label: const Text('查看全部'),
             ),
           ],
         ),
@@ -1092,11 +1090,9 @@ class _HomeTravelGuideSection extends StatelessWidget {
         Row(
           children: [
             const Expanded(child: _SectionHeading(title: '出行指南')),
-            TextButton.icon(
+            _SectionLink(
+              label: '查看全部',
               onPressed: reviews.isEmpty ? null : onOpenAll,
-              icon: const Icon(Icons.arrow_forward, size: 18),
-              iconAlignment: IconAlignment.end,
-              label: const Text('查看全部'),
             ),
           ],
         ),
@@ -1688,36 +1684,26 @@ class _StatsGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            // 这一行只有一个入口，手机上放得下文字，不必按三个入口的门槛收成图标。
-            final compact = constraints.maxWidth < 240;
-            return Row(
-              children: [
-                const Expanded(child: _SectionHeading(title: '铁路足迹')),
-                _SectionAction(
-                  compact: compact,
-                  icon: Icons.query_stats,
-                  label: '更多统计',
-                  tooltip: '更多统计',
-                  onPressed: stats.tripCount == 0
-                      ? null
-                      : () async {
-                          final changed = await Navigator.of(context)
-                              .push<bool>(
-                                m3PageRoute(
-                                  builder: (_) => MoreStatisticsPage(
-                                    trips: stats.allTrips,
-                                    openTrip: openTrip,
-                                  ),
-                                ),
-                              );
-                          if (changed == true) await onChanged();
-                        },
-                ),
-              ],
-            );
-          },
+        Row(
+          children: [
+            const Expanded(child: _SectionHeading(title: '铁路足迹')),
+            _SectionLink(
+              label: '更多统计',
+              onPressed: stats.tripCount == 0
+                  ? null
+                  : () async {
+                      final changed = await Navigator.of(context).push<bool>(
+                        m3PageRoute(
+                          builder: (_) => MoreStatisticsPage(
+                            trips: stats.allTrips,
+                            openTrip: openTrip,
+                          ),
+                        ),
+                      );
+                      if (changed == true) await onChanged();
+                    },
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         _MetricGrid(cards: footprintCards),
@@ -1760,6 +1746,25 @@ class _SectionHeading extends StatelessWidget {
     return Semantics(
       header: true,
       child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+}
+
+/// 区块标题行右侧的单个入口：文字在前、箭头在后，成就、出行指南与更多统计
+/// 共用同一种写法，视觉上保持一致。
+class _SectionLink extends StatelessWidget {
+  const _SectionLink({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_forward, size: 18),
+      iconAlignment: IconAlignment.end,
+      label: Text(label),
     );
   }
 }
