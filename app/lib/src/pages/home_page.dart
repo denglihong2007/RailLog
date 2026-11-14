@@ -13,6 +13,7 @@ import 'package:raillog/src/pages/achievement_requirements_page.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
+import 'package:raillog/src/pages/more_statistics_page.dart';
 import 'package:raillog/src/pages/partner_applications_page.dart';
 import 'package:raillog/src/pages/travel_guide_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
@@ -1687,7 +1688,37 @@ class _StatsGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionHeading(title: '铁路足迹'),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // 这一行只有一个入口，手机上放得下文字，不必按三个入口的门槛收成图标。
+            final compact = constraints.maxWidth < 240;
+            return Row(
+              children: [
+                const Expanded(child: _SectionHeading(title: '铁路足迹')),
+                _SectionAction(
+                  compact: compact,
+                  icon: Icons.query_stats,
+                  label: '更多统计',
+                  tooltip: '更多统计',
+                  onPressed: stats.tripCount == 0
+                      ? null
+                      : () async {
+                          final changed = await Navigator.of(context)
+                              .push<bool>(
+                                m3PageRoute(
+                                  builder: (_) => MoreStatisticsPage(
+                                    trips: stats.allTrips,
+                                    openTrip: openTrip,
+                                  ),
+                                ),
+                              );
+                          if (changed == true) await onChanged();
+                        },
+                ),
+              ],
+            );
+          },
+        ),
         const SizedBox(height: 12),
         _MetricGrid(cards: footprintCards),
       ],
