@@ -2012,7 +2012,7 @@ public sealed partial class RailLogDatabase
                        WHERE exact.Location = other.Location
                          AND exact.EventDay = other.EventDay
                    ) THEN 1 ELSE 0 END) AS IsStrict,
-                   trip.TrainNumber
+                   trip.TrainNumber, trip.FromStation, trip.ToStation
             FROM MineLocations mine
             JOIN VisitEvents other
               ON other.Location = mine.Location AND other.UserId <> $userId
@@ -2030,7 +2030,7 @@ public sealed partial class RailLogDatabase
                        WHERE exact.TrainKey = upper(trim(trip.TrainNumber))
                          AND exact.EventDay = date(trip.DepartureTime)
                    ) THEN 1 ELSE 0 END,
-                   trip.TrainNumber
+                   trip.TrainNumber, trip.FromStation, trip.ToStation
             FROM MineTrainKeys mine
             JOIN ActiveTrips trip
               ON upper(trim(trip.TrainNumber)) = mine.TrainKey
@@ -2050,7 +2050,8 @@ public sealed partial class RailLogDatabase
             var trip = new IntersectionTrip(
                 reader.GetInt64(2), reader.GetString(3), reader.GetString(4),
                 NullableString(reader, 5), FromDb(reader.GetString(6)),
-                reader.GetInt32(7) == 1, reader.GetString(8));
+                reader.GetInt32(7) == 1, reader.GetString(8),
+                reader.GetString(9), reader.GetString(10));
             var key = (kind, location);
             if (!grouped.TryGetValue(key, out var trips))
             {

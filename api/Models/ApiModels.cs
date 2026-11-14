@@ -147,7 +147,9 @@ public sealed record IntersectionTrip(
     string? AvatarUrl,
     DateTime OccurredAt,
     bool IsStrict,
-    string TrainNumber);
+    string TrainNumber,
+    string FromStation,
+    string ToStation);
 
 public sealed record IntersectionGroup(
     string Kind,
