@@ -56,7 +56,11 @@ param(
 
     [string]$EndpointUrl = 'https://cn-nb2.rains3.com',
 
-    [string]$Bucket = 'raillog'
+    [string]$Bucket = 'raillog',
+
+    # 覆盖已存在的对象。默认按大小跳过，但「大小相同、内容不同」是可能的
+    # （比如只改了 APK 的 versionCode），替换坏包时必须显式带上。
+    [switch]$Force
 )
 
 Set-StrictMode -Version Latest
@@ -238,7 +242,7 @@ try {
         $remoteKey = "$Tag/$key"
 
         $remoteSize = Get-RemoteObjectSize -Key $remoteKey
-        if ($null -ne $remoteSize -and $remoteSize -eq $file.Length) {
+        if (-not $Force -and $null -ne $remoteSize -and $remoteSize -eq $file.Length) {
             Write-Step "跳过 $key（已存在，$($file.Length) 字节）"
             $skipped++
             continue

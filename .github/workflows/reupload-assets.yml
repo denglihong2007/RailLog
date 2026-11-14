@@ -1,0 +1,62 @@
+name: Re-upload release assets
+
+# 一次性运维入口：把某个 Release 上的 Android 产物重新传一遍对象存储。
+# 正常发版走 release.yml；这里只用于替换已经传错的个别产物，
+# 用完即删（配合 release.yml 的「已存在 Release 不重建」策略使用）。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 目标 Release 标签，例如 v2.8.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  reupload:
+    # 与两个站点部署共用一个组，避免和正常发布抢占服务器
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Release 附件是公开的，直接按文件名下载，不依赖服务器上有没有 gh
+      - name: Download assets from the release
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $files = @(
+            "raillog-$env:RELEASE_TAG-android-armeabi-v7a.apk",
+            "raillog-$env:RELEASE_TAG-android-arm64-v8a.apk",
+            "raillog-$env:RELEASE_TAG-android-x86_64.apk"
+          )
+          foreach ($f in $files) {
+            $url = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/$f"
+            Invoke-WebRequest -Uri $url -OutFile (Join-Path 'dist' $f) -UseBasicParsing
+            "downloaded $f"
+          }
+          Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize | Out-String
+
+      # -Force：默认会跳过大小相同的已有对象，而只改 versionCode 时体积可能一模一样
+      - name: Upload to RainS3
+        shell: powershell
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File "$env:GITHUB_WORKSPACE\tools\deploy\upload-storage.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE\dist" `
+            -Tag $env:RELEASE_TAG -Force
+          if ($LASTEXITCODE -ne 0) { throw "upload-storage.ps1 exited with $LASTEXITCODE" }
