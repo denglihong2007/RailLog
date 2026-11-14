@@ -50,7 +50,7 @@ void main() {
     ]);
   });
 
-  test('平均总旅速排除异常速度', () {
+  test('平均旅速排除异常速度', () {
     expect(statistics.speed.sampleCount, 2);
     expect(statistics.speed.average, closeTo(200, 0.001));
     expect(statistics.speed.binWidth, 25);
@@ -58,7 +58,8 @@ void main() {
     expect(statistics.speed.bins.last.count, 2);
   });
 
-  test('平均里程包含全部铁路行程', () {
+  test('平均里程包含全部行程', () {
+    expect(statistics.tripCount, 4);
     expect(statistics.mileage.sampleCount, 4);
     expect(statistics.mileage.average, closeTo(600, 0.001));
     expect(statistics.mileage.binWidth, 200);
@@ -129,16 +130,18 @@ void main() {
     ]);
   });
 
-  test('非铁路行程完全不参与', () {
+  test('非铁路行程同样参与统计，范围由调用方决定', () {
     final result = TripMetricsStatistics.fromTrips([
       _trip(id: 1, isRailTrip: false),
       _trip(id: 2, mileageKm: 0, price: 0, duration: null, isRailTrip: false),
     ]);
 
-    expect(result.speed.isEmpty, isTrue);
-    expect(result.unitPrice.isEmpty, isTrue);
-    expect(result.ticketPrice.isEmpty, isTrue);
-    expect(result.durationMinutes.isEmpty, isTrue);
+    expect(result.tripCount, 2);
+    expect(result.speed.sampleCount, 1);
+    expect(result.mileage.sampleCount, 2);
+    expect(result.ticketPrice.sampleCount, 2);
+    expect(result.unitPrice.sampleCount, 1);
+    expect(result.durationMinutes.sampleCount, 1);
   });
 
   test('没有数据时保留默认组距且不生成柱', () {

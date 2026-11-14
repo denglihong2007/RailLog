@@ -8,20 +8,15 @@ import 'package:raillog/src/widgets/app_card.dart';
 typedef TripListOpener =
     Future<void> Function(String title, List<DashboardTripEntry> trips);
 
-/// 与趋势页顶部选项卡对应的指标种类。
-enum TripMetricKind { speed, mileage, unitPrice, ticketPrice, duration }
-
 /// 趋势页底部的出行指标：平均值 + 按固定组距分箱的分布。
 class TripMetricsSection extends StatelessWidget {
   const TripMetricsSection({
     super.key,
     required this.metrics,
-    required this.kinds,
     required this.onOpenTrips,
   });
 
   final TripMetricsStatistics metrics;
-  final Set<TripMetricKind> kinds;
   final TripListOpener onOpenTrips;
 
   @override
@@ -30,15 +25,11 @@ class TripMetricsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _MetricsHeader(
-          tripCount: metrics.ticketPrice.sampleCount,
-          showSpeedNote: kinds.contains(TripMetricKind.speed),
+          tripCount: metrics.tripCount,
+          showSpeedNote: metrics.speed.sampleCount > 0,
         ),
         const SizedBox(height: AppSpacing.md),
-        _TripMetricsGrid(
-          metrics: metrics,
-          kinds: kinds,
-          onOpenTrips: onOpenTrips,
-        ),
+        _TripMetricsGrid(metrics: metrics, onOpenTrips: onOpenTrips),
       ],
     );
   }
@@ -60,7 +51,7 @@ class _MetricsHeader extends StatelessWidget {
         Row(
           children: [
             Expanded(child: Text('出行指标', style: theme.textTheme.titleMedium)),
-            _HeaderCount(label: '$tripCount 段'),
+            _HeaderCount(label: '$tripCount 段行程'),
           ],
         ),
         const SizedBox(height: AppSpacing.xxs),
@@ -76,14 +67,9 @@ class _MetricsHeader extends StatelessWidget {
 }
 
 class _TripMetricsGrid extends StatelessWidget {
-  const _TripMetricsGrid({
-    required this.metrics,
-    required this.kinds,
-    required this.onOpenTrips,
-  });
+  const _TripMetricsGrid({required this.metrics, required this.onOpenTrips});
 
   final TripMetricsStatistics metrics;
-  final Set<TripMetricKind> kinds;
   final TripListOpener onOpenTrips;
 
   @override
@@ -101,81 +87,76 @@ class _TripMetricsGrid extends StatelessWidget {
           spacing: AppSpacing.lg,
           runSpacing: AppSpacing.lg,
           children: [
-            if (kinds.contains(TripMetricKind.speed))
-              SizedBox(
-                width: width,
-                child: _MetricDistributionCard(
-                  title: '平均总旅速',
-                  icon: Icons.speed_outlined,
-                  distribution: metrics.speed,
-                  formatAverage: (value) => '${_trimNumber(value, 1)} km/h',
-                  formatTick: (value) => _trimNumber(value, 0),
-                  formatRange: (bin) =>
-                      '${_trimNumber(bin.lower, 0)}–${_trimNumber(bin.upper, 0)} km/h',
-                  formatBinWidth: (value) => '${_trimNumber(value, 0)} km/h',
-                  onOpenTrips: onOpenTrips,
-                ),
+            SizedBox(
+              width: width,
+              child: _MetricDistributionCard(
+                title: '平均旅速',
+                icon: Icons.speed_outlined,
+                distribution: metrics.speed,
+                formatAverage: (value) => '${_trimNumber(value, 1)} km/h',
+                formatTick: (value) => _trimNumber(value, 0),
+                formatRange: (bin) =>
+                    '${_trimNumber(bin.lower, 0)}–${_trimNumber(bin.upper, 0)} km/h',
+                formatBinWidth: (value) => '${_trimNumber(value, 0)} km/h',
+                onOpenTrips: onOpenTrips,
               ),
-            if (kinds.contains(TripMetricKind.mileage))
-              SizedBox(
-                width: width,
-                child: _MetricDistributionCard(
-                  title: '平均里程',
-                  icon: Icons.straighten_outlined,
-                  distribution: metrics.mileage,
-                  formatAverage: (value) => '${_groupNumber(value, 0)} km',
-                  formatTick: (value) => _groupNumber(value, 0),
-                  formatRange: (bin) =>
-                      '${_groupNumber(bin.lower, 0)}–${_groupNumber(bin.upper, 0)} km',
-                  formatBinWidth: (value) => '${_groupNumber(value, 0)} km',
-                  onOpenTrips: onOpenTrips,
-                ),
+            ),
+            SizedBox(
+              width: width,
+              child: _MetricDistributionCard(
+                title: '平均里程',
+                icon: Icons.straighten_outlined,
+                distribution: metrics.mileage,
+                formatAverage: (value) => '${_groupNumber(value, 0)} km',
+                formatTick: (value) => _groupNumber(value, 0),
+                formatRange: (bin) =>
+                    '${_groupNumber(bin.lower, 0)}–${_groupNumber(bin.upper, 0)} km',
+                formatBinWidth: (value) => '${_groupNumber(value, 0)} km',
+                onOpenTrips: onOpenTrips,
               ),
-            if (kinds.contains(TripMetricKind.unitPrice))
-              SizedBox(
-                width: width,
-                child: _MetricDistributionCard(
-                  title: '平均单位票价',
-                  icon: Icons.price_change_outlined,
-                  distribution: metrics.unitPrice,
-                  formatAverage: (value) => '${_trimNumber(value, 2)} 元/km',
-                  formatTick: (value) => _trimNumber(value, 2),
-                  formatRange: (bin) =>
-                      '${_trimNumber(bin.lower, 2)}–${_trimNumber(bin.upper, 2)} 元/km',
-                  formatBinWidth: (value) => '${_trimNumber(value, 2)} 元/km',
-                  onOpenTrips: onOpenTrips,
-                ),
+            ),
+            SizedBox(
+              width: width,
+              child: _MetricDistributionCard(
+                title: '平均单位票价',
+                icon: Icons.price_change_outlined,
+                distribution: metrics.unitPrice,
+                formatAverage: (value) => '${_trimNumber(value, 2)} 元/km',
+                formatTick: (value) => _trimNumber(value, 2),
+                formatRange: (bin) =>
+                    '${_trimNumber(bin.lower, 2)}–${_trimNumber(bin.upper, 2)} 元/km',
+                formatBinWidth: (value) => '${_trimNumber(value, 2)} 元/km',
+                onOpenTrips: onOpenTrips,
               ),
-            if (kinds.contains(TripMetricKind.ticketPrice))
-              SizedBox(
-                width: width,
-                child: _MetricDistributionCard(
-                  title: '平均单程票价',
-                  icon: Icons.confirmation_number_outlined,
-                  distribution: metrics.ticketPrice,
-                  formatAverage: (value) => '¥${_groupNumber(value, 2)}',
-                  formatTick: (value) => _groupNumber(value, 0),
-                  formatRange: (bin) =>
-                      '¥${_groupNumber(bin.lower, 0)}–¥${_groupNumber(bin.upper, 0)}',
-                  formatBinWidth: (value) => '¥${_groupNumber(value, 0)}',
-                  onOpenTrips: onOpenTrips,
-                ),
+            ),
+            SizedBox(
+              width: width,
+              child: _MetricDistributionCard(
+                title: '平均单程票价',
+                icon: Icons.confirmation_number_outlined,
+                distribution: metrics.ticketPrice,
+                formatAverage: (value) => '¥${_groupNumber(value, 2)}',
+                formatTick: (value) => _groupNumber(value, 0),
+                formatRange: (bin) =>
+                    '¥${_groupNumber(bin.lower, 0)}–¥${_groupNumber(bin.upper, 0)}',
+                formatBinWidth: (value) => '¥${_groupNumber(value, 0)}',
+                onOpenTrips: onOpenTrips,
               ),
-            if (kinds.contains(TripMetricKind.duration))
-              SizedBox(
-                width: width,
-                child: _MetricDistributionCard(
-                  title: '平均时长',
-                  icon: Icons.timer_outlined,
-                  distribution: metrics.durationMinutes,
-                  formatAverage: _formatDurationAverage,
-                  formatTick: _formatDurationTick,
-                  formatRange: (bin) =>
-                      '${_formatDurationTick(bin.lower)}–${_formatDurationTick(bin.upper)}',
-                  formatBinWidth: _formatDurationTick,
-                  onOpenTrips: onOpenTrips,
-                ),
+            ),
+            SizedBox(
+              width: width,
+              child: _MetricDistributionCard(
+                title: '平均时长',
+                icon: Icons.timer_outlined,
+                distribution: metrics.durationMinutes,
+                formatAverage: _formatDurationAverage,
+                formatTick: _formatDurationTick,
+                formatRange: (bin) =>
+                    '${_formatDurationTick(bin.lower)}–${_formatDurationTick(bin.upper)}',
+                formatBinWidth: _formatDurationTick,
+                onOpenTrips: onOpenTrips,
               ),
+            ),
           ],
         );
       },
@@ -265,13 +246,15 @@ class _MetricDistributionCard extends StatelessWidget {
                 _Histogram(
                   bins: distribution.bins,
                   maxBinCount: distribution.maxBinCount,
+                  average: average,
+                  formatAverage: formatAverage,
                   formatTick: formatTick,
                   formatRange: formatRange,
                   onOpenTrips: onOpenTrips,
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  '组距 ${formatBinWidth(distribution.binWidth)}',
+                  '组距 ${formatBinWidth(distribution.binWidth)} · 竖线为平均值',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
@@ -286,6 +269,8 @@ class _Histogram extends StatelessWidget {
   const _Histogram({
     required this.bins,
     required this.maxBinCount,
+    required this.average,
+    required this.formatAverage,
     required this.formatTick,
     required this.formatRange,
     required this.onOpenTrips,
@@ -293,6 +278,8 @@ class _Histogram extends StatelessWidget {
 
   final List<TripMetricBin> bins;
   final int maxBinCount;
+  final double average;
+  final String Function(double value) formatAverage;
   final String Function(double value) formatTick;
   final String Function(TripMetricBin bin) formatRange;
   final TripListOpener onOpenTrips;
@@ -304,24 +291,50 @@ class _Histogram extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final upper = bins.isEmpty ? 0.0 : bins.last.upper;
+    final markerFraction = upper > 0 ? (average / upper).clamp(0.0, 1.0) : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          height: _barAreaHeight,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (final bin in bins)
-                Expanded(
-                  child: _HistogramBar(
-                    bin: bin,
-                    maxBinCount: maxBinCount,
-                    formatRange: formatRange,
-                    onOpenTrips: onOpenTrips,
+        LayoutBuilder(
+          builder: (context, constraints) => SizedBox(
+            height: _barAreaHeight,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final bin in bins)
+                        Expanded(
+                          child: _HistogramBar(
+                            bin: bin,
+                            maxBinCount: maxBinCount,
+                            formatRange: formatRange,
+                            onOpenTrips: onOpenTrips,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-            ],
+                if (markerFraction != null)
+                  Positioned(
+                    left: (constraints.maxWidth - 1.5) * markerFraction,
+                    top: _countLabelHeight,
+                    bottom: 0,
+                    child: Tooltip(
+                      message: '平均值 ${formatAverage(average)}',
+                      child: Container(
+                        width: 1.5,
+                        decoration: BoxDecoration(
+                          color: colors.tertiary,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
         Container(height: 1, color: colors.outlineVariant),

@@ -54,6 +54,7 @@ class TripMetricDistribution {
 
 class TripMetricsStatistics {
   const TripMetricsStatistics({
+    required this.tripCount,
     required this.speed,
     required this.mileage,
     required this.unitPrice,
@@ -61,15 +62,17 @@ class TripMetricsStatistics {
     required this.durationMinutes,
   });
 
+  /// 参与统计的行程数。范围（日期、铁路/非铁路）由调用方先筛好，
+  /// 这里不再隐藏任何行程，避免上下两块统计口径不一致。
   factory TripMetricsStatistics.fromTrips(Iterable<DashboardTripEntry> trips) {
+    final samples = trips.toList(growable: false);
     final speeds = <_MetricSample>[];
     final mileages = <_MetricSample>[];
     final unitPrices = <_MetricSample>[];
     final ticketPrices = <_MetricSample>[];
     final durations = <_MetricSample>[];
 
-    for (final trip in trips) {
-      if (!trip.isRailTrip) continue;
+    for (final trip in samples) {
       ticketPrices.add(_MetricSample(trip.price, trip));
       mileages.add(_MetricSample(trip.mileageKm, trip));
 
@@ -89,6 +92,7 @@ class TripMetricsStatistics {
     }
 
     return TripMetricsStatistics(
+      tripCount: samples.length,
       speed: _buildDistribution(
         speeds,
         candidates: const [5, 10, 20, 25, 50, 100],
@@ -111,6 +115,8 @@ class TripMetricsStatistics {
       ),
     );
   }
+
+  final int tripCount;
 
   final TripMetricDistribution speed;
 
