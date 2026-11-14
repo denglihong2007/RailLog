@@ -3,8 +3,10 @@ import 'package:raillog/src/models/achievement_unlock_trip.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/achievement_unlock_service.dart';
+import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
+import 'package:raillog/src/widgets/leaderboard_row.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class AchievementUnlockTripsPage extends StatefulWidget {
@@ -56,12 +58,8 @@ class _AchievementUnlockTripsPageState
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final sourceTrips = snapshot.data!.trips;
-        final trips = [
-          ...sourceTrips.where((trip) => trip.isCurrentUser),
-          ...sourceTrips.where((trip) => !trip.isCurrentUser),
-        ];
-        if (trips.isEmpty) {
+        final ranking = snapshot.data!.ranking;
+        if (ranking.isEmpty) {
           return const Center(child: Text('暂无解锁行程'));
         }
         return Center(
@@ -71,10 +69,12 @@ class _AchievementUnlockTripsPageState
             ),
             child: ListView.separated(
               padding: AppSpacing.page,
-              itemCount: trips.length,
+              itemCount: ranking.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) =>
-                  AchievementTripRow(trip: trips[index]),
+              itemBuilder: (context, index) {
+                final entry = ranking[index];
+                return AchievementTripRow(trip: entry.trip, rank: entry.rank);
+              },
             ),
           ),
         );
@@ -87,40 +87,50 @@ class AchievementTripRow extends StatelessWidget {
   const AchievementTripRow({
     super.key,
     required this.trip,
+    this.rank,
     this.highlight = false,
   });
 
   final AchievementUnlockTrip trip;
+
+  /// 经验随进度变化的成就才有名次；其余只沿用排行榜版式。
+  final int? rank;
+
+  /// 实体详情页用它标出严格匹配的行程。
   final bool highlight;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return AppCard.filled(
-      color: (trip.isCurrentUser || highlight)
-          ? colors.primaryContainer
-          : colors.surfaceContainerLow,
-      padding: EdgeInsets.zero,
-      child: ListTile(
-        leading: _AchievementTripAvatar(trip: trip, highlight: highlight),
-        title: Text(trip.displayName),
-        subtitle: Text(
-          '${_date(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}'
-          ' · ${trip.fromStation} → ${trip.toStation}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(context).push(
-          m3PageRoute(
-            builder: (_) => TripRecordDetailsPage.public(
-              ticketId: trip.ticketId,
-              onOwnerTap: () => Navigator.of(context).push(
-                m3PageRoute(
-                  builder: (_) => PublicUserPage(userId: trip.userId),
-                ),
-              ),
-            ),
+    return LeaderboardRow(
+      rank: rank,
+      avatar: _AchievementTripAvatar(trip: trip),
+      title: trip.displayName,
+      subtitle: _subtitle(trip),
+      value: rank == null ? null : '${trip.experience} XP',
+      color: highlight ? colors.primaryContainer : null,
+      onTap: () => _openTrip(context),
+    );
+  }
+
+  /// 自己的行程走本地详情（可编辑、删除）；别人的只读。
+  Future<void> _openTrip(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    if (trip.isCurrentUser) {
+      final local = await DbHelper.instance.getTripByTicketId(trip.ticketId);
+      if (local != null) {
+        navigator.push(
+          m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: local.id)),
+        );
+        return;
+      }
+    }
+    navigator.push(
+      m3PageRoute(
+        builder: (_) => TripRecordDetailsPage.public(
+          ticketId: trip.ticketId,
+          onOwnerTap: () => navigator.push(
+            m3PageRoute(builder: (_) => PublicUserPage(userId: trip.userId)),
           ),
         ),
       ),
@@ -129,36 +139,35 @@ class AchievementTripRow extends StatelessWidget {
 }
 
 class _AchievementTripAvatar extends StatelessWidget {
-  const _AchievementTripAvatar({required this.trip, this.highlight = false});
+  const _AchievementTripAvatar({required this.trip});
 
   final AchievementUnlockTrip trip;
-  final bool highlight;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final avatarPadding = trip.isCurrentUser ? 2.0 : 4.0;
-    return Container(
-      width: 48,
-      height: 48,
-      padding: EdgeInsets.all(avatarPadding),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: (trip.isCurrentUser || highlight)
-              ? colors.primary
-              : colors.outlineVariant,
-          width: (trip.isCurrentUser || highlight) ? 3 : 1,
-        ),
-      ),
-      child: CachedAvatar(
-        name: trip.displayName,
-        imageUrl: trip.avatarUrl,
-        size: 48 - avatarPadding * 2,
-        backgroundColor: colors.secondaryContainer,
-      ),
+    return CachedAvatar(
+      name: trip.displayName,
+      imageUrl: trip.avatarUrl,
+      size: 40,
+      backgroundColor: colors.secondaryContainer,
     );
   }
+}
+
+String _subtitle(AchievementUnlockTrip trip) {
+  final head = '${_date(trip.occurredAt)} · ${_trainLabel(trip.trainNumber)}';
+  final route = _routeLabel(trip);
+  return route.isEmpty ? head : '$head · $route';
+}
+
+String _routeLabel(AchievementUnlockTrip trip) {
+  final from = trip.fromStation.trim();
+  final to = trip.toStation.trim();
+  if (from.isEmpty && to.isEmpty) return '';
+  if (from.isEmpty) return '→ $to';
+  if (to.isEmpty) return '$from →';
+  return '$from → $to';
 }
 
 String _date(DateTime value) =>
