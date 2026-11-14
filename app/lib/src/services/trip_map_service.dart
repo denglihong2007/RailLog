@@ -60,6 +60,8 @@ class TripMapEndpoint {
 class TripMapRoute {
   const TripMapRoute({
     required this.name,
+    this.lineName,
+    this.color,
     this.entries = const [],
     this.direction = TripMapDirection.direction1,
     required this.fromStation,
@@ -70,6 +72,15 @@ class TripMapRoute {
   });
 
   final String name;
+
+  /// 这一段所走的线路名（可能来自线路库的规范名）；查不到时为 null。
+  ///
+  /// 上层用它给折线配简图里同一条线路的颜色。
+  final String? lineName;
+
+  /// 折线的 CSS 颜色。为空时按经过次数/上下行着色（多行程地图的默认样式）。
+  final String? color;
+
   final List<TripMapRouteEntry> entries;
   final TripMapDirection direction;
   final String fromStation;
@@ -77,6 +88,19 @@ class TripMapRoute {
   final StationCoordinate? fromCoordinate;
   final StationCoordinate? toCoordinate;
   final List<StationCoordinate> points;
+
+  TripMapRoute withColor(String? color) => TripMapRoute(
+    name: name,
+    lineName: lineName,
+    color: color,
+    entries: entries,
+    direction: direction,
+    fromStation: fromStation,
+    toStation: toStation,
+    fromCoordinate: fromCoordinate,
+    toCoordinate: toCoordinate,
+    points: points,
+  );
 }
 
 class TripMapData {
@@ -218,6 +242,7 @@ class TripMapService {
     RailTrackIndex? tracks,
     DateTime? start,
     DateTime? endExclusive,
+    bool mergeAcrossLines = true,
   }) {
     final routeGroups = <String, _TripMapRouteGroup>{};
     final endpoints = <String, TripMapEndpoint>{};
@@ -313,6 +338,7 @@ class TripMapService {
     final routes = _absorbShadowedStraightRoutes(
       _mergeAdjacentRoutes(
         routeGroups.values.map((group) => group.toRoute()).toList(),
+        mergeAcrossLines: mergeAcrossLines,
       ),
     );
 
@@ -375,6 +401,8 @@ String buildAmapHtml(
   required bool showStationMarkers,
   List<TripMapEndpoint> endpoints = const [],
   MapDetailLevel detailLevel = MapDetailLevel.normal,
+  bool colorByRoute = false,
+  bool tripLinks = true,
 }) {
   final apiBaseUrl = ApiClient.baseUrl.replaceFirst(RegExp(r'/+$'), '');
   // 要素名全是 ASCII，不必像 routeJson 那样做尖括号转义。
@@ -384,6 +412,8 @@ String buildAmapHtml(
         .map(
           (route) => {
             'name': route.name,
+            'lineName': route.lineName,
+            'color': route.color,
             'direction': route.direction.name,
             'entries': route.entries
                 .map(
@@ -456,6 +486,8 @@ String buildAmapHtml(
   <script src="$apiBaseUrl/api/amap/sdk/loca.js"></script>
   <script>
     const routes = $routeJson;
+    const colorByRoute = $colorByRoute;
+    const tripLinks = $tripLinks;
     const directionColor = (direction) =>
       direction === 'direction1' ? '#7DD3FC' : '#FDBA74';
 
@@ -520,52 +552,72 @@ String buildAmapHtml(
         },
         geometry: { type: 'LineString', coordinates: line.coordinates }
       })));
-      const source = new Loca.GeoJSONSource({
-        data: { type: 'FeatureCollection', features }
-      });
-      const loca = new Loca.Container({ map });
-      const lines = new Loca.PulseLineLayer({
-        zIndex: 11,
-        opacity: 1,
-        visible: true,
-        zooms: [2, 22]
-      });
-      lines.setSource(source);
-
-      // 经过次数决定线宽与亮度：按对数拉开差距，常走的线又粗又亮，只走过一次的
-      // 线仍看得见。Loca 的 style 支持按 feature 取值的函数（属性级样式）。
-      const maxFrequency = features.reduce(
-        (max, feature) => Math.max(max, feature.properties.frequency), 1);
-      // 只有一趟行程时所有线一样粗，图例没有意义。
-      if (maxFrequency <= 1) {
+      if (colorByRoute) {
+        // 单趟行程的地图：每段折线直接使用简图里同一条线路的颜色（实线），
+        // 不再按经过次数做脉冲着色。地图内的「经过次数」图例也随之隐藏，
+        // 线路颜色与里程由地图下方的图例说明。
         const legend = document.querySelector('.map-legend');
         if (legend) legend.style.display = 'none';
-      }
-      const frequencyOf = (feature) => {
-        const value = feature && feature.properties && feature.properties.frequency;
-        return typeof value === 'number' && value > 0 ? value : 1;
-      };
-      const intensityOf = (feature) => maxFrequency <= 1
-        ? 1
-        : Math.log(frequencyOf(feature)) / Math.log(maxFrequency);
-      const lineWidthOf = (source, feature) => maxFrequency <= 1
-        ? 4
-        : 3 + 8 * intensityOf(feature);
-      const headColorOf = (source, feature) => 'rgba(${darkMode ? '236,255,177' : '122,75,0'},' +
-        (${darkMode ? '0.62' : '0.55'} + ${darkMode ? '0.38' : '0.45'} * intensityOf(feature)) + ')';
-      const trailColorOf = (source, feature) => 'rgba(${darkMode ? '255,178,6' : '180,72,0'},' +
-        (${darkMode ? '0.10' : '0.36'} + ${darkMode ? '0.24' : '0.42'} * intensityOf(feature)) + ')';
+        const polylines = routes.flatMap((route) => routeLines(route).map((line) =>
+          new AMap.Polyline({
+            path: line.coordinates,
+            strokeColor: route.color || directionColor(route.direction),
+            strokeOpacity: 0.95,
+            strokeWeight: 5,
+            lineJoin: 'round',
+            lineCap: 'round',
+            zIndex: 11,
+            bubble: false
+          })));
+        map.add(polylines);
+      } else {
+        const source = new Loca.GeoJSONSource({
+          data: { type: 'FeatureCollection', features }
+        });
+        const loca = new Loca.Container({ map });
+        const lines = new Loca.PulseLineLayer({
+          zIndex: 11,
+          opacity: 1,
+          visible: true,
+          zooms: [2, 22]
+        });
+        lines.setSource(source);
 
-      lines.setStyle({
-        altitude: 0,
-        lineWidth: lineWidthOf,
-        headColor: headColorOf,
-        trailColor: trailColorOf,
-        interval: 0.45,
-        duration: 3200
-      });
-      loca.add(lines);
-      loca.animate.start();
+        // 经过次数决定线宽与亮度：按对数拉开差距，常走的线又粗又亮，只走过一次的
+        // 线仍看得见。Loca 的 style 支持按 feature 取值的函数（属性级样式）。
+        const maxFrequency = features.reduce(
+          (max, feature) => Math.max(max, feature.properties.frequency), 1);
+        // 只有一趟行程时所有线一样粗，图例没有意义。
+        if (maxFrequency <= 1) {
+          const legend = document.querySelector('.map-legend');
+          if (legend) legend.style.display = 'none';
+        }
+        const frequencyOf = (feature) => {
+          const value = feature && feature.properties && feature.properties.frequency;
+          return typeof value === 'number' && value > 0 ? value : 1;
+        };
+        const intensityOf = (feature) => maxFrequency <= 1
+          ? 1
+          : Math.log(frequencyOf(feature)) / Math.log(maxFrequency);
+        const lineWidthOf = (source, feature) => maxFrequency <= 1
+          ? 4
+          : 3 + 8 * intensityOf(feature);
+        const headColorOf = (source, feature) => 'rgba(${darkMode ? '236,255,177' : '122,75,0'},' +
+          (${darkMode ? '0.62' : '0.55'} + ${darkMode ? '0.38' : '0.45'} * intensityOf(feature)) + ')';
+        const trailColorOf = (source, feature) => 'rgba(${darkMode ? '255,178,6' : '180,72,0'},' +
+          (${darkMode ? '0.10' : '0.36'} + ${darkMode ? '0.24' : '0.42'} * intensityOf(feature)) + ')';
+
+        lines.setStyle({
+          altitude: 0,
+          lineWidth: lineWidthOf,
+          headColor: headColorOf,
+          trailColor: trailColorOf,
+          interval: 0.45,
+          duration: 3200
+        });
+        loca.add(lines);
+        loca.animate.start();
+      }
 
       // Loca renders the animated line but does not expose a consistent hit
       // target across WebView platforms. Add a transparent, wider AMap
@@ -574,12 +626,15 @@ String buildAmapHtml(
         const hitLine = new AMap.Polyline({
           path: line.coordinates,
           strokeColor: '#000000',
-          strokeOpacity: 0,
+          // 完全透明时部分渲染器不会把它当作可点击图形；留一点点透明度，
+          // 肉眼看不出，但点击一定能命中。
+          strokeOpacity: 0.01,
           strokeWeight: 16,
           lineJoin: 'round',
           lineCap: 'round',
           zIndex: 12,
-          bubble: false
+          bubble: false,
+          cursor: 'pointer'
         });
         hitLine.on('click', (event) => {
           const content = document.createElement('div');
@@ -596,7 +651,8 @@ String buildAmapHtml(
             const row = document.createElement('div');
             // 有 id 才能跳到行程详情：自己的行程用本地 id，他人主页的公开行程用
             // 票据 id，由 Flutter 那侧按来源决定打开哪一种详情页。
-            const canOpen = entry.tripId != null || entry.ticketId != null;
+            const canOpen = tripLinks &&
+              (entry.tripId != null || entry.ticketId != null);
             row.className = canOpen ? 'route-popup-row is-link' : 'route-popup-row';
             const train = document.createElement('strong');
             train.textContent = entry.trainNumber || '未填写车次';
@@ -666,13 +722,13 @@ String buildAmapHtml(
       });
       map.add(markers);''' : ''}
 
-      const firstPoint = routes[0].coordinates[0];
-      const firstLngLat = new AMap.LngLat(firstPoint[0], firstPoint[1]);
-      const bounds = new AMap.Bounds(firstLngLat, firstLngLat);
-      routes.forEach((route) => routeLines(route).forEach((line) =>
-        line.coordinates.forEach((point) =>
-          bounds.extend(new AMap.LngLat(point[0], point[1])))));
-      map.setBounds(bounds, false, [48, 48, 48, 48]);
+      // 默认视角要装得下整条轨迹。内嵌 WebView 在脚本刚执行时容器可能还没
+      // 拿到最终尺寸，setFitView 会按错误视口计算缩放，所以布局完成后再套一次；
+      // 窗口尺寸变化时也重新套。
+      const fitRoute = () => map.setFitView(hitLines, false, [48, 48, 48, 48]);
+      fitRoute();
+      setTimeout(fitRoute, 200);
+      window.addEventListener('resize', fitRoute);
     }
   </script>
 </body>
@@ -751,6 +807,7 @@ class _TripMapRouteGroup {
       ..sort((a, b) => b.departureDate.compareTo(a.departureDate));
     return TripMapRoute(
       name: '$fromStation - $toStation',
+      lineName: _routeNames.isEmpty ? null : _routeNames.first,
       entries: entries,
       direction: _directionOf(entries),
       fromStation: fromStation,
@@ -775,7 +832,10 @@ TripMapDirection _directionOf(List<TripMapRouteEntry> entries) {
   return TripMapDirection.direction1;
 }
 
-List<TripMapRoute> _mergeAdjacentRoutes(List<TripMapRoute> routes) {
+List<TripMapRoute> _mergeAdjacentRoutes(
+  List<TripMapRoute> routes, {
+  required bool mergeAcrossLines,
+}) {
   final merged = <TripMapRoute>[];
   for (final route in routes) {
     if (merged.isNotEmpty) {
@@ -787,9 +847,14 @@ List<TripMapRoute> _mergeAdjacentRoutes(List<TripMapRoute> routes) {
         route.points.first,
       );
       final sameDirection = previous.direction == route.direction;
-      if (sameEntries && connected && sameDirection) {
+      // 单趟行程要按线路分色时，跨线路合并会把两条线画成一条同色折线。
+      final sameLine =
+          mergeAcrossLines ||
+          _lineNameKey(previous.lineName) == _lineNameKey(route.lineName);
+      if (sameEntries && connected && sameDirection && sameLine) {
         merged[merged.length - 1] = TripMapRoute(
           name: previous.name,
+          lineName: previous.lineName ?? route.lineName,
           entries: previous.entries,
           direction: previous.direction,
           fromStation: previous.fromStation,
@@ -805,6 +870,8 @@ List<TripMapRoute> _mergeAdjacentRoutes(List<TripMapRoute> routes) {
   }
   return merged;
 }
+
+String _lineNameKey(String? value) => (value ?? '').trim().toLowerCase();
 
 /// 消掉「被真实折线盖住的站间直线」。
 ///
@@ -895,6 +962,8 @@ TripMapRoute _withEntries(
     ..sort((a, b) => b.departureDate.compareTo(a.departureDate));
   return TripMapRoute(
     name: route.name,
+    lineName: route.lineName,
+    color: route.color,
     entries: sorted,
     direction: _directionOf(sorted),
     fromStation: route.fromStation,

@@ -72,7 +72,6 @@ void main() {
     await pumpNarrow(tester, const DisplaySettingsPage());
     expect(find.text('跟随系统主题色'), findsOneWidget);
     expect(find.text('底图显示层级'), findsOneWidget);
-    expect(find.text('默认展开线路站点'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 

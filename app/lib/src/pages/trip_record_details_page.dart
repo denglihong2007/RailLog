@@ -11,7 +11,6 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
-import 'package:raillog/src/pages/trip_map_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/engagement_prompt_service.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
@@ -22,13 +21,14 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
-import 'package:raillog/src/services/trip_detail_settings.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/trip_details/trip_via_route_map.dart';
+import 'package:raillog/src/widgets/trip_details/via_route_style.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -411,28 +411,9 @@ class _TripDetailsContent extends StatelessWidget {
                 _DetailsSection(
                   icon: Icons.alt_route,
                   title: '经由线路 · ${trip.viaRouteSegments.length} 段',
-                  trailing: trip.viaRouteSegments.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: '查看单次行程轨迹',
-                          onPressed: () => Navigator.of(context).push(
-                            m3PageRoute(
-                              builder: (_) => TripMapPage(
-                                trips: [trip],
-                                // 这张地图只有当前这一趟；点弹窗里的车次就是
-                                // 回到行程详情，关掉地图即可。
-                                openTrip: (mapContext, _) async {
-                                  Navigator.of(mapContext).maybePop();
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ),
-                          icon: const Icon(Icons.map_outlined),
-                        ),
                   child: trip.viaRouteSegments.isEmpty
                       ? const Text('未记录')
-                      : _ViaRouteDiagram(trip: trip),
+                      : _ViaRouteDisplay(trip: trip),
                 ),
               _DetailsSection(
                 icon: Icons.notes_outlined,
@@ -1235,13 +1216,11 @@ class _DetailsSection extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.child,
-    this.trailing,
   });
 
   final IconData icon;
   final String title;
   final Widget child;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1249,12 +1228,7 @@ class _DetailsSection extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: M3Reveal(
         distance: 6,
-        child: AppCard.filled(
-          title: title,
-          icon: icon,
-          trailing: trailing,
-          child: child,
-        ),
+        child: AppCard.filled(title: title, icon: icon, child: child),
       ),
     );
   }
@@ -1534,10 +1508,136 @@ class _RollingStockEntityChip extends StatelessWidget {
   }
 }
 
-class _ViaRouteDiagram extends StatefulWidget {
-  const _ViaRouteDiagram({required this.trip});
+enum _ViaRouteDisplayMode { diagram, map }
+
+/// 经由线路的两种视图：简图与地图。
+///
+/// 两者共用 [ViaRouteLineStyle]：简图里的轨道颜色、地图上的折线颜色，以及
+/// 底部图例里的色块都是同一份配色。
+class _ViaRouteDisplay extends StatefulWidget {
+  const _ViaRouteDisplay({required this.trip});
 
   final TripRecord trip;
+
+  @override
+  State<_ViaRouteDisplay> createState() => _ViaRouteDisplayState();
+}
+
+class _ViaRouteDisplayState extends State<_ViaRouteDisplay> {
+  _ViaRouteDisplayMode _mode = _ViaRouteDisplayMode.diagram;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final lineStyles = buildViaRouteLineStyles(
+      widget.trip.viaRouteSegments,
+      colors,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SegmentedButton<_ViaRouteDisplayMode>(
+            segments: const [
+              ButtonSegment(
+                value: _ViaRouteDisplayMode.diagram,
+                icon: Icon(Icons.account_tree_outlined, size: 18),
+                label: Text('简图'),
+              ),
+              ButtonSegment(
+                value: _ViaRouteDisplayMode.map,
+                icon: Icon(Icons.map_outlined, size: 18),
+                label: Text('地图'),
+              ),
+            ],
+            selected: {_mode},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) =>
+                setState(() => _mode = selection.first),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_mode == _ViaRouteDisplayMode.diagram)
+          _ViaRouteDiagram(trip: widget.trip, lineStyles: lineStyles)
+        else
+          TripViaRouteMap(trip: widget.trip, lineStyles: lineStyles),
+        _ViaRouteLegend(lines: lineStyles),
+      ],
+    );
+  }
+}
+
+/// 两种视图底部共用的线路图例：颜色、线路名、本次行程的线路总里程。
+class _ViaRouteLegend extends StatelessWidget {
+  const _ViaRouteLegend({required this.lines});
+
+  final List<ViaRouteLineStyle> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    if (lines.isEmpty) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Divider(height: 1, color: colors.outlineVariant),
+          const SizedBox(height: 8),
+          // 一行尽量多放几组「颜色 + 线路 + 里程」，放不下再自动换行。
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              for (final line in lines)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: line.color,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      child: Text(
+                        line.route,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.labelMedium,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      line.mileageKm > 0
+                          ? '${_number(line.mileageKm)} km'
+                          : '里程未记录',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ViaRouteDiagram extends StatefulWidget {
+  const _ViaRouteDiagram({required this.trip, required this.lineStyles});
+
+  final TripRecord trip;
+  final List<ViaRouteLineStyle> lineStyles;
 
   @override
   State<_ViaRouteDiagram> createState() => _ViaRouteDiagramState();
@@ -1548,66 +1648,75 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
   static const _rowHeight = 88.0;
   Map<int, List<RouteStation>> _routeStations = const {};
   final Set<int> _expandedRouteSections = {};
-  bool _isLoading = true;
+  bool _isLoading = false;
   int _stationRequestId = 0;
 
   @override
   bool get wantKeepAlive => true;
 
   @override
-  void initState() {
-    super.initState();
-    _loadRouteStations();
-  }
-
-  @override
   void didUpdateWidget(covariant _ViaRouteDiagram oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.trip.clientId != widget.trip.clientId ||
         oldWidget.trip.updatedAt != widget.trip.updatedAt) {
-      _loadRouteStations();
-    }
-  }
-
-  Future<void> _loadRouteStations() async {
-    final requestId = ++_stationRequestId;
-    if (mounted && !_isLoading) {
-      setState(() {
-        _isLoading = true;
-        _routeStations = const {};
-        _expandedRouteSections.clear();
-      });
-    }
-    final results = <int, List<RouteStation>>{};
-    await Future.wait([
-      for (var index = 0; index < widget.trip.viaRouteSegments.length; index++)
-        _loadRouteSection(index, results),
-    ]);
-    if (!mounted || requestId != _stationRequestId) return;
-    setState(() {
-      _routeStations = results;
+      // 换了一趟行程：之前读到的中间站和展开状态都不再适用，回到全部收起。
+      _stationRequestId++;
+      _routeStations = const {};
+      _expandedRouteSections.clear();
       _isLoading = false;
-      if (TripDetailSettings.instance.expandRouteStationsByDefault) {
-        _expandedRouteSections.addAll(_expandableRouteSectionIds(results));
-      }
-    });
+    }
   }
 
-  /// 与 build 中的区间分组保持一致，找出可展开（含中间站）的线路区间。
-  Set<int> _expandableRouteSectionIds(Map<int, List<RouteStation>> stations) {
+  /// 与 build 中的区间分组保持一致，列出所有线路区间 ID。
+  Set<int> _routeSectionIds() {
     final segments = widget.trip.viaRouteSegments;
     final ids = <int>{};
     var routeSectionId = 0;
     String? previousRoute;
     for (var index = 0; index < segments.length; index++) {
-      final route = _routeLabel(segments[index].routeName);
+      final route = viaRouteLabel(segments[index].routeName);
       if (index == 0 || route != previousRoute) {
         routeSectionId = index;
       }
       previousRoute = route;
-      if ((stations[index]?.length ?? 0) > 2) ids.add(routeSectionId);
+      ids.add(routeSectionId);
     }
     return ids;
+  }
+
+  bool get _allSectionsExpanded =>
+      _expandedRouteSections.containsAll(_routeSectionIds());
+
+  /// 全部展开时才去读完整经由（含中间站）；此前只画各段端点，省掉无谓的读库。
+  Future<void> _toggleAllSections() async {
+    if (_allSectionsExpanded) {
+      setState(_expandedRouteSections.clear);
+      return;
+    }
+    await _loadAllRouteStations();
+  }
+
+  Future<void> _loadAllRouteStations() async {
+    final requestId = ++_stationRequestId;
+    final segmentCount = widget.trip.viaRouteSegments.length;
+    final missing = [
+      for (var index = 0; index < segmentCount; index++)
+        if (!_routeStations.containsKey(index)) index,
+    ];
+    if (missing.isNotEmpty) {
+      setState(() => _isLoading = true);
+      final results = {..._routeStations};
+      await Future.wait([
+        for (final index in missing) _loadRouteSection(index, results),
+      ]);
+      if (!mounted || requestId != _stationRequestId) return;
+      setState(() {
+        _routeStations = results;
+        _isLoading = false;
+      });
+    }
+    if (!mounted) return;
+    setState(() => _expandedRouteSections.addAll(_routeSectionIds()));
   }
 
   Future<void> _loadRouteSection(
@@ -1652,29 +1761,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       );
     }
     final segments = widget.trip.viaRouteSegments;
-    final routeColors = <String, Color>{};
-    const routeColorSeeds = [
-      Color(0xFF005AC1),
-      Color(0xFFC43E00),
-      Color(0xFF006B5E),
-      Color(0xFF8E24AA),
-      Color(0xFF7A5900),
-      Color(0xFFB0005A),
-    ];
-    final palette = [
-      for (final seed in routeColorSeeds)
-        ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: colors.brightness,
-        ).primary,
-    ];
-    for (final segment in segments) {
-      final route = _routeLabel(segment.routeName);
-      routeColors.putIfAbsent(
-        route,
-        () => palette[routeColors.length % palette.length],
-      );
-    }
     final segmentColors = <Color>[];
     final routeNames = <String>[];
     final routeSectionIds = <int>[];
@@ -1687,7 +1773,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     var collapsedMileage = 0.0;
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
-      final route = _routeLabel(segment.routeName);
+      final route = viaRouteLabel(segment.routeName);
       final departsReversal = _isReversalDeparture(index);
       if (departsReversal &&
           stationReversals.isNotEmpty &&
@@ -1699,7 +1785,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         collapsedMileage = 0;
       }
       previousRoute = route;
-      final color = routeColors[route]!;
+      final color = findViaRouteColor(route, widget.lineStyles) ?? colors.primary;
       final routeStations = _routeStations[index];
       if ((routeStations?.length ?? 0) > 2) {
         expandableRouteSectionIds.add(routeSectionId);
@@ -1707,7 +1793,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       if (!_expandedRouteSections.contains(routeSectionId)) {
         collapsedMileage += segment.mileageKm;
         final nextRoute = index + 1 < segments.length
-            ? _routeLabel(segments[index + 1].routeName)
+            ? viaRouteLabel(segments[index + 1].routeName)
             : null;
         // 折返站即使在收起状态也要露出来，否则圆圈和折返图标会一起消失。
         final endsAtReversal =
@@ -1794,11 +1880,31 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '点击名称查看详情',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '点击名称查看详情',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _toggleAllSections,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: Icon(
+                    _allSectionsExpanded
+                        ? Icons.unfold_less
+                        : Icons.unfold_more,
+                    size: 18,
+                  ),
+                  label: Text(_allSectionsExpanded ? '全部收起' : '全部展开'),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             SizedBox(
@@ -2023,7 +2129,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     final previous = segments[index - 1];
     final current = segments[index];
     final sameRoute =
-        _routeLabel(previous.routeName) == _routeLabel(current.routeName);
+        viaRouteLabel(previous.routeName) == viaRouteLabel(current.routeName);
     if (!_sameStation(previous.toStation, current.fromStation)) return false;
 
     final previousStations = _routeStations[index - 1];
@@ -2544,11 +2650,6 @@ class _ViaStationDotPainter extends CustomPainter {
   bool shouldRepaint(covariant _ViaStationDotPainter oldDelegate) =>
       oldDelegate.leftColor != leftColor ||
       oldDelegate.rightColor != rightColor;
-}
-
-String _routeLabel(String routeName) {
-  final value = routeName.trim();
-  return value.isEmpty ? '手动线路' : value;
 }
 
 class _MessageState extends StatelessWidget {

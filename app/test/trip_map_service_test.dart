@@ -697,6 +697,45 @@ void main() {
       );
     });
 
+    test('按线路拆开时不同线路各画一条折线', () {
+      final index = StationCoordinateIndex.fromCsv(csv);
+      final trip = _trip(id: 43, date: DateTime(2026, 1, 1));
+      final tracks = _indexWith({
+        '京沪高速线|北京|济南西': [
+          [39.9022, 116.4211],
+          [38.5, 116.6],
+          [36.67, 116.89],
+        ],
+        '胶济客专线|济南西|上海虹桥': [
+          [36.67, 116.89],
+          [34.0, 118.5],
+          [31.196, 121.316],
+        ],
+      });
+
+      final data = TripMapService.buildData(
+        [trip],
+        index,
+        journeyStations: {
+          trip.clientId: const JourneyStations(
+            stations: ['北京站', '济南西站', '上海虹桥站'],
+            legRouteNames: ['京沪高速铁路', '胶济客专线'],
+          ),
+        },
+        tracks: tracks,
+        mergeAcrossLines: false,
+      );
+
+      // 跨线路合并会让两段变成同一条折线，地图上只能取一种颜色；详情页要按线路
+      // 分色，所以必须拆开。
+      expect(data.routes, hasLength(2));
+      expect(
+        data.routes.map((route) => route.lineName),
+        ['京沪高速铁路', '胶济客专线'],
+      );
+      expect(data.routes.map((route) => route.points.length), [3, 3]);
+    });
+
     test('resolves a leg from a later train when the first has no route name', () {
       final index = StationCoordinateIndex.fromCsv(csv);
       final unlabeled = _trip(id: 44, date: DateTime(2026, 1, 1));
@@ -972,6 +1011,36 @@ void main() {
     expect(lightHtml, contains("'rgba(122,75,0,'"));
     expect(lightHtml, contains("'rgba(180,72,0,'"));
     expect(lightHtml, isNot(contains('new AMap.Marker')));
+  });
+
+  test('按线路着色时用实线折线，不用脉冲图层', () {
+    final route = TripMapRoute(
+      name: '北京站 - 上海虹桥站',
+      lineName: '京沪高速线',
+      color: '#FF0000',
+      entries: const [],
+      fromStation: '北京站',
+      toStation: '上海虹桥站',
+      fromCoordinate: StationCoordinate(latitude: 39.9, longitude: 116.4),
+      toCoordinate: StationCoordinate(latitude: 31.2, longitude: 121.3),
+      points: [
+        StationCoordinate(latitude: 39.9, longitude: 116.4),
+        StationCoordinate(latitude: 31.2, longitude: 121.3),
+      ],
+    );
+
+    final html = buildAmapHtml(
+      [route],
+      darkMode: false,
+      backgroundColor: '#FFFFFF',
+      showStationMarkers: false,
+      colorByRoute: true,
+    );
+
+    expect(html, contains('const colorByRoute = true;'));
+    expect(html, contains('"color":"#FF0000"'));
+    expect(html, contains('strokeColor: route.color'));
+    expect(html, contains("route.color || directionColor(route.direction)"));
   });
 
   group('buildAmapHtml 生成的脚本', () {

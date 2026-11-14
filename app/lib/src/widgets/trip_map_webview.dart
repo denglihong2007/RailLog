@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/services/map_payload_store.dart';
 import 'package:raillog/src/services/trip_map_service.dart';
@@ -14,6 +16,7 @@ class TripMapWebView extends StatelessWidget {
     required this.html,
     required this.backgroundColor,
     this.onOpenTrip,
+    this.absorbGestures = false,
   });
 
   final String html;
@@ -22,23 +25,46 @@ class TripMapWebView extends StatelessWidget {
   /// 弹窗里点了某趟行程时回调；为空时弹窗行不可点。
   final ValueChanged<TripMapTripRef>? onOpenTrip;
 
+  /// 是否让 WebView 独占地图区域内的手势。
+  ///
+  /// 内嵌在可滚动页面里时必须打开：否则纵向拖动会被外层滚动视图抢走，
+  /// 地图上的点击/拖动也容易收不到。全屏地图页不需要。
+  final bool absorbGestures;
+
   @override
   Widget build(BuildContext context) {
+    Widget view;
     if (Platform.isWindows) {
-      return _WindowsWebView(
+      view = _WindowsWebView(
         html: html,
         backgroundColor: backgroundColor,
         onOpenTrip: onOpenTrip,
       );
-    }
-    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
-      return _MobileWebView(
+    } else if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+      view = _MobileWebView(
         html: html,
         backgroundColor: backgroundColor,
         onOpenTrip: onOpenTrip,
+        absorbGestures: absorbGestures,
       );
+    } else {
+      return const _WebViewError(message: '当前平台暂不支持地图视图');
     }
-    return const _WebViewError(message: '当前平台暂不支持地图视图');
+    if (!absorbGestures) return view;
+    // 鼠标滚轮在地图上滚动时，PointerSignal 会同时发给 WebView 和祖先滚动视图，
+    // 结果是地图缩放、页面也跟着滚。这里先一步“认领”滚轮信号，让外层滚动视图
+    // 收不到这次信号；WebView 自己的 Listener 仍然会收到并缩放地图。
+    return Listener(
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent) {
+          GestureBinding.instance.pointerSignalResolver.register(
+            event,
+            (_) {},
+          );
+        }
+      },
+      child: view,
+    );
   }
 }
 
@@ -150,11 +176,13 @@ class _MobileWebView extends StatefulWidget {
     required this.html,
     required this.backgroundColor,
     this.onOpenTrip,
+    required this.absorbGestures,
   });
 
   final String html;
   final Color backgroundColor;
   final ValueChanged<TripMapTripRef>? onOpenTrip;
+  final bool absorbGestures;
 
   @override
   State<_MobileWebView> createState() => _MobileWebViewState();
@@ -240,7 +268,9 @@ class _MobileWebViewState extends State<_MobileWebView> {
   @override
   Widget build(BuildContext context) => mobile.WebViewWidget(
     controller: _controller,
-    gestureRecognizers: const {},
+    gestureRecognizers: widget.absorbGestures
+        ? {Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new)}
+        : const {},
   );
 }
 
