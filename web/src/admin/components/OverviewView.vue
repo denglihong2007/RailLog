@@ -60,8 +60,6 @@ function groupKey(group: AdminDuplicateGroup): string {
     group.travelDate,
     group.fromStation,
     group.toStation,
-    group.mileageKm,
-    group.price,
   ].join(':')
 }
 

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using RailLog.API.Models;
 
@@ -1436,25 +1437,80 @@ public sealed partial class RailLogDatabase
         """;
 
     /// <summary>
-    /// 疑似重复的判据：同用户、同车次、同乘车日期，且始发终到站、票价、
-    /// 里程都一致。区间或票价不同说明是两次不同的乘车，不能算重复。
+    /// 疑似重复的判据，与客户端保持一致：同用户、同一趟车、同一天、同一区间。
+    /// 车次号忽略大小写、空白与「次」，号对拆开后排序；站名去掉首尾空白与结尾
+    /// 「站」。票价、里程只是同一条记录的不同字段值，不参与判重 —— 同一趟车在
+    /// 同一天不会因为票价或里程填得不一样就变成两次乘车。
     /// </summary>
     private const string DuplicateGroupKey = """
-        SELECT UserId, TrainNumber, date(TravelDate) AS Day,
-               FromStation, ToStation, MileageKm, Price
+        SELECT UserId,
+               normalize_train_number(TrainNumber) AS TrainNumber,
+               date(TravelDate) AS Day,
+               normalize_station(FromStation) AS FromStation,
+               normalize_station(ToStation) AS ToStation,
+               COUNT(*) AS TripCount
         FROM TripRecords
         WHERE IsRailTrip = 1 AND DeletedAt IS NULL
-        GROUP BY UserId, TrainNumber, date(TravelDate),
-                 FromStation, ToStation, MileageKm, Price
+          AND normalize_train_number(TrainNumber) <> ''
+          AND normalize_station(FromStation) <> ''
+          AND normalize_station(ToStation) <> ''
+        GROUP BY 1, 2, 3, 4, 5
         HAVING COUNT(*) > 1
         """;
+
+    /// <summary>把疑似重复组与具体行程行对上的条件，口径与 [DuplicateGroupKey] 一致。</summary>
+    private const string DuplicateTripJoin = """
+        trip.UserId = duplicate.UserId
+         AND normalize_train_number(trip.TrainNumber) = duplicate.TrainNumber
+         AND date(trip.TravelDate) = duplicate.Day
+         AND normalize_station(trip.FromStation) = duplicate.FromStation
+         AND normalize_station(trip.ToStation) = duplicate.ToStation
+        """;
+
+    /// <summary>
+    /// 判重查询专用的连接：注册与客户端同名的归一化函数，让 SQL 里的分组
+    /// 与 App 端的 `_trainCodes` / `normalizeStationName` 走同一套规则。
+    /// </summary>
+    private SqliteConnection OpenDuplicateConnection()
+    {
+        var connection = new SqliteConnection(_connectionString);
+        connection.CreateFunction<string?, string>(
+            "normalize_train_number", NormalizeDuplicateTrainNumber);
+        connection.CreateFunction<string?, string>(
+            "normalize_station", NormalizeDuplicateStation);
+        return connection;
+    }
+
+    /// <summary>
+    /// 车次号归一化：大写、去掉「次」与所有空白；号对（`D111/D114`）拆开后
+    /// 去重、排序再拼回去，使 `D114/D111` 与 `D111/D114` 得到同一个键。
+    /// </summary>
+    private static string NormalizeDuplicateTrainNumber(string? value)
+    {
+        var codes = (value ?? string.Empty)
+            .ToUpperInvariant()
+            .Replace("次", string.Empty, StringComparison.Ordinal)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(code => Regex.Replace(code, @"\s+", string.Empty))
+            .Where(code => code.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(code => code, StringComparer.Ordinal);
+        return string.Join('/', codes);
+    }
+
+    /// <summary>站名归一化：去首尾空白与结尾的「站」，与客户端一致。</summary>
+    private static string NormalizeDuplicateStation(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return trimmed.EndsWith('站') ? trimmed[..^1] : trimmed;
+    }
 
     public async Task<AdminOverview> GetAdminOverviewAsync(int sampleLimit = 5)
     {
         sampleLimit = Math.Clamp(sampleLimit, 1, 20);
         var since = ToDbUtc(DateTime.UtcNow.AddDays(-7));
 
-        await using var connection = OpenConnection();
+        await using var connection = OpenDuplicateConnection();
         await connection.OpenAsync();
 
         AdminOverviewCounts counts;
@@ -1523,16 +1579,9 @@ public sealed partial class RailLogDatabase
         long duplicateTripCount;
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
-                SELECT COUNT(*), COALESCE(SUM(cnt), 0)
-                FROM (
-                    SELECT COUNT(*) AS cnt
-                    FROM TripRecords
-                    WHERE IsRailTrip = 1 AND DeletedAt IS NULL
-                    GROUP BY UserId, TrainNumber, date(TravelDate),
-                             FromStation, ToStation, MileageKm, Price
-                    HAVING COUNT(*) > 1
-                );
+            command.CommandText = $"""
+                WITH duplicate AS ({DuplicateGroupKey})
+                SELECT COUNT(*), COALESCE(SUM(TripCount), 0) FROM duplicate;
                 """;
             await using var reader = await command.ExecuteReaderAsync();
             await reader.ReadAsync();
@@ -1616,23 +1665,16 @@ public sealed partial class RailLogDatabase
         offset = Math.Max(0, offset);
         limit = Math.Clamp(limit, 1, 50);
 
-        await using var connection = OpenConnection();
+        await using var connection = OpenDuplicateConnection();
         await connection.OpenAsync();
 
         long totalGroups;
         long totalTrips;
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
-                SELECT COUNT(*), COALESCE(SUM(cnt), 0)
-                FROM (
-                    SELECT COUNT(*) AS cnt
-                    FROM TripRecords
-                    WHERE IsRailTrip = 1 AND DeletedAt IS NULL
-                    GROUP BY UserId, TrainNumber, date(TravelDate),
-                             FromStation, ToStation, MileageKm, Price
-                    HAVING COUNT(*) > 1
-                );
+            command.CommandText = $"""
+                WITH duplicate AS ({DuplicateGroupKey})
+                SELECT COUNT(*), COALESCE(SUM(TripCount), 0) FROM duplicate;
                 """;
             await using var reader = await command.ExecuteReaderAsync();
             await reader.ReadAsync();
@@ -1657,23 +1699,16 @@ public sealed partial class RailLogDatabase
         await _writeLock.WaitAsync();
         try
         {
-            await using var connection = OpenConnection();
+            await using var connection = OpenDuplicateConnection();
             await connection.OpenAsync();
             await using var transaction = await BeginTransactionWithRetryAsync(connection);
 
             await using (var count = connection.CreateCommand())
             {
                 count.Transaction = transaction;
-                count.CommandText = """
-                    SELECT COUNT(*), COALESCE(SUM(cnt), 0)
-                    FROM (
-                        SELECT COUNT(*) AS cnt
-                        FROM TripRecords
-                        WHERE IsRailTrip = 1 AND DeletedAt IS NULL
-                        GROUP BY UserId, TrainNumber, date(TravelDate),
-                                 FromStation, ToStation, MileageKm, Price
-                        HAVING COUNT(*) > 1
-                    );
+                count.CommandText = $"""
+                    WITH duplicate AS ({DuplicateGroupKey})
+                    SELECT COUNT(*), COALESCE(SUM(TripCount), 0) FROM duplicate;
                     """;
                 await using var reader = await count.ExecuteReaderAsync();
                 await reader.ReadAsync();
@@ -1692,17 +1727,10 @@ public sealed partial class RailLogDatabase
                                     ROW_NUMBER() OVER (
                                         PARTITION BY duplicate.UserId, duplicate.TrainNumber,
                                                      duplicate.Day, duplicate.FromStation,
-                                                     duplicate.ToStation, duplicate.MileageKm,
-                                                     duplicate.Price
+                                                     duplicate.ToStation
                                         ORDER BY trip.CreatedAt, trip.Id) AS rn
                              FROM duplicate
-                             JOIN TripRecords trip ON trip.UserId = duplicate.UserId
-                              AND trip.TrainNumber = duplicate.TrainNumber
-                              AND date(trip.TravelDate) = duplicate.Day
-                              AND trip.FromStation = duplicate.FromStation
-                              AND trip.ToStation = duplicate.ToStation
-                              AND trip.MileageKm = duplicate.MileageKm
-                              AND trip.Price = duplicate.Price
+                             JOIN TripRecords trip ON {DuplicateTripJoin}
                              WHERE trip.IsRailTrip = 1 AND trip.DeletedAt IS NULL
                          )
                     SELECT Id, UserId FROM ranked WHERE rn > 1 ORDER BY UserId, Id;
@@ -1774,29 +1802,23 @@ public sealed partial class RailLogDatabase
     {
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            WITH duplicate AS ({DuplicateGroupKey}),
-                 page AS (
-                     SELECT * FROM duplicate
+            WITH all_duplicates AS ({DuplicateGroupKey}),
+                 duplicate AS (
+                     SELECT * FROM all_duplicates
                      ORDER BY Day DESC, TrainNumber, UserId, FromStation, ToStation
                      LIMIT $limit OFFSET $offset
                  )
-            SELECT page.UserId, user.DisplayName, page.TrainNumber, page.Day,
-                   page.FromStation, page.ToStation, page.MileageKm, page.Price,
+            SELECT duplicate.UserId, user.DisplayName, duplicate.TrainNumber,
+                   duplicate.Day, duplicate.FromStation, duplicate.ToStation,
                    trip.Id, trip.FromStation, trip.ToStation,
                    trip.DepartureTime, trip.ArrivalTime, trip.MileageKm, trip.Price,
                    trip.RollingStock, trip.SeatType, trip.SeatNumber, trip.CreatedAt
-            FROM page
-            JOIN AspNetUsers user ON user.Id = page.UserId
-            JOIN TripRecords trip ON trip.UserId = page.UserId
-             AND trip.TrainNumber = page.TrainNumber
-             AND date(trip.TravelDate) = page.Day
-             AND trip.FromStation = page.FromStation
-             AND trip.ToStation = page.ToStation
-             AND trip.MileageKm = page.MileageKm
-             AND trip.Price = page.Price
+            FROM duplicate
+            JOIN AspNetUsers user ON user.Id = duplicate.UserId
+            JOIN TripRecords trip ON {DuplicateTripJoin}
             WHERE trip.IsRailTrip = 1 AND trip.DeletedAt IS NULL
-            ORDER BY page.Day DESC, page.TrainNumber, page.UserId,
-                     page.FromStation, page.ToStation, trip.CreatedAt, trip.Id;
+            ORDER BY duplicate.Day DESC, duplicate.TrainNumber, duplicate.UserId,
+                     duplicate.FromStation, duplicate.ToStation, trip.CreatedAt, trip.Id;
             """;
         command.Parameters.AddWithValue("$limit", limit);
         command.Parameters.AddWithValue("$offset", offset);
@@ -1812,12 +1834,11 @@ public sealed partial class RailLogDatabase
             var day = reader.GetString(3);
             var fromStation = reader.GetString(4);
             var toStation = reader.GetString(5);
-            var groupMileage = reader.GetDouble(6);
-            var groupPrice = reader.GetDouble(7);
+            // 同组记录的票价/里程可能不同，组头展示最早一条（保留项）的值。
+            var groupMileage = reader.GetDouble(11);
+            var groupPrice = reader.GetDouble(12);
             var key = string.Join('\u001f',
-                userId, trainNumber, day, fromStation, toStation,
-                groupMileage.ToString("R", CultureInfo.InvariantCulture),
-                groupPrice.ToString("R", CultureInfo.InvariantCulture));
+                userId, trainNumber, day, fromStation, toStation);
             if (!byKey.TryGetValue(key, out var trips))
             {
                 trips = [];
@@ -1834,17 +1855,17 @@ public sealed partial class RailLogDatabase
                     trips));
             }
             trips.Add(new AdminDuplicateTrip(
-                reader.GetInt64(8),
-                reader.GetString(9),
-                reader.GetString(10),
-                NullableDate(reader, 11),
-                NullableDate(reader, 12),
-                reader.GetDouble(13),
-                reader.GetDouble(14),
+                reader.GetInt64(6),
+                reader.GetString(7),
+                reader.GetString(8),
+                NullableDate(reader, 9),
+                NullableDate(reader, 10),
+                reader.GetDouble(11),
+                reader.GetDouble(12),
+                NullableString(reader, 13),
+                NullableString(reader, 14),
                 NullableString(reader, 15),
-                NullableString(reader, 16),
-                NullableString(reader, 17),
-                FromDb(reader.GetString(18))));
+                FromDb(reader.GetString(16))));
         }
         return groups;
     }

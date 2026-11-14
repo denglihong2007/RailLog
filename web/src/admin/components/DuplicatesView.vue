@@ -158,7 +158,8 @@ onMounted(() => {
         <div>
           <h2><Copy :size="17" /> 疑似重复行程</h2>
           <p>
-            同一用户、同一车次、同一乘车日期，且始发终到站、票价、里程都相同，却存在多条有效记录，常见于重复导入。
+            同一用户、同一车次、同一乘车日期、同一上下车站，却存在多条有效记录，常见于重复导入。
+            车次号与站名按与客户端相同的规则归一化后比对，票价、里程不同仍算重复。
             共 <strong>{{ formatNumber(data.totalGroups) }}</strong> 组 /
             <strong>{{ formatNumber(data.totalTrips) }}</strong> 条。
             删除为软删除，可在对应用户的「行程管理」中恢复。

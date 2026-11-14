@@ -113,7 +113,7 @@ const titles: Record<ViewName, { title: string; subtitle: string }> = {
   leaderboards: { title: '排行榜', subtitle: '点选排行中的用户或行程，可直接定位并修正数据' },
   reviews: { title: '评价管理', subtitle: '检索、查看与删除用户评价及其回应，并查看评价用户排行' },
   achievements: { title: '等级与成就', subtitle: '用户等级分布与经验分界线、全站成就达成情况（成就只读）' },
-  duplicates: { title: '重复行程', subtitle: '核对并清理同车次、同日期、同区间与票价的重复记录' },
+  duplicates: { title: '重复行程', subtitle: '核对并清理同车次、同日期、同区间的重复记录' },
   users: { title: '用户与行程', subtitle: '检索用户并管理其行程记录' },
   'user-trips': { title: '行程管理', subtitle: '编辑、新增或删除该用户的行程' },
   'pdf-downloads': { title: 'PDF 下载管理', subtitle: '管理网页端 PDF 下载密码与请求 Key' },

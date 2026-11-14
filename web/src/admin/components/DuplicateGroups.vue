@@ -22,8 +22,6 @@ function groupKey(group: AdminDuplicateGroup): string {
     group.travelDate,
     group.fromStation,
     group.toStation,
-    group.mileageKm,
-    group.price,
   ].join(':')
 }
 
@@ -42,7 +40,7 @@ function timeRange(trip: AdminDuplicateTrip): string {
           <strong>{{ group.trainNumber }}</strong>
           <span class="muted-text">{{ group.fromStation }} → {{ group.toStation }}</span>
           <span class="muted-text">{{ formatDate(group.travelDate) }}</span>
-          <span class="muted-text">
+          <span class="muted-text" title="最早录入记录的里程与票价">
             {{ formatMileage(group.mileageKm) }} · {{ formatMoney(group.price) }}
           </span>
           <button

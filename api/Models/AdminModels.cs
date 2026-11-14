@@ -284,8 +284,9 @@ public sealed record AdminDuplicateTrip(
     DateTime CreatedAt);
 
 /// <summary>
-/// 一组疑似重复行程：同一用户、同一车次、同一乘车日期，且始发终到站、
-/// 票价与里程都相同 —— 只差录入时间的多条记录。
+/// 一组疑似重复行程：同一用户、同一车次、同一乘车日期、同一上下车站 ——
+/// 只差录入时间的多条记录。车次号与站名按与客户端相同的规则归一化后比对；
+/// 票价与里程允许不同，组上的值取最早录入的一条。
 /// </summary>
 public sealed record AdminDuplicateGroup(
     string UserId,
