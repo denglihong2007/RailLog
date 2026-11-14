@@ -933,7 +933,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
     );
   }
 
-  /// 车票图片下方的动作控制条：下载、订票、设置三等分。
+  /// 车票图片下方的动作控制条：下载、打印、设置三等分。
   ///
   /// 贴住图片下沿、上方直角、只给底部圆角，读起来像车票自带的一条控制栏；
   /// 离图片留一点小间距，但不至于断开。
@@ -967,7 +967,7 @@ class _GeneratedTicketPanelState extends State<_GeneratedTicketPanel>
               Expanded(
                 child: _TicketAction(
                   icon: Icons.shopping_bag_outlined,
-                  label: '订票',
+                  label: '打印',
                   busy: _buying,
                   onPressed: _buy,
                 ),

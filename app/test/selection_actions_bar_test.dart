@@ -32,7 +32,7 @@ Future<void> _pump(
   );
 }
 
-const _labels = ['分组', '下载', '手账', '订票', '删除'];
+const _labels = ['分组', '下载', '手账', '打印', '删除'];
 const _icons = [
   Icons.workspaces_outline,
   Icons.download_outlined,

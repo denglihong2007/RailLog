@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// 多选状态下贴着底部的一条动作栏。
 ///
-/// 多选期间的操作都集中在这里（分组、下载、手账、订票、删除）：
+/// 多选期间的操作都集中在这里（分组、下载、手账、打印、删除）：
 /// 图标在上、两字标签在下，单个动作只占标签宽度，360dp 屏分出 5 份也很宽裕；
 /// 「删除」放在最右并用错误色，与其他动作拉开距离。
 ///
@@ -69,7 +69,7 @@ class SelectionActionsBar extends StatelessWidget {
             ),
             SelectionActionSpec(
               icon: Icons.shopping_bag_outlined,
-              label: '订票',
+              label: '打印',
               tooltip: '订购车票',
               onPressed: busy || !canGenerate ? null : onOrder,
             ),
