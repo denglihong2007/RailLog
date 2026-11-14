@@ -92,6 +92,7 @@ class AllTripsPage extends StatefulWidget {
     this.compactView,
     this.headerBuilder,
     this.selectionBarBuilder,
+    this.onSelectionBlocked,
   });
 
   final List<DashboardTripEntry> trips;
@@ -99,6 +100,10 @@ class AllTripsPage extends StatefulWidget {
   final bool showTripKindFilter;
   final TripEntryOpener? openTrip;
   final bool enableSelection;
+
+  /// 未开启多选时用户仍可能长按卡片尝试进入多选；回调给复用方一句提示，
+  /// 否则长按看起来像是毫无反应。
+  final VoidCallback? onSelectionBlocked;
 
   /// 只对「完整行程列表」开启：按 `groupName` 合并成卡片。
   /// 已按条件筛过的子集（实体详情、图表、成就解锁）保持关闭。
@@ -248,7 +253,11 @@ class _AllTripsPageState extends State<AllTripsPage> {
   }
 
   void _toggleSelection(DashboardTripEntry trip) {
-    if (!widget.enableSelection || _busyLabel != null) return;
+    if (!widget.enableSelection) {
+      widget.onSelectionBlocked?.call();
+      return;
+    }
+    if (_busyLabel != null) return;
     setState(() {
       _isSelecting = true;
       if (!_selectedTripIds.add(trip.id)) _selectedTripIds.remove(trip.id);
@@ -256,7 +265,11 @@ class _AllTripsPageState extends State<AllTripsPage> {
   }
 
   void _startSelection() {
-    if (!widget.enableSelection || _busyLabel != null) return;
+    if (!widget.enableSelection) {
+      widget.onSelectionBlocked?.call();
+      return;
+    }
+    if (_busyLabel != null) return;
     setState(() => _isSelecting = true);
   }
 

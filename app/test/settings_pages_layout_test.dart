@@ -141,6 +141,8 @@ void main() {
     expect(find.text('全部 0'), findsOneWidget);
     expect(find.text('缺到点 0'), findsOneWidget);
     expect(find.text('经由损坏'), findsOneWidget);
+    expect(find.text('重复行程 0'), findsOneWidget);
+    expect(find.text('均速异常 0'), findsOneWidget);
     expect(find.text('没有符合当前筛选条件的行程'), findsOneWidget);
     // 筛选条应该贴着内容左边，而不是缩成一小块悬在页面中间。
     expect(tester.getTopLeft(find.text('全部 0')).dx, lessThan(100));
@@ -174,13 +176,187 @@ void main() {
     );
     expect(find.text('缺到点 1'), findsOneWidget);
     expect(find.text('G1'), findsOneWidget);
+    // 「全部」只浏览，不提供多选与操作面板。
+    expect(find.byIcon(Icons.checklist), findsNothing);
 
+    await tester.tap(find.text('缺到点 1'));
+    await tester.pump();
     await tester.tap(find.byIcon(Icons.checklist));
     await tester.pump();
     await tester.tap(find.text('G1'));
     await tester.pump();
+    // 缺到点只给对应的「重建到点」。
     expect(find.text('重建到点'), findsOneWidget);
-    expect(find.text('重建经由'), findsOneWidget);
+    expect(find.text('重建经由'), findsNothing);
+    expect(find.text('更正里程'), findsNothing);
+    expect(find.text('删除'), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('「全部」里点击和长按都提示先筛选', (tester) async {
+    final trips = [
+      TripRecord(
+        id: 1,
+        trainNumber: 'G1',
+        fromStation: '北京南',
+        toStation: '上海虹桥',
+        departureTime: DateTime(2024, 5, 1, 8),
+        viaRouteSegments: const [],
+      ),
+    ];
+    await pumpNarrow(
+      tester,
+      TimetableRebuildPage(tripsLoader: () async => trips),
+    );
+    expect(find.byIcon(Icons.checklist), findsNothing);
+
+    await tester.tap(find.text('G1'));
+    await tester.pump();
+    expect(find.textContaining('先在顶部按条件筛选'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.longPress(find.text('G1'));
+    await tester.pump();
+    expect(find.textContaining('先在顶部按条件筛选'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('重复行程筛选只列多余副本，删除前需要确认', (tester) async {
+    final trips = [
+      TripRecord(
+        id: 1,
+        ticketId: 100,
+        trainNumber: 'G1',
+        fromStation: '北京南',
+        toStation: '上海虹桥',
+        departureTime: DateTime(2024, 5, 1, 8),
+        arrivalTime: DateTime(2024, 5, 1, 12),
+        mileageKm: 1318,
+        viaRouteSegments: const [],
+      ),
+      TripRecord(
+        id: 2,
+        trainNumber: 'G1',
+        fromStation: '北京南',
+        toStation: '上海虹桥',
+        departureTime: DateTime(2024, 5, 1, 8),
+        viaRouteSegments: const [],
+      ),
+      TripRecord(
+        id: 3,
+        trainNumber: 'G2',
+        fromStation: '上海虹桥',
+        toStation: '北京南',
+        departureTime: DateTime(2024, 5, 2, 9),
+        arrivalTime: DateTime(2024, 5, 2, 10),
+        mileageKm: 1318,
+        viaRouteSegments: const [],
+      ),
+    ];
+    await pumpNarrow(
+      tester,
+      TimetableRebuildPage(tripsLoader: () async => trips),
+    );
+    expect(find.text('重复行程 1'), findsOneWidget);
+    expect(find.text('均速异常 1'), findsOneWidget);
+
+    await tester.tap(find.text('重复行程 1'));
+    await tester.pump();
+    // 只列多余的本地副本：带 ticket_id 的那条被保留，不进筛选结果。
+    expect(find.text('G1'), findsOneWidget);
+    expect(find.text('G2'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.checklist));
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.select_all));
+    await tester.pump();
+
+    await tester.tap(find.text('删除'));
+    await tester.pump();
+    expect(find.text('删除 1 趟行程？'), findsOneWidget);
+    expect(find.textContaining('其中 1 条是重复副本'), findsOneWidget);
+
+    // 取消后不落库；确认删除会走 DbHelper，在 widget 测试里必须避开。
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('均速异常筛选提供更正里程入口', (tester) async {
+    final trips = [
+      TripRecord(
+        id: 1,
+        trainNumber: 'G1',
+        fromStation: '北京南',
+        toStation: '上海虹桥',
+        departureTime: DateTime(2024, 5, 1, 8),
+        arrivalTime: DateTime(2024, 5, 1, 12),
+        mileageKm: 1318,
+        viaRouteSegments: const [],
+      ),
+      TripRecord(
+        id: 2,
+        trainNumber: 'G2',
+        fromStation: '上海虹桥',
+        toStation: '北京南',
+        departureTime: DateTime(2024, 5, 2, 9),
+        arrivalTime: DateTime(2024, 5, 2, 10),
+        mileageKm: 1318,
+        viaRouteSegments: const [],
+      ),
+    ];
+    await pumpNarrow(
+      tester,
+      TimetableRebuildPage(tripsLoader: () async => trips),
+    );
+    expect(find.byIcon(Icons.checklist), findsNothing);
+
+    await tester.tap(find.text('均速异常 1'));
+    await tester.pump();
+    expect(find.text('G2'), findsOneWidget);
+    expect(find.text('G1'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.checklist));
+    await tester.pump();
+    await tester.tap(find.text('G2'));
+    await tester.pump();
+    expect(find.text('更正里程'), findsOneWidget);
+    expect(find.text('重建到点'), findsNothing);
+    expect(find.text('重建经由'), findsNothing);
+    expect(find.text('删除'), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  testWidgets('里程确认页摆出新旧里程与均速变化', (tester) async {
+    final trip = TripRecord(
+      id: 1,
+      trainNumber: 'G1',
+      fromStation: '北京南',
+      toStation: '上海虹桥',
+      departureTime: DateTime(2024, 5, 1, 8),
+      arrivalTime: DateTime(2024, 5, 1, 12),
+      mileageKm: 5000,
+      viaRouteSegments: const [],
+    );
+    await pumpNarrow(
+      tester,
+      TimetableRebuildReviewPage(
+        plan: TimetableRebuildPlan(
+          mode: TimetableRebuildMode.mileage,
+          proposals: [
+            TimetableRebuildProposal.mileage(trip: trip, mileageKm: 1320),
+          ],
+          issues: const [],
+          unchanged: 0,
+          cancelled: false,
+        ),
+      ),
+    );
+    expect(find.text('原里程'), findsOneWidget);
+    expect(find.text('新里程'), findsOneWidget);
+    expect(find.text('5000.0 km'), findsOneWidget);
+    expect(find.text('1320.0 km'), findsOneWidget);
+    expect(find.textContaining('均速 1250 → 330 km/h'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 

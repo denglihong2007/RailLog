@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/models/train_schedule_stop.dart';
+import 'package:raillog/src/models/trip_record.dart';
+import 'package:raillog/src/models/via_route_segment.dart';
 import 'package:raillog/src/services/timetable_rebuild_service.dart';
 
 TrainScheduleStop _stop(
@@ -120,6 +122,165 @@ void main() {
       );
 
       expect(match, isNull);
+    });
+  });
+
+  group('findDuplicateCopies', () {
+    TripRecord trip({
+      required int id,
+      String train = 'G1',
+      DateTime? departure,
+      String from = '北京南',
+      String to = '上海虹桥',
+      int? ticketId,
+      DateTime? arrival,
+      double mileageKm = 1318,
+      List<ViaRouteSegment> via = const [],
+      bool isRailTrip = true,
+      DateTime? createdAt,
+    }) {
+      return TripRecord(
+        id: id,
+        ticketId: ticketId,
+        trainNumber: train,
+        fromStation: from,
+        toStation: to,
+        departureTime: departure ?? DateTime(2024, 5, 1, 8),
+        arrivalTime: arrival,
+        mileageKm: mileageKm,
+        viaRouteSegments: via,
+        isRailTrip: isRailTrip,
+        createdAt: createdAt,
+      );
+    }
+
+    test('同车次同日同区间只留下多余副本', () {
+      final synced = trip(
+        id: 1,
+        ticketId: 100,
+        arrival: DateTime(2024, 5, 1, 12),
+      );
+      final local = trip(id: 2);
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        local,
+        synced,
+      ]);
+
+      expect(copies.map((value) => value.id), [2]);
+    });
+
+    test('三条重复时优先保留云端副本，其余都是副本', () {
+      final richest = trip(
+        id: 1,
+        ticketId: 100,
+        arrival: DateTime(2024, 5, 1, 12),
+        via: const [
+          ViaRouteSegment(
+            routeName: '京沪高速',
+            fromStation: '北京南',
+            toStation: '上海虹桥',
+          ),
+        ],
+      );
+      final plain = trip(id: 2);
+      final middle = trip(id: 3, arrival: DateTime(2024, 5, 1, 12));
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        plain,
+        richest,
+        middle,
+      ]);
+
+      expect(copies.map((value) => value.id), [2, 3]);
+    });
+
+    test('云端副本优先于更早的本地副本', () {
+      final local = trip(id: 1, createdAt: DateTime(2024, 1, 1));
+      final synced = trip(
+        id: 2,
+        ticketId: 100,
+        createdAt: DateTime(2024, 1, 2),
+      );
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        local,
+        synced,
+      ]);
+
+      expect(copies.map((value) => value.id), [1]);
+    });
+
+    test('同一同步状态下按录入时间保留最早的一条', () {
+      final later = trip(id: 1, createdAt: DateTime(2024, 1, 2));
+      final earlier = trip(id: 2, createdAt: DateTime(2024, 1, 1));
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        later,
+        earlier,
+      ]);
+
+      expect(copies.map((value) => value.id), [1]);
+    });
+
+    test('车次号大小写、空白、号对顺序和站名「站」字不影响判重', () {
+      final first = trip(
+        id: 1,
+        train: 'd111/d114',
+        departure: DateTime(2024, 5, 1, 8),
+        from: '北京南站',
+        to: '上海虹桥站',
+      );
+      final second = trip(
+        id: 2,
+        train: 'D114 / D111',
+        departure: DateTime(2024, 5, 1, 20),
+      );
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        first,
+        second,
+      ]);
+
+      expect(copies.map((value) => value.id), [2]);
+    });
+
+    test('不同日期、不同区间、不同车次都不算重复', () {
+      final base = trip(id: 1, arrival: DateTime(2024, 5, 1, 12));
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        base,
+        trip(id: 2, departure: DateTime(2024, 5, 2, 8)),
+        trip(id: 3, to: '杭州东'),
+        trip(id: 4, train: 'G2'),
+      ]);
+
+      expect(copies, isEmpty);
+    });
+
+    test('非铁路行程不参与判重', () {
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        trip(id: 1, isRailTrip: false),
+        trip(id: 2, isRailTrip: false),
+      ]);
+
+      expect(copies, isEmpty);
+    });
+
+    test('副本按传入顺序返回，保持列表原排序', () {
+      final first = trip(id: 1, createdAt: DateTime(2024, 1, 1));
+      final other = trip(id: 9, train: 'G9');
+      final second = trip(id: 2, createdAt: DateTime(2024, 1, 2));
+      final third = trip(id: 3, createdAt: DateTime(2024, 1, 3));
+
+      final copies = TimetableRebuildService.findDuplicateCopies([
+        second,
+        other,
+        first,
+        third,
+      ]);
+
+      expect(copies.map((value) => value.id), [2, 3]);
     });
   });
 }

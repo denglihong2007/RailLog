@@ -48,32 +48,32 @@ class SelectionActionsBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final actions = <_SelectionActionSpec>[
-            _SelectionActionSpec(
+          final actions = <SelectionActionSpec>[
+            SelectionActionSpec(
               icon: Icons.workspaces_outline,
               label: '分组',
               tooltip: '设置分组',
               onPressed: busy || !hasSelection ? null : onGroup,
             ),
-            _SelectionActionSpec(
+            SelectionActionSpec(
               icon: Icons.download_outlined,
               label: '下载',
               tooltip: '下载车票图片',
               onPressed: busy || !canGenerate ? null : onDownload,
             ),
-            _SelectionActionSpec(
+            SelectionActionSpec(
               icon: Icons.menu_book_outlined,
               label: '手账',
               tooltip: '导出手账 PDF',
               onPressed: busy || !hasSelection ? null : onExportJournal,
             ),
-            _SelectionActionSpec(
+            SelectionActionSpec(
               icon: Icons.shopping_bag_outlined,
               label: '订票',
               tooltip: '订购车票',
               onPressed: busy || !canGenerate ? null : onOrder,
             ),
-            _SelectionActionSpec(
+            SelectionActionSpec(
               icon: Icons.delete_outline,
               label: '删除',
               tooltip: '删除所选行程',
@@ -89,7 +89,7 @@ class SelectionActionsBar extends StatelessWidget {
               for (final action in actions)
                 Expanded(
                   child: labelled
-                      ? _LabelledAction(action: action)
+                      ? SelectionActionButton(action: action)
                       : _IconAction(action: action),
                 ),
             ],
@@ -100,8 +100,12 @@ class SelectionActionsBar extends StatelessWidget {
   }
 }
 
-class _SelectionActionSpec {
-  const _SelectionActionSpec({
+/// 动作栏里的一项：图标、标签、提示与回调。
+///
+/// 默认的 [SelectionActionsBar] 与复用多选界面的批量维护页共用它，保证两边
+/// 的按钮样式一致。
+class SelectionActionSpec {
+  const SelectionActionSpec({
     required this.icon,
     required this.label,
     required this.tooltip,
@@ -116,11 +120,14 @@ class _SelectionActionSpec {
   final Color? color;
 }
 
-/// 图标在上、标签在下，单个动作的宽度只要放得下两字标签。
-class _LabelledAction extends StatelessWidget {
-  const _LabelledAction({required this.action});
+/// 图标在上、标签在下的单个动作。
+///
+/// 放在 [Expanded] 里可以横向均分（默认动作栏），放进固定宽度的 [SizedBox]
+/// 则是一个紧凑按钮，桌面上不会被拉成横贯整栏的长条。
+class SelectionActionButton extends StatelessWidget {
+  const SelectionActionButton({super.key, required this.action});
 
-  final _SelectionActionSpec action;
+  final SelectionActionSpec action;
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +165,7 @@ class _LabelledAction extends StatelessWidget {
 class _IconAction extends StatelessWidget {
   const _IconAction({required this.action});
 
-  final _SelectionActionSpec action;
+  final SelectionActionSpec action;
 
   @override
   Widget build(BuildContext context) {

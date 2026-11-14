@@ -359,10 +359,11 @@ class _ProposalCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            if (proposal.mode == TimetableRebuildMode.arrivalTime)
-              _buildArrivalDiff(context)
-            else
-              _buildViaDiff(context),
+            switch (proposal.mode) {
+              TimetableRebuildMode.arrivalTime => _buildArrivalDiff(context),
+              TimetableRebuildMode.viaRoute => _buildViaDiff(context),
+              TimetableRebuildMode.mileage => _buildMileageDiff(context),
+            },
             const SizedBox(height: AppSpacing.sm),
             Align(
               alignment: Alignment.centerRight,
@@ -420,6 +421,62 @@ class _ProposalCard extends StatelessWidget {
       ],
     );
   }
+
+  Widget _buildMileageDiff(BuildContext context) {
+    final theme = Theme.of(context);
+    final arrowColor = theme.colorScheme.onSurfaceVariant;
+    final trip = proposal.trip;
+    final duration = trip.arrivalTime?.difference(trip.departureTime);
+    final newSpeed =
+        duration == null ||
+            duration <= Duration.zero ||
+            proposal.mileageKm == null
+        ? null
+        : proposal.mileageKm! / (duration.inMilliseconds / 3600000);
+    final previousSpeed = trip.averageSpeedKmh;
+    final speedLine = previousSpeed == null || newSpeed == null
+        ? null
+        : '均速 ${previousSpeed.toStringAsFixed(0)} → '
+              '${newSpeed.toStringAsFixed(0)} km/h';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _ValueBlock(
+                label: '原里程',
+                value: _formatMileage(
+                  proposal.previousMileageKm ?? trip.mileageKm,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+              child: Icon(Icons.arrow_forward, size: 18, color: arrowColor),
+            ),
+            Expanded(
+              child: _ValueBlock(
+                label: '新里程',
+                value: _formatMileage(proposal.mileageKm ?? 0),
+                highlight: true,
+              ),
+            ),
+          ],
+        ),
+        if (speedLine != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            speedLine,
+            style: theme.textTheme.bodySmall?.copyWith(color: arrowColor),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _formatMileage(double value) =>
+      '${value.toStringAsFixed(1)} km';
 
   Widget _buildViaDiff(BuildContext context) {
     return Column(

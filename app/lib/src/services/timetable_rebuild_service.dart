@@ -14,6 +14,9 @@ enum TimetableRebuildMode {
 
   /// 按历史时刻表重算经由线路。
   viaRoute,
+
+  /// 按历史时刻表重算总里程。
+  mileage,
 }
 
 /// 一张没处理成功的车票，以及原因。
@@ -34,6 +37,8 @@ class TimetableRebuildProposal {
     required this.mode,
     this.previousArrivalTime,
     this.arrivalTime,
+    this.previousMileageKm,
+    this.mileageKm,
     this.previousViaRouteSegments = const [],
     this.viaRouteSegments = const [],
   });
@@ -46,6 +51,18 @@ class TimetableRebuildProposal {
     mode: TimetableRebuildMode.arrivalTime,
     previousArrivalTime: trip.arrivalTime,
     arrivalTime: arrivalTime,
+  );
+
+  factory TimetableRebuildProposal.mileage({
+    required TripRecord trip,
+    required double mileageKm,
+  }) => TimetableRebuildProposal(
+    trip: trip,
+    mode: TimetableRebuildMode.mileage,
+    previousArrivalTime: trip.arrivalTime,
+    arrivalTime: trip.arrivalTime,
+    previousMileageKm: trip.mileageKm,
+    mileageKm: mileageKm,
   );
 
   factory TimetableRebuildProposal.viaRoute({
@@ -64,6 +81,8 @@ class TimetableRebuildProposal {
   final TimetableRebuildMode mode;
   final DateTime? previousArrivalTime;
   final DateTime? arrivalTime;
+  final double? previousMileageKm;
+  final double? mileageKm;
   final List<ViaRouteSegment> previousViaRouteSegments;
   final List<ViaRouteSegment> viaRouteSegments;
 
@@ -73,6 +92,7 @@ class TimetableRebuildProposal {
     TimetableRebuildMode.viaRoute => trip.copyWith(
       viaRouteSegments: viaRouteSegments,
     ),
+    TimetableRebuildMode.mileage => trip.copyWith(mileageKm: mileageKm),
   };
 }
 
@@ -266,6 +286,21 @@ class TimetableRebuildService {
       );
     }
 
+    if (mode == TimetableRebuildMode.mileage) {
+      final mileage = await _historicalJourneyMileage(match);
+      if (mileage == null) {
+        return const _TripResult(_TripOutcome.skipped, '历史时刻表中该区间没有有效里程数据');
+      }
+      if ((mileage - trip.mileageKm).abs() <= 0.05) {
+        return const _TripResult(_TripOutcome.unchanged);
+      }
+      return _TripResult(
+        _TripOutcome.changed,
+        null,
+        TimetableRebuildProposal.mileage(trip: trip, mileageKm: mileage),
+      );
+    }
+
     final sections = historicalSectionDistances(
       stops,
       match.departureIndex,
@@ -308,6 +343,85 @@ class TimetableRebuildService {
       null,
       TimetableRebuildProposal.viaRoute(trip: trip, viaRouteSegments: segments),
     );
+  }
+
+  /// 所选区间的总里程。
+  ///
+  /// 优先逐段累加站序自带的累计里程；某一段缺里程时改走线路数据库推断，避免
+  /// 跳过缺失的中间站直接拿首尾累计里程相减（那样会把缺站的那一段整个漏掉）。
+  static Future<double?> _historicalJourneyMileage(
+    HistoricalSegmentMatch match,
+  ) async {
+    final sections = historicalSectionDistances(
+      match.resolvedStops,
+      match.departureIndex,
+      match.arrivalIndex,
+    );
+    if (sections.isEmpty) return null;
+    if (sections.every((section) => section.distanceKm != null)) {
+      return sections.fold<double>(
+        0,
+        (total, section) => total + section.distanceKm!,
+      );
+    }
+    final resolution = await RouteService.resolveJourney(sections);
+    if (resolution.unresolvedSections.isNotEmpty) return null;
+    final total = resolution.segments.fold<double>(
+      0,
+      (sum, segment) => sum + segment.mileageKm,
+    );
+    return total > 0 ? total : null;
+  }
+
+  /// 重复行程里多出来的副本。
+  ///
+  /// 判重只看「同一趟车、同一天、同一区间」：车次号归一化后相同、出发日期相同、
+  /// 上下车站（去掉结尾「站」）相同；票价与里程不参与判重。每组保留一条，其余
+  /// 作为副本返回；返回顺序与传入顺序一致，交给列表按原排序展示。
+  static List<TripRecord> findDuplicateCopies(Iterable<TripRecord> trips) {
+    final groups = <String, List<TripRecord>>{};
+    for (final trip in trips) {
+      if (!trip.isRailTrip) continue;
+      final key = _duplicateKey(trip);
+      // 车次号或上下车站缺失时没法确认是不是同一趟车，宁可漏判也不误删。
+      if (key == null) continue;
+      (groups[key] ??= []).add(trip);
+    }
+    final copyIds = <int>{};
+    for (final group in groups.values) {
+      if (group.length < 2) continue;
+      group.sort(_compareKeepPriority);
+      copyIds.addAll(group.skip(1).map((trip) => trip.id));
+    }
+    if (copyIds.isEmpty) return const [];
+    return [
+      for (final trip in trips)
+        if (copyIds.contains(trip.id)) trip,
+    ];
+  }
+
+  static String? _duplicateKey(TripRecord trip) {
+    final codes = _trainCodes(trip.trainNumber).toList()..sort();
+    final from = normalizeStationName(trip.fromStation);
+    final to = normalizeStationName(trip.toStation);
+    if (codes.isEmpty || from.isEmpty || to.isEmpty) return null;
+    final departure = trip.departureTime;
+    final date = '${departure.year}-${departure.month}-${departure.day}';
+    return '${codes.join('/')}|$date|$from|$to';
+  }
+
+  /// 组内保留顺序：云端副本优先，其次与网页管理端一致——录入时间更早、ID 更小。
+  ///
+  /// 删掉带 ticket_id 的副本会让这张票从云端一起消失，而本地副本补不回来，所以
+  /// 同步状态必须先于「录入时间」。同一同步状态下就完全按后台的口径挑保留项。
+  static int _compareKeepPriority(TripRecord first, TripRecord second) {
+    final bySynced = (first.ticketId == null ? 1 : 0).compareTo(
+      second.ticketId == null ? 1 : 0,
+    );
+    if (bySynced != 0) return bySynced;
+    final byCreated = first.createdAt.compareTo(second.createdAt);
+    if (byCreated != 0) return byCreated;
+    return first.id.compareTo(second.id);
   }
 
   /// 按车次号 + 版本找整趟站序。

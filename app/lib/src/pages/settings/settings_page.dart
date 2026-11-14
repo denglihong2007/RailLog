@@ -325,7 +325,7 @@ class _TimetableRebuildEntry extends StatelessWidget {
   Widget build(BuildContext context) => SettingsNavTile(
     icon: Icons.auto_fix_high_outlined,
     title: '历史时刻表重建',
-    subtitle: '按历史时刻表批量重建所选车票的到点与经由线路',
+    subtitle: '按历史时刻表批量重建到点、经由与里程，并清理重复行程',
     onTap: () => _push(context, const TimetableRebuildPage()),
   );
 }
