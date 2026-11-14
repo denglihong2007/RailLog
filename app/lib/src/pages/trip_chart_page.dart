@@ -5,8 +5,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_chart_series.dart';
+import 'package:raillog/src/models/trip_metrics_statistics.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';
 import 'package:raillog/src/widgets/app_card.dart';
+import 'package:raillog/src/widgets/trip_metrics_section.dart';
 
 enum _TripChartStyle { line, heatmap }
 
@@ -60,7 +62,7 @@ class _TripChartPageState extends State<TripChartPage> {
       railFilter: _railFilter,
     );
     final total = points.fold<double>(0, (sum, point) => sum + point.value);
-    final matchingTripCount = widget.trips.where((trip) {
+    final filteredTrips = widget.trips.where((trip) {
       final date = _dateOnly(trip.departureTime);
       if (date.isBefore(_range.start) || date.isAfter(_range.end)) return false;
       return switch (_railFilter) {
@@ -68,7 +70,10 @@ class _TripChartPageState extends State<TripChartPage> {
         TripChartRailFilter.rail => trip.isRailTrip,
         TripChartRailFilter.nonRail => !trip.isRailTrip,
       };
-    }).length;
+    }).toList();
+    final matchingTripCount = filteredTrips.length;
+    final metrics = TripMetricsStatistics.fromTrips(filteredTrips);
+    final metricKinds = _metricKindsFor(_metric);
 
     return Scaffold(
       appBar: AppBar(title: const Text('行程趋势')),
@@ -213,6 +218,15 @@ class _TripChartPageState extends State<TripChartPage> {
                       ),
                     ),
                   ),
+                  if (metricKinds.isNotEmpty &&
+                      metrics.ticketPrice.sampleCount > 0) ...[
+                    const SizedBox(height: AppSpacing.section),
+                    TripMetricsSection(
+                      metrics: metrics,
+                      kinds: metricKinds,
+                      onOpenTrips: _openMetricTrips,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -277,6 +291,37 @@ class _TripChartPageState extends State<TripChartPage> {
     if (!mounted || !_heatmapScrollController.hasClients) return;
     _heatmapScrollController.jumpTo(
       _heatmapScrollController.position.maxScrollExtent,
+    );
+  }
+
+  Set<TripMetricKind> _metricKindsFor(TripChartMetric metric) =>
+      switch (metric) {
+        TripChartMetric.count => const {},
+        TripChartMetric.mileage => const {
+          TripMetricKind.speed,
+          TripMetricKind.mileage,
+        },
+        TripChartMetric.duration => const {TripMetricKind.duration},
+        TripChartMetric.spending => const {
+          TripMetricKind.unitPrice,
+          TripMetricKind.ticketPrice,
+        },
+      };
+
+  Future<void> _openMetricTrips(
+    String title,
+    List<DashboardTripEntry> trips,
+  ) async {
+    if (!mounted || trips.isEmpty) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AllTripsPage(
+          trips: trips,
+          title: title,
+          showTripKindFilter: false,
+          openTrip: widget.openTrip,
+        ),
+      ),
     );
   }
 
