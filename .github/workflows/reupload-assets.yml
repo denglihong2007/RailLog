@@ -1,7 +1,7 @@
-name: Re-upload release assets
+name: Rebuild and re-upload Android assets
 
-# 一次性运维入口：把某个 Release 上的 Android 产物重新传一遍对象存储。
-# 正常发版走 release.yml；这里只用于替换已经传错的个别产物，
+# 一次性运维入口：用指定构建号重编三个 Android 产物，覆盖 GitHub Release 附件
+# 并重传对象存储。正常发版走 release.yml，这里只用于替换已经传错的包，
 # 用完即删（配合 release.yml 的「已存在 Release 不重建」策略使用）。
 on:
   workflow_dispatch:
@@ -10,15 +10,87 @@ on:
         description: 目标 Release 标签，例如 v2.8.0
         required: true
         type: string
+      build_name:
+        description: 版本名，例如 2.8.0
+        required: true
+        type: string
+      build_number:
+        description: 构建号（Android versionCode），必须大于线上已安装的
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.44.6
 
 jobs:
-  reupload:
-    # 与两个站点部署共用一个组，避免和正常发布抢占服务器
+  rebuild-android:
+    name: Rebuild APKs and replace release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/android/upload-keystore.jks
+          {
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'storeFile=%s\n' "$GITHUB_WORKSPACE/app/android/upload-keystore.jks"
+          } > app/android/key.properties
+
+      # 不动 pubspec.yaml，只在构建时覆盖版本号，避免触发发版工作流
+      - name: Build APK
+        working-directory: app
+        run: |
+          flutter build apk --release --split-per-abi \
+            --build-name="${{ inputs.build_name }}" \
+            --build-number="${{ inputs.build_number }}"
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/raillog-${{ inputs.tag }}-android-armeabi-v7a.apk"
+          cp app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "dist/raillog-${{ inputs.tag }}-android-arm64-v8a.apk"
+          cp app/build/app/outputs/flutter-apk/app-x86_64-release.apk "dist/raillog-${{ inputs.tag }}-android-x86_64.apk"
+          ls -l dist
+
+      - name: Replace release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release upload "$RELEASE_TAG" dist/*.apk --clobber --repo "${{ github.repository }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dist/*.apk
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  push-to-storage:
+    name: Upload APKs to object storage
+    needs: rebuild-android
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
+    # 与两个站点部署共用一个组，避免和正常发布抢占服务器
     concurrency:
       group: deploy-iis
       cancel-in-progress: false
@@ -27,25 +99,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # Release 附件是公开的，直接按文件名下载，不依赖服务器上有没有 gh
-      - name: Download assets from the release
-        shell: powershell
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $files = @(
-            "raillog-$env:RELEASE_TAG-android-armeabi-v7a.apk",
-            "raillog-$env:RELEASE_TAG-android-arm64-v8a.apk",
-            "raillog-$env:RELEASE_TAG-android-x86_64.apk"
-          )
-          foreach ($f in $files) {
-            $url = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG/$f"
-            Invoke-WebRequest -Uri $url -OutFile (Join-Path 'dist' $f) -UseBasicParsing
-            "downloaded $f"
-          }
-          Get-ChildItem dist | Select-Object Name, Length | Format-Table -AutoSize | Out-String
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: dist
 
       # -Force：默认会跳过大小相同的已有对象，而只改 versionCode 时体积可能一模一样
       - name: Upload to RainS3
