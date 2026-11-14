@@ -16,6 +16,15 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
+#
+# 构建号（+ 后面那个数）只增不减。Android 用 --split-per-abi 打包时，
+# Flutter 会把 versionCode 覆盖为「ABI 编号 × 1000 + 构建号」
+# （armeabi-v7a = 1、arm64-v8a = 2、x86_64 = 4），minor 和 patch 不参与计算：
+# 2.8.1+1 相对 2.8.0+3 仍然是降级。构建号回退后，已安装旧版的用户会报
+# 「无法降级安装」（INSTALL_FAILED_VERSION_DOWNGRADE）。
+#
+# 2.8.0 实际发出去的是 +3：当时 +1 比 2.7.3+2 小，装不上，用
+# --build-number=3 重编后覆盖了产物，没有回写本文件。所以下一个版本至少 +4。
 version: 2.8.0+1
 
 environment:
