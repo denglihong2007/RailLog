@@ -1,0 +1,74 @@
+name: Deploy website
+
+# 只发布官网 + 管理后台（IIS 站点 RailLog，C:\wwwroot\RailLog）：
+# 不重建安装包、不动 GitHub Release、不碰对象存储。
+# release.yml 只在 app/pubspec.yaml 变化时触发，网页改动推送后不会自动上线，
+# 需要上线时手动运行本工作流。
+#
+# 构建仍然在 GitHub 托管的 runner 上（npm 在境外），落地在 156.254.6.59
+# 注册的自建 runner 上：部署目标就在本机，不需要 sshpass / SCP。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-web:
+    name: Build website
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm run build = vue-tsc 类型检查 + vite build + vitepress build
+      # 产物在 web/dist，api-docs 会落在 web/dist/api-docs
+      - name: Build website
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy-web:
+    name: Deploy website to IIS
+    needs: build-web
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    # 与 release.yml 的部署作业共用一个组，避免同时往站点目录写
+    concurrency:
+      group: deploy-iis
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 工作区常驻在服务器上，别把 token 留在 .git/config 里
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: dist/web
+
+      # 脚本要求 Windows PowerShell 5.1（WebAdministration 是 5.1 才有的快照），
+      # 所以用 powershell.exe 调用，不能直接交给 pwsh。
+      - name: Deploy
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File "$env:GITHUB_WORKSPACE\tools\deploy\deploy-iis.ps1" `
+            -SourceDirectory "$env:GITHUB_WORKSPACE\dist\web" `
+            -Profile web
+          if ($LASTEXITCODE -ne 0) { throw "deploy-iis.ps1 exited with $LASTEXITCODE" }
