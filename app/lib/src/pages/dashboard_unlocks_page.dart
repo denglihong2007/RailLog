@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/pages/all_trips_page.dart';

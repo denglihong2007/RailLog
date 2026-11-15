@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:raillog/src/pages/achievement_proposal_page.dart';
 import 'package:raillog/src/theme/app_theme.dart';

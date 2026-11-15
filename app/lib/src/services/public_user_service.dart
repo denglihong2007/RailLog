@@ -50,7 +50,7 @@ class PublicUserService {
       final data = response.data!;
       final trips = data['trips'];
       if (trips is List && trips.length >= 100) {
-        return compute(_parseDashboard, data);
+        return await compute(_parseDashboard, data);
       }
       return _parseDashboard(data);
     } on DioException catch (error) {

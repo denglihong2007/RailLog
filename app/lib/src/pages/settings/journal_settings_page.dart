@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/journal/journal_layout.dart';
 import 'package:raillog/src/journal/journal_style.dart';
 import 'package:raillog/src/services/journal_export_service.dart';

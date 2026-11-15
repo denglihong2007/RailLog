@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/theme_settings.dart';
 import 'package:raillog/src/services/trip_list_settings.dart';

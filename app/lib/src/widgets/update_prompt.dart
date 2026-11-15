@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/services/update_service.dart';
 import 'package:raillog/src/widgets/update_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';

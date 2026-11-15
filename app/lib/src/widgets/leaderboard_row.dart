@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 
 /// 排行榜通用行：名次、头像、标题/副标题与右侧数值。

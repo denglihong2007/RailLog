@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_chart_series.dart';
 import 'package:raillog/src/models/trip_metrics_statistics.dart';

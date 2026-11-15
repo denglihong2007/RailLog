@@ -1,5 +1,5 @@
 import 'package:confetti/confetti.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 守住一个新依赖的编译与启动。

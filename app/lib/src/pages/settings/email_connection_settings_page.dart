@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/services/mail_account_settings.dart';
 import 'package:raillog/src/services/mail_import_service.dart';

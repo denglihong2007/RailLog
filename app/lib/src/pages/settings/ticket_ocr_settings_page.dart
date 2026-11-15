@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/services/aliyun_train_ticket_ocr_service.dart';
 import 'package:raillog/src/services/baidu_train_ticket_ocr_service.dart';
 import 'package:raillog/src/services/train_ticket_ocr_models.dart';

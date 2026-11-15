@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/via_route_segment.dart';
 
 /// 一条经由线路在简图与地图上的统一配色与里程。

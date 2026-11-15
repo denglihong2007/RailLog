@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/journal_settings.dart';
@@ -87,11 +86,13 @@ class RailLogApp extends StatelessWidget {
             title: '轨记',
             locale: const Locale('zh', 'CN'),
             supportedLocales: const [Locale('zh', 'CN')],
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates:
+                GlobalMaterialLocalizations.delegates,
+            // flutter_markdown_plus 等仍基于 package:flutter/material 的依赖
+            // 需要 legacy ThemeData / MaterialLocalizations。
+            builder: (context, child) =>
+                // ignore: deprecated_member_use
+                MaterialUiCompatibilityBridge(child: child!),
             themeMode: settings.themeMode,
             theme: _theme(lightScheme),
             darkTheme: _theme(darkScheme),

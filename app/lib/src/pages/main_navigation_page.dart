@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/pages/add_trip_page.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/settings/settings_page.dart';

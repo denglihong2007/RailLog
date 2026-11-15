@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/widgets/settings/settings_section.dart';
 import 'package:raillog/src/widgets/settings/settings_sub_page.dart';
 import 'package:url_launcher/url_launcher.dart';

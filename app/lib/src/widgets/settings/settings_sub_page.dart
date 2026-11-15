@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 
 /// 设置子页面的统一骨架：AppBar + 居中限宽的可滚动正文。

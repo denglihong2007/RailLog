@@ -26,7 +26,7 @@ concurrency:
 # 钉住 Flutter 版本：stable 通道推新版会让构建在没有任何代码改动时突然变红，
 # 也会让 subosito/flutter-action 的 SDK 缓存不再命中。
 env:
-  FLUTTER_VERSION: 3.44.6
+  FLUTTER_VERSION: 3.50.0
 
 jobs:
   prepare:

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 import 'package:raillog/src/services/ticket_order_confirmation.dart';

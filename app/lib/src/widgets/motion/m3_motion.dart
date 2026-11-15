@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 const m3MotionDuration = Duration(milliseconds: 300);
 const m3MotionDurationShort = Duration(milliseconds: 200);

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';

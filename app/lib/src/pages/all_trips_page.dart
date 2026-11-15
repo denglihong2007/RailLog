@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
 import 'package:raillog/src/models/trip_group_summary.dart';

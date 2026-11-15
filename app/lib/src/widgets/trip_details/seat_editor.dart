@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/seat_selection.dart';
 import 'package:raillog/src/models/ticket_seat_option.dart';
 import 'package:raillog/src/widgets/app_card.dart';

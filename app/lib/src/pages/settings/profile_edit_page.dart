@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/user_profile.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/entity_review_service.dart';

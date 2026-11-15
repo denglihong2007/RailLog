@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/services/map_payload_store.dart';
 import 'package:raillog/src/services/trip_map_service.dart';
 import 'package:webview_flutter/webview_flutter.dart' as mobile;

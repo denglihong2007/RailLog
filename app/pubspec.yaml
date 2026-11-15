@@ -28,7 +28,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 2.8.0+1
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.14.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -39,16 +39,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_localizations:
-    sdk: flutter
   flutter_svg: ^2.2.1
   flutter_markdown_plus: ^1.0.5
-  dynamic_color: ^1.8.1
+  dynamic_color: ^2.1.0
   shared_preferences: ^2.5.4
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   json_annotation: ^4.9.0
   path: ^1.9.1
   path_provider: ^2.1.5
@@ -62,7 +60,7 @@ dependencies:
   url_launcher: ^6.3.2
   image_picker: ^1.2.1
   fl_chart: ^1.1.1
-  cached_network_image: ^3.4.1
+  cached_network_image: ^4.0.7
   excel: ^4.0.6
   # 电子发票导入：OFD 是 ZIP 包，PDF 内嵌的 XBRL 附件需要解压后按 XML 读取。
   archive: ^3.6.1
@@ -71,11 +69,12 @@ dependencies:
   # 而 excel 4.0.6 要求 xml >=5.0.0 <7.0.0，两者区间无交集。
   pdf: ^3.12.0
   file_selector: ^1.0.4
-  file_saver: ^0.4.0
+  file_saver: ^0.7.0
   webview_flutter: ^4.14.1
   webview_windows: ^0.4.0
   confetti: ^0.8.0
   enough_convert: ^1.7.1
+  material_ui: ^1.11.0
 
 dev_dependencies:
   flutter_test:

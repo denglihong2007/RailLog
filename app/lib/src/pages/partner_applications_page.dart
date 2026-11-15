@@ -1,5 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/partner_application.dart';
 import 'package:raillog/src/services/partner_application_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';

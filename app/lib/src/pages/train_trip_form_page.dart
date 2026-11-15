@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/rolling_stock_lookup_result.dart';
 import 'package:raillog/src/models/route_resolution.dart';
 import 'package:raillog/src/models/seat_selection.dart';
@@ -287,7 +287,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
     try {
       if (_isHistoricalJourney) {
         // 站序本来就是历史库来的，自带累计里程。
-        return _inferJourney(
+        return await _inferJourney(
           historicalSectionDistances(
             widget.scheduleStops,
             widget.departureStopIndex,
@@ -317,7 +317,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
           '历史时刻表 $version 里没有 ${widget.trainNumber}，已跳过经由推断',
         );
       }
-      return _inferJourney(
+      return await _inferJourney(
         historicalSectionDistancesFromReference(
           widget.scheduleStops,
           lookup.stops,

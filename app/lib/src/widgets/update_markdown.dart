@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+// ignore: deprecated_member_use
+import 'package:flutter/material.dart' as legacy;
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -10,7 +12,9 @@ class UpdateMarkdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // flutter_markdown_plus 的类型来自 package:flutter/material，
+    // 由 MaterialApp.builder 里的 MaterialUiCompatibilityBridge 提供。
+    final theme = legacy.Theme.of(context);
     return MarkdownBody(
       data: data,
       selectable: true,

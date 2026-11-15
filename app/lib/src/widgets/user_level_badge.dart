@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 /// App 内置默认值。服务端（管理后台）可以下发新的分界线覆盖它。

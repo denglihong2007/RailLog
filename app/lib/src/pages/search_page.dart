@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/search_result.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
