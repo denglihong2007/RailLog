@@ -620,7 +620,7 @@ jobs:
   deploy-web:
     name: Deploy website to IIS
     # 官网把官方下载指向对象存储，等上传成功再发布，避免短时间里链接 404
-    needs: [prepare, release, upload-storage]
+    needs: [prepare, build-web, release, upload-storage]
     if: needs.prepare.outputs.changed == 'true'
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
