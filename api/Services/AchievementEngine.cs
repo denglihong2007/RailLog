@@ -274,8 +274,14 @@ public static partial class AchievementEngine
             })
             .Append(new RollingStockTarget("MTR380A"))
             .ToArray();
+    private static readonly IReadOnlyList<(string Key, string Label)> CommonTrainCategoryEntries =
+    [
+        ("G", "G 字头"), ("D", "D 字头"), ("C", "C 字头"), ("S", "S 字头"),
+        ("Z", "Z 字头"), ("T", "T 字头"), ("K", "K 字头"), ("Y", "Y 字头"),
+        ("numeric", "纯数字车次")
+    ];
     private static readonly HashSet<string> CommonTrainCategories =
-        ["G", "D", "C", "Z", "T", "K", "Y", "S", "numeric"];
+        [.. CommonTrainCategoryEntries.Select(entry => entry.Key)];
     private static readonly IReadOnlyList<RollingStockTarget> HonorLocomotives =
     [
         new("HXD3CA", "8161"), new("HXD3D", "0035"), new("HXD3D", "0039"),
@@ -322,7 +328,8 @@ public static partial class AchievementEngine
     private static readonly IReadOnlyList<(string Rail, string Intercity)> TwinInterchangePairs =
     [
         ("广州南", "番禺"), ("广州新塘", "新塘南"), ("广州北", "花都"),
-        ("肇庆东", "鼎湖东"), ("虎门", "虎门北"), ("惠州", "小金口")
+        ("肇庆东", "鼎湖东"), ("虎门", "虎门北"), ("惠州", "小金口"),
+        ("清远", "洲心")
     ];
     // 「走投无路」：站场全部为永久尽头式且无延伸条件的车站。
     private static readonly IReadOnlyList<string> DeadEndStations =
@@ -417,7 +424,7 @@ public static partial class AchievementEngine
         new("沪苏通长江大桥", "沪苏通线", "南通西", "张家港")
     ];
 
-    // 附表2：33 座黄河大桥。
+    // 附表2：34 座黄河大桥。
     private static readonly IReadOnlyList<RailwaySection> YellowRiverBridges =
     [
         new("河口黄河大桥", "兰新客专线", "兰州西", "陈家湾西"),
@@ -440,6 +447,7 @@ public static partial class AchievementEngine
         new("吴堡黄河特大桥", "太中线", "柳林南", "吴堡"),
         new("禹门口黄河大桥", "侯阎线", "禹门口", "韩城"),
         new("风陵渡黄河大桥", "南同蒲线", "风陵渡", "孟塬"),
+        new("晋陕黄河特大桥", "大西高铁", "永济北", "大荔"),
         new("焦枝铁路黄河大桥", "焦柳线焦怀段", "留庄", "王庄"),
         new("郑焦城际铁路黄河大桥", "郑太客专", "黄河景区", "武陟"),
         new("郑焦城际铁路黄河大桥", "京广线", "焦作东", "南阳寨"),
@@ -711,6 +719,13 @@ public static partial class AchievementEngine
         string? Note = null,
         string? NarrativeNote = null,
         bool Hidden = false,
+        Func<List<PublicTrip>, List<AchievementReview>, DateTime, AchievementContext?,
+            AchievementProgress?>? Progress = null,
+        Func<List<PublicTrip>, double, AchievementProgress?>? MaxProgress = null,
+        Func<List<PublicTrip>, IReadOnlyList<AchievementRequirement>?>? Requirements = null,
+        ExperienceTierSpec? Tier = null,
+        ExperienceChangeNote? ChangeNote = null,
+        Func<List<PublicTrip>, int>? Bonus = null,
         Func<AchievementTriggerInput, PublicTrip?>? Trigger = null);
 
     private sealed record AchievementTriggerInput(
@@ -734,173 +749,12 @@ public static partial class AchievementEngine
         ["阳泉北", "盘锦北", "孝感北", "邵阳北"];
     private static readonly IReadOnlyList<string> BorderPortStations =
         ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"];
-
-    private static readonly IReadOnlyDictionary<string, ExperienceTierSpec> TierSpecsById =
-        new Dictionary<string, ExperienceTierSpec>(StringComparer.Ordinal)
-        {
-            ["twinInterchange"] = new(
-                trips => Percent(TwinInterchangeCount(trips), TwinInterchangePairs.Count),
-                p => 0.2 * p - 5),
-            ["tightTransfer"] = new(
-                trips => Percent(20 - TightestTransferMinutes(trips), 20),
-                p => Math.Exp(0.05 * p) + 3),
-            ["miniTurnaround"] = new(
-                trips => Percent(20 - ShortestTripMinutes(trips), 20),
-                p => Math.Exp(0.05 * p) + 3),
-            ["whatAgeIsThis"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)),
-                    EarlyPassengerCoachModels.Count),
-                p => 0.3 * p),
-            ["tenNumericTrains"] = new(
-                trips => Percent(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")) - 10, 10),
-                p => 0.3 * p - 15),
-            ["lkjEquippedEmu"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)),
-                    LkjEquippedEmuModels.Count),
-                p => 0.15 * p),
-            ["facingTheWorld"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, VariableGaugeModels)),
-                    VariableGaugeModels.Count),
-                p => 0.1 * p),
-            ["revivalPrototype"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, PrototypeModels)),
-                    PrototypeModels.Count),
-                p => 0.3 * p),
-            ["unpredictableWorld"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, RetiredEmus)),
-                    RetiredEmus.Count),
-                p => 0.1 * p),
-            ["railwayTrailblazer"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, EarlyEmuModels)),
-                    EarlyEmuModels.Count),
-                p => 0.25 * p),
-            ["meritAndHonor"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, HonorLocomotives)),
-                    HonorLocomotives.Count),
-                p => 0.3 * p),
-            ["powerHouse"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)),
-                    HighPowerFreightLocomotives.Count),
-                p => 0.25 * p),
-            ["friendshipForever"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)),
-                    EarlyImportedLocomotives.Count),
-                p => 0.25 * p),
-            ["steamPower"] = new(
-                trips => Percent(CollectedCount(trips, trip =>
-                    RollingStockMatches(trip.RollingStock, SteamLocomotives)),
-                    SteamLocomotives.Count),
-                p => 0.6 * p),
-            ["envoyArrival"] = new(
-                trips => Percent(ForeignCapitalCount(trips), ForeignCapitals.Count),
-                p => 0.3 * p),
-            ["fourFamousNorths"] = new(
-                trips => Percent(VisitedStationCount(trips, FourFamousNorthStations), FourFamousNorthStations.Count),
-                p => 0.15 * p),
-            ["borderPorts"] = new(
-                trips => Percent(VisitedStationCount(trips, BorderPortStations), BorderPortStations.Count),
-                p => 0.3 * p),
-            ["deadEnd"] = new(
-                trips => Percent(VisitedStationCount(trips, DeadEndStations), DeadEndStations.Count),
-                p => 0.5 * p - 5),
-            ["airRail"] = new(
-                trips => Percent(AirportStationCount(trips), 25),
-                p => 0.4 * p - 5),
-            ["qinlingPassage"] = new(
-                trips => Percent(SectionCoverageCount(trips, AvailableSections(QinlingPassages)),
-                    QinlingPassages.Count),
-                p => 0.4 * p - 20),
-            ["missedEra"] = new(
-                trips => Percent(DowngradedSectionCount(trips), DowngradedSections.Count),
-                p => 0.7 * p - 30),
-            ["aboveTheClouds"] = new(
-                trips => Percent(HighAltitudeSectionCount(trips), HighAltitudeSections.Count),
-                p => 0.4 * p - 20),
-            ["goddessYangtzeBridges"] = new(
-                trips => Percent(SectionCoverageCount(trips, AvailableSections(YangtzeBridges)),
-                    YangtzeBridges.Select(section => section.Name).Distinct(StringComparer.Ordinal).Count()),
-                p => 0.45 * p - 15),
-            ["muddyWavesSweepSky"] = new(
-                trips => Percent(SectionCoverageCount(trips, AvailableSections(YellowRiverBridges)),
-                    YellowRiverBridges.Select(section => section.Name).Distinct(StringComparer.Ordinal).Count()),
-                p => 0.45 * p - 15),
-            ["mistyVastWaters"] = new(
-                trips => Percent(SectionCoverageCount(trips, AvailableSections(SeaBayBridges)),
-                    SeaBayBridges.Count),
-                p => 0.3 * p - 15),
-            ["tunnelCollection"] = new(
-                trips => Percent(SectionCoverageCount(trips, AvailableSections(Tunnels)), Tunnels.Count),
-                p => 0.4 * p - 15),
-            ["modestAppetite"] = new(
-                trips => Percent(20 - MinTripMileage(trips, trip => trip.MileageKm is > 0 and <= 20, 20), 20),
-                p => Math.Exp(0.05 * p) + 3),
-            ["shortLuxurySleeper"] = new(
-                trips => Percent(400 - MinTripMileage(trips, trip => trip.MileageKm is > 0 and <= 400 &&
-                    NormalizedSeatType(trip.SeatType) is "高级软卧" or "高级动卧", 400), 400),
-                p => 0.75 * Math.Exp(0.045 * p)),
-            ["substituteSeats"] = new(
-                trips => Percent(SubstituteSeatCount(trips) - 3, 3),
-                p => 0.15 * p),
-            ["unnecessaryExtra"] = new(
-                trips => Percent(MaxSameTrainTicketChain(trips) - 3, 3),
-                p => Math.Exp(0.04 * p) + 2),
-            ["storedUpReward"] = new(
-                trips => StoredUpRewardProgress(trips),
-                d => 6 * d, AdditionalCount: true),
-            ["repeatTrainTen"] = new(
-                trips => Percent(MaxRepeatedTrainCount(trips) - 10, 10),
-                p => 0.2 * p - 10),
-            ["multipleChoices"] = new(
-                trips => Percent(MaxDistinctTrainCountForRoute(trips) - 10, 10),
-                p => 0.2 * p - 10),
-            ["differentRoutesSameDestination"] = new(
-                trips => Percent(MaxDifferentRoutesSameDestination(trips) - 3, 3),
-                p => 0.2 * p - 10),
-            ["complexPath"] = new(
-                trips => Math.Max(0, MaxComplexPathChangeCount(trips) - 4),
-                d => 1.5 * Math.Exp(1.25 * d), AdditionalCount: true),
-            // 「一石三鸟」的进度依赖同一次行程触发的其他成就数，在 Evaluate 里单独代入。
-            ["oneStoneThreeBirds"] = new(_ => 0, p => Math.Exp(0.04 * p) + 2),
-            ["archaeologyTeam"] = new(
-                trips => Math.Max(0, 2009 - EarliestDepartureYear(trips)),
-                d => Math.Exp(0.4 * d), AdditionalCount: true),
-            ["ancientMemory"] = new(
-                trips => Math.Max(0, 1994 - EarliestDepartureYear(trips)),
-                d => 4 * d - 2, AdditionalCount: true),
-            ["tripleTransfer"] = new(
-                trips => Math.Max(0, MaxTransferCount(trips) - 2),
-                d => Math.Exp(0.5 * (d + 3)), AdditionalCount: true),
-            ["verticalChina"] = new(
-                trips => StationPairPerDayCount(trips, "漠河", "三亚", 30),
-                d => DailyWindowBonus(d), AdditionalCount: true),
-            ["horizontalChina"] = new(
-                trips => StationPairPerDayCount(trips, "阿克陶", "抚远", 30),
-                d => DailyWindowBonus(d), AdditionalCount: true),
-            ["skyAndSea"] = new(
-                trips => StationPairPerDayCount(trips, "雁石坪", "香港西九龙", 30),
-                d => DailyWindowBonus(d), AdditionalCount: true),
-            ["fourExtremes"] = new(
-                trips => FourExtremesPerDayCount(trips),
-                d => DailyWindowBonus(d), AdditionalCount: true),
-            ["multipleLocomotives"] = new(
-                trips => Math.Max(0, MaxLocomotiveCount(trips) - 2),
-                d => Math.Exp(1.2 * d) + 2, AdditionalCount: true),
-            ["relayLocomotives"] = new(
-                trips => Math.Max(0, MaxLocomotiveChangeCount(trips) - 3),
-                d => 0.8 * Math.Exp(d + 1), AdditionalCount: true),
-            ["completeEmuFleet"] = new(
-                trips => Math.Max(0, CompleteEmuFamilyCount(trips) - 1),
-                d => 20 * Math.Exp(0.2 * (d + 6)) - 60, AdditionalCount: true),
-        };
+    private static readonly IReadOnlyList<string> VerticalChinaStations = ["漠河", "三亚"];
+    private static readonly IReadOnlyList<string> HorizontalChinaStations = ["阿克陶", "抚远"];
+    private static readonly IReadOnlyList<string> SkyAndSeaStations = ["雁石坪", "香港西九龙"];
+    private static readonly IReadOnlyList<string> FourExtremesStations =
+        ["漠河", "三亚", "阿克陶", "抚远"];
+    private static readonly IReadOnlyList<string> EastRedSunRisesStations = ["东方红", "太阳升"];
 
     /// <summary>「经验分阶」的说明尾巴：满分要求、满分经验与变化趋势。
     /// MaxExperience 只在表列上限实际达不到时才覆盖（目前只有「两面一体」）。</summary>
@@ -909,68 +763,16 @@ public static partial class AchievementEngine
         string Trend,
         int? MaxExperience = null);
 
-    private static readonly IReadOnlyDictionary<string, ExperienceChangeNote> ExperienceChangeNotes =
-        new Dictionary<string, ExperienceChangeNote>(StringComparer.Ordinal)
-        {
-            ["twinInterchange"] = new("6 组站对全部完成换乘", "完成的站对数越多，经验越高（线性递增）", 25),
-            ["tightTransfer"] = new("换乘时间不超过 4 分钟", "换乘时间越短，经验越高（指数递增）"),
-            ["miniTurnaround"] = new("单程时间不超过 4 分钟", "单程时间越短，经验越高（指数递增）"),
-            ["whatAgeIsThis"] = new("19 种客车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
-            ["tenNumericTrains"] = new("累计乘坐 25 次纯数字车次", "累计次数越多，经验越高（线性递增）"),
-            ["lkjEquippedEmu"] = new("6 组 LKJ 动车组全部乘坐", "乘坐的组数越多，经验越高（线性递增）"),
-            ["facingTheWorld"] = new("3 种可变轨距动车组全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
-            ["revivalPrototype"] = new("10 组原样车全部乘坐", "乘坐的组数越多，经验越高（线性递增）"),
-            ["unpredictableWorld"] = new("乘坐 3 组退役动车组", "乘坐的组数越多，经验越高（线性递增）"),
-            ["railwayTrailblazer"] = new("11 种早期动车组全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
-            ["meritAndHonor"] = new("12 组荣誉机车全部乘坐", "乘坐的组数越多，经验越高（线性递增）"),
-            ["powerHouse"] = new("12 种大功率货运电力机车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
-            ["friendshipForever"] = new("13 种早期进口机车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
-            ["fourFamousNorths"] = new("4 座车站全部到访", "到访站数越多，经验越高（线性递增）"),
-            ["borderPorts"] = new("7 座口岸车站全部到访", "到访站数越多，经验越高（线性递增）"),
-            ["deadEnd"] = new("到访 17 座永久尽头式车站", "到访站数越多，经验越高（线性递增）"),
-            ["airRail"] = new("25 座机场铁路站全部到访", "到访站数越多，经验越高（线性递增）"),
-            ["qinlingPassage"] = new("7 条线路全部完整横穿秦岭", "线路数越多，经验越高（线性递增）"),
-            ["missedEra"] = new("16 条降标线路全部行经", "线路数越多，经验越高（线性递增）"),
-            ["aboveTheClouds"] = new("8 段高海拔区间全部行经", "区间数越多，经验越高（线性递增）"),
-            ["goddessYangtzeBridges"] = new("27 座长江大桥全部行经", "行经的座数越多，经验越高（线性递增）"),
-            ["muddyWavesSweepSky"] = new("33 座黄河大桥全部行经", "行经的座数越多，经验越高（线性递增）"),
-            ["mistyVastWaters"] = new("7 座跨海、海湾大桥全部行经", "行经的座数越多，经验越高（线性递增）"),
-            ["tunnelCollection"] = new("15 座特长隧道全部行经", "行经的座数越多，经验越高（线性递增）"),
-            ["modestAppetite"] = new("单程里程不超过 4 公里", "里程越短，经验越高（指数递增）"),
-            ["shortLuxurySleeper"] = new("里程不超过 80 公里", "里程越短，经验越高（指数递增）"),
-            ["substituteSeats"] = new("累计 9 次代用席位", "次数越多，经验越高（线性递增）"),
-            ["unnecessaryExtra"] = new("分 6 张车票接续乘坐同一列车", "票数越多，经验越高（指数递增）"),
-            ["storedUpReward"] = new("兑换里程达到 300 公里", "超出 50 公里的里程越多，经验越高（线性递增）"),
-            ["repeatTrainTen"] = new("同一车次累计乘坐 30 次", "次数越多，经验越高（线性递增）"),
-            ["multipleChoices"] = new("同一区间乘坐 30 个不同车次", "车次数越多，经验越高（线性递增）"),
-            ["differentRoutesSameDestination"] = new("同起终点经由 9 条不同路线", "路线数越多，经验越高（线性递增）"),
-            ["complexPath"] = new("单程连续 7 次换线", "换线次数越多，经验越高（指数递增）"),
-            ["oneStoneThreeBirds"] = new("单次行程同时满足 6 项成就", "同时满足的项数越多，经验越高（指数递增）"),
-            ["steamPower"] = new("乘坐 4 种蒸汽机车", "乘坐的型号数越多，经验越高（线性递增）"),
-            ["envoyArrival"] = new("6 座别国首都车站全部到访", "到访站数越多，经验越高（线性递增）"),
-            ["archaeologyTeam"] = new("录入 2000 年及以前的行程", "年份越早，经验越高（指数递增）"),
-            ["tripleTransfer"] = new("连续换乘 7 次", "换乘次数越多，经验越高（指数递增）"),
-            ["verticalChina"] = new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
-            ["horizontalChina"] = new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
-            ["skyAndSea"] = new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
-            ["fourExtremes"] = new("四站到访间隔不超过 8 天", "间隔越短，经验越高（对数递增）"),
-            ["multipleLocomotives"] = new("同时由 5 台机车牵引或担当补机", "机车台数越多，经验越高（指数递增）"),
-            ["relayLocomotives"] = new("中途换挂 6 次", "换挂次数越多，经验越高（指数递增）"),
-            ["ancientMemory"] = new("录入 1986 年及以前的行程", "年份越早，经验越高（线性递增）"),
-            ["completeEmuFleet"] = new("完成 6 个系列的全部车组", "完成的系列数越多，经验越高（指数递增）"),
-            ["allAlone"] = new("解锁时座号为 11（不限后缀）且乘车日期为 11 月 11 日（两项各加 10 点）",
-                "满足的附加条件越多，经验越高（线性递增，每项加 10 点）"),
-            ["gobiThunder"] = new("乘 8921/2/3/4 次（新车次 Z1121/2/3/4）到达", "阶梯式：普通到达 20 点，指定车次 50 点"),
-        };
-
-    private static string? NoteWithExperienceChange(
-        string id, AchievementDefinition definition)
+    private static string? NoteWithExperienceChange(AchievementDefinition definition)
     {
-        if (!ExperienceChangeNotes.TryGetValue(id, out var change)) return definition.Note;
+        if (definition.ChangeNote is not { } change) return definition.Note;
         var max = change.MaxExperience ?? definition.MaxExperience ?? definition.Experience;
         var suffix = $"满分要求：{change.Requirement}；满分经验：{max} 点；{change.Trend}";
         return string.IsNullOrEmpty(definition.Note) ? suffix : $"{definition.Note}；{suffix}";
     }
+
+    /// <summary>「截至 …」类附注的日期前缀，按运行当天的年月生成。</summary>
+    private static string AsOfNow => $"截至 {DateTime.Today.Year} 年 {DateTime.Today.Month} 月";
 
     private static readonly IReadOnlyList<AchievementDefinition> Definitions =
     [
@@ -985,51 +787,86 @@ public static partial class AchievementEngine
         new("tightTransfer", ExtremeChallenges, "transfer_within_a_station", "极限换乘", "完成同站换乘，换乘时间少于 10 分钟", 10,
             MaxExperience: 50,
             NarrativeNote: "哦，那是接近的",
+            Tier: new(
+                trips => Percent(10 - TightestTransferMinutes(trips), 10),
+                p => Math.Exp(0.05 * p) + 3),
+            ChangeNote: new("换乘时间不超过 2 分钟", "换乘时间越短，经验越高（指数递增）"),
             Trigger: i => FirstTightTransfer(i.Trips)),
         new("wellPreparedTransfer", ExtremeChallenges, "schedule_outlined", "充分打算", "完成同站换乘，等待至少 6 小时但不超过 12 小时", 10,
             NarrativeNote: "在候车厅打发时间的方式其实很多",
             Trigger: i => FirstWellPreparedTransfer(i.Trips)),
         new("twinInterchange", ExtremeChallenges, "compare_arrows", "两面一体",
-            "在国铁车站与对应的异名城际车站之间完成间隔不超过 1 小时的换乘", 10,
+            "在拥有同一个站前广场的国铁车站与对应的异名城际车站之间完成间隔不超过 1 小时的换乘", 10,
             MaxExperience: 30,
             NarrativeNote: "其他地方也学着点，除了票价",
+            Progress: (trips, reviews, today, context) => P(TwinInterchangeCount(trips), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(TwinInterchangeCount(trips), TwinInterchangePairs.Count),
+            Requirements: trips => TwinInterchangeRequirements(trips),
+            Tier: new(
+                trips => Percent(TwinInterchangeCount(trips), TwinInterchangePairs.Count),
+                p => 0.2 * p - 5),
+            ChangeNote: new($"{TwinInterchangePairs.Count} 组站对全部完成换乘", "完成的站对数越多，经验越高（线性递增）", 25),
             Trigger: i => FirstTwinInterchange(i.Trips)),
         new("sevenDayStreak", Milestones, "local_fire_department", "马不停蹄", "连续 7 天乘坐列车", 15,
             NarrativeNote: "买了计次票的话就会很方便",
+            Progress: (trips, reviews, today, context) => P(LongestStreak(trips), 7),
             Trigger: i => FirstStreakCompletion(i.Trips, 7)),
         new("thirtyDayStreak", Milestones, "calendar_month_outlined", "漂泊不定", "连续 30 天乘坐列车", 30,
             NarrativeNote: "不要停下来啊……",
+            Progress: (trips, reviews, today, context) => P(LongestStreak(trips), 30),
             Trigger: i => FirstStreakCompletion(i.Trips, 30)),
         new("duration24Hours", ExtremeChallenges, "looks_one_outlined", "恍如昨日", "乘坐单程时长至少 24 小时的列车", 10,
             NarrativeNote: "下车后多活动活动吧",
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips), 24),
             Trigger: i => First(i.Trips, trip => ValidDuration(trip) >= TimeSpan.FromHours(24))),
         new("duration48Hours", ExtremeChallenges, "looks_two_outlined", "旦复旦兮", "乘坐单程时长至少 48 小时的列车", 25,
             NarrativeNote: "跪求硬座过夜技巧",
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips), 48),
             Trigger: i => First(i.Trips, trip => ValidDuration(trip) >= TimeSpan.FromHours(48))),
         new("duration72Hours", ExtremeChallenges, "looks_3_outlined", "舟车劳顿", "乘坐单程时长至少 72 小时的列车", 50,
             NarrativeNote: "也许只有临客了",
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips), 72),
             Trigger: i => First(i.Trips, trip => ValidDuration(trip) >= TimeSpan.FromHours(72))),
         new("all25Series", RailwayCatalog, "palette_outlined", "五彩斑斓", "分别乘坐全部常规 25 系列客车型号", 30,
             NarrativeNote: "反对直特换桶.mp4",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, Regular25Models)), Regular25Models.Count),
+            Requirements: trips => RollingStockRequirements(
+                trips,
+                Regular25Models.Select(model => new RollingStockTarget(model))),
             Trigger: i => FirstCollectionCompletion(i.Trips, Regular25Models,
                 trip => RollingStockMatches(trip.RollingStock, Regular25Models))),
         new("allEmuSeries", RailwayCatalog, "train_outlined", "琳琅满目", "分别乘坐全部常规和谐号、复兴号系列", 40,
             NarrativeNote: "从博采众长到自主创新的历程缩影",
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
+                EmuModelFamilies.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                EmuModelFamilies.Select(family => (Key: family.Series, Label: family.Series)),
+                trip => EmuMatches(trip.RollingStock)),
             Trigger: i => FirstCollectionCompletion(i.Trips, EmuSeriesNames, trip => EmuMatches(trip.RollingStock))),
         new("allSeatTypes", RailwayCatalog, "checklist_outlined", "我全都要", "分别乘坐全部常规席别", 40,
             NarrativeNote: "能看出你很热衷于尝试未体验过的事物",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, SeatTypeMatches), RegularSeatTypes.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                RegularSeatTypes.Select(seat => (Key: seat, Label: seat)),
+                SeatTypeMatches),
             Trigger: i => FirstCollectionCompletion(i.Trips, RegularSeatTypes, SeatTypeMatches)),
         new("noSeat12Hours", ExtremeChallenges, "fitness_center_outlined", "体力非凡", "持硬座或二等座无座车票乘坐至少 12 小时", 25,
             NarrativeNote: "还好国铁没有放开自由席",
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips.Where(IsNoSeat)), 12),
             Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(12))),
         new("sweatLikeRain", ExtremeChallenges, "mode_fan_off", "汗如雨下", "在 5 至 9 月乘坐单程至少 12 小时的非空调列车", 15,
             NarrativeNote: "即使风扇开到最大也是杯水车薪",
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips.Where(trip => HasNonAirConditionedCoach(trip.RollingStock))), 12),
             Trigger: i => First(i.Trips, trip => Departure(trip).Month is >= 5 and <= 9 &&
                 ValidDuration(trip) >= TimeSpan.FromHours(12) &&
                 HasNonAirConditionedCoach(trip.RollingStock))),
         new("hundredTickets", Milestones, "collections_bookmark_outlined", "日积月累", "累计出发 100 次", 10,
             NarrativeNote: "总有一天会习惯乘火车出行的",
+            Progress: (trips, reviews, today, context) => P(trips.Count, 100),
             Trigger: i => i.Trips.Count >= 100 ? i.Trips[99] : null),
         new("midnightBoarding", ExtremeChallenges, "nightlight_outlined", "夜半钟声", "在 00:00 至 05:00 乘车或下车", 10,
             NarrativeNote: "您旅途辛苦了",
@@ -1039,31 +876,49 @@ public static partial class AchievementEngine
             Trigger: i => First(i.Trips, UnlocksWallFacingSeat)),
         new("cornerSeat", FunJourneys, "event_seat", "象塔一隅", "至少 10 次且 1/3 以上的二等座行程落座 F 排", 25,
             NarrativeNote: "无丝竹之乱耳，无案牍之劳形",
+            Progress: (trips, reviews, today, context) => SeatRowProgress(trips, 'F'),
             Trigger: i => FirstSeatRowCompletion(i.Trips, 'F')),
         new("overlookedSeat", FunJourneys, "chair", "左右为难", "至少 10 次且 1/3 以上的二等座行程落座 B 排", 25,
             NarrativeNote: "全体都有，保持睡姿端正，向后卧倒，开睡！",
+            Progress: (trips, reviews, today, context) => SeatRowProgress(trips, 'B'),
             Trigger: i => FirstSeatRowCompletion(i.Trips, 'B')),
         new("hundredStations", Milestones, "location_on_outlined", "百站印记", "累计到访过 100 座不同的客运车站", 15,
             NarrativeNote: "虽然不少车站千篇一律，但也有些独具特色",
+            Progress: (trips, reviews, today, context) => P(trips.SelectMany(trip => new[] { trip.FromStation.Trim(), trip.ToStation.Trim() }).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).Count(), 100),
             Trigger: i => FirstStationCompletion(i.Trips, 100)),
         new("thousandKilometers", Milestones, "straighten_outlined", "千里足迹", "完成单程至少 1,000 公里的行程", 10,
             NarrativeNote: "适千里者，如今无需三月聚粮",
+            Progress: (trips, reviews, today, context) => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 1000),
             Trigger: i => First(i.Trips, trip => trip.MileageKm >= 1000)),
         new("fourThousandKmJourney", Milestones, "nights_stay_outlined", "云月相照",
             "完成单程至少 4,000 公里的行程", 30,
             NarrativeNote: "还是得准备好两三天的干粮",
+            Progress: (trips, reviews, today, context) => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 4000),
             Trigger: i => First(i.Trips, trip => trip.MileageKm >= 4000)),
         new("airRail", Touring, "connecting_airports_outlined", "扶摇直上", "累计到访至少 3 座不同的国内机场铁路站", 15,
             MaxExperience: 50,
             NarrativeNote: "一对恋人在虹桥机场分手的故事是虚构的，听听就行了",
+            Progress: (trips, reviews, today, context) => P(AirportStationCount(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(AirportStationCount(trips), AirportRailStations.Count),
+            Requirements: trips => StationRequirements(trips, AirportRailStations),
+            Tier: new(
+                trips => Percent(AirportStationCount(trips), AirportRailStations.Count),
+                p => 0.4 * p - 5),
+            ChangeNote: new($"{AirportRailStations.Count} 座机场铁路站全部到访", "到访站数越多，经验越高（线性递增）"),
             Trigger: i => FirstAirportStationCompletion(i.Trips, 3)),
         new("acrossTheRealm", Touring, "travel_explore", "纵横九州",
             "到访内地全部省会、自治区首府、直辖市以及香港的任意一座主城区车站", 30,
             Note: "不含城际车站与市域铁路车站，详见附表5",
             NarrativeNote: "就只差一个台湾了",
+            Progress: (trips, reviews, today, context) => P(CapitalCityCount(trips), CapitalCityNames.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                CapitalCityNames.Select(city => (Key: city, Label: city)),
+                trip => CapitalCitiesFor(trip)),
             Trigger: i => FirstCapitalCityCompletion(i.Trips, CapitalCityNames.Count)),
         new("railFerry", Touring, "directions_boat_outlined", "长风破浪", "乘坐经由任意轮渡线的列车，或在大连与烟台之间完成 24 小时内的跨海接续", 15,
             NarrativeNote: "谁不喜欢看火车上船呢",
+            Requirements: trips => RailFerryRequirements(trips),
             Trigger: i => FirstRailFerryCompletion(i.Trips)),
         new("railwayWorkerPassenger", RailwayCatalog, "engineering_outlined", "顺风班车", "乘坐一次路用列车", 25,
             Note: "车次 57XXX 或 40XXX",
@@ -1072,13 +927,27 @@ public static partial class AchievementEngine
         new("verticalChina", Touring, "swap_vert", "通津南北", "分别到访漠河站和三亚站", 10,
             MaxExperience: 50,
             NarrativeNote: "一周之内，感受四季",
+            Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, VerticalChinaStations), VerticalChinaStations.Count),
+            Requirements: trips => StationRequirements(trips, VerticalChinaStations),
+            Tier: new(
+                trips => StationPairPerDayCount(trips, "漠河", "三亚", 30),
+                d => DailyWindowBonus(d), AdditionalCount: true),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "漠河", "三亚")),
         new("horizontalChina", Touring, "swap_horiz", "东奔西走", "分别到访阿克陶站和抚远站", 10,
             MaxExperience: 50,
             NarrativeNote: "乌苏里江畔旭日初升，帕米尔高原繁星满天",
+            Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, HorizontalChinaStations), HorizontalChinaStations.Count),
+            Requirements: trips => StationRequirements(trips, HorizontalChinaStations),
+            Tier: new(
+                trips => StationPairPerDayCount(trips, "阿克陶", "抚远", 30),
+                d => DailyWindowBonus(d), AdditionalCount: true),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "阿克陶", "抚远")),
         new("eastRedSunRises", Touring, "wb_sunny_outlined", "其道大光", "分别到访东方红站和太阳升站", 30,
             NarrativeNote: "我们的生活天天向上♪我们的前程万丈光芒♪",
+            Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, EastRedSunRisesStations), EastRedSunRisesStations.Count),
+            Requirements: trips => StationRequirements(trips, EastRedSunRisesStations),
             Trigger: i => FirstStationPairCompletion(i.Trips, "东方红", "太阳升")),
         new("highSpeedExperiment", ExtremeChallenges, "speed_outlined", "冲高试验", "完成时长超过 1 小时且均速超过 300 公里/小时的行程", 15,
             NarrativeNote: "虽乘奔御风，不以疾也",
@@ -1096,6 +965,15 @@ public static partial class AchievementEngine
         new("borderPorts", Touring, "language_outlined", "异域风情", "到访阿拉山口站、二连站、满洲里站、绥芬河站、丹东站、崇左站或磨憨站", 20,
             MaxExperience: 50,
             NarrativeNote: "前面的区域，办了护照再来探索吧",
+            Progress: (trips, reviews, today, context) => P(
+                VisitedStationCount(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]),
+                1),
+            MaxProgress: (trips, oneStoneConditions) => M(VisitedStationCount(trips, BorderPortStations), BorderPortStations.Count),
+            Requirements: trips => StationRequirements(trips, BorderPortStations),
+            Tier: new(
+                trips => Percent(VisitedStationCount(trips, BorderPortStations), BorderPortStations.Count),
+                p => 0.3 * p),
+            ChangeNote: new($"{BorderPortStations.Count} 座口岸车站全部到访", "到访站数越多，经验越高（线性递增）"),
             Trigger: i => FirstStationVisit(i.Trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"])),
         new("singleBikeBorder", Touring, "departure_board_outlined", "单车问边", "乘坐联运列车从任一口岸车站出入境", 30,
             NarrativeNote: "……我护照领到了",
@@ -1106,34 +984,79 @@ public static partial class AchievementEngine
         new("skyAndSea", Touring, "filter_hdr_outlined", "上天入海", "分别到访雁石坪站和香港西九龙站", 10,
             MaxExperience: 50,
             NarrativeNote: "可上九天揽月，可下五洋捉鳖，谈笑凯歌还",
+            Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, SkyAndSeaStations), SkyAndSeaStations.Count),
+            Requirements: trips => StationRequirements(trips, SkyAndSeaStations),
+            Tier: new(
+                trips => StationPairPerDayCount(trips, "雁石坪", "香港西九龙", 30),
+                d => DailyWindowBonus(d), AdditionalCount: true),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "雁石坪", "香港西九龙")),
         new("greatWallExpress", RailwayCatalog, "electric_bolt_outlined", "飞驰长城", "乘坐一种 17 编组的动力分散动车组", 10,
             NarrativeNote: "惊人的长度，极致的运量",
+            Requirements: trips => RollingStockRequirements(trips, GreatWallExpressModels),
             Trigger: i => FirstRollingStockMatch(i.Trips, GreatWallExpressModels)),
         new("qinlingPassage", Touring, "landscape_outlined", "蜀道不难", "至少经由 3 条铁路线路完整横穿秦岭", 20,
             MaxExperience: 40,
             NarrativeNote: "西当太白有铁道，可以横插群山间",
+            Progress: (trips, reviews, today, context) => SectionProgress(trips, QinlingPassages, 3),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                SectionCoverageCount(trips, AvailableSections(QinlingPassages)), QinlingPassages.Count),
+            Requirements: trips => IntervalSectionRequirements(
+                trips,
+                QinlingPassages,
+                (trip, section) => RouteSpans(trip)
+                    .Any(segment => CoversRouteSection(segment, section))),
+            Tier: new(
+                trips => Percent(SectionCoverageCount(trips, AvailableSections(QinlingPassages)),
+                    QinlingPassages.Count),
+                p => 0.4 * p - 20),
+            ChangeNote: new($"{QinlingPassages.Count} 条线路全部完整横穿秦岭", "线路数越多，经验越高（线性递增）"),
             Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(QinlingPassages), 3)),
         new("tunnelCollection", Touring, "subway_outlined", "云霞明灭",
             "行经至少 5 座承担客运的 20 公里以上的特长隧道", 15,
             MaxExperience: 40,
-            Note: "截至 2026 年 11 月共 15 座，详见附表4",
+            Note: $"{AsOfNow}共 {Tunnels.Count} 座，详见附表4",
             NarrativeNote: "这就是地铁吧",
+            Progress: (trips, reviews, today, context) => SectionProgress(trips, Tunnels, 5),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                SectionCoverageCount(trips, AvailableSections(Tunnels)), Tunnels.Count),
+            Requirements: trips => SectionRequirements(trips, AvailableSections(Tunnels)),
+            Tier: new(
+                trips => Percent(SectionCoverageCount(trips, AvailableSections(Tunnels)), Tunnels.Count),
+                p => 0.4 * p - 15),
+            ChangeNote: new($"{Tunnels.Count} 座特长隧道全部行经", "行经的座数越多，经验越高（线性递增）"),
             Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(Tunnels), 5)),
         new("lonelyPlanet", Touring, "travel_explore_outlined", "孤独星球", "分别乘坐经由和若线与格库线的列车", 30,
             NarrativeNote: "21世纪工程奇迹之环塔克拉玛干沙漠铁路",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip => MatchingRoutes(trip, ["若和铁路", "格库线"])), 2),
+            Requirements: trips => RouteRequirements(trips, ["若和铁路", "格库线"]),
             Trigger: i => FirstRouteCollectionCompletion(i.Trips, ["若和铁路", "格库线"])),
         new("aboveTheClouds", Touring, "cloud_outlined", "飞云之上",
             "行经至少 3 条铁路线路的海拔高于 3,000 米的区间", 20,
             MaxExperience: 40,
             NarrativeNote: "不敢高声语，恐惊天上人",
+            Progress: (trips, reviews, today, context) => P(HighAltitudeSectionCount(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(HighAltitudeSectionCount(trips), HighAltitudeSections.Count),
+            Requirements: trips => AboveTheCloudsRequirements(trips),
+            Tier: new(
+                trips => Percent(HighAltitudeSectionCount(trips), HighAltitudeSections.Count),
+                p => 0.4 * p - 20),
+            ChangeNote: new($"{HighAltitudeSections.Count} 段高海拔区间全部行经", "区间数越多，经验越高（线性递增）"),
             Trigger: i => HighAltitudeSectionCount(i.Trips) >= 3 ? i.LatestTrip : null),
         new("missedEra", Touring, "trending_down", "生不逢时", "行经至少 3 条降标修建且无法恢复的线路的区间", 10,
             MaxExperience: 50,
             NarrativeNote: "高阻牛叉♪降标满地开花♪",
+            Progress: (trips, reviews, today, context) => P(DowngradedSectionCount(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(DowngradedSectionCount(trips), DowngradedSections.Count),
+            Requirements: trips => DowngradedRequirements(trips),
+            Tier: new(
+                trips => Percent(DowngradedSectionCount(trips), DowngradedSections.Count),
+                p => 0.7 * p - 30),
+            ChangeNote: new($"{DowngradedSections.Count} 条降标线路全部行经", "线路数越多，经验越高（线性递增）"),
             Trigger: i => DowngradedSectionCount(i.Trips) >= 3 ? i.LatestTrip : null),
         new("hundredThousandKilometers", Milestones, "route_outlined", "轻车熟路", "累计乘车里程至少 100,000 公里", 25,
             NarrativeNote: "你对哪里的印象最深刻呢",
+            Progress: (trips, reviews, today, context) => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
             Trigger: i => FirstCumulativeMileageCompletion(i.Trips, 100000)),
         new("fTrain", RailwayCatalog, "u_turn_left_outlined", "中途遣返", "乘坐一次 F 字头列车", 40,
             NarrativeNote: "列车行驶未半而中道折返",
@@ -1146,9 +1069,11 @@ public static partial class AchievementEngine
             Trigger: i => FirstRollingStockMatch(i.Trips, [new("CRH380AN")])),
         new("advantageIsMine", Touring, "sports_score_outlined", "优势在我", "到访徐州站或徐州东站", 10,
             NarrativeNote: "站场规模，是15线对13线",
+            Requirements: trips => StationRequirements(trips, ["徐州", "徐州东"]),
             Trigger: i => FirstStationVisit(i.Trips, ["徐州", "徐州东"])),
         new("thousandMilesToSea", Touring, "sailing_outlined", "去海千里", "到访额敏站或铁厂沟站", 15,
             NarrativeNote: "欧亚大陆难抵极并没有想象的那样干燥",
+            Requirements: trips => StationRequirements(trips, ["额敏", "铁厂沟"]),
             Trigger: i => FirstStationVisit(i.Trips, ["额敏", "铁厂沟"])),
         new("platformSubsidence", Touring, "vertical_align_bottom_outlined", "站台沉降", "到访杭州东站", 10,
             NarrativeNote: "事实上只有头尾几节车厢能明显感受到沉降",
@@ -1156,6 +1081,8 @@ public static partial class AchievementEngine
         new("gobiThunder", Touring, "bolt", "戈壁惊雷", "到访低窝铺站", 20,
             MaxExperience: 50,
             NarrativeNote: "Not found.",
+            Bonus: trips => ArrivedByGobiTrain(trips) ? 30 : 0,
+            ChangeNote: new("乘 8921/2/3/4 次（新车次 Z1121/2/3/4）到达", "阶梯式：普通到达 20 点，指定车次 50 点"),
             Trigger: i => FirstStationVisit(i.Trips, ["低窝铺"])),
         new("lanxiVisit", Touring, "brightness_7_outlined", "青空若现", "到访兰溪站", 15,
             NarrativeNote: "「年少的我们，以为只要说过了永远，就一定能够永远」",
@@ -1163,6 +1090,16 @@ public static partial class AchievementEngine
         new("archaeologyTeam", Milestones, "history_edu_outlined", "朝花夕拾", "录入 2010 年以前的行程", 25,
             MaxExperience: 50,
             NarrativeNote: "那时跟火车站售票员打好关系能赚大钱",
+            // 朝花夕拾的解锁进度按当前年份折算：行程越老越接近 2010 年这条线。
+            // 分母随年份增长，跨过 2009 年即 100%。
+            Progress: (trips, reviews, today, context) => P(
+                today.Year - EarliestDepartureYear(trips),
+                Math.Max(1, today.Year - 2009)),
+            MaxProgress: (trips, oneStoneConditions) => M(2009 - EarliestDepartureYear(trips), 9),
+            Tier: new(
+                trips => Math.Max(0, 2009 - EarliestDepartureYear(trips)),
+                d => Math.Exp(0.4 * d), AdditionalCount: true),
+            ChangeNote: new("录入 2000 年及以前的行程", "年份越早，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => Departure(trip) < new DateTime(2010, 1, 1))),
         new("sevenExperienceTiers", Milestones, "filter_drama_outlined", "不霁何虹",
             "所有 7 种初始经验值的成就都至少取得一项", 30,
@@ -1185,15 +1122,34 @@ public static partial class AchievementEngine
             "单程行经至少 4 个彼此相邻的换线站且分别跨线一次", 15,
             MaxExperience: 50,
             NarrativeNote: "打通票一打一个不吱声",
+            Progress: (trips, reviews, today, context) => P(MaxComplexPathChangeCount(trips), 4),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxComplexPathChangeCount(trips), 7),
+            Tier: new(
+                trips => Math.Max(0, MaxComplexPathChangeCount(trips) - 4),
+                d => 1.5 * Math.Exp(1.25 * d), AdditionalCount: true),
+            ChangeNote: new("单程连续 7 次换线", "换线次数越多，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, UnlocksComplexPath)),
         new("repeatTrainTen", FunJourneys, "restart_alt_outlined", "驾轻就熟", "乘坐相同车次至少 10 次", 20,
             MaxExperience: 50,
             Note: "区间不限",
             NarrativeNote: "乘务员：How old are you?",
+            Progress: (trips, reviews, today, context) => P(MaxRepeatedTrainCount(trips), 10),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxRepeatedTrainCount(trips), 30),
+            Tier: new(
+                trips => Percent(MaxRepeatedTrainCount(trips) - 10, 10),
+                p => 0.2 * p - 10),
+            ChangeNote: new("同一车次累计乘坐 30 次", "次数越多，经验越高（线性递增）"),
             Trigger: i => FirstRepeatedTrainCompletion(i.Trips, 10)),
         new("tenNumericTrains", RailwayCatalog, "pin_outlined", "慢慢旅途", "累计乘坐至少 10 次纯数字车次", 25,
             MaxExperience: 50,
             NarrativeNote: "时间充足的话，何必还要过分追求速度",
+            Progress: (trips, reviews, today, context) => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 25),
+            Tier: new(
+                trips => Percent(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")) - 10, 10),
+                p => 0.3 * p - 15),
+            ChangeNote: new("累计乘坐 25 次纯数字车次", "累计次数越多，经验越高（线性递增）"),
             Trigger: i => FirstCountCompletion(i.Trips, 10, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$"))),
         new("overnightSleeper", FunJourneys, "bedtime_outlined", "夕发朝至",
             "乘坐 18:00 至 00:00 发车且 05:00 至 11:00 到达的卧铺列车", 10,
@@ -1202,6 +1158,12 @@ public static partial class AchievementEngine
         new("tripleTransfer", ExtremeChallenges, "multiple_stop_outlined", "辗转挪移", "连续换乘至少 2 次，每次换乘间隔不超过 3 小时", 10,
             MaxExperience: 50,
             NarrativeNote: "专业提示：有时中转反而比直达更实惠",
+            Progress: (trips, reviews, today, context) => P(MaxTransferCount(trips), 2),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxTransferCount(trips), 7),
+            Tier: new(
+                trips => Math.Max(0, MaxTransferCount(trips) - 2),
+                d => Math.Exp(0.5 * (d + 3)), AdditionalCount: true),
+            ChangeNote: new("连续换乘 7 次", "换乘次数越多，经验越高（指数递增）"),
             Trigger: i => FirstTransferChainCompletion(i.Trips, 2)),
         new("endsOfTheEarth", Touring, "beach_access_outlined", "天涯海角", "到访天涯海角站", 10,
             NarrativeNote: "这其实还不是国铁的最南端",
@@ -1209,6 +1171,16 @@ public static partial class AchievementEngine
         new("fourFamousNorths", Touring, "navigation_outlined", "四大名北", "到访阳泉北站、盘锦北站、孝感北站或邵阳北站", 15,
             MaxExperience: 30,
             NarrativeNote: "一个比一个名不符实",
+            Progress: (trips, reviews, today, context) => P(
+                VisitedStationCount(trips, FourFamousNorthStations),
+                1),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                VisitedStationCount(trips, FourFamousNorthStations), FourFamousNorthStations.Count),
+            Requirements: trips => StationRequirements(trips, FourFamousNorthStations),
+            Tier: new(
+                trips => Percent(VisitedStationCount(trips, FourFamousNorthStations), FourFamousNorthStations.Count),
+                p => 0.15 * p),
+            ChangeNote: new($"{FourFamousNorthStations.Count} 座车站全部到访", "到访站数越多，经验越高（线性递增）"),
             Trigger: i => FirstStationVisit(i.Trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"])),
         new("youthPriceless", ExtremeChallenges, "airline_seat_recline_normal", "欲试天高",
             "从北京、上海或广州出发，乘坐全程硬座列车到达拉萨站", 40,
@@ -1227,14 +1199,31 @@ public static partial class AchievementEngine
             Trigger: i => First(i.Trips, UnlocksCommuterSpecial)),
         new("grandSlam", RailwayCatalog, "hub_outlined", "十人十色", "分别乘坐全部铁路局担当的列车", 30,
             NarrativeNote: "哪个路局又是你的心头好",
+            Progress: (trips, reviews, today, context) => P(RailwayBureauCount(trips), RailwayBureaus.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                RailwayBureaus.Keys.Select(bureau => (Key: bureau, Label: bureau)),
+                trip =>
+                {
+                    var company = trip.CompanyName?.Trim() ?? string.Empty;
+                    var bureau = RailwayBureaus.FirstOrDefault(entry => entry.Value.Contains(company)).Key;
+                    return bureau is null ? [] : [bureau];
+                }),
             Trigger: i => FirstRailwayBureauCompletion(i.Trips)),
         new("storedUpReward", FunJourneys, "redeem_outlined", "厚积薄发", "使用积分兑换里程超过 50 公里的商务座或特等座车票", 20,
             MaxExperience: 50,
             NarrativeNote: "这要花不少积分，先生",
+            Progress: (trips, reviews, today, context) => P(MaxStoredUpRewardMileage(trips), 50),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxStoredUpRewardMileage(trips), 300),
+            Tier: new(
+                trips => StoredUpRewardProgress(trips),
+                d => 6 * d, AdditionalCount: true),
+            ChangeNote: new("兑换里程达到 300 公里", "超出 50 公里的里程越多，经验越高（线性递增）"),
             Trigger: i => First(i.Trips, UnlocksStoredUpReward)),
         new("drippingStone", FunJourneys, "opacity_outlined", "滴水穿石",
             "在任意 30 天内使用积分兑换至少 10 次里程超过 50 公里的车票", 25,
             NarrativeNote: "像极了在B站一直白嫖攒硬币的人",
+            Progress: (trips, reviews, today, context) => P(MaxThirtyDayRedemptionCount(trips), 10),
             Trigger: i => FirstThirtyDayRedemptionCompletion(i.Trips, 10)),
         new("soundSleep", FunJourneys, "hotel_outlined", "酣然入梦", "乘坐全程高级软卧或高级动卧列车的下铺", 25,
             NarrativeNote: "和酒店房间之间就差一间淋浴室",
@@ -1243,6 +1232,11 @@ public static partial class AchievementEngine
             "乘坐单程不超过 400 公里的高级软卧或高级动卧", 30,
             MaxExperience: 50,
             NarrativeNote: "年轻真好，倒头就睡",
+            Tier: new(
+                trips => Percent(400 - MinTripMileage(trips, trip => trip.MileageKm is > 0 and <= 400 &&
+                    NormalizedSeatType(trip.SeatType) is "高级软卧" or "高级动卧", 400), 400),
+                p => 0.75 * Math.Exp(0.045 * p)),
+            ChangeNote: new("里程不超过 80 公里", "里程越短，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => trip.MileageKm is > 0 and <= 400 &&
                 NormalizedSeatType(trip.SeatType) is "高级软卧" or "高级动卧")),
         new("soloCompartment", FunJourneys, "chair_alt_outlined", "目中无人",
@@ -1255,11 +1249,13 @@ public static partial class AchievementEngine
         new("redFootprints", Touring, "directions_walk_outlined", "红色足迹", "乘坐韶山南站至延安站或瑞金站至延安站的全程列车", 20,
             Note: "必须以延安为终点站",
             NarrativeNote: "重走一次先辈们的来时路吧",
+            Requirements: trips => RedFootprintsRequirements(trips),
             Trigger: i => First(i.Trips, trip =>
                 NormalizedStation(trip.ToStation) == "延安" &&
                 NormalizedStation(trip.FromStation) is "韶山南" or "瑞金")),
         new("greatWallWatch", Touring, "account_balance_outlined", "长城守望", "到访八达岭站或八达岭长城站", 10,
             NarrativeNote: "中国人的铁路就应该中国人自己建",
+            Requirements: trips => StationRequirements(trips, ["八达岭", "八达岭长城"]),
             Trigger: i => FirstStationVisit(i.Trips, ["八达岭", "八达岭长城"])),
         new("icyWorld", Touring, "ac_unit_outlined", "冰天雪地", "在 12 月、1 月或 2 月到访根河站", 30,
             NarrativeNote: "不做好保暖就只会被冻成英吉利牛肉了",
@@ -1267,6 +1263,12 @@ public static partial class AchievementEngine
         new("unnecessaryExtra", FunJourneys, "call_split_outlined", "多此一举", "至少分 3 张车票接续乘坐同一列车", 25,
             MaxExperience: 50,
             NarrativeNote: "才不是因为没买到全程票呢",
+            Progress: (trips, reviews, today, context) => P(MaxSameTrainTicketChain(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxSameTrainTicketChain(trips), 6),
+            Tier: new(
+                trips => Percent(MaxSameTrainTicketChain(trips) - 3, 3),
+                p => Math.Exp(0.04 * p) + 2),
+            ChangeNote: new("分 6 张车票接续乘坐同一列车", "票数越多，经验越高（指数递增）"),
             Trigger: i => FirstThreeTicketSameTrainCompletion(i.Trips)),
         new("blessChina", FunJourneys, "flag_outlined", "祝福祖国", "在 10 月 1 日乘坐列车", 10,
             NarrativeNote: "以前报销凭证上会写些特别的贺词",
@@ -1294,14 +1296,48 @@ public static partial class AchievementEngine
             "累计乘坐至少 3 列加装 LKJ 装置的高速动车组", 25,
             MaxExperience: 40,
             NarrativeNote: "开门，社区送温暖",
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)),
+                3),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)), LkjEquippedEmuModels.Count),
+            Requirements: trips => RollingStockRequirements(trips, LkjEquippedEmuModels),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)),
+                    LkjEquippedEmuModels.Count),
+                p => 0.15 * p),
+            ChangeNote: new($"{LkjEquippedEmuModels.Count} 组 LKJ 动车组全部乘坐", "乘坐的组数越多，经验越高（线性递增）"),
             Trigger: i => FirstPartialRollingStockCompletion(i.Trips, LkjEquippedEmuModels, 3)),
         new("facingTheWorld", RailwayCatalog, "public_outlined", "面向世界", "乘坐一种 CR400 系列可变轨距动车组", 20,
             MaxExperience: 30,
             NarrativeNote: "跨国高铁项目何时再次重启",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, VariableGaugeModels)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, VariableGaugeModels)), VariableGaugeModels.Count),
+            Requirements: trips => RollingStockRequirements(trips, VariableGaugeModels),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, VariableGaugeModels)),
+                    VariableGaugeModels.Count),
+                p => 0.1 * p),
+            ChangeNote: new($"{VariableGaugeModels.Count} 种可变轨距动车组全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, VariableGaugeModels)),
         new("revivalPrototype", RailwayCatalog, "science_outlined", "复兴之路", "乘坐一种 CR400 或 CR300 原样车", 20,
             MaxExperience: 50,
             NarrativeNote: "动车组自主创新之路，就此迈出第一步",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, PrototypeModels)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, PrototypeModels)), PrototypeModels.Count),
+            Requirements: trips => RollingStockRequirements(trips, PrototypeModels),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, PrototypeModels)),
+                    PrototypeModels.Count),
+                p => 0.3 * p),
+            ChangeNote: new($"{PrototypeModels.Count} 组原样车全部乘坐", "乘坐的组数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, PrototypeModels)),
         new("vibrantJourney", RailwayCatalog, "movie_outlined", "动感之旅", "乘坐一次港铁动感号列车", 20,
             NarrativeNote: "Caring for life's money",
@@ -1309,11 +1345,24 @@ public static partial class AchievementEngine
         new("dreamExpress", RailwayCatalog, "format_list_numbered_outlined", "梦之特快",
             "分别乘坐全部种类的动力分散式动卧列车", 20,
             NarrativeNote: "现在已经很晚啦，做个好梦，晚安~",
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels)),
+                DistributedSleeperEmuModels.Count),
+            Requirements: trips => RollingStockRequirements(
+                trips,
+                DistributedSleeperEmuModels.OrderBy(model => model, StringComparer.Ordinal)
+                    .Select(model => new RollingStockTarget(model))),
             Trigger: i => FirstCollectionCompletion(i.Trips, DistributedSleeperEmuModels,
                 trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels))),
         new("multipleChoices", FunJourneys, "list_alt_outlined", "多重选择", "在同一乘车区间累计乘坐 10 个不同车次", 20,
             MaxExperience: 50,
             NarrativeNote: "车次多就是可以为所欲为的",
+            Progress: (trips, reviews, today, context) => P(MaxDistinctTrainCountForRoute(trips), 10),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxDistinctTrainCountForRoute(trips), 30),
+            Tier: new(
+                trips => Percent(MaxDistinctTrainCountForRoute(trips) - 10, 10),
+                p => 0.2 * p - 10),
+            ChangeNote: new("同一区间乘坐 30 个不同车次", "车次数越多，经验越高（线性递增）"),
             Trigger: i => FirstDistinctTrainCountForRoute(i.Trips, 10)),
         new("publicDisplayOfAffection", FunJourneys, "favorite_outline", "成双成对",
             "在 5 月 20 日、2 月 14 日或七夕乘坐重联动车组列车", 15,
@@ -1329,16 +1378,24 @@ public static partial class AchievementEngine
         new("substituteSeats", FunJourneys, "event_seat_outlined", "物尽其用", "至少乘坐 3 次代用席位", 15,
             MaxExperience: 40,
             NarrativeNote: "你当然可以躺下……只要旁边人不介意",
+            Progress: (trips, reviews, today, context) => P(trips.Count(trip => IsSubstituteSeat(trip.SeatType)), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(SubstituteSeatCount(trips), 9),
+            Tier: new(
+                trips => Percent(SubstituteSeatCount(trips) - 3, 3),
+                p => 0.15 * p),
+            ChangeNote: new("累计 9 次代用席位", "次数越多，经验越高（线性递增）"),
             Trigger: i => FirstCountCompletion(i.Trips, 3, trip => IsSubstituteSeat(trip.SeatType))),
         new("oneYuanJourney", FunJourneys, "currency_yen", "一元旅程", "单程票价为 1 元", 20,
             NarrativeNote: "1995年以后就几乎无法通过全价票取得这一成就了",
             Trigger: i => First(i.Trips, trip => trip.Price == 1)),
         new("cardinalStations", Touring, "assistant_navigation", "东西南北", "到访过一个城市的东西南北中 5 个车站", 25,
             NarrativeNote: "这样的城市一只手也能数得过来",
+            Progress: (trips, reviews, today, context) => P(MaxCardinalStationCount(trips), 5),
             Trigger: i => FirstCardinalStationCompletion(i.Trips)),
         new("ancientLetters", RailwayCatalog, "abc_outlined", "远古字母",
             "在 2004 至 2009 年之间乘坐过以 A、N 或 L 开头的列车，或在 2000 年以前乘坐过 G 字头列车", 20,
             NarrativeNote: "坐过的人年纪都不小了",
+            Requirements: trips => AncientLettersRequirements(trips),
             Trigger: i => First(i.Trips, trip =>
             {
                 var year = Departure(trip).Year;
@@ -1350,14 +1407,27 @@ public static partial class AchievementEngine
         new("miniTurnaround", ExtremeChallenges, "timer_outlined", "迷你运转", "单次旅程时间在 10 分钟以内", 10,
             MaxExperience: 50,
             NarrativeNote: "座位还没坐热就到了？！",
+            Tier: new(
+                trips => Percent(10 - ShortestTripMinutes(trips), 10),
+                p => Math.Exp(0.05 * p) + 3),
+            ChangeNote: new("单程时间不超过 2 分钟", "单程时间越短，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => trip.ArrivalTime is not null && trip.ArrivalTime >= Departure(trip) &&
                 trip.ArrivalTime - Departure(trip) <= TimeSpan.FromMinutes(10))),
         new("verticalSleeper", RailwayCatalog, "king_bed_outlined", "私人小窝", "乘坐一次 CRH2E 纵向动卧列车", 20,
             NarrativeNote: "要是床帘遮光就更好了",
+            Requirements: trips => RollingStockRequirements(trips,
+                [new("CRH2E", "2463"), new("CRH2E", "2464"), new("CRH2E", "2465")]),
             Trigger: i => First(i.Trips, UnlocksVerticalSleeper)),
         new("completeTrainLetters", RailwayCatalog, "sort_by_alpha_outlined", "车次大全", "分别乘坐全部常见车次字母的列车", 30,
             Note: "未来车次调整后该成就将大幅重构",
             NarrativeNote: "实际上只有四个字母完全没有在车次里用过",
+            Progress: (trips, reviews, today, context) => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                CommonTrainCategoryEntries,
+                trip => CommonTrainCategory(trip.TrainNumber) is { } category
+                    ? [category]
+                    : []),
             Trigger: i => FirstCollectionCompletion(i.Trips, CommonTrainCategories, trip =>
                 {
                     var category = CommonTrainCategory(trip.TrainNumber);
@@ -1366,22 +1436,61 @@ public static partial class AchievementEngine
         new("unpredictableWorld", RailwayCatalog, "heart_broken_outlined", "世事难料", "乘坐过任意已提前退役的动车组", 25,
             MaxExperience: 30,
             NarrativeNote: "那日一别，即是永别QAQ",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, RetiredEmus)), 1),
+            // 清单比 3 组长：满分经验在 3 组就封顶了。
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, RetiredEmus)), 3),
+            Requirements: trips => RollingStockRequirements(trips, RetiredEmus),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, RetiredEmus)),
+                    RetiredEmus.Count),
+                p => 0.1 * p),
+            ChangeNote: new("乘坐 3 组退役动车组", "乘坐的组数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, RetiredEmus)),
         new("fireIncident", RailwayCatalog, "whatshot", "熊熊烈火", "乘坐过任意发生过起火事故的动车组", 25,
             NarrativeNote: "顷刻——炼化！",
+            Requirements: trips => RollingStockRequirements(trips, FireIncidentEmus),
             Trigger: i => FirstRollingStockMatch(i.Trips, FireIncidentEmus)),
         new("railwayTrailblazer", RailwayCatalog, "rocket_launch_outlined", "开路先锋",
             "乘坐一种早期动车组列车（不含退役后编入普通列车的 25DT）", 25,
             MaxExperience: 50,
             NarrativeNote: "对前辈们艰辛的探索致以崇高的敬意",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, EarlyEmuModels)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, EarlyEmuModels)), EarlyEmuModels.Count),
+            Requirements: trips => RollingStockRequirements(trips, EarlyEmuModels),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, EarlyEmuModels)),
+                    EarlyEmuModels.Count),
+                p => 0.25 * p),
+            ChangeNote: new($"{EarlyEmuModels.Count} 种早期动车组全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, EarlyEmuModels)),
         new("modestAppetite", FunJourneys, "near_me_outlined", "腹犹果然", "完成单程不超过 20 公里的行程", 10,
             MaxExperience: 50,
             NarrativeNote: "适莽苍者，古时且能三餐而反，遑论今朝？",
+            Tier: new(
+                trips => Percent(20 - MinTripMileage(trips, trip => trip.MileageKm is > 0 and <= 20, 20), 20),
+                p => Math.Exp(0.05 * p) + 3),
+            ChangeNote: new("单程里程不超过 4 公里", "里程越短，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => trip.MileageKm is > 0 and <= 20)),
         new("whatAgeIsThis", RailwayCatalog, "history_outlined", "今乃何世", "乘坐一种 2000 年之前停产的客车", 20,
             MaxExperience: 50,
             NarrativeNote: "以后或许只能在博物馆里见到了",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)), EarlyPassengerCoachModels.Count),
+            Requirements: trips => RollingStockRequirements(trips, EarlyPassengerCoachModels),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)),
+                    EarlyPassengerCoachModels.Count),
+                p => 0.3 * p),
+            ChangeNote: new($"{EarlyPassengerCoachModels.Count} 种客车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, EarlyPassengerCoachModels)),
         new("centuryMeterGauge", RailwayCatalog, "map_outlined", "碧色芳华", "乘坐经由昆河线的列车", 15,
             NarrativeNote: "全国最早的动车组也在这里",
@@ -1400,78 +1509,137 @@ public static partial class AchievementEngine
             "在相同起终点（方向不限）之间，经由至少 3 种不同路线", 20,
             MaxExperience: 50,
             NarrativeNote: "铁路枢纽是方便走邪道的好地方",
+            Progress: (trips, reviews, today, context) => P(MaxDifferentRoutesSameDestination(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxDifferentRoutesSameDestination(trips), 9),
+            Tier: new(
+                trips => Percent(MaxDifferentRoutesSameDestination(trips) - 3, 3),
+                p => 0.2 * p - 10),
+            ChangeNote: new("同起终点经由 9 条不同路线", "路线数越多，经验越高（线性递增）"),
             Trigger: i => FirstDifferentRoutesSameDestination(i.Trips)),
         new("fourOfAKind", FunJourneys, "numbers", "四重存在", "乘坐一次车组号为 4 位相同数字的动车组列车", 20,
             NarrativeNote: "如果在车上遇到了一只金发吸血鬼，请告诉我",
+            Requirements: trips => RollingStockRequirements(trips, FourOfAKindTargets),
             Trigger: i => First(i.Trips, trip => HasQuadrupleSetNumber(trip.RollingStock))),
         new("allAlone", FunJourneys, "person_outline", "茕茕孑立", "乘坐一次 RZ25K 111111 车厢或 CR400AF-AS-1111 的 11 车厢", 30,
             MaxExperience: 50,
             NarrativeNote: "你最好是刻意来完成这个成就的QAQ",
+            Requirements: trips => AllAloneRequirements(trips),
+            Bonus: AllAloneBonus,
+            ChangeNote: new("解锁时座号为 11（不限后缀）且乘车日期为 11 月 11 日（两项各加 10 点）",
+                "满足的附加条件越多，经验越高（线性递增，每项加 10 点）"),
             Trigger: i => First(i.Trips, UnlocksAllAlone)),
         new("dejaVu", FunJourneys, "replay_outlined", "似曾相识", "乘坐至少 2 次除日期和车号外均一致的行程", 30,
             NarrativeNote: "不知道有多少人忘了填座号",
             Trigger: i => FirstRepeatedTripCompletion(i.Trips, 2)),
         new("traverseOneRegion", Milestones, "linear_scale_outlined", "遍历一方", "经由区间去重后的累计里程达到 5,000 公里", 10,
             NarrativeNote: "继续下去，还有广大的区域等着你来探索",
+            Progress: (trips, reviews, today, context) => P(UniqueRouteMileage(trips), 5000),
             Trigger: i => FirstUniqueRouteMileageCompletion(i.Trips, 5000)),
         new("halfTheRealm", Milestones, "pie_chart_outline", "半壁江山", "经由区间去重后的累计里程达到 80,000 公里", 30,
             NarrativeNote: "探索度50%是什么水平？只有自己才知道",
+            Progress: (trips, reviews, today, context) => P(UniqueRouteMileage(trips), 80000),
             Trigger: i => FirstUniqueRouteMileageCompletion(i.Trips, 80000)),
         new("centuryDreamFulfilled", Milestones, "flag_circle_outlined", "世纪梦圆", "经由区间去重后的累计里程达到 160,000 公里", 50,
             NarrativeNote: "一百年前，孙中山曾梦想全国修建起16万千米的铁路网",
+            Progress: (trips, reviews, today, context) => P(UniqueRouteMileage(trips), 160000),
             Trigger: i => FirstUniqueRouteMileageCompletion(i.Trips, 160000)),
         new("moonPhases", Milestones, "dark_mode_outlined", "晦朔弦望", "累计乘车时长超过 720 小时", 15,
             NarrativeNote: "时间真的过得好快",
+            Progress: (trips, reviews, today, context) => P(TotalDurationHours(trips), 720),
             Trigger: i => FirstCumulativeDurationCompletion(i.Trips, 720)),
         new("seasonsChange", Milestones, "thermostat_outlined", "寒来暑往", "累计乘车时长超过 4,320 小时", 40,
             NarrativeNote: "还记得你第一次运转已经是多久之前的了吗",
+            Progress: (trips, reviews, today, context) => P(TotalDurationHours(trips), 4320),
             Trigger: i => FirstCumulativeDurationCompletion(i.Trips, 4320)),
         new("spendsLikeWater", FunJourneys, "payments_outlined", "挥金如土", "单程票价超过 2,000 元", 40,
             NarrativeNote: "商务座，爽！高级软卧，爽！",
+            Progress: (trips, reviews, today, context) => P(
+                trips.Select(trip => trip.Price).DefaultIfEmpty(0).Max(), 2000),
             Trigger: i => First(i.Trips, trip => trip.Price > 2000)),
         new("wealthyTraveler", ExtremeChallenges, "savings_outlined", "腰缠万贯", "任意 30 天内的车票总支出超过 10,000 元", 40,
             NarrativeNote: "要是能报销倒还好说",
+            Progress: (trips, reviews, today, context) => P(MaxThirtyDaySpending(trips), 10000),
             Trigger: i => FirstThirtyDaySpendingCompletion(i.Trips, 10000)),
         new("meritAndHonor", RailwayCatalog, "military_tech_outlined", "功成名就", "乘坐至少一种荣誉机车牵引的列车", 20,
             MaxExperience: 50,
             NarrativeNote: "真正坐一次挂牌车的体验是单纯拍车感受不到的",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, HonorLocomotives)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, HonorLocomotives)), HonorLocomotives.Count),
+            Requirements: trips => RollingStockRequirements(trips, HonorLocomotives),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, HonorLocomotives)),
+                    HonorLocomotives.Count),
+                p => 0.3 * p),
+            ChangeNote: new($"{HonorLocomotives.Count} 组荣誉机车全部乘坐", "乘坐的组数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, HonorLocomotives)),
         new("powerHouse", RailwayCatalog, "construction_outlined", "力拔山河", "乘坐至少一种大功率货运型电力机车牵引或担当补机的列车", 25,
             MaxExperience: 50,
             NarrativeNote: "这该死的推背感",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)), HighPowerFreightLocomotives.Count),
+            Requirements: trips => RollingStockRequirements(trips, HighPowerFreightLocomotives),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)),
+                    HighPowerFreightLocomotives.Count),
+                p => 0.25 * p),
+            ChangeNote: new($"{HighPowerFreightLocomotives.Count} 种大功率货运电力机车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, HighPowerFreightLocomotives)),
         new("firstTrip", Milestones, "trip_origin", "始于足下", "首次录入行程", 10,
             NarrativeNote: "就此开始你的第一次出行吧",
             Trigger: i => i.Trips.FirstOrDefault()),
         new("thousandTickets", Milestones, "confirmation_number_outlined", "千千晚星", "累计出发 1,000 次", 40,
             NarrativeNote: "来日纵使千千阙歌♪飘于远方我路上♪",
+            Progress: (trips, reviews, today, context) => P(trips.Count, 1000),
             Trigger: i => i.Trips.Count >= 1000 ? i.Trips[999] : null),
         new("fiftyThousandSpending", Milestones, "account_balance_wallet_outlined", "千金散尽", "累计车票总支出超过 50,000 元", 30,
             NarrativeNote: "……还复来，但转化成积分了",
+            Progress: (trips, reviews, today, context) => P(trips.Sum(trip => trip.Price), 50000),
             Trigger: i => FirstCumulativeSpendingCompletion(i.Trips, 50000)),
         new("reviewedTrainNumbers", Milestones, "rate_review_outlined", "激扬文字", "累计发布 50 次评论", 20,
             NarrativeNote: "你的点评就是为后人规划出行的参考",
+            Progress: (trips, reviews, today, context) => P(reviews.Count, 50),
             Trigger: i => i.Reviews.Count >= 50 ? i.Trips.LastOrDefault() : null),
         new("reviewReplies500", Milestones, "forum_outlined", "交口称赞", "全部评论累计获得 500 次回复", 25,
             NarrativeNote: "先生所言极是",
+            Progress: (trips, reviews, today, context) => P(context?.TotalReviewReactions ?? 0, 500),
             Trigger: i => ContextTrigger(i, (i.Context?.TotalReviewReactions ?? 0) >= 500)),
         new("fourThousandKmInDay", ExtremeChallenges, "calendar_view_day_outlined", "日行万里",
             "24 小时内的总移动里程超过 4,000 公里", 30,
             NarrativeNote: "早上坐最快的高铁出发，晚上再坐动卧回来……",
+            Progress: (trips, reviews, today, context) => P(MaxRolling24HourMileage(trips), 4000),
             Trigger: i => FirstRolling24HourMileageCompletion(i.Trips, 4000)),
         new("hundredDeparturesFromStation", FunJourneys, "pin_drop_outlined", "脚步不止", "从单一车站出发 100 次", 25,
             NarrativeNote: "又要开始下一次远行吗……",
+            Progress: (trips, reviews, today, context) => P(MaxStationDepartureCount(trips), 100),
             Trigger: i => FirstStationDepartureCompletion(i.Trips, 100)),
         new("multipleLocomotives", FunJourneys, "precision_manufacturing_outlined", "其利断金",
             "乘坐同时由至少 2 台机车牵引或担当补机的列车", 20,
             MaxExperience: 50,
             Note: "中途换挂的也可以",
             NarrativeNote: "沿线车迷注意接车，今天×××次双机",
+            Progress: (trips, reviews, today, context) => P(MaxLocomotiveCount(trips), 2),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxLocomotiveCount(trips), 5),
+            Tier: new(
+                trips => Math.Max(0, MaxLocomotiveCount(trips) - 2),
+                d => Math.Exp(1.2 * d) + 2, AdditionalCount: true),
+            ChangeNote: new("同时由 5 台机车牵引或担当补机", "机车台数越多，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => LocomotiveCount(trip.RollingStock) >= 2)),
         new("relayLocomotives", FunJourneys, "sync_alt_outlined", "前赴后继",
             "乘坐除上下车站外中途至少换挂 3 次的列车", 25,
             MaxExperience: 50,
             NarrativeNote: "当心你的泡面或便当",
+            Progress: (trips, reviews, today, context) => P(MaxLocomotiveChangeCount(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(MaxLocomotiveChangeCount(trips), 6),
+            Tier: new(
+                trips => Math.Max(0, MaxLocomotiveChangeCount(trips) - 3),
+                d => 0.8 * Math.Exp(d + 1), AdditionalCount: true),
+            ChangeNote: new("中途换挂 6 次", "换挂次数越多，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => LocomotiveChangeCount(trip.RollingStock) >= 3)),
         new("snowBlockingBlueGate", FunJourneys, "severe_cold_outlined", "雪拥蓝关",
             "在 2008-01-10 至 2008-02-10 期间行经京广线武昌至广州之间的任意区间", 30,
@@ -1482,10 +1650,28 @@ public static partial class AchievementEngine
             Note: "JF, SL, KD, FD, KF, JS, RM, QJ",
             NarrativeNote: "这就是为什么火车叫做火车",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, SteamLocomotives)), 1),
+            // 同上：8 种蒸汽机车里坐满 4 种就到 80 点封顶。
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, SteamLocomotives)), 4),
+            Requirements: trips => RollingStockRequirements(trips, SteamLocomotives),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, SteamLocomotives)),
+                    SteamLocomotives.Count),
+                p => 0.6 * p),
+            ChangeNote: new("乘坐 4 种蒸汽机车", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, SteamLocomotives)),
         new("fourExtremes", Touring, "explore_outlined", "遍览四境", "分别到访漠河站、三亚站、阿克陶站、抚远站，次序不限", 10,
             MaxExperience: 50,
             NarrativeNote: "四境之内，皆为汉土",
+            Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, FourExtremesStations), FourExtremesStations.Count),
+            Requirements: trips => StationRequirements(trips, ["漠河", "三亚", "阿克陶", "抚远"]),
+            Tier: new(
+                trips => FourExtremesPerDayCount(trips),
+                d => DailyWindowBonus(d), AdditionalCount: true),
+            ChangeNote: new("四站到访间隔不超过 8 天", "间隔越短，经验越高（对数递增）"),
             Trigger: i => FirstFourExtremesCompletion(i.Trips, TimeSpan.MaxValue)),
         new("waterIsCalm", Touring, "water_outlined", "水何澹澹", "到访东戴河站", 20,
             NarrativeNote: "萧瑟秋风今又是，换了人间",
@@ -1499,26 +1685,65 @@ public static partial class AchievementEngine
         new("deadEnd", Touring, "wrong_location", "走投无路", "到访任意永久尽头式车站", 10,
             MaxExperience: 40,
             NarrativeNote: "给我达速跨一个试试？",
+            Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, DeadEndStations), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(VisitedStationCount(trips, DeadEndStations), DeadEndStations.Count),
+            Requirements: trips => StationRequirements(trips, DeadEndStations),
+            Tier: new(
+                trips => Percent(VisitedStationCount(trips, DeadEndStations), DeadEndStations.Count),
+                p => 0.4 * p - 5),
+            ChangeNote: new($"{DeadEndStations.Count} 座永久尽头式车站全部到访", "到访站数越多，经验越高（线性递增）"),
             Trigger: i => FirstStationVisit(i.Trips, DeadEndStations)),
         new("goddessYangtzeBridges", Touring, "architecture_outlined", "神女无恙", "行经至少 10 座承担客运的铁路长江大桥", 20,
             MaxExperience: 50,
-            Note: "截至 2026 年 11 月共 27 座，详见附表1",
+            Note: $"{AsOfNow}共 {DistinctSectionNameCount(YangtzeBridges)} 座，详见附表1",
             NarrativeNote: "高峡出平湖的梦想我们也实现了",
+            Progress: (trips, reviews, today, context) => SectionProgress(trips, YangtzeBridges, 10),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                SectionCoverageCount(trips, AvailableSections(YangtzeBridges)), DistinctSectionNameCount(YangtzeBridges)),
+            Requirements: trips => SectionRequirements(trips, AvailableSections(YangtzeBridges)),
+            Tier: new(
+                trips => Percent(SectionCoverageCount(trips, AvailableSections(YangtzeBridges)),
+                    DistinctSectionNameCount(YangtzeBridges)),
+                p => 0.45 * p - 15),
+            ChangeNote: new($"{DistinctSectionNameCount(YangtzeBridges)} 座长江大桥全部行经", "行经的座数越多，经验越高（线性递增）"),
             Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(YangtzeBridges), 10)),
         new("muddyWavesSweepSky", Touring, "tsunami", "浊浪排空", "行经至少 10 座承担客运的铁路黄河大桥", 20,
             MaxExperience: 50,
-            Note: "截至 2026 年 11 月共 33 座，详见附表2",
+            Note: $"{AsOfNow}共 {DistinctSectionNameCount(YellowRiverBridges)} 座，详见附表2",
             NarrativeNote: "一桥飞架，百尺之冰亦可渡",
+            Progress: (trips, reviews, today, context) => SectionProgress(trips, YellowRiverBridges, 10),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                SectionCoverageCount(trips, AvailableSections(YellowRiverBridges)), DistinctSectionNameCount(YellowRiverBridges)),
+            Requirements: trips => SectionRequirements(trips, AvailableSections(YellowRiverBridges)),
+            Tier: new(
+                trips => Percent(SectionCoverageCount(trips, AvailableSections(YellowRiverBridges)),
+                    DistinctSectionNameCount(YellowRiverBridges)),
+                p => 0.45 * p - 15),
+            ChangeNote: new($"{DistinctSectionNameCount(YellowRiverBridges)} 座黄河大桥全部行经", "行经的座数越多，经验越高（线性递增）"),
             Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(YellowRiverBridges), 10)),
         new("mistyVastWaters", Touring, "anchor", "烟波微茫", "行经至少 3 座承担客运的铁路跨海大桥或海湾大桥", 10,
             MaxExperience: 25,
-            Note: "截至 2026 年 11 月共 7 座，详见附表3",
+            Note: $"{AsOfNow}共 {SeaBayBridges.Count} 座，详见附表3",
             NarrativeNote: "或许大多数人只能想起其中一两座",
+            Progress: (trips, reviews, today, context) => SectionProgress(trips, SeaBayBridges, 3),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                SectionCoverageCount(trips, AvailableSections(SeaBayBridges)), SeaBayBridges.Count),
+            Requirements: trips => SectionRequirements(trips, AvailableSections(SeaBayBridges)),
+            Tier: new(
+                trips => Percent(SectionCoverageCount(trips, AvailableSections(SeaBayBridges)),
+                    SeaBayBridges.Count),
+                p => 0.3 * p - 15),
+            ChangeNote: new($"{SeaBayBridges.Count} 座跨海、海湾大桥全部行经", "行经的座数越多，经验越高（线性递增）"),
             Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(SeaBayBridges), 3)),
         new("oneStoneThreeBirds", FunJourneys, "filter_3_outlined", "一石三鸟", "单次行程同时满足其他至少 3 项成就的取得条件", 25,
             MaxExperience: 50,
             Note: "必须均为之前未取得过的成就",
-            NarrativeNote: "要 素 过 多"),
+            NarrativeNote: "要 素 过 多",
+            MaxProgress: (trips, oneStoneConditions) => M(oneStoneConditions, 6),
+            // 「一石三鸟」的进度依赖同一次行程触发的其他成就数，在 Evaluate 里单独代入。
+            Tier: new(_ => 0, p => Math.Exp(0.04 * p) + 2),
+            ChangeNote: new("单次行程同时满足 6 项成就", "同时满足的项数越多，经验越高（指数递增）")
+        ),
         new("unknownTerritory", Milestones, "visibility_outlined", "未知领域", "取得任意隐藏成就", 40,
             NarrativeNote: "并非做不到，只要有这个决心，没什么不可能"),
         new("careerRecord", Milestones, "emoji_events_outlined", "履历斐然", "取得其他所有常规成就", 50,
@@ -1527,26 +1752,38 @@ public static partial class AchievementEngine
             MaxExperience: 80,
             NarrativeNote: "那时甚至还没有软纸车票",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(1994 - EarliestDepartureYear(trips), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(1994 - EarliestDepartureYear(trips), 8),
+            Tier: new(
+                trips => Math.Max(0, 1994 - EarliestDepartureYear(trips)),
+                d => 4 * d - 2, AdditionalCount: true),
+            ChangeNote: new("录入 1986 年及以前的行程", "年份越早，经验越高（线性递增）"),
             Trigger: i => First(i.Trips, trip => Departure(trip) < new DateTime(1995, 1, 1))),
         new("thousandCities", Milestones, "location_city_outlined", "千城千面", "累计到访过 2,500 座不同的客运车站", 80,
             NarrativeNote: "进站，安检，检票，上车……这个流程想必已经形成肌肉记忆了吧",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(StationCount(trips), 2500),
             Trigger: i => FirstStationCompletion(i.Trips, 2500)),
         new("rottenAxe", Milestones, "hourglass_bottom_outlined", "烂柯之人", "连续 365 天乘坐列车", 80,
             NarrativeNote: "师傅你是做什么工作的",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(LongestStreak(trips), 365),
             Trigger: i => FirstStreakCompletion(i.Trips, 365)),
         new("roamFreely", Milestones, "signpost_outlined", "随心徜徉", "分别行经全部客运线路的任意区间", 80,
             NarrativeNote: "你一定把全国铁路网都背熟了吧",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
+            Requirements: trips => RouteCatalogRequirements(trips),
             Trigger: i => FirstRouteCatalogCompletion(i.Trips)),
         new("travelAllMountains", Milestones, "terrain_outlined", "踏遍山河", "累计乘车里程至少 500,000 公里", 80,
             NarrativeNote: "小汽车也很少开得到这个里程……大货车也许可以与之一试？",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 500000),
             Trigger: i => FirstCumulativeMileageCompletion(i.Trips, 500000)),
         new("reviewReplies10000", Milestones, "campaign_outlined", "有口皆碑", "全部评论累计获得 10,000 次回复", 50,
             NarrativeNote: "新时代的国铁嘴替就是你了",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(context?.TotalReviewReactions ?? 0, 10000),
             Trigger: i => ContextTrigger(i, (i.Context?.TotalReviewReactions ?? 0) >= 10000)),
         new("nineHeavens", Milestones, "stars_outlined", "九重天外", "除本项外的隐藏成就累计取得 9 项", 80,
             Note: "本项不参与计数",
@@ -1555,6 +1792,7 @@ public static partial class AchievementEngine
         new("immovableMountain", ExtremeChallenges, "accessibility_new", "不动如山", "持硬座或二等座无座车票乘坐至少 24 小时", 50,
             NarrativeNote: "你站你也麻",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips.Where(IsNoSeat)), 24),
             Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24))),
         new("pitchDark", ExtremeChallenges, "inventory_2_outlined", "暗无天日",
@@ -1562,12 +1800,17 @@ public static partial class AchievementEngine
             Note: "路用列车也可以",
             NarrativeNote: "我是在坐车吗……这分明是在坐牢！",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips.Where(trip => IsBoxcarSeat(trip.SeatType))) * 60, 30),
             Trigger: i => First(i.Trips, trip => IsBoxcarSeat(trip.SeatType) &&
                 ValidDuration(trip) >= TimeSpan.FromMinutes(30))),
         new("standingTall", ExtremeChallenges, "directions_railway_outlined", "顶天立地",
             "在 5 至 9 月持无座或硬座车票乘坐单程至少 24 小时的非空调列车", 80,
             NarrativeNote: "老资历我敬你",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(
+                MaxDurationHours(trips.Where(trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
+                    HasNonAirConditionedCoach(trip.RollingStock))),
+                24),
             Trigger: i => First(i.Trips, trip => Departure(trip).Month is >= 5 and <= 9 &&
                 (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
                 ValidDuration(trip) >= TimeSpan.FromHours(24) &&
@@ -1576,16 +1819,19 @@ public static partial class AchievementEngine
             "任意自然年内的乘车时长超过 2,160 小时", 80,
             NarrativeNote: "Shall we go, then?",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxCalendarYearDurationHours(trips), 2160),
             Trigger: i => FirstCalendarYearDurationCompletion(i.Trips, 2160)),
         new("richerThanNation", ExtremeChallenges, "diamond_outlined", "富可敌国", "任意 30 天内的车票总支出超过 50,000 元", 80,
             NarrativeNote: "坐一次丝路梦享号的最豪华包间就够了",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxThirtyDaySpending(trips), 50000),
             Trigger: i => FirstThirtyDaySpendingCompletion(i.Trips, 50000)),
         new("crowningGlory", Touring, "military_tech", "功盖振声",
             "到访内地全部省会、自治区首府、直辖市以及香港的全部主城区车站", 80,
             Note: "不含城际车站与市域铁路车站，详见附表5",
             NarrativeNote: "火车在这些铁路枢纽当中到底有多少种走法",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(CapitalStationCount(trips), RequiredCapitalStationCount),
             Trigger: i => FirstCapitalStationCompletion(i.Trips, RequiredCapitalStationCount)),
         new("envoyArrival", Touring, "gps_fixed_outlined", "使者莅临",
             "乘坐直达联运列车到访至少 3 座别国首都车站", 50,
@@ -1593,36 +1839,87 @@ public static partial class AchievementEngine
             Note: "莫斯科（雅罗斯拉夫尔）、乌兰巴托、平壤、河内（嘉林）、万象、阿斯塔纳（1 号站、光明之路站）",
             NarrativeNote: "未来还会有更多的跨国铁路，拭目以待吧",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(ForeignCapitalCount(trips), 3),
+            MaxProgress: (trips, oneStoneConditions) => M(ForeignCapitalCount(trips), ForeignCapitals.Count),
+            Tier: new(
+                trips => Percent(ForeignCapitalCount(trips), ForeignCapitals.Count),
+                p => 0.3 * p),
+            ChangeNote: new($"{ForeignCapitals.Count} 座别国首都车站全部到访", "到访站数越多，经验越高（线性递增）"),
             Trigger: i => FirstForeignCapitalCompletion(i.Trips, 3)),
         new("flowersAmong", RailwayCatalog, "local_florist_outlined", "百花丛中", "分别乘坐全部常规和谐号、复兴号小类型号", 80,
-            Note: "截至 2026 年 11 月共 66 种，详见附表6",
+            Note: $"{AsOfNow}共 {EmuSubModelNames.Count} 种，详见附表6",
             NarrativeNote: "各种技术参数你或许比车辆厂的职工还熟悉",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => SmallEmuMatches(trip.RollingStock)),
+                EmuModelFamilies.Sum(family => family.Models.Count)),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                EmuModelFamilies.SelectMany(family => family.Models)
+                    .Select(model => (Key: model, Label: model)),
+                trip => SmallEmuMatches(trip.RollingStock)),
             Trigger: i => FirstCollectionCompletion(i.Trips, EmuSubModelNames, trip => SmallEmuMatches(trip.RollingStock))),
         new("unifiedCoachFleet", RailwayCatalog, "tram_outlined", "悠游自在", "分别乘坐全部统型机辆客车", 80,
             Note: "21, 22, 22A, 22B, 22C, 23, 24, 25, 25A, 25B, 25C, 25G, 25Z, 25K, 25T, 25DT, 18, 18A, 19, 19A, 30, 31, M1",
             NarrativeNote: "普速自有普速的魅力……不是吗",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => UnifiedCoachMatches(trip.RollingStock)),
+                UnifiedCoachModels.Count),
             Trigger: i => FirstCollectionCompletion(i.Trips, UnifiedCoachModels, trip => UnifiedCoachMatches(trip.RollingStock))),
         new("refinedMechanic", RailwayCatalog, "handyman_outlined", "精益求精", "分别乘坐全部和谐型与复兴型量产机车牵引的列车（不含动集动力车、调机与非国铁机车）", 80,
             Note: "HXD1, HXD1B, HXD1C, HXD1D, HXD2, HXD2B, HXD2C, HXD3, HXD3B, HXD3C, HXD3D, HXN3, HXN5, FXD1, FXD1BA, FXD2BA, FXD3, FXN3C, FXN5C, FXSY",
             NarrativeNote: "更大功率，更高运力",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, ModernLocomotives)),
+                ModernLocomotives.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                ModernLocomotives.OrderBy(model => model, StringComparer.Ordinal)
+                    .Select(model => (Key: model, Label: model)),
+                trip => RollingStockMatches(trip.RollingStock, ModernLocomotives)),
             Trigger: i => FirstCollectionCompletion(i.Trips, ModernLocomotives, trip => RollingStockMatches(trip.RollingStock, ModernLocomotives))),
         new("dawnBreaks", RailwayCatalog, "wb_twilight_outlined", "曙光乍现", "分别乘坐全部东风型与韶山型量产机车牵引的列车（不含调机与非国铁机车）", 80,
             Note: "DF1, DF3, DF4, DF4B, DF4C, DF4D, DF7D, DF8, DF8B, DF9, DF10F, DF11, DF11Z, DF11G, DF21, SS1, SS3, SS3B, SS4, SS6, SS6B, SS7, SS7C, SS7D, SS7E, SS8, SS9",
             NarrativeNote: "听说这是HCM的最爱",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(
+                CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives)),
+                DongfengShaoshanLocomotives.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                DongfengShaoshanLocomotives.OrderBy(model => model, StringComparer.Ordinal)
+                    .Select(model => (Key: model, Label: model)),
+                trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives)),
             Trigger: i => FirstCollectionCompletion(i.Trips, DongfengShaoshanLocomotives, trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives))),
         new("completeEmuFleet", RailwayCatalog, "menu_book_outlined", "百车全书", "分别乘坐任意和谐号或复兴号系列的全部载客车组", 80,
             MaxExperience: 200,
             Note: "详见附表6",
             NarrativeNote: "建议是没有必要继续贪这个成就的额外经验",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(CompleteEmuFamilyCount(trips), 1),
+            // 15 个车系里做满 6 个就到 200 点封顶。
+            MaxProgress: (trips, oneStoneConditions) => M(CompleteEmuFamilyCount(trips), 6),
+            Tier: new(
+                trips => Math.Max(0, CompleteEmuFamilyCount(trips) - 1),
+                d => 20 * Math.Exp(0.2 * (d + 6)) - 60, AdditionalCount: true),
+            ChangeNote: new("完成 6 个系列的全部车组", "完成的系列数越多，经验越高（指数递增）"),
             Trigger: i => FirstCompleteEmuFamily(i.Trips)),
         new("hundredPeople", RailwayCatalog, "groups_outlined", "百人百相", "分别乘坐全部客运段担当的列车", 50,
             NarrativeNote: "所以你觉得哪个客运段的服务最好，哪个又最差？",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(PassengerCompanyCount(trips), AllPassengerCompanies.Count),
+            Requirements: trips => CollectionRequirements(
+                trips,
+                AllPassengerCompanies.OrderBy(company => company, StringComparer.Ordinal)
+                    .Select(company => (Key: company, Label: company)),
+                trip =>
+                {
+                    var company = trip.CompanyName?.Trim() ?? string.Empty;
+                    return AllPassengerCompanies.Where(candidate =>
+                        company.Contains(candidate, StringComparison.Ordinal));
+                }),
             Trigger: i => FirstCollectionCompletion(i.Trips, AllPassengerCompanies, trip =>
                 AllPassengerCompanies.Where(company =>
                     (trip.CompanyName?.Contains(company, StringComparison.Ordinal) ?? false))
@@ -1630,20 +1927,24 @@ public static partial class AchievementEngine
         new("thousandDeparturesFromStation", FunJourneys, "outbound_outlined", "百转千回", "从单一车站出发 1,000 次", 80,
             NarrativeNote: "车站的结构图已经早就被你刻在DNA里了吧！",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxStationDepartureCount(trips), 1000),
             Trigger: i => FirstStationDepartureCompletion(i.Trips, 1000)),
         new("luxuryStreak2", FunJourneys, "airline_seat_flat_angled_outlined", "车驾肥轻",
             "连续 2 次乘坐商务座、特等座、高级软卧或高级动卧出行", 30,
             NarrativeNote: "不要告诉我是因为买不到别的席位的票",
+            Progress: (trips, reviews, today, context) => P(LuxuryStreakCount(trips), 2),
             Trigger: i => FirstLuxuryStreakCompletion(i.Trips, 2)),
         new("luxuryStreak20", FunJourneys, "airline_seat_individual_suite_outlined", "君临天下",
             "连续 20 次乘坐商务座、特等座、高级软卧或高级动卧出行", 80,
             NarrativeNote: "我太想进步了",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(LuxuryStreakCount(trips), 20),
             Trigger: i => FirstLuxuryStreakCompletion(i.Trips, 20)),
         new("misfortuneTwice", FunJourneys, "car_repair_outlined", "厄运成双",
             "乘坐单程因故中途更换过 2 次编组的动车组列车", 80,
             NarrativeNote: "什么叫机破了之后换的热备车又机破了？你解释一下",
             Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxEmuFormationChangeCount(trips), 2),
             Trigger: i => First(i.Trips, trip => EmuFormationChangeCount(trip.RollingStock) >= 2)),
         new("nonOrdinary", Milestones, "workspace_premium_outlined", "非同凡人", "取得所有常规成就和隐藏成就", 0,
             NarrativeNote: "这个成就你居然达成了？已经没有人类了。必须给你专门颁个奖，毕竟再多的经验如今对你而言也没有什么意义orz",
@@ -1651,6 +1952,17 @@ public static partial class AchievementEngine
         new("friendshipForever", RailwayCatalog, "handshake_outlined", "友谊长存", "乘坐至少一种早期进口机车牵引的列车", 25,
             MaxExperience: 50,
             NarrativeNote: "For the sake of auld lang syne",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)), EarlyImportedLocomotives.Count),
+            Requirements: trips => RollingStockRequirements(trips, EarlyImportedLocomotives),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)),
+                    EarlyImportedLocomotives.Count),
+                p => 0.25 * p),
+            ChangeNote: new($"{EarlyImportedLocomotives.Count} 种早期进口机车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, EarlyImportedLocomotives)),
     ];
 
@@ -1683,7 +1995,8 @@ public static partial class AchievementEngine
     /// <summary>该成就的经验是否随进度变化（分阶加成或附加条件加成）。
     /// 解锁行程页据此决定要不要按经验排行。</summary>
     public static bool HasExperienceVariation(string id) =>
-        TierSpecsById.ContainsKey(id) || id is "gobiThunder" or "allAlone";
+        DefinitionById.TryGetValue(id, out var definition) &&
+        (definition.Tier is not null || definition.Bonus is not null);
 
     private static PublicTrip? ContextTrigger(AchievementTriggerInput input, bool condition) =>
         condition ? input.LatestTrip : null;
@@ -1820,19 +2133,15 @@ public static partial class AchievementEngine
                     "sevenExperienceTiers" => P(coveredTiers, ExperienceTiers.Length),
                     "nineHeavens" => P(hiddenAchievementCount, 9),
                     "oneStoneThreeBirds" => P(oneStoneConditions, 3),
-                    _ => ProgressFor(item.Id, trips, reviews, today, context)
+                    _ => definition.Progress?.Invoke(trips, reviews, today, context)
                 };
                 var requirements = definition.Hidden
                     ? null
-                    : RequirementsFor(item.Id, trips);
-                var maxProgress = MaxProgressFor(
-                    item.Id,
+                    : definition.Requirements?.Invoke(trips);
+                var maxProgress = definition.MaxProgress?.Invoke(
                     trips,
-                    reviews,
-                    context,
-                    item.Id == "oneStoneThreeBirds" ? oneStoneConditions : null);
+                    item.Id == "oneStoneThreeBirds" ? oneStoneConditions : 0);
                 var experience = ExperienceFor(
-                    item.Id,
                     definition,
                     item.TriggerTripId.HasValue,
                     trips,
@@ -1848,7 +2157,7 @@ public static partial class AchievementEngine
                         definition.MaxExperience is int maximum &&
                         experience >= maximum,
                     Hidden = definition.Hidden,
-                    Note = NoteWithExperienceChange(item.Id, definition),
+                    Note = NoteWithExperienceChange(definition),
                     NarrativeNote = definition.NarrativeNote
                 };
             })
@@ -1884,7 +2193,6 @@ public static partial class AchievementEngine
     }
 
     private static int ExperienceFor(
-        string id,
         AchievementDefinition definition,
         bool unlocked,
         List<PublicTrip> trips,
@@ -1893,7 +2201,7 @@ public static partial class AchievementEngine
         if (!unlocked) return definition.Experience;
         var experience = definition.Experience;
         var bonus = 0;
-        if (TierSpecsById.TryGetValue(id, out var tier))
+        if (definition.Tier is { } tier)
         {
             var raw = tierOverride ?? tier.Measure(trips);
             var point = tier.AdditionalCount
@@ -1904,13 +2212,9 @@ public static partial class AchievementEngine
                 ? (int)(Math.Max(0, Math.Floor(value / 5) * 5))
                 : 0;
         }
-        else if (id == "gobiThunder" && ArrivedByGobiTrain(trips))
+        else if (definition.Bonus is { } extra)
         {
-            bonus = 30;
-        }
-        else if (id == "allAlone")
-        {
-            bonus = AllAloneBonus(trips);
+            bonus = extra(trips);
         }
         experience += bonus;
         return definition.MaxExperience is int maximum
@@ -1929,6 +2233,10 @@ public static partial class AchievementEngine
 
     private static double Percent(double value, double total) =>
         total <= 0 ? 0 : Math.Max(0, value) * 100 / total;
+
+    /// <summary>同名区段（同一座桥的不同线路）只算一座。</summary>
+    private static int DistinctSectionNameCount(IReadOnlyList<RailwaySection> sections) =>
+        sections.Select(section => section.Name).Distinct(StringComparer.Ordinal).Count();
 
     private static int TwinInterchangeCount(List<PublicTrip> trips)
     {
@@ -1963,7 +2271,7 @@ public static partial class AchievementEngine
     private static double TightestTransferMinutes(List<PublicTrip> trips)
     {
         var arrivals = ArrivalsByStation(trips);
-        var tightest = 20d;
+        var tightest = 10d;
         for (var outgoingIndex = 0; outgoingIndex < trips.Count; outgoingIndex++)
         {
             var outgoing = trips[outgoingIndex];
@@ -2025,7 +2333,7 @@ public static partial class AchievementEngine
     private static double ShortestTripMinutes(List<PublicTrip> trips) =>
         trips.Select(trip => ValidDuration(trip).TotalMinutes)
             .Where(minutes => minutes > 0)
-            .DefaultIfEmpty(20)
+            .DefaultIfEmpty(10)
             .Min();
 
     /// <summary>符合条件的最短里程；没有符合条件的行程时返回 <paramref name="fallback"/>。</summary>
@@ -2111,353 +2419,12 @@ public static partial class AchievementEngine
         return covered.Count;
     }
 
-    private static AchievementProgress? ProgressFor(
-        string id,
-        List<PublicTrip> trips,
-        List<AchievementReview> reviews,
-        DateTime today,
-        AchievementContext? context) => id switch
-    {
-        "sevenDayStreak" => P(LongestStreak(trips), 7),
-        "thirtyDayStreak" => P(LongestStreak(trips), 30),
-        "rottenAxe" => P(LongestStreak(trips), 365),
-        "duration24Hours" => P(MaxDurationHours(trips), 24),
-        "duration48Hours" => P(MaxDurationHours(trips), 48),
-        "duration72Hours" => P(MaxDurationHours(trips), 72),
-        "moonPhases" => P(TotalDurationHours(trips), 720),
-        "seasonsChange" => P(TotalDurationHours(trips), 4320),
-        "threeMonthsApart" => P(MaxCalendarYearDurationHours(trips), 2160),
-        "all25Series" => P(CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, Regular25Models)), Regular25Models.Count),
-        "allEmuSeries" => P(
-            CollectedCount(trips, trip => EmuMatches(trip.RollingStock)),
-            EmuModelFamilies.Count),
-        "allSeatTypes" => P(CollectedCount(trips, SeatTypeMatches), RegularSeatTypes.Count),
-        "lkjEquippedEmu" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)),
-            3),
-        "noSeat12Hours" => P(MaxDurationHours(trips.Where(IsNoSeat)), 12),
-        "sweatLikeRain" => P(MaxDurationHours(trips.Where(trip => HasNonAirConditionedCoach(trip.RollingStock))), 12),
-        "immovableMountain" => P(MaxDurationHours(trips.Where(IsNoSeat)), 24),
-        "hundredTickets" => P(trips.Count, 100),
-        "thousandTickets" => P(trips.Count, 1000),
-        "hundredStations" => P(trips.SelectMany(trip => new[] { trip.FromStation.Trim(), trip.ToStation.Trim() }).Where(value => value.Length > 0).Distinct(StringComparer.Ordinal).Count(), 100),
-        "thousandCities" => P(StationCount(trips), 2500),
-        "thousandKilometers" => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 1000),
-        "fourThousandKmJourney" => P(trips.Select(trip => trip.MileageKm).DefaultIfEmpty(0).Max(), 4000),
-        "airRail" => P(AirportStationCount(trips), 3),
-        "lonelyPlanet" => P(CollectedCount(trips, trip => MatchingRoutes(trip, ["若和铁路", "格库线"])), 2),
-        "hundredThousandKilometers" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 100000),
-        "travelAllMountains" => P(trips.Where(trip => trip.MileageKm > 0).Sum(trip => trip.MileageKm), 500000),
-        "fiftyThousandSpending" => P(trips.Sum(trip => trip.Price), 50000),
-        "reviewedTrainNumbers" => P(reviews.Count, 50),
-        "reviewReplies500" => P(context?.TotalReviewReactions ?? 0, 500),
-        "reviewReplies10000" => P(context?.TotalReviewReactions ?? 0, 10000),
-        "tenNumericTrains" => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
-        "tripleTransfer" => P(MaxTransferCount(trips), 2),
-        "grandSlam" => P(RailwayBureauCount(trips), RailwayBureaus.Count),
-        "hundredPeople" => P(PassengerCompanyCount(trips), AllPassengerCompanies.Count),
-        "unnecessaryExtra" => P(MaxSameTrainTicketChain(trips), 3),
-        "multipleChoices" => P(MaxDistinctTrainCountForRoute(trips), 10),
-        "cardinalStations" => P(MaxCardinalStationCount(trips), 5),
-        "verticalChina" => P(VisitedStationCount(trips, ["漠河", "三亚"]), 2),
-        "horizontalChina" => P(VisitedStationCount(trips, ["阿克陶", "抚远"]), 2),
-        "skyAndSea" => P(VisitedStationCount(trips, ["雁石坪", "香港西九龙"]), 2),
-        "fourExtremes" => P(VisitedStationCount(trips, ["漠河", "三亚", "阿克陶", "抚远"]), 4),
-        "borderPorts" => P(
-            VisitedStationCount(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]),
-            1),
-        "fourFamousNorths" => P(
-            VisitedStationCount(trips, ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
-            1),
-        "acrossTheRealm" => P(CapitalCityCount(trips), CapitalCityNames.Count),
-        "crowningGlory" => P(CapitalStationCount(trips), RequiredCapitalStationCount),
-        "eastRedSunRises" => P(VisitedStationCount(trips, ["东方红", "太阳升"]), 2),
-        "goddessYangtzeBridges" => SectionProgress(trips, YangtzeBridges, 10),
-        "muddyWavesSweepSky" => SectionProgress(trips, YellowRiverBridges, 10),
-        "mistyVastWaters" => SectionProgress(trips, SeaBayBridges, 3),
-        "qinlingPassage" => SectionProgress(trips, QinlingPassages, 3),
-        "missedEra" => P(DowngradedSectionCount(trips), 3),
-        "tunnelCollection" => SectionProgress(trips, Tunnels, 5),
-        "dreamExpress" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DistributedSleeperEmuModels)),
-            DistributedSleeperEmuModels.Count),
-        "standingTall" => P(
-            MaxDurationHours(trips.Where(trip => (IsNoSeat(trip) || NormalizedSeatType(trip.SeatType) == "硬座") &&
-                HasNonAirConditionedCoach(trip.RollingStock))),
-            24),
-        "envoyArrival" => P(ForeignCapitalCount(trips), 3),
-        "differentRoutesSameDestination" => P(MaxDifferentRoutesSameDestination(trips), 3),
-        "completeTrainLetters" => P(trips.Select(trip => CommonTrainCategory(trip.TrainNumber)).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count(), CommonTrainCategories.Count),
-        "flowersAmong" => P(
-            CollectedCount(trips, trip => SmallEmuMatches(trip.RollingStock)),
-            EmuModelFamilies.Sum(family => family.Models.Count)),
-        "refinedMechanic" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, ModernLocomotives)),
-            ModernLocomotives.Count),
-        "dawnBreaks" => P(
-            CollectedCount(trips, trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives)),
-            DongfengShaoshanLocomotives.Count),
-        "traverseOneRegion" => P(UniqueRouteMileage(trips), 5000),
-        "halfTheRealm" => P(UniqueRouteMileage(trips), 80000),
-        "centuryDreamFulfilled" => P(UniqueRouteMileage(trips), 160000),
-        "spendsLikeWater" => P(
-            trips.Select(trip => trip.Price).DefaultIfEmpty(0).Max(), 2000),
-        "wealthyTraveler" => P(MaxThirtyDaySpending(trips), 10000),
-        "richerThanNation" => P(MaxThirtyDaySpending(trips), 50000),
-        "fourThousandKmInDay" => P(MaxRolling24HourMileage(trips), 4000),
-        "hundredDeparturesFromStation" => P(MaxStationDepartureCount(trips), 100),
-        "thousandDeparturesFromStation" => P(MaxStationDepartureCount(trips), 1000),
-        "luxuryStreak2" => P(LuxuryStreakCount(trips), 2),
-        "luxuryStreak20" => P(LuxuryStreakCount(trips), 20),
-        "multipleLocomotives" => P(MaxLocomotiveCount(trips), 2),
-        "relayLocomotives" => P(MaxLocomotiveChangeCount(trips), 3),
-        "substituteSeats" => P(trips.Count(trip => IsSubstituteSeat(trip.SeatType)), 3),
-        "cornerSeat" => SeatRowProgress(trips, 'F'),
-        "overlookedSeat" => SeatRowProgress(trips, 'B'),
-        "whatAgeIsThis" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)), 1),
-        "facingTheWorld" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, VariableGaugeModels)), 1),
-        "revivalPrototype" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, PrototypeModels)), 1),
-        "unpredictableWorld" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, RetiredEmus)), 1),
-        "railwayTrailblazer" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, EarlyEmuModels)), 1),
-        "meritAndHonor" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, HonorLocomotives)), 1),
-        "powerHouse" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)), 1),
-        "friendshipForever" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)), 1),
-        "steamPower" => P(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, SteamLocomotives)), 1),
-        "twinInterchange" => P(TwinInterchangeCount(trips), 1),
-        "deadEnd" => P(VisitedStationCount(trips, DeadEndStations), 1),
-        "storedUpReward" => P(MaxStoredUpRewardMileage(trips), 50),
-        // 朝花夕拾的解锁进度按当前年份折算：行程越老越接近 2010 年这条线。
-        // 分母随年份增长，跨过 2009 年即 100%。
-        "archaeologyTeam" => P(
-            today.Year - EarliestDepartureYear(trips),
-            Math.Max(1, today.Year - 2009)),
-        "ancientMemory" => P(1994 - EarliestDepartureYear(trips), 1),
-        "completeEmuFleet" => P(CompleteEmuFamilyCount(trips), 1),
-        "pitchDark" => P(MaxDurationHours(trips.Where(trip => IsBoxcarSeat(trip.SeatType))) * 60, 30),
-        "drippingStone" => P(MaxThirtyDayRedemptionCount(trips), 10),
-        "misfortuneTwice" => P(MaxEmuFormationChangeCount(trips), 2),
-        "roamFreely" => P(RouteCatalogCount(trips), Math.Max(1, RouteStations.Value.Count)),
-        "aboveTheClouds" => P(HighAltitudeSectionCount(trips), 3),
-        "complexPath" => P(MaxComplexPathChangeCount(trips), 4),
-        "repeatTrainTen" => P(MaxRepeatedTrainCount(trips), 10),
-        "unifiedCoachFleet" => P(
-            CollectedCount(trips, trip => UnifiedCoachMatches(trip.RollingStock)),
-            UnifiedCoachModels.Count),
-        _ => null
-    };
-
-    /// <summary>满分进度：在当前成就使用的同一度量上给出达到最高经验所需的数值。
-    /// 负相关成就（用时/里程/间隔越短越好）与阶梯式的戈壁惊雷没有满分条。</summary>
-    private static AchievementProgress? MaxProgressFor(
-        string id,
-        List<PublicTrip> trips,
-        List<AchievementReview> reviews,
-        AchievementContext? context,
-        double? oneStoneConditions = null) => id switch
-    {
-        "twinInterchange" => M(TwinInterchangeCount(trips), 6),
-        "whatAgeIsThis" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)), 19),
-        "tenNumericTrains" => M(
-            trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 25),
-        "lkjEquippedEmu" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, LkjEquippedEmuModels)), 6),
-        "facingTheWorld" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, VariableGaugeModels)), 3),
-        "revivalPrototype" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, PrototypeModels)), 10),
-        "unpredictableWorld" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, RetiredEmus)), 3),
-        "railwayTrailblazer" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, EarlyEmuModels)), 11),
-        "meritAndHonor" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, HonorLocomotives)), 12),
-        "powerHouse" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)), 12),
-        "friendshipForever" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)), 13),
-        "steamPower" => M(CollectedCount(trips, trip =>
-            RollingStockMatches(trip.RollingStock, SteamLocomotives)), 4),
-        "fourFamousNorths" => M(
-            VisitedStationCount(trips, FourFamousNorthStations), 4),
-        "borderPorts" => M(VisitedStationCount(trips, BorderPortStations), 7),
-        "deadEnd" => M(VisitedStationCount(trips, DeadEndStations), 17),
-        "airRail" => M(AirportStationCount(trips), 25),
-        "qinlingPassage" => M(
-            SectionCoverageCount(trips, AvailableSections(QinlingPassages)), 7),
-        "missedEra" => M(DowngradedSectionCount(trips), 16),
-        "aboveTheClouds" => M(HighAltitudeSectionCount(trips), 8),
-        "goddessYangtzeBridges" => M(
-            SectionCoverageCount(trips, AvailableSections(YangtzeBridges)), 27),
-        "muddyWavesSweepSky" => M(
-            SectionCoverageCount(trips, AvailableSections(YellowRiverBridges)), 33),
-        "mistyVastWaters" => M(
-            SectionCoverageCount(trips, AvailableSections(SeaBayBridges)), 7),
-        "tunnelCollection" => M(
-            SectionCoverageCount(trips, AvailableSections(Tunnels)), 15),
-        "substituteSeats" => M(SubstituteSeatCount(trips), 9),
-        "unnecessaryExtra" => M(MaxSameTrainTicketChain(trips), 6),
-        "storedUpReward" => M(MaxStoredUpRewardMileage(trips), 300),
-        "repeatTrainTen" => M(MaxRepeatedTrainCount(trips), 30),
-        "multipleChoices" => M(MaxDistinctTrainCountForRoute(trips), 30),
-        "differentRoutesSameDestination" => M(MaxDifferentRoutesSameDestination(trips), 9),
-        "complexPath" => M(MaxComplexPathChangeCount(trips), 7),
-        "oneStoneThreeBirds" => M(oneStoneConditions ?? 0, 6),
-        "envoyArrival" => M(ForeignCapitalCount(trips), 6),
-        "tripleTransfer" => M(MaxTransferCount(trips), 7),
-        "multipleLocomotives" => M(MaxLocomotiveCount(trips), 5),
-        "relayLocomotives" => M(MaxLocomotiveChangeCount(trips), 6),
-        "archaeologyTeam" => M(2009 - EarliestDepartureYear(trips), 9),
-        "ancientMemory" => M(1994 - EarliestDepartureYear(trips), 8),
-        "completeEmuFleet" => M(CompleteEmuFamilyCount(trips), 6),
-        _ => null
-    };
-
     /// <summary>满分进度用的度量：当前值不夹紧，UI 才能算出「解锁之后又走了多少」。</summary>
     private static AchievementProgress M(double current, double target) =>
         new(Math.Clamp(current, 0, target), target);
 
     private static AchievementProgress P(double current, double target) =>
         new(Math.Clamp(current, 0, target), target);
-
-    private static IReadOnlyList<AchievementRequirement>? RequirementsFor(
-        string id,
-        List<PublicTrip> trips) => id switch
-    {
-        "all25Series" => RollingStockRequirements(
-            trips,
-            new[] { "25B", "25G", "25Z", "25K", "25T", "25DT" }
-                .Select(model => new RollingStockTarget(model))),
-        "allEmuSeries" => CollectionRequirements(
-            trips,
-            EmuModelFamilies.Select(family => (Key: family.Series, Label: family.Series)),
-            trip => EmuMatches(trip.RollingStock)),
-        "allSeatTypes" => CollectionRequirements(
-            trips,
-            new[]
-            {
-                "无座", "硬座", "软座", "二等座", "一等座", "特等座", "优选一等座", "商务座",
-                "硬卧", "软卧", "二等卧", "一等卧", "高级软卧", "动卧", "高级动卧"
-            }.Select(seat => (Key: seat, Label: seat)),
-            SeatTypeMatches),
-        "lonelyPlanet" => RouteRequirements(trips, ["若和铁路", "格库线"]),
-        "verticalChina" => StationRequirements(trips, ["漠河", "三亚"]),
-        "horizontalChina" => StationRequirements(trips, ["阿克陶", "抚远"]),
-        "skyAndSea" => StationRequirements(trips, ["雁石坪", "香港西九龙"]),
-        "fourExtremes" => StationRequirements(trips, ["漠河", "三亚", "阿克陶", "抚远"]),
-        "borderPorts" => StationRequirements(
-            trips,
-            ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]),
-        "fourFamousNorths" => StationRequirements(
-            trips,
-            ["阳泉北", "盘锦北", "孝感北", "邵阳北"]),
-        "eastRedSunRises" => StationRequirements(trips, ["东方红", "太阳升"]),
-        "aboveTheClouds" => AboveTheCloudsRequirements(trips),
-        "acrossTheRealm" => CollectionRequirements(
-            trips,
-            CapitalCityNames.Select(city => (Key: city, Label: city)),
-            trip => CapitalCitiesFor(trip)),
-        "completeTrainLetters" => CollectionRequirements(
-            trips,
-        [
-            (Key: "G", Label: "G 字头"),
-            (Key: "D", Label: "D 字头"),
-            (Key: "C", Label: "C 字头"),
-            (Key: "S", Label: "S 字头"),
-            (Key: "Z", Label: "Z 字头"),
-            (Key: "T", Label: "T 字头"),
-            (Key: "K", Label: "K 字头"),
-            (Key: "Y", Label: "Y 字头"),
-            (Key: "numeric", Label: "纯数字车次")
-        ],
-            trip => CommonTrainCategory(trip.TrainNumber) is { } category
-                ? [category]
-                : []),
-        "grandSlam" => CollectionRequirements(
-            trips,
-            RailwayBureaus.Keys.Select(bureau => (Key: bureau, Label: bureau)),
-            trip =>
-            {
-                var company = trip.CompanyName?.Trim() ?? string.Empty;
-                var bureau = RailwayBureaus.FirstOrDefault(entry => entry.Value.Contains(company)).Key;
-                return bureau is null ? [] : [bureau];
-            }),
-        "dreamExpress" => RollingStockRequirements(
-            trips,
-            DistributedSleeperEmuModels.OrderBy(model => model, StringComparer.Ordinal)
-                .Select(model => new RollingStockTarget(model))),
-        "railwayTrailblazer" => RollingStockRequirements(trips, EarlyEmuModels),
-        "whatAgeIsThis" => RollingStockRequirements(trips, EarlyPassengerCoachModels),
-        "revivalPrototype" => RollingStockRequirements(trips, PrototypeModels),
-        "lkjEquippedEmu" => RollingStockRequirements(trips, LkjEquippedEmuModels),
-        "meritAndHonor" => RollingStockRequirements(trips, HonorLocomotives),
-        "friendshipForever" => RollingStockRequirements(trips, EarlyImportedLocomotives),
-        "steamPower" => RollingStockRequirements(trips, SteamLocomotives),
-        "goddessYangtzeBridges" => SectionRequirements(trips, AvailableSections(YangtzeBridges)),
-        "muddyWavesSweepSky" => SectionRequirements(trips, AvailableSections(YellowRiverBridges)),
-        "mistyVastWaters" => SectionRequirements(trips, AvailableSections(SeaBayBridges)),
-        "qinlingPassage" => IntervalSectionRequirements(
-            trips,
-            QinlingPassages,
-            (trip, section) => RouteSpans(trip)
-                .Any(segment => CoversRouteSection(segment, section))),
-        "tunnelCollection" => SectionRequirements(trips, AvailableSections(Tunnels)),
-        "missedEra" => DowngradedRequirements(trips),
-        "powerHouse" => RollingStockRequirements(trips, HighPowerFreightLocomotives),
-        "deadEnd" => StationRequirements(trips, DeadEndStations),
-        "airRail" => StationRequirements(trips, AirportRailStations),
-        "facingTheWorld" => RollingStockRequirements(trips, VariableGaugeModels),
-        "unpredictableWorld" => RollingStockRequirements(trips, RetiredEmus),
-        "fireIncident" => RollingStockRequirements(trips, FireIncidentEmus),
-        "verticalSleeper" => RollingStockRequirements(trips,
-            [new("CRH2E", "2463"), new("CRH2E", "2464"), new("CRH2E", "2465")]),
-        "fourOfAKind" => RollingStockRequirements(trips, FourOfAKindTargets),
-        "advantageIsMine" => StationRequirements(trips, ["徐州", "徐州东"]),
-        "thousandMilesToSea" => StationRequirements(trips, ["额敏", "铁厂沟"]),
-        "greatWallWatch" => StationRequirements(trips, ["八达岭", "八达岭长城"]),
-        "greatWallExpress" => RollingStockRequirements(trips, GreatWallExpressModels),
-        "redFootprints" => RedFootprintsRequirements(trips),
-        "ancientLetters" => AncientLettersRequirements(trips),
-        "twinInterchange" => TwinInterchangeRequirements(trips),
-        "allAlone" => AllAloneRequirements(trips),
-        "railFerry" => RailFerryRequirements(trips),
-        "flowersAmong" => CollectionRequirements(
-            trips,
-            EmuModelFamilies.SelectMany(family => family.Models)
-                .Select(model => (Key: model, Label: model)),
-            trip => SmallEmuMatches(trip.RollingStock)),
-        "refinedMechanic" => CollectionRequirements(
-            trips,
-            ModernLocomotives.OrderBy(model => model, StringComparer.Ordinal)
-                .Select(model => (Key: model, Label: model)),
-            trip => RollingStockMatches(trip.RollingStock, ModernLocomotives)),
-        "dawnBreaks" => CollectionRequirements(
-            trips,
-            DongfengShaoshanLocomotives.OrderBy(model => model, StringComparer.Ordinal)
-                .Select(model => (Key: model, Label: model)),
-            trip => RollingStockMatches(trip.RollingStock, DongfengShaoshanLocomotives)),
-        "hundredPeople" => CollectionRequirements(
-            trips,
-            AllPassengerCompanies.OrderBy(company => company, StringComparer.Ordinal)
-                .Select(company => (Key: company, Label: company)),
-            trip =>
-            {
-                var company = trip.CompanyName?.Trim() ?? string.Empty;
-                return AllPassengerCompanies.Where(candidate =>
-                    company.Contains(candidate, StringComparison.Ordinal));
-            }),
-        "roamFreely" => RouteCatalogRequirements(trips),
-        _ => null
-    };
 
     private static IReadOnlyList<AchievementRequirement> CollectionRequirements(
         List<PublicTrip> trips,
