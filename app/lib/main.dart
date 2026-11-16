@@ -9,6 +9,7 @@ import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/main_navigation_page.dart';
 import 'package:raillog/src/services/cloud_sync_service.dart';
+import 'package:raillog/src/services/railkale_oauth_service.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/train_service.dart';
 import 'package:raillog/src/services/theme_settings.dart';
@@ -51,6 +52,10 @@ void main() async {
     SessionService.instance.onAuthenticated =
         CloudSyncService.instance.syncIfSignedIn;
     unawaited(CloudSyncService.instance.syncIfSignedIn());
+
+    // 万花筒 OAuth：接收 raillog://oauth/rk/{key} 唤起
+    // 放在登录态恢复之后，确保处理时能拿到当前用户
+    unawaited(RailKaleOAuthService.instance.initialize());
     debugPrint('RailLog 数据库初始化成功！');
   } catch (e) {
     debugPrint('RailLog 数据库初始化失败: $e');
