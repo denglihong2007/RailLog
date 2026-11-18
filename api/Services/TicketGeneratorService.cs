@@ -41,6 +41,7 @@ public sealed partial class TicketGeneratorService(
 
         var ticketNumber = FormatTicketNumber(trip.TicketId);
         var travelDate = trip.DepartureTime ?? trip.CreatedAt;
+        var isConventional = TrainNumberClassifier.IsConventional(trip.TrainNumber, travelDate);
         // 结算日期跟着「打印日期」走，而不是乘车日期。本系统没有单独的出票时间，
         // 就把行程的录入时间当作打印日期，取它的次日。
         var settlementDate = trip.CreatedAt.AddDays(1)
@@ -58,9 +59,9 @@ public sealed partial class TicketGeneratorService(
             await toPinyinTask,
             trip.TrainNumber,
             travelDate,
-            FormatCarriageSeat(trip.SeatNumber, trip.SeatType),
+            FormatCarriageSeat(trip.SeatNumber, isConventional),
             trip.Price,
-            FormatSeatClass(trip.SeatType, request.ShowNewAirConditioned),
+            FormatSeatClass(trip.SeatType, request.ShowNewAirConditioned, isConventional),
             request.Passenger.Trim(),
             request.MaskedId.Trim(),
             text.Restriction,
@@ -335,16 +336,17 @@ public sealed partial class TicketGeneratorService(
         return letters.ToString();
     }
 
-    private static string FormatSeatClass(string? value, bool showNewAirConditioned)
+    private static string FormatSeatClass(
+        string? value, bool showNewAirConditioned, bool isConventional)
     {
         var seatClass = string.IsNullOrWhiteSpace(value) ? "未记录" : value.Trim();
-        if (!showNewAirConditioned || seatClass.StartsWith("新空调", StringComparison.Ordinal) ||
-            !IsConventionalSeatClass(seatClass))
+        if (!showNewAirConditioned || !isConventional ||
+            seatClass.StartsWith("新空调", StringComparison.Ordinal))
             return seatClass;
         return $"新空调{seatClass}";
     }
 
-    private static string FormatCarriageSeat(string? value, string? seatClass)
+    private static string FormatCarriageSeat(string? value, bool isConventional)
     {
         var normalized = string.IsNullOrWhiteSpace(value) ? "未记录" : value.Trim();
         var carriage = CarriageSeatRegex().Match(normalized);
@@ -360,7 +362,7 @@ public sealed partial class TicketGeneratorService(
             seat = carriage.Groups["seat"].Value;
         }
 
-        if (IsConventionalSeatClass(seatClass))
+        if (isConventional)
         {
             var number = SeatNumberRegex().Match(seat);
             if (number.Success)
@@ -376,9 +378,6 @@ public sealed partial class TicketGeneratorService(
         }
         return prefix + seat;
     }
-
-    private static bool IsConventionalSeatClass(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && (value.Contains('硬') || value.Contains('软'));
 
     [GeneratedRegex("^[0-9]{10}$", RegexOptions.CultureInvariant)]
     private static partial Regex SerialPrefixRegex();

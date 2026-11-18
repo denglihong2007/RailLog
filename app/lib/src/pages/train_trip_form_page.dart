@@ -168,7 +168,7 @@ class _TrainTripFormPageState extends State<TrainTripFormPage> {
         terminalStop.departureDateTime ??
         _arrivalTime;
     final shouldFetchRollingStock =
-        TrainService.shouldFetchRollingStock(widget.trainNumber) &&
+        TrainService.shouldFetchRollingStock(widget.trainNumber, _departureTime) &&
         _keepOnlineLookups;
     // 历史模式的席位取自历史库，本来就没打算查 12306，失败标记也要跟着一起跳过，
     // 否则界面上会挂一句「未获取到当前区间的座位信息」，其实什么都没失败。

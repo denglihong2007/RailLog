@@ -1036,11 +1036,28 @@ class TrainService {
     }
   }
 
-  static bool shouldFetchRollingStock(String trainNumber) {
-    return RegExp(
-      r'^[GDCS]',
-      caseSensitive: false,
-    ).hasMatch(trainNumber.trim());
+  /// 2026-11-25 0 时起车次字母体系调整：此前普速为 Z/T/K/Y/L/N/A 字头与纯数字，
+  /// 此后为 Z/N/V/Y 字头与纯数字。
+  static final DateTime conventionalTrainCutover = DateTime(2026, 11, 25);
+  static const Set<String> _conventionalPrefixesBefore = {
+    'Z', 'T', 'K', 'Y', 'L', 'N', 'A',
+  };
+  static const Set<String> _conventionalPrefixesAfter = {'Z', 'N', 'V', 'Y'};
+
+  static bool isConventionalTrain(String trainNumber, DateTime departure) {
+    final normalized = _normalizeTrainNumber(trainNumber.split('/').first);
+    if (normalized.isEmpty) return false;
+    if (RegExp(r'^\d+$').hasMatch(normalized)) return true;
+    final prefixes = departure.isBefore(conventionalTrainCutover)
+        ? _conventionalPrefixesBefore
+        : _conventionalPrefixesAfter;
+    return prefixes.contains(normalized[0]);
+  }
+
+  static bool shouldFetchRollingStock(String trainNumber, DateTime departure) {
+    final normalized = _normalizeTrainNumber(trainNumber.split('/').first);
+    if (!RegExp(r'^[A-Z]').hasMatch(normalized)) return false;
+    return !isConventionalTrain(normalized, departure);
   }
 
   static DateTime? _combineDateAndTime(DateTime date, String value) {
