@@ -1,12 +1,13 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/ticket_12306_order.dart';
+import 'package:raillog/src/pages/settings/ticket_12306_settings_page.dart';
+import 'package:raillog/src/services/ticket_12306_auth_settings.dart';
 import 'package:raillog/src/services/ticket_12306_service.dart';
 import 'package:raillog/src/services/ticket_order_confirmation.dart';
 import 'package:raillog/src/widgets/app_card.dart';
+import 'package:raillog/src/widgets/motion/m3_motion.dart';
 import 'package:raillog/src/widgets/ticket_order_selection.dart';
 
 class Import12306Page extends StatefulWidget {
@@ -21,27 +22,18 @@ class Import12306Page extends StatefulWidget {
 class _Import12306PageState extends State<Import12306Page> {
   late final Ticket12306Service _service =
       widget.service ?? Ticket12306Service();
+  Ticket12306Credentials? _credentials;
+  bool _loadingCredentials = true;
+  bool _credentialsExpired = false;
+  List<Ticket12306Order> _orders = const [];
   final Set<String> _selectedKeys = {};
   final Set<String> _importedKeys = {};
-  List<Ticket12306Order> _orders = const [];
-  Uint8List? _qrImage;
-  String? _username;
-  String? _message;
-  String? _qrMessage;
-  bool _messageIsError = false;
-  bool _qrMessageIsError = false;
-  bool _isCreatingQr = false;
-  bool _isPollingQr = false;
-  bool _isFinalizingLogin = false;
-  bool _invoiceVerified = false;
-  bool _invoiceVerificationStarted = false;
-  bool _isQuerying = false;
-  bool _isImporting = false;
+  bool _querying = false;
+  bool _importing = false;
+  bool _extendedLoaded = false;
   int? _preparingPosition;
-  int _pollGeneration = 0;
-
-  bool get _canQuery =>
-      _username != null && !_isFinalizingLogin && !_isQuerying;
+  String? _message;
+  bool _messageIsError = false;
 
   List<Ticket12306Order> get _selectableOrders => _orders
       .where(
@@ -50,207 +42,141 @@ class _Import12306PageState extends State<Import12306Page> {
       .toList(growable: false);
 
   @override
+  void initState() {
+    super.initState();
+    _loadCredentials();
+  }
+
+  @override
   void dispose() {
-    _pollGeneration++;
     _service.dispose();
     super.dispose();
   }
 
-  Future<void> _startQrLogin() async {
-    final generation = ++_pollGeneration;
+  Future<void> _loadCredentials() async {
+    final credentials = await Ticket12306AuthSettings.load();
+    if (!mounted) return;
+    final usable = credentials?.isComplete ?? false;
+    if (usable) _service.restoreCredentials(credentials!);
     setState(() {
-      _isCreatingQr = true;
-      _qrImage = null;
-      _username = null;
-      _invoiceVerified = false;
-      _invoiceVerificationStarted = false;
-      _orders = const [];
-      _selectedKeys.clear();
-      _importedKeys.clear();
-      _message = null;
-      _qrMessage = null;
-      _qrMessageIsError = false;
+      _credentials = usable ? credentials : null;
+      _loadingCredentials = false;
+      _credentialsExpired = credentials != null && !usable;
     });
-    try {
-      final result = await _service.createQrCode();
-      if (!mounted || generation != _pollGeneration) return;
-      final image = _decodeQrImage(result.imageBase64);
-      setState(() {
-        _qrImage = image;
-        _isPollingQr = true;
-        _qrMessage = '请使用铁路 12306 App 扫码并确认登录';
-      });
-      unawaited(_pollQrStatus(result.uuid, generation));
-    } catch (error) {
-      if (!mounted || generation != _pollGeneration) return;
-      setState(() {
-        _qrMessageIsError = true;
-        _qrMessage = '获取二维码失败：$error';
-      });
-    } finally {
-      if (mounted && generation == _pollGeneration) {
-        setState(() => _isCreatingQr = false);
-      }
-    }
+    if (usable) await _loadTrips();
   }
 
-  Future<void> _pollQrStatus(String uuid, int generation) async {
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push<void>(
+      m3PageRoute(builder: (context) => const Ticket12306SettingsPage()),
+    );
+    if (!mounted) return;
+    final credentials = await Ticket12306AuthSettings.load();
+    if (!mounted) return;
+    final usable = credentials?.isComplete ?? false;
+    if (usable) _service.restoreCredentials(credentials!);
+    final changed = !_sameCredentials(
+      _credentials,
+      usable ? credentials : null,
+    );
+    setState(() {
+      _credentials = usable ? credentials : null;
+      _credentialsExpired = credentials != null && !usable;
+      if (!usable || changed) {
+        _orders = const [];
+        _extendedLoaded = false;
+        _selectedKeys.clear();
+        _message = null;
+        _messageIsError = false;
+      }
+    });
+    if (usable && changed) await _loadTrips();
+  }
+
+  bool _sameCredentials(
+    Ticket12306Credentials? first,
+    Ticket12306Credentials? second,
+  ) {
+    if (first == null || second == null) return first == second;
+    return jsonEncode(first.toJson()) == jsonEncode(second.toJson());
+  }
+
+  Future<void> _loadTrips() async {
+    final credentials = _credentials;
+    if (credentials == null || _querying) return;
+    setState(() {
+      _querying = true;
+      _selectedKeys.clear();
+      _message = null;
+      _messageIsError = false;
+    });
     try {
-      while (mounted && generation == _pollGeneration) {
-        final status = await _service.checkQrStatus(uuid);
-        if (!mounted || generation != _pollGeneration) return;
-        setState(() {
-          _qrMessageIsError = false;
-          _qrMessage = status.message.isEmpty ? '等待扫码确认' : status.message;
-        });
-        if (status.code == '2') {
-          final ticket = status.uamtk;
-          if (ticket == null || ticket.isEmpty) {
-            throw const Ticket12306Exception('扫码成功，但未获得登录票据');
-          }
-          await _completeLogin(ticket, generation);
-          if (mounted && generation == _pollGeneration) {
-            await _queryRegularOrders();
-          }
+      var invoiceVerified = credentials.invoiceVerified;
+      String? warning;
+      try {
+        final state = await _service.checkCredentials();
+        if (!mounted) return;
+        if (!state.loginValid) {
+          await _markCredentialsExpired();
           return;
         }
-        if (status.code == '3') {
-          setState(() {
-            _qrMessageIsError = true;
-            _qrMessage = '二维码已过期，请重新获取';
-          });
-          return;
+        if (credentials.invoiceVerified && !state.invoiceVerified) {
+          warning = '人证核验凭证已过期，本次只加载近 1 个月订单，请前往设置重新核验';
         }
-        await Future<void>.delayed(const Duration(seconds: 2));
+        invoiceVerified = state.invoiceVerified;
+        if (invoiceVerified != credentials.invoiceVerified) {
+          await _persistCredentials(invoiceVerified: invoiceVerified);
+        }
+      } catch (_) {
+        // 服务端检查失败时不阻断查询；订单接口本身还会再判断一次登录状态。
       }
-    } catch (error) {
-      if (!mounted || generation != _pollGeneration) return;
-      setState(() {
-        _qrMessageIsError = true;
-        _qrMessage = '登录状态查询失败：$error';
-      });
-    } finally {
-      if (mounted && generation == _pollGeneration) {
-        setState(() => _isPollingQr = false);
-      }
-    }
-  }
+      if (!mounted) return;
 
-  Future<void> _completeLogin(String uamtk, int generation) async {
-    setState(() {
-      _isFinalizingLogin = true;
-      _qrMessage = '正在完成登录校验...';
-    });
-    try {
-      final username = await _service.completeLogin(uamtk);
-      if (!mounted || generation != _pollGeneration) return;
-      setState(() {
-        _username = username.isEmpty ? '已登录账号' : username;
-        _qrMessage = '登录成功，正在查询行程';
-      });
-    } catch (error) {
-      if (!mounted || generation != _pollGeneration) return;
-      setState(() {
-        _qrMessageIsError = true;
-        _qrMessage = '登录失败：$error';
-      });
-    } finally {
-      if (mounted && generation == _pollGeneration) {
-        setState(() => _isFinalizingLogin = false);
-      }
-    }
-  }
-
-  Future<void> _restartInvoiceVerification() async {
-    final generation = ++_pollGeneration;
-    await _startInvoiceVerification(generation);
-  }
-
-  Future<void> _startInvoiceVerification(int generation) async {
-    if (!mounted || generation != _pollGeneration) return;
-    setState(() {
-      _invoiceVerified = false;
-      _invoiceVerificationStarted = true;
-      _isCreatingQr = true;
-      _qrImage = null;
-      _qrMessageIsError = false;
-      _qrMessage = '正在生成电子发票核验二维码...';
-    });
-    try {
-      final result = await _service.createInvoiceVerificationQr();
-      if (!mounted || generation != _pollGeneration) return;
-      setState(() {
-        _qrImage = _decodeQrImage(result.imageBase64);
-        _isCreatingQr = false;
-        _isPollingQr = true;
-        _qrMessage = '请再次扫码完成电子发票访问核验';
-      });
-      await _pollInvoiceVerification(result.uuid, generation);
-    } catch (error) {
-      if (!mounted || generation != _pollGeneration) return;
-      setState(() {
-        _qrMessageIsError = true;
-        _qrMessage = '获取电子发票核验二维码失败：$error';
-      });
-    } finally {
-      if (mounted && generation == _pollGeneration) {
-        setState(() {
-          _isCreatingQr = false;
-          _isPollingQr = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _pollInvoiceVerification(String uuid, int generation) async {
-    while (mounted && generation == _pollGeneration) {
-      final status = await _service.checkInvoiceVerificationQr(uuid);
-      if (!mounted || generation != _pollGeneration) return;
-      if (status.code == '2') {
-        setState(() {
-          _invoiceVerified = true;
-          _qrMessageIsError = false;
-          _qrMessage = status.message;
-        });
-        await _queryInvoiceAndMerge();
-        return;
-      }
-      if (status.code != '0' && status.code != '1') {
-        throw const Ticket12306Exception('电子发票核验状态异常，请重新获取二维码');
-      }
-      setState(() {
-        _qrMessageIsError = false;
-        _qrMessage = status.message;
-      });
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
-  }
-
-  Future<void> _refreshOrders() async {
-    await _queryRegularOrders();
-    if (_invoiceVerified) {
-      await _queryInvoiceAndMerge();
-    }
-  }
-
-  /// 登录后即可查询，无需电子发票核验。
-  Future<void> _queryRegularOrders() async {
-    if (_username == null) return;
-    setState(() {
-      _isQuerying = true;
-      _message = null;
-      _selectedKeys.clear();
-    });
-    try {
       final orders = await _service.queryOrderTrips();
       if (!mounted) return;
+
+      var merged = orders;
+      var extendedLoaded = false;
+      if (invoiceVerified) {
+        try {
+          merged = Ticket12306Service.mergeTrips(
+            merged,
+            await _service.queryPersonalTrips(),
+          );
+          extendedLoaded = true;
+        } on Ticket12306AuthException {
+          warning ??= '人证核验已失效，本次只加载了近期订单，请前往设置重新核验';
+          invoiceVerified = false;
+        } catch (error) {
+          warning ??= '本人车票加载失败：$error';
+        }
+        if (invoiceVerified) {
+          try {
+            merged = Ticket12306Service.mergeTrips(
+              merged,
+              await _service.queryInvoiceTrips(),
+            );
+            extendedLoaded = true;
+          } on Ticket12306AuthException {
+            warning ??= '人证核验已失效，本次只加载了近期订单，请前往设置重新核验';
+            invoiceVerified = false;
+          } catch (error) {
+            warning ??= '电子发票行程加载失败：$error';
+          }
+        }
+      }
+      if (!mounted) return;
       setState(() {
-        _orders = orders;
-        _messageIsError = false;
-        _message = orders.isEmpty
-            ? '近 1 个月没有可导入行程，可查看更多行程'
-            : '近 1 个月共查询到 ${orders.length} 张车票';
+        _orders = merged;
+        _extendedLoaded = extendedLoaded;
+        _messageIsError = warning != null;
+        _message =
+            warning ??
+            (merged.isEmpty ? '近 1 个月没有可导入行程' : '共查询到 ${merged.length} 张车票');
       });
+      await _persistCredentials(invoiceVerified: invoiceVerified);
+    } on Ticket12306AuthException {
+      await _markCredentialsExpired();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -258,40 +184,47 @@ class _Import12306PageState extends State<Import12306Page> {
         _message = '查询订单失败：$error';
       });
     } finally {
-      if (mounted) setState(() => _isQuerying = false);
+      if (mounted) setState(() => _querying = false);
     }
   }
 
-  /// 核验通过后追加电子发票行程，并按车票去重合并（发票数据优先）。
-  Future<void> _queryInvoiceAndMerge() async {
-    setState(() => _isQuerying = true);
-    try {
-      final extra = await _service.queryInvoiceTrips();
-      if (!mounted) return;
-      setState(() {
-        _orders = Ticket12306Service.mergeTrips(_orders, extra);
-        _messageIsError = false;
-        _message = '已加载近 180 天行程，合并去重后共 ${_orders.length} 张车票';
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _messageIsError = true;
-        _message = '查询电子发票行程失败：$error';
-      });
-    } finally {
-      if (mounted) setState(() => _isQuerying = false);
-    }
+  Future<void> _markCredentialsExpired() async {
+    await Ticket12306AuthSettings.clear();
+    _service.clearSession();
+    if (!mounted) return;
+    setState(() {
+      _credentials = null;
+      _credentialsExpired = true;
+      _orders = const [];
+      _extendedLoaded = false;
+      _selectedKeys.clear();
+      _message = null;
+      _messageIsError = false;
+    });
+  }
+
+  /// 查询会刷新 Cookie 有效期，顺手把最新凭证写回本机。
+  Future<void> _persistCredentials({required bool invoiceVerified}) async {
+    final credentials = _credentials;
+    if (credentials == null) return;
+    final updated = _service.exportCredentials(
+      invoiceVerified: invoiceVerified,
+      loginAt: credentials.loginAt,
+    );
+    if (updated.cookies.isEmpty) return;
+    await Ticket12306AuthSettings.save(updated);
+    if (!mounted) return;
+    setState(() => _credentials = updated);
   }
 
   Future<void> _importSelected() async {
     final selected = _orders
         .where((order) => _selectedKeys.contains(order.dedupKey))
         .toList(growable: false);
-    if (selected.isEmpty || _isImporting) return;
+    if (selected.isEmpty || _importing) return;
 
     setState(() {
-      _isImporting = true;
+      _importing = true;
       _message = null;
       _messageIsError = false;
     });
@@ -334,7 +267,7 @@ class _Import12306PageState extends State<Import12306Page> {
     } finally {
       if (mounted) {
         setState(() {
-          _isImporting = false;
+          _importing = false;
           _preparingPosition = null;
         });
       }
@@ -362,237 +295,122 @@ class _Import12306PageState extends State<Import12306Page> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
     final horizontalPadding = width > 880
         ? (width - AppLayout.detailMaxWidth) / 2
         : AppSpacing.lg;
+    final credentials = _credentials;
     final selectable = _selectableOrders;
     final allSelected =
         selectable.isNotEmpty &&
         selectable.every((order) => _selectedKeys.contains(order.dedupKey));
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('从 12306 导入'),
         scrolledUnderElevation: 0,
       ),
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              16,
-              horizontalPadding,
-              4,
-            ),
-            sliver: const SliverToBoxAdapter(child: _SmallWindowTip()),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              12,
-              horizontalPadding,
-              10,
-            ),
-            sliver: const SliverToBoxAdapter(
-              child: TicketImportStepHeader(
-                step: 1,
-                icon: Icons.login,
-                title: '登录铁路 12306',
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              0,
-              horizontalPadding,
-              24,
-            ),
-            sliver: SliverToBoxAdapter(
-              child: _username == null
-                  ? Column(
-                      children: [
-                        _LoginPanel(
-                          qrImage: _qrImage,
-                          status: _qrMessage,
-                          statusIsError: _qrMessageIsError,
-                          isBusy:
-                              _isCreatingQr ||
-                              _isPollingQr ||
-                              _isFinalizingLogin,
-                          isLoggedIn: false,
-                          isInvoiceVerification: false,
-                          onCreateQr: _startQrLogin,
-                        ),
-                      ],
-                    )
-                  : _CompletedStepCard(message: '已登录：$_username'),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              0,
-              horizontalPadding,
-              10,
-            ),
-            sliver: const SliverToBoxAdapter(
-              child: TicketImportStepHeader(
-                step: 2,
-                icon: Icons.more_horiz,
-                title: '查看更多行程（可选）',
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              0,
-              horizontalPadding,
-              24,
-            ),
-            sliver: SliverToBoxAdapter(
-              child: _username == null
-                  ? const _PendingStepCard(message: '登录后可查看更多行程')
-                  : _invoiceVerified
-                  ? const _CompletedStepCard(message: '已加载近 180 天电子发票行程')
-                  : _invoiceVerificationStarted
-                  ? Column(
-                      children: [
-                        _LoginPanel(
-                          qrImage: _qrImage,
-                          status: _qrMessage,
-                          statusIsError: _qrMessageIsError,
-                          isBusy:
-                              _isCreatingQr ||
-                              _isPollingQr ||
-                              _isFinalizingLogin,
-                          isLoggedIn: true,
-                          isInvoiceVerification: true,
-                          onCreateQr: _restartInvoiceVerification,
-                        ),
-                      ],
-                    )
-                  : _MoreTripsCard(onPressed: _restartInvoiceVerification),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              0,
-              horizontalPadding,
-              8,
-            ),
-            sliver: SliverToBoxAdapter(
-              child: TicketImportStepHeader(
-                step: 3,
-                icon: Icons.train_outlined,
-                title: '选择待导入车票',
-                trailing: IconButton.filledTonal(
-                  tooltip: '重新查询',
-                  onPressed: _canQuery ? _refreshOrders : null,
-                  icon: _isQuerying
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh),
-                ),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              0,
-              horizontalPadding,
-              8,
-            ),
-            sliver: SliverToBoxAdapter(
-              child: Text(
-                '勾选车票后逐条确认导入，不会自动写入。',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-          if (_message != null)
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                0,
-                horizontalPadding,
-                8,
-              ),
-              sliver: SliverToBoxAdapter(
-                child: TicketImportMessageBanner(
-                  message: _message!,
-                  isError: _messageIsError,
-                ),
-              ),
-            ),
-          if (_orders.isNotEmpty)
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              sliver: SliverToBoxAdapter(
-                child: TicketOrderSelectionToolbar(
-                  selectedCount: _selectedKeys.length,
-                  selectableCount: selectable.length,
-                  allSelected: allSelected,
-                  enabled: !_isImporting,
-                  onToggleAll: _toggleAll,
-                ),
-              ),
-            ),
-          if (_orders.isEmpty && !_isQuerying)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: TicketImportEmptyState(
-                  icon: _username == null
-                      ? Icons.lock_outline
-                      : Icons.confirmation_number_outlined,
-                  title: _username == null ? '登录后显示近期行程' : '暂无可导入车票',
-                  hint: _username == null
-                      ? '扫码登录后即可查询近 1 个月的 12306 订单'
-                      : '可尝试查看更多行程以加载更早记录',
-                ),
-              ),
+      body: _loadingCredentials
+          ? const Center(child: CircularProgressIndicator())
+          : credentials == null || _credentialsExpired
+          ? _CredentialsProblem(
+              expired: _credentialsExpired,
+              onOpenSettings: _openSettings,
             )
-          else
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                4,
-                horizontalPadding,
-                112,
-              ),
-              sliver: SliverList.separated(
-                itemCount: _orders.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final order = _orders[index];
-                  return TicketOrderSelectionTile(
-                    order: order,
-                    selected: _selectedKeys.contains(order.dedupKey),
-                    imported: _importedKeys.contains(order.dedupKey),
-                    enabled: !_isImporting,
-                    onChanged: order.canImport
-                        ? (value) => _toggleOrder(order, value)
-                        : null,
-                  );
-                },
+          : RefreshIndicator(
+              onRefresh: _loadTrips,
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  16,
+                  horizontalPadding,
+                  112,
+                ),
+                children: [
+                  _AccountCard(
+                    credentials: credentials,
+                    extendedLoaded: _extendedLoaded,
+                    onOpenSettings: _openSettings,
+                  ),
+                  const SizedBox(height: 20),
+                  TicketImportStepHeader(
+                    step: 1,
+                    icon: Icons.train_outlined,
+                    title: '选择待导入车票',
+                    trailing: IconButton.filledTonal(
+                      tooltip: '重新查询',
+                      onPressed: _querying || _importing ? null : _loadTrips,
+                      icon: _querying
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '读取近 1 个月的 12306 订单；完成人证核验后可加载电子发票和本人车票。'
+                    '勾选后逐条确认导入，不会自动写入。',
+                    style: TextStyle(color: colors.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  if (!credentials.invoiceVerified) ...[
+                    _InvoiceVerificationHint(onOpenSettings: _openSettings),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_message != null) ...[
+                    TicketImportMessageBanner(
+                      message: _message!,
+                      isError: _messageIsError,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_querying)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  if (selectable.isNotEmpty) ...[
+                    TicketOrderSelectionToolbar(
+                      selectedCount: _selectedKeys.length,
+                      selectableCount: selectable.length,
+                      allSelected: allSelected,
+                      enabled: !_importing && !_querying,
+                      onToggleAll: _toggleAll,
+                    ),
+                  ],
+                  for (final order in _orders) ...[
+                    TicketOrderSelectionTile(
+                      order: order,
+                      selected: _selectedKeys.contains(order.dedupKey),
+                      imported: _importedKeys.contains(order.dedupKey),
+                      enabled: !_importing && !_querying,
+                      onChanged: order.canImport
+                          ? (value) => _toggleOrder(order, value)
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_orders.isEmpty && !_querying)
+                    TicketImportEmptyState(
+                      title: '暂无可导入车票',
+                      hint: credentials.invoiceVerified
+                          ? '近 1 个月没有查询到 12306 订单'
+                          : '可在设置中完成人证核验，加载更早行程',
+                      actionLabel: '重新查询',
+                      onAction: _loadTrips,
+                    ),
+                ],
               ),
             ),
-        ],
-      ),
       bottomNavigationBar: _selectedKeys.isEmpty
           ? null
           : TicketImportActionBar(
               selectedCount: _selectedKeys.length,
               preparingPosition: _preparingPosition,
-              isImporting: _isImporting,
+              isImporting: _importing,
               onStart: _importSelected,
               horizontalPadding: horizontalPadding,
             ),
@@ -600,29 +418,47 @@ class _Import12306PageState extends State<Import12306Page> {
   }
 }
 
-class _CompletedStepCard extends StatelessWidget {
-  const _CompletedStepCard({required this.message});
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({
+    required this.credentials,
+    required this.extendedLoaded,
+    required this.onOpenSettings,
+  });
 
-  final String message;
+  final Ticket12306Credentials credentials;
+  final bool extendedLoaded;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final username = credentials.username.trim();
+    final verificationStatus = credentials.invoiceVerified
+        ? (extendedLoaded ? '已加载扩展行程' : '人证核验已通过')
+        : '人证核验未核验';
     return AppCard.filled(
-      color: colors.primaryContainer,
+      color: colors.surfaceContainerLow,
       padding: EdgeInsets.zero,
       child: ListTile(
-        leading: Icon(Icons.check_circle_outline, color: colors.primary),
-        title: Text(message),
+        leading: Icon(Icons.verified_user_outlined, color: colors.primary),
+        title: Text(username.isEmpty ? '12306 账号' : username),
+        subtitle: Text(
+          '登录于 ${_formatDateTime(credentials.loginAt)} · $verificationStatus',
+        ),
+        trailing: TextButton.icon(
+          onPressed: onOpenSettings,
+          icon: const Icon(Icons.settings_outlined),
+          label: const Text('设置'),
+        ),
       ),
     );
   }
 }
 
-class _MoreTripsCard extends StatelessWidget {
-  const _MoreTripsCard({required this.onPressed});
+class _InvoiceVerificationHint extends StatelessWidget {
+  const _InvoiceVerificationHint({required this.onOpenSettings});
 
-  final VoidCallback onPressed;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -632,41 +468,29 @@ class _MoreTripsCard extends StatelessWidget {
       padding: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.receipt_long_outlined,
-                  size: 32,
-                  color: colors.primary,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '查看更多行程',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '以上为 12306 订单记录。电子发票行程可覆盖近 180 天，'
-                        '需要再次扫码核验访问权限，重复行程会自动去重。',
-                        style: TextStyle(color: colors.onSurfaceVariant),
-                      ),
-                    ],
+            Icon(Icons.receipt_long_outlined, color: colors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('查看更多行程', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    '完成人证核验后，可加载近 180 天电子发票行程和近 1 年本人车票。',
+                    style: TextStyle(color: colors.onSurfaceVariant),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: onPressed,
-              icon: const Icon(Icons.qr_code_2),
-              label: const Text('扫码查看更多'),
+                  const SizedBox(height: 12),
+                  FilledButton.tonalIcon(
+                    onPressed: onOpenSettings,
+                    icon: const Icon(Icons.domain_verification_outlined),
+                    label: const Text('去设置核验'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -675,201 +499,59 @@ class _MoreTripsCard extends StatelessWidget {
   }
 }
 
-class _PendingStepCard extends StatelessWidget {
-  const _PendingStepCard({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return AppCard.filled(
-      color: colors.surfaceContainerLow,
-      padding: EdgeInsets.zero,
-      child: ListTile(
-        leading: Icon(Icons.lock_outline, color: colors.onSurfaceVariant),
-        title: Text(message, style: TextStyle(color: colors.onSurfaceVariant)),
-      ),
-    );
-  }
-}
-
-class _SmallWindowTip extends StatelessWidget {
-  const _SmallWindowTip();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return AppCard.filled(
-      color: colors.tertiaryContainer,
-      padding: EdgeInsets.zero,
-      child: ListTile(
-        leading: Icon(
-          Icons.picture_in_picture_alt_outlined,
-          color: colors.onTertiaryContainer,
-        ),
-        title: Text(
-          '建议开启小窗模式',
-          style: TextStyle(color: colors.onTertiaryContainer),
-        ),
-        subtitle: Text(
-          '避免切回应用时网络请求中断',
-          style: TextStyle(color: colors.onTertiaryContainer),
-        ),
-      ),
-    );
-  }
-}
-
-class _LoginPanel extends StatelessWidget {
-  const _LoginPanel({
-    required this.qrImage,
-    required this.status,
-    required this.statusIsError,
-    required this.isBusy,
-    required this.isLoggedIn,
-    required this.isInvoiceVerification,
-    required this.onCreateQr,
+class _CredentialsProblem extends StatelessWidget {
+  const _CredentialsProblem({
+    required this.expired,
+    required this.onOpenSettings,
   });
 
-  final Uint8List? qrImage;
-  final String? status;
-  final bool statusIsError;
-  final bool isBusy;
-  final bool isLoggedIn;
-  final bool isInvoiceVerification;
-  final VoidCallback onCreateQr;
+  final bool expired;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return AppCard.filled(
-      color: isLoggedIn ? colors.primaryContainer : colors.surfaceContainerLow,
-      padding: EdgeInsets.zero,
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 560;
-            final details = _LoginDetails(
-              status: status,
-              statusIsError: statusIsError,
-              isBusy: isBusy,
-              isLoggedIn: isLoggedIn,
-              isInvoiceVerification: isInvoiceVerification,
-              hasQrCode: qrImage != null,
-              onCreateQr: onCreateQr,
-            );
-            final qr = qrImage == null
-                ? null
-                : Container(
-                    width: compact ? 168 : 184,
-                    height: compact ? 168 : 184,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(AppRadius.small),
-                    ),
-                    child: Image.memory(qrImage!, gaplessPlayback: true),
-                  );
-            if (compact) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  details,
-                  if (qr != null) ...[
-                    const SizedBox(height: 20),
-                    Align(child: qr),
-                  ],
-                ],
-              );
-            }
-            return Row(
-              children: [
-                Expanded(child: details),
-                if (qr != null) ...[const SizedBox(width: 28), qr],
-              ],
-            );
-          },
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              expired ? Icons.lock_clock_outlined : Icons.lock_outline,
+              size: 48,
+              color: colors.outline,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              expired ? '登录凭证已失效' : '尚未配置 12306 登录凭证',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              expired ? '请前往设置重新登录 12306' : '在设置中登录 12306 后，即可查询并导入车票',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onOpenSettings,
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('去设置'),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _LoginDetails extends StatelessWidget {
-  const _LoginDetails({
-    required this.status,
-    required this.statusIsError,
-    required this.isBusy,
-    required this.isLoggedIn,
-    required this.isInvoiceVerification,
-    required this.hasQrCode,
-    required this.onCreateQr,
-  });
-
-  final String? status;
-  final bool statusIsError;
-  final bool isBusy;
-  final bool isLoggedIn;
-  final bool isInvoiceVerification;
-  final bool hasQrCode;
-  final VoidCallback onCreateQr;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          isInvoiceVerification
-              ? Icons.domain_verification_outlined
-              : isLoggedIn
-              ? Icons.verified_outlined
-              : Icons.phone_android,
-          size: 32,
-          color: isLoggedIn ? colors.onPrimaryContainer : colors.primary,
-        ),
-        const SizedBox(height: 12),
-        Text(
-          isInvoiceVerification
-              ? '核验电子发票访问'
-              : isLoggedIn
-              ? '账号已连接'
-              : '使用 12306 App 扫码',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        if (status != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            status!,
-            style: TextStyle(
-              color: statusIsError
-                  ? colors.error
-                  : isLoggedIn
-                  ? colors.onPrimaryContainer
-                  : colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        FilledButton.tonalIcon(
-          onPressed: isBusy ? null : onCreateQr,
-          icon: isBusy
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.qr_code_2),
-          label: Text(hasQrCode ? '重新获取' : '获取二维码'),
-        ),
-      ],
-    );
-  }
-}
-
-Uint8List _decodeQrImage(String source) {
-  final comma = source.indexOf(',');
-  return base64Decode(comma >= 0 ? source.substring(comma + 1) : source);
+String _formatDateTime(DateTime value) {
+  final local = value.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
