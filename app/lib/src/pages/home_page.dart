@@ -1614,6 +1614,13 @@ class _StatsGrid extends StatelessWidget {
           entries: stats.rollingStockUnlocks,
           allTrips: stats.allTrips,
           entityType: EntityType.rollingStock,
+          primaryViewLabel: '车型',
+          otherViews: [
+            DashboardUnlockView(
+              label: '车号',
+              entries: stats.rollingStockNumberUnlocks,
+            ),
+          ],
         ),
       ),
       _Metric(
@@ -1633,6 +1640,16 @@ class _StatsGrid extends StatelessWidget {
                 .toList(growable: false),
           ),
           entityType: EntityType.company,
+          primaryViewLabel: '单位',
+          otherViews: [
+            DashboardUnlockView(
+              label: '路局',
+              entries: stats.bureauUnlocks,
+              progressCatalog: Future.value(
+                railwayBureauSegments.keys.toList(growable: false),
+              ),
+            ),
+          ],
         ),
       ),
       _Metric(
@@ -1717,6 +1734,8 @@ class _StatsGrid extends StatelessWidget {
     Future<List<String>>? progressCatalog,
     bool showTrainNumber = true,
     EntityType? entityType,
+    String? primaryViewLabel,
+    List<DashboardUnlockView> otherViews = const [],
   }) async {
     final changed = await _openUnlocks(
       context,
@@ -1728,6 +1747,8 @@ class _StatsGrid extends StatelessWidget {
       showTrainNumber: showTrainNumber,
       openTrip: openTrip,
       entityType: entityType,
+      primaryViewLabel: primaryViewLabel,
+      otherViews: otherViews,
     );
     if (changed == true) await onChanged();
   }
@@ -2106,6 +2127,8 @@ Future<bool?> _openUnlocks(
   bool showTrainNumber = true,
   TripEntryOpener? openTrip,
   EntityType? entityType,
+  String? primaryViewLabel,
+  List<DashboardUnlockView> otherViews = const [],
 }) {
   return Navigator.of(context).push<bool>(
     m3PageRoute(
@@ -2118,6 +2141,8 @@ Future<bool?> _openUnlocks(
         showTrainNumber: showTrainNumber,
         openTrip: openTrip,
         entityType: entityType,
+        primaryViewLabel: primaryViewLabel,
+        otherViews: otherViews,
       ),
     ),
   );

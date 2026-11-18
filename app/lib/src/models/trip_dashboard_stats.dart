@@ -1,5 +1,6 @@
 import 'package:raillog/src/models/dashboard_unlock_entry.dart';
 import 'package:raillog/src/models/dashboard_trip_entry.dart';
+import 'package:raillog/src/models/railway_bureau.dart';
 import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/train_service.dart';
@@ -17,7 +18,9 @@ class TripDashboardStats {
     required this.routeUnlocks,
     required this.trainUnlocks,
     required this.rollingStockUnlocks,
+    required this.rollingStockNumberUnlocks,
     required this.companyUnlocks,
+    required this.bureauUnlocks,
     required this.stationUnlocks,
     required this.firstRecordAt,
     required this.lastRecordAt,
@@ -39,7 +42,9 @@ class TripDashboardStats {
     routeUnlocks: [],
     trainUnlocks: [],
     rollingStockUnlocks: [],
+    rollingStockNumberUnlocks: [],
     companyUnlocks: [],
+    bureauUnlocks: [],
     stationUnlocks: [],
     firstRecordAt: null,
     lastRecordAt: null,
@@ -62,7 +67,9 @@ class TripDashboardStats {
     final routeUnlocks = <String, DashboardUnlockEntry>{};
     final trainUnlocks = <String, DashboardUnlockEntry>{};
     final rollingStockUnlocks = <String, DashboardUnlockEntry>{};
+    final rollingStockNumberUnlocks = <String, DashboardUnlockEntry>{};
     final companyUnlocks = <String, DashboardUnlockEntry>{};
+    final bureauUnlocks = <String, DashboardUnlockEntry>{};
     final stationUnlocks = <String, DashboardUnlockEntry>{};
     final routePairUnlocks = <String, DashboardUnlockEntry>{};
     final cityUnlocks = <String, DashboardUnlockEntry>{};
@@ -82,8 +89,23 @@ class TripDashboardStats {
       _recordUnlock(trainUnlocks, trip.trainNumber, trip);
       for (final parsed in TrainModelParser.parse(trip.rollingStock)) {
         _recordUnlock(rollingStockUnlocks, parsed.statisticsCode, trip);
+        for (final number in parsed.numbers) {
+          _recordUnlock(
+            rollingStockNumberUnlocks,
+            _rollingStockNumberName(parsed, number),
+            trip,
+          );
+        }
       }
       _recordUnlock(companyUnlocks, trip.companyName, trip);
+      final company = trip.companyName?.trim() ?? '';
+      if (company.isNotEmpty) {
+        _recordUnlock(
+          bureauUnlocks,
+          railwayBureauForCompany(company) ?? _unknownBureau,
+          trip,
+        );
+      }
       _recordUnlock(
         stationUnlocks,
         trip.fromStation,
@@ -138,7 +160,9 @@ class TripDashboardStats {
       routeUnlocks: _newestFirst(routeUnlocks.values),
       trainUnlocks: _newestFirst(trainUnlocks.values),
       rollingStockUnlocks: _newestFirst(rollingStockUnlocks.values),
+      rollingStockNumberUnlocks: _newestFirst(rollingStockNumberUnlocks.values),
       companyUnlocks: _newestFirst(companyUnlocks.values),
+      bureauUnlocks: _newestFirst(bureauUnlocks.values),
       stationUnlocks: _newestFirst(stationUnlocks.values),
       firstRecordAt: railTrips.first.departureTime,
       lastRecordAt: railTrips.last.departureTime,
@@ -158,7 +182,13 @@ class TripDashboardStats {
   final List<DashboardUnlockEntry> routeUnlocks;
   final List<DashboardUnlockEntry> trainUnlocks;
   final List<DashboardUnlockEntry> rollingStockUnlocks;
+
+  /// 按车号拆分的车型统计：同车型不同车号各算一项，没写车号的行程不计入。
+  final List<DashboardUnlockEntry> rollingStockNumberUnlocks;
   final List<DashboardUnlockEntry> companyUnlocks;
+
+  /// 按路局汇总的承运单位统计，自定义单位归入「其它」。
+  final List<DashboardUnlockEntry> bureauUnlocks;
   final List<DashboardUnlockEntry> stationUnlocks;
   final DateTime? firstRecordAt;
   final DateTime? lastRecordAt;
@@ -172,6 +202,15 @@ class TripDashboardStats {
   int get stationCount => stationUnlocks.length;
   int get routePairCount => routePairUnlocks.length;
   int get cityCount => cityUnlocks.length;
+}
+
+const _unknownBureau = '其它';
+
+/// 车号项的显示名沿用录入时的写法：动车组「CR400AF-2011」，其他
+/// 「YZ25T 345678」。客车带上席别前缀，避免不同席别的同号车被合并。
+String _rollingStockNumberName(TrainModelParseResult parsed, String number) {
+  final separator = parsed.category == TrainCategory.emu ? '-' : ' ';
+  return '${parsed.modelCode}$separator$number';
 }
 
 String? _cityForStation(Map<String, String> cities, String station) {

@@ -13,6 +13,19 @@ import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 enum _UnlockSortField { unlockTime, tripCount }
 
+/// 统计页可切换的另一种口径。切换后不再对应单个实体，条目只能列出行程。
+class DashboardUnlockView {
+  const DashboardUnlockView({
+    required this.label,
+    required this.entries,
+    this.progressCatalog,
+  });
+
+  final String label;
+  final List<DashboardUnlockEntry> entries;
+  final Future<List<String>>? progressCatalog;
+}
+
 class DashboardUnlocksPage extends StatefulWidget {
   const DashboardUnlocksPage({
     super.key,
@@ -24,6 +37,8 @@ class DashboardUnlocksPage extends StatefulWidget {
     this.showTrainNumber = true,
     this.openTrip,
     this.entityType,
+    this.primaryViewLabel,
+    this.otherViews = const [],
   });
 
   final String title;
@@ -35,6 +50,10 @@ class DashboardUnlocksPage extends StatefulWidget {
   final TripEntryOpener? openTrip;
   final EntityType? entityType;
 
+  /// 主口径在右上角切换里的标签；为空时不显示口径切换。
+  final String? primaryViewLabel;
+  final List<DashboardUnlockView> otherViews;
+
   @override
   State<DashboardUnlocksPage> createState() => _DashboardUnlocksPageState();
 }
@@ -42,9 +61,20 @@ class DashboardUnlocksPage extends StatefulWidget {
 class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
   _UnlockSortField _sortField = _UnlockSortField.tripCount;
   bool _descending = true;
+  int _viewIndex = 0;
+
+  List<DashboardUnlockEntry> get _entries => _viewIndex == 0
+      ? widget.entries
+      : widget.otherViews[_viewIndex - 1].entries;
+
+  Future<List<String>>? get _progressCatalog => _viewIndex == 0
+      ? widget.progressCatalog
+      : widget.otherViews[_viewIndex - 1].progressCatalog;
+
+  EntityType? get _entityType => _viewIndex == 0 ? widget.entityType : null;
 
   List<DashboardUnlockEntry> get _sortedEntries {
-    final entries = widget.entries.toList()..sort(_compareEntries);
+    final entries = _entries.toList()..sort(_compareEntries);
     return entries;
   }
 
@@ -149,19 +179,53 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
       builder: (context) => _UnlockPieChartPage(
         title: widget.title,
         icon: widget.icon,
-        entries: widget.entries,
+        entries: _entries,
       ),
     ),
   );
+
+  Widget _buildViewSwitch() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Center(
+        child: SegmentedButton<int>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity(horizontal: -3, vertical: -2),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          segments: [
+            ButtonSegment(value: 0, label: Text(widget.primaryViewLabel!)),
+            for (var index = 0; index < widget.otherViews.length; index++)
+              ButtonSegment(
+                value: index + 1,
+                label: Text(widget.otherViews[index].label),
+              ),
+          ],
+          selected: {_viewIndex},
+          onSelectionChanged: (selection) =>
+              setState(() => _viewIndex = selection.first),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final entries = _sortedEntries;
+    final progressCatalog = _progressCatalog;
+    final showViewSwitch =
+        widget.primaryViewLabel != null && widget.otherViews.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text(
+          widget.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
+          if (showViewSwitch) _buildViewSwitch(),
           IconButton(
             tooltip: '次数占比',
             onPressed: _openPieChart,
@@ -196,7 +260,7 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (widget.progressCatalog == null)
+                        if (progressCatalog == null)
                           Row(
                             children: [
                               Icon(widget.icon, color: colors.primary),
@@ -215,8 +279,8 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
                           )
                         else
                           _UnlockProgress(
-                            entries: widget.entries,
-                            catalog: widget.progressCatalog!,
+                            entries: _entries,
+                            catalog: progressCatalog,
                             icon: widget.icon,
                           ),
                       ],
@@ -296,8 +360,9 @@ class _DashboardUnlocksPageState extends State<DashboardUnlocksPage> {
   }
 
   Future<void> _openMatchingTrips(DashboardUnlockEntry entry) async {
-    if (widget.entityType != null) {
-      await openEntityPage(context, widget.entityType!, entry.name);
+    final entityType = _entityType;
+    if (entityType != null) {
+      await openEntityPage(context, entityType, entry.name);
       return;
     }
     final tripIds = entry.tripIds.toSet();
