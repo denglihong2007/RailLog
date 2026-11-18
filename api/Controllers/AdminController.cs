@@ -592,7 +592,8 @@ public sealed class AdminController(
         Ok(await database.GetAdminDuplicateGroupsAsync(offset, limit));
 
     /// <summary>
-    /// 一键处理全部疑似重复行程：每组保留最早录入的一条，其余软删除。
+    /// 一键处理全部疑似重复行程：每组保留数据最全的一条（其次录入时间最早），
+    /// 其余软删除。
     /// </summary>
     [HttpPost("duplicates/resolve")]
     public async Task<ActionResult<AdminDuplicateResolveResult>> ResolveDuplicates()

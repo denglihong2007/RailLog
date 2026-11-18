@@ -96,8 +96,8 @@ async function resolveAll(): Promise<void> {
       toast('没有需要处理的重复行程', 'info')
     } else {
       toast(
-        `已处理 ${formatNumber(result.groups)} 组重复行程，保留每组最早录入的一条，` +
-          `共删除 ${formatNumber(result.deletedTrips)} 条`,
+        `已处理 ${formatNumber(result.groups)} 组重复行程，保留每组数据最全的一条` +
+          `（其次最早录入），共删除 ${formatNumber(result.deletedTrips)} 条`,
         'info',
       )
     }
@@ -110,7 +110,7 @@ async function resolveAll(): Promise<void> {
   }
 }
 
-async function keepEarliest(group: AdminDuplicateGroup): Promise<void> {
+async function keepRichest(group: AdminDuplicateGroup): Promise<void> {
   const keep = group.trips[0]
   const removed = group.trips.slice(1)
   if (!keep) return
@@ -121,7 +121,7 @@ async function keepEarliest(group: AdminDuplicateGroup): Promise<void> {
     if (result.failed.length > 0) {
       toast(`保留 #${keep.ticketId}，但有 ${result.failed.length} 条删除失败`, 'error')
     } else {
-      toast(`已保留最早录入的 #${keep.ticketId}，删除其余 ${removed.length} 条`, 'info')
+      toast(`已保留数据最全的 #${keep.ticketId}，删除其余 ${removed.length} 条`, 'info')
     }
     await load(true)
   } finally {
@@ -160,6 +160,7 @@ onMounted(() => {
           <p>
             同一用户、同一车次、同一乘车日期、同一上下车站，却存在多条有效记录，常见于重复导入。
             车次号与站名按与客户端相同的规则归一化后比对，票价、里程不同仍算重复。
+            处理时每组保留数据最全的一条（可选字段填得最多），数据一样全才取最早录入的。
             共 <strong>{{ formatNumber(data.totalGroups) }}</strong> 组 /
             <strong>{{ formatNumber(data.totalTrips) }}</strong> 条。
             删除为软删除，可在对应用户的「行程管理」中恢复。
@@ -172,7 +173,7 @@ onMounted(() => {
           <button
             type="button"
             class="button danger small"
-            title="全站每组保留最早录入的一条，删除其余重复记录"
+            title="全站每组保留数据最全的一条，删除其余重复记录"
             :disabled="busy || resolving || loading || data.totalGroups === 0"
             @click="resolveAll"
           >
@@ -194,7 +195,7 @@ onMounted(() => {
           :groups="data.items"
           :busy="busy || resolving"
           @delete-trip="deleteTrip"
-          @keep-earliest="keepEarliest"
+          @keep-richest="keepRichest"
           @open-trip="(userId, ticketId) => emit('open-trip', userId, ticketId)"
           @open-user="(userId) => emit('open-user', userId)"
         />

@@ -268,7 +268,8 @@ public sealed record AdminTicketPasswordStatus(
 public sealed record AdminTicketPasswordRequest(string Password);
 
 /// <summary>
-/// 重复行程组内的单条行程。带上录入时间，便于判断该保留哪一条。
+/// 重复行程组内的单条行程。带上可选字段与录入时间，前端按接口返回的顺序展示，
+/// 第一条就是保留项。
 /// </summary>
 public sealed record AdminDuplicateTrip(
     long TicketId,
@@ -284,9 +285,10 @@ public sealed record AdminDuplicateTrip(
     DateTime CreatedAt);
 
 /// <summary>
-/// 一组疑似重复行程：同一用户、同一车次、同一乘车日期、同一上下车站 ——
-/// 只差录入时间的多条记录。车次号与站名按与客户端相同的规则归一化后比对；
-/// 票价与里程允许不同，组上的值取最早录入的一条。
+/// 一组疑似重复行程：同一用户、同一车次、同一乘车日期、同一上下车站，却有多条
+/// 有效记录（到点、座位等字段可能不同）。车次号与站名按与客户端相同的规则归一化
+/// 后比对；票价与里程允许不同。组内顺序即保留优先级：数据最全的在前，其次录入
+/// 时间最早；组上的值取第一条（保留项）。
 /// </summary>
 public sealed record AdminDuplicateGroup(
     string UserId,
@@ -305,7 +307,7 @@ public sealed record AdminDuplicateGroupPage(
     IReadOnlyList<AdminDuplicateGroup> Items);
 
 /// <summary>
-/// 一键处理重复行程的结果：每组保留录入时间最早的一条，其余全部软删除。
+/// 一键处理重复行程的结果：每组保留数据最全的一条（其次录入时间最早），其余全部软删除。
 /// </summary>
 public sealed record AdminDuplicateResolveResult(
     long Groups,

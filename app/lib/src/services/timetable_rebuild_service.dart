@@ -376,8 +376,9 @@ class TimetableRebuildService {
   /// 重复行程里多出来的副本。
   ///
   /// 判重只看「同一趟车、同一天、同一区间」：车次号归一化后相同、出发日期相同、
-  /// 上下车站（去掉结尾「站」）相同；票价与里程不参与判重。每组保留一条，其余
-  /// 作为副本返回；返回顺序与传入顺序一致，交给列表按原排序展示。
+  /// 上下车站（去掉结尾「站」）相同；票价与里程不参与判重。每组按
+  /// [_compareKeepPriority] 挑一条保留，其余作为副本返回；返回顺序与传入顺序
+  /// 一致，交给列表按原排序展示。
   static List<TripRecord> findDuplicateCopies(Iterable<TripRecord> trips) {
     final groups = <String, List<TripRecord>>{};
     for (final trip in trips) {
@@ -410,19 +411,42 @@ class TimetableRebuildService {
     return '${codes.join('/')}|$date|$from|$to';
   }
 
-  /// 组内保留顺序：云端副本优先，其次与网页管理端一致——录入时间更早、ID 更小。
+  /// 组内保留顺序：数据更全的优先，其次与网页管理端一致——录入时间更早、ID 更小。
   ///
-  /// 删掉带 ticket_id 的副本会让这张票从云端一起消失，而本地副本补不回来，所以
-  /// 同步状态必须先于「录入时间」。同一同步状态下就完全按后台的口径挑保留项。
+  /// 重复多半来自重复导入，其中一条往往缺到点、里程或席别；先按已填字段数挑，
+  /// 才不会为了「录入时间早」留下一张信息残缺的票。两边都不再额外看是否已同步，
+  /// 同一组在 App 与后台选出的保留项完全相同。
   static int _compareKeepPriority(TripRecord first, TripRecord second) {
-    final bySynced = (first.ticketId == null ? 1 : 0).compareTo(
-      second.ticketId == null ? 1 : 0,
-    );
-    if (bySynced != 0) return bySynced;
+    final byCompleteness = _completenessScore(
+      second,
+    ).compareTo(_completenessScore(first));
+    if (byCompleteness != 0) return byCompleteness;
     final byCreated = first.createdAt.compareTo(second.createdAt);
     if (byCreated != 0) return byCreated;
     return first.id.compareTo(second.id);
   }
+
+  /// 已填写的可选字段数。里程、票价为 0 视为没填，经由为空表示还没画出来。
+  ///
+  /// 分组口径只比较车次、日期与区间，所以组内各条的差异全在这些字段上；
+  /// 后台 `DuplicateKeepOrder` 用同一份字段清单排序，改这里要同步那边。
+  static int _completenessScore(TripRecord trip) {
+    var score = 0;
+    if (trip.arrivalTime != null) score++;
+    if (trip.mileageKm > 0) score++;
+    if (trip.price > 0) score++;
+    if (_isFilled(trip.rollingStock)) score++;
+    if (_isFilled(trip.companyName)) score++;
+    if (_isFilled(trip.seatType)) score++;
+    if (_isFilled(trip.seatNumber)) score++;
+    if (_isFilled(trip.notes)) score++;
+    if (_isFilled(trip.groupName)) score++;
+    if (trip.viaRouteSegments.isNotEmpty) score++;
+    return score;
+  }
+
+  static bool _isFilled(String? value) =>
+      value != null && value.trim().isNotEmpty;
 
   /// 按车次号 + 版本找整趟站序。
   ///

@@ -379,7 +379,7 @@ class _TimetableRebuildPageState extends State<TimetableRebuildPage> {
           label: Text('重复行程 ${_duplicateIds.length}'),
           tooltip:
               '同一车次、同一天、同一区间出现多条时，每组只保留一条'
-              '（优先云端副本，其次最早录入）；这里只列出多余的副本，可全选删除',
+              '（优先数据更全的，其次最早录入）；这里只列出多余的副本，可全选删除',
           selected: _filter == _RebuildFilter.duplicates,
           onSelected: (_) => _selectFilter(_RebuildFilter.duplicates),
         ),
