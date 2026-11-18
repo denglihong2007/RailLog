@@ -19,6 +19,7 @@ public sealed partial class RailLogDatabase
     private const int HomeTravelGuideLimit = 12;
     private const int HomeTravelGuideHotLimit = 4;
     private const int TravelGuideMaxPageSize = 50;
+    private const int MaxReviewMentions = 10;
     // 「全站热门」的综合排序 = 时间衰减 × (8 × 回应分 + 2 × 篇幅分) / 10。
     // 回应分：反应人数取对数后对参考值归一，0 人得 0 分、参考值（10 人）为 1 分。
     //   用对数是因为第一个回应比第十个珍贵得多，而线上回应本来就稀疏（约八成评价为 0）。
@@ -198,11 +199,41 @@ public sealed partial class RailLogDatabase
                 FOREIGN KEY (ReviewId) REFERENCES EntityReviews (Id) ON DELETE CASCADE,
                 FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS EntityReviewMentions (
+                ReviewId INTEGER NOT NULL,
+                UserId TEXT NOT NULL,
+                MentionedName TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                PRIMARY KEY (ReviewId, UserId),
+                FOREIGN KEY (ReviewId) REFERENCES EntityReviews (Id) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_Entity ON EntityReviews(EntityType, EntityKey);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_UserId ON EntityReviews(UserId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_TripId ON EntityReviews(TripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviews_SecondTripId ON EntityReviews(SecondTripId);
             CREATE INDEX IF NOT EXISTS IX_EntityReviewReactions_ReviewId ON EntityReviewReactions(ReviewId);
+            CREATE INDEX IF NOT EXISTS IX_EntityReviewMentions_ReviewId ON EntityReviewMentions(ReviewId);
+            CREATE INDEX IF NOT EXISTS IX_EntityReviewMentions_UserId ON EntityReviewMentions(UserId);
+            CREATE TABLE IF NOT EXISTS Notifications (
+                Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                UserId TEXT NOT NULL,
+                Type TEXT NOT NULL,
+                ActorUserId TEXT NULL,
+                ActorName TEXT NOT NULL,
+                Message TEXT NOT NULL,
+                TripId INTEGER NULL,
+                ReviewId INTEGER NULL,
+                EntityType TEXT NULL,
+                EntityKey TEXT NULL,
+                CreatedAt TEXT NOT NULL,
+                ReadAt TEXT NULL,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS IX_Notifications_UserId_CreatedAt
+                ON Notifications(UserId, CreatedAt DESC);
+            CREATE INDEX IF NOT EXISTS IX_Notifications_UserId_ReadAt
+                ON Notifications(UserId, ReadAt);
             CREATE TABLE IF NOT EXISTS Announcements (
                 Id TEXT NOT NULL PRIMARY KEY,
                 Text TEXT NOT NULL,
@@ -810,7 +841,16 @@ public sealed partial class RailLogDatabase
                        SELECT SUM(achievement.Experience)
                        FROM UserAchievements achievement
                        WHERE achievement.UserId=r.UserId
-                   ), 0)
+                   ), 0),
+                   COALESCE((
+                       SELECT json_group_array(json_object(
+                           'UserId', mention.UserId,
+                           'DisplayName', mentionUser.DisplayName,
+                           'MentionedName', mention.MentionedName))
+                       FROM EntityReviewMentions mention
+                       JOIN AspNetUsers mentionUser ON mentionUser.Id=mention.UserId
+                       WHERE mention.ReviewId=r.Id
+                   ), '[]')
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -847,7 +887,8 @@ public sealed partial class RailLogDatabase
                     ReadPublicTrip(reader, 17),
                     ReadPublicTrip(reader, 33),
                     [],
-                    Convert.ToInt32(reader.GetInt64(49))));
+                    Convert.ToInt32(reader.GetInt64(49)),
+                    ReadReviewMentions(reader)));
         }
         var reactions = await GetEntityReviewReactionSummariesAsync(
             connection,
@@ -890,7 +931,16 @@ public sealed partial class RailLogDatabase
                        SELECT SUM(achievement.Experience)
                        FROM UserAchievements achievement
                        WHERE achievement.UserId=r.UserId
-                   ), 0)
+                   ), 0),
+                   COALESCE((
+                       SELECT json_group_array(json_object(
+                           'UserId', mention.UserId,
+                           'DisplayName', mentionUser.DisplayName,
+                           'MentionedName', mention.MentionedName))
+                       FROM EntityReviewMentions mention
+                       JOIN AspNetUsers mentionUser ON mentionUser.Id=mention.UserId
+                       WHERE mention.ReviewId=r.Id
+                   ), '[]')
             FROM TripRecords reviewedTrip
             JOIN EntityReviews r
                 ON r.UserId=reviewedTrip.UserId
@@ -931,7 +981,8 @@ public sealed partial class RailLogDatabase
                     ReadPublicTrip(reader, 17),
                     ReadPublicTrip(reader, 33),
                     [],
-                    Convert.ToInt32(reader.GetInt64(49))));
+                    Convert.ToInt32(reader.GetInt64(49)),
+                    ReadReviewMentions(reader)));
         }
         var reactions = await GetTripReviewReactionSummariesAsync(
             connection,
@@ -1037,7 +1088,16 @@ public sealed partial class RailLogDatabase
                        SELECT SUM(achievement.Experience)
                        FROM UserAchievements achievement
                        WHERE achievement.UserId=r.UserId
-                   ), 0)
+                   ), 0),
+                   COALESCE((
+                       SELECT json_group_array(json_object(
+                           'UserId', mention.UserId,
+                           'DisplayName', mentionUser.DisplayName,
+                           'MentionedName', mention.MentionedName))
+                       FROM EntityReviewMentions mention
+                       JOIN AspNetUsers mentionUser ON mentionUser.Id=mention.UserId
+                       WHERE mention.ReviewId=r.Id
+                   ), '[]')
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -1187,7 +1247,16 @@ public sealed partial class RailLogDatabase
                        SELECT SUM(achievement.Experience)
                        FROM UserAchievements achievement
                        WHERE achievement.UserId=r.UserId
-                   ), 0)
+                   ), 0),
+                   COALESCE((
+                       SELECT json_group_array(json_object(
+                           'UserId', mention.UserId,
+                           'DisplayName', mentionUser.DisplayName,
+                           'MentionedName', mention.MentionedName))
+                       FROM EntityReviewMentions mention
+                       JOIN AspNetUsers mentionUser ON mentionUser.Id=mention.UserId
+                       WHERE mention.ReviewId=r.Id
+                   ), '[]')
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -1276,7 +1345,16 @@ public sealed partial class RailLogDatabase
                        SELECT SUM(achievement.Experience)
                        FROM UserAchievements achievement
                        WHERE achievement.UserId=r.UserId
-                   ), 0)
+                   ), 0),
+                   COALESCE((
+                       SELECT json_group_array(json_object(
+                           'UserId', mention.UserId,
+                           'DisplayName', mentionUser.DisplayName,
+                           'MentionedName', mention.MentionedName))
+                       FROM EntityReviewMentions mention
+                       JOIN AspNetUsers mentionUser ON mentionUser.Id=mention.UserId
+                       WHERE mention.ReviewId=r.Id
+                   ), '[]')
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
             LEFT JOIN TripRecords trip ON trip.Id=r.TripId
@@ -1332,7 +1410,15 @@ public sealed partial class RailLogDatabase
         ReadPublicTrip(reader, 17),
         ReadPublicTrip(reader, 33),
         [],
-        Convert.ToInt32(reader.GetInt64(49)));
+        Convert.ToInt32(reader.GetInt64(49)),
+        ReadReviewMentions(reader));
+
+    private static IReadOnlyList<EntityReviewMention> ReadReviewMentions(
+        SqliteDataReader reader) =>
+        reader.IsDBNull(50)
+            ? []
+            : JsonSerializer.Deserialize<List<EntityReviewMention>>(
+                reader.GetString(50)) ?? [];
 
     private static void AddReviewCriteria(
         ICollection<(string Type, IReadOnlyList<string> Keys)> criteria,
@@ -1766,15 +1852,88 @@ public sealed partial class RailLogDatabase
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
         await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = "INSERT INTO EntityReviews(EntityType,EntityKey,ReviewType,UserId,Rating,Comment,TripId,SecondTripId,TransferMinutes,RouteFromStation,RouteToStation,Dish,Price,CreatedAt) VALUES($type,$key,$review,$user,$rating,$comment,$trip,$second,$minutes,$routeFrom,$routeTo,$dish,$price,$created); SELECT last_insert_rowid();";
         command.Parameters.AddWithValue("$type", request.EntityType); command.Parameters.AddWithValue("$key", request.EntityKey); command.Parameters.AddWithValue("$review", request.ReviewType); command.Parameters.AddWithValue("$user", userId); command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$routeFrom", DbValue(request.RouteFromStation)); command.Parameters.AddWithValue("$routeTo", DbValue(request.RouteToStation)); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$created", DateTime.UtcNow.ToString("O"));
         var id = Convert.ToInt64(await command.ExecuteScalarAsync());
+        var mentionedUserIds = await InsertEntityReviewMentionsAsync(
+            connection,
+            (SqliteTransaction)transaction,
+            id,
+            request.MentionUserIds);
+        await NotifyReviewMentionsAsync(
+            connection,
+            (SqliteTransaction)transaction,
+            id,
+            userId,
+            request.EntityType,
+            request.EntityKey,
+            mentionedUserIds);
+        await transaction.CommitAsync();
         // 评价列表是成就的输入之一，发表后要让本人成就跟上（此前只在下次同步才会更新）。
         EnqueueAchievementRecompute(userId);
         // 评分会显示在要素排行榜上，不能让缓存继续发旧的平均分。
         InvalidateStatisticsCache(userId);
         return (await GetEntityReviewsAsync(request.EntityType, request.EntityKey)).First(r => r.Id == id);
+    }
+
+    /// <summary>
+    /// 把正文里选中的被提及用户写进关联表。名字取当前 DisplayName；正文里的
+    /// 名字由客户端插入，正常提交时两者一致。已不存在的用户直接跳过。
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> InsertEntityReviewMentionsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long reviewId,
+        IReadOnlyList<string>? mentionUserIds)
+    {
+        var ids = (mentionUserIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaxReviewMentions)
+            .ToList();
+        if (ids.Count == 0) return [];
+
+        await using var lookup = connection.CreateCommand();
+        lookup.Transaction = transaction;
+        var idParameters = ids.Select((_, index) => $"$mention{index}").ToList();
+        lookup.CommandText = $"""
+            SELECT Id, DisplayName FROM AspNetUsers
+            WHERE Id IN ({string.Join(",", idParameters)});
+            """;
+        for (var index = 0; index < ids.Count; index++)
+            lookup.Parameters.AddWithValue(idParameters[index], ids[index]);
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        await using (var reader = await lookup.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                names[reader.GetString(0)] = reader.GetString(1);
+        }
+        if (names.Count == 0) return [];
+
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        var values = new List<string>(names.Count);
+        var created = DateTime.UtcNow.ToString("O");
+        var valueIndex = 0;
+        foreach (var (mentionedUserId, displayName) in names)
+        {
+            values.Add($"($review,$id{valueIndex},$name{valueIndex},$created)");
+            insert.Parameters.AddWithValue($"$id{valueIndex}", mentionedUserId);
+            insert.Parameters.AddWithValue($"$name{valueIndex}", displayName);
+            valueIndex++;
+        }
+        insert.Parameters.AddWithValue("$review", reviewId);
+        insert.Parameters.AddWithValue("$created", created);
+        insert.CommandText = $"""
+            INSERT INTO EntityReviewMentions (ReviewId, UserId, MentionedName, CreatedAt)
+            VALUES {string.Join(",", values)};
+            """;
+        await insert.ExecuteNonQueryAsync();
+        return names.Keys.ToList();
     }
 
     public async Task<bool> DeleteEntityReviewAsync(long id, string userId)
@@ -1785,6 +1944,12 @@ public sealed partial class RailLogDatabase
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = """
             DELETE FROM EntityReviewReactions
+            WHERE ReviewId=$id
+              AND EXISTS (
+                  SELECT 1 FROM EntityReviews
+                  WHERE Id=$id AND UserId=$user
+              );
+            DELETE FROM EntityReviewMentions
             WHERE ReviewId=$id
               AND EXISTS (
                   SELECT 1 FROM EntityReviews
@@ -1812,13 +1977,42 @@ public sealed partial class RailLogDatabase
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
-        await using var ownerCommand = connection.CreateCommand();
-        ownerCommand.CommandText = "SELECT UserId FROM EntityReviews WHERE Id=$id;";
-        ownerCommand.Parameters.AddWithValue("$id", reviewId);
-        var ownerId = await ownerCommand.ExecuteScalarAsync() as string;
-        if (ownerId is null || ownerId == userId) return false;
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        string? ownerId = null;
+        string? entityType = null;
+        string? entityKey = null;
+        string? previousEmoji = null;
+        await using (var ownerCommand = connection.CreateCommand())
+        {
+            ownerCommand.Transaction = (SqliteTransaction)transaction;
+            ownerCommand.CommandText = """
+                SELECT review.UserId, review.EntityType, review.EntityKey,
+                       reaction.Emoji
+                FROM EntityReviews review
+                LEFT JOIN EntityReviewReactions reaction
+                    ON reaction.ReviewId=review.Id AND reaction.UserId=$userId
+                WHERE review.Id=$id;
+                """;
+            ownerCommand.Parameters.AddWithValue("$id", reviewId);
+            ownerCommand.Parameters.AddWithValue("$userId", userId);
+            await using var reader = await ownerCommand.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                ownerId = reader.GetString(0);
+                entityType = reader.GetString(1);
+                entityKey = reader.GetString(2);
+                previousEmoji = reader.IsDBNull(3) ? null : reader.GetString(3);
+            }
+        }
+        if (ownerId is null || ownerId == userId)
+        {
+            await transaction.RollbackAsync();
+            return false;
+        }
 
         await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
         // ownerId 是上一步查出来的；若评价在那两步之间被删，裸 INSERT 会撞上
         // ReviewId 的外键（Microsoft.Data.Sqlite 默认开启外键，实测 PRAGMA foreign_keys = 1）
         // 直接抛 SqliteException，用户看到 500。WHERE EXISTS 把这条竞态变成干净的「未写入」。
@@ -1835,6 +2029,28 @@ public sealed partial class RailLogDatabase
         command.Parameters.AddWithValue("$emoji", emoji);
         command.Parameters.AddWithValue("$createdAt", DateTime.UtcNow.ToString("O"));
         var affected = await command.ExecuteNonQueryAsync() > 0;
+
+        // 只有第一次回应或更换表情时才提醒作者，重复点同一个表情不再打扰。
+        if (affected && previousEmoji != emoji)
+        {
+            var actorName =
+                await GetUserDisplayNameAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId) ?? "某位用户";
+            await AddNotificationAsync(
+                connection,
+                (SqliteTransaction)transaction,
+                ownerId,
+                "review_reaction",
+                actorName,
+                $"{actorName} 回应了你在「{entityKey}」下的评价：{emoji}",
+                reviewId: reviewId,
+                entityType: entityType,
+                entityKey: entityKey,
+                actorUserId: userId);
+        }
+        await transaction.CommitAsync();
         // 「收到的 reaction 数」算在评价作者头上，不是回应者头上。
         if (affected) EnqueueAchievementRecompute(ownerId);
         return affected;
@@ -1867,10 +2083,73 @@ public sealed partial class RailLogDatabase
     public async Task<bool> UpdateEntityReviewAsync(long id, string userId, UpdateEntityReviewRequest request)
     {
         await using var connection = OpenConnection(); await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
         await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = "UPDATE EntityReviews SET Rating=$rating,Comment=$comment,TripId=$trip,SecondTripId=$second,TransferMinutes=$minutes,RouteFromStation=$routeFrom,RouteToStation=$routeTo,Dish=$dish,Price=$price WHERE Id=$id AND UserId=$user";
         command.Parameters.AddWithValue("$rating", request.Rating); command.Parameters.AddWithValue("$comment", request.Comment); command.Parameters.AddWithValue("$trip", (object?)request.TripId ?? DBNull.Value); command.Parameters.AddWithValue("$second", (object?)request.SecondTripId ?? DBNull.Value); command.Parameters.AddWithValue("$minutes", (object?)request.TransferMinutes ?? DBNull.Value); command.Parameters.AddWithValue("$routeFrom", DbValue(request.RouteFromStation)); command.Parameters.AddWithValue("$routeTo", DbValue(request.RouteToStation)); command.Parameters.AddWithValue("$dish", (object?)request.Dish ?? DBNull.Value); command.Parameters.AddWithValue("$price", (object?)request.Price ?? DBNull.Value); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$user", userId);
         var affected = await command.ExecuteNonQueryAsync() > 0;
+        // 旧客户端不传 MentionUserIds，保留已有提及；新客户端用空数组表示清空。
+        if (affected && request.MentionUserIds is not null)
+        {
+            var previousMentionIds = new HashSet<string>(StringComparer.Ordinal);
+            await using (var previous = connection.CreateCommand())
+            {
+                previous.Transaction = (SqliteTransaction)transaction;
+                previous.CommandText =
+                    "SELECT UserId FROM EntityReviewMentions WHERE ReviewId=$reviewId;";
+                previous.Parameters.AddWithValue("$reviewId", id);
+                await using var reader = await previous.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    previousMentionIds.Add(reader.GetString(0));
+            }
+
+            await using (var deleteMentions = connection.CreateCommand())
+            {
+                deleteMentions.Transaction = (SqliteTransaction)transaction;
+                deleteMentions.CommandText =
+                    "DELETE FROM EntityReviewMentions WHERE ReviewId=$reviewId;";
+                deleteMentions.Parameters.AddWithValue("$reviewId", id);
+                await deleteMentions.ExecuteNonQueryAsync();
+            }
+
+            var mentionedUserIds = await InsertEntityReviewMentionsAsync(
+                connection,
+                (SqliteTransaction)transaction,
+                id,
+                request.MentionUserIds);
+            var newlyMentioned = mentionedUserIds
+                .Where(mentionedUserId => !previousMentionIds.Contains(mentionedUserId))
+                .ToList();
+            if (newlyMentioned.Count > 0)
+            {
+                string? entityType = null;
+                string? entityKey = null;
+                await using var info = connection.CreateCommand();
+                info.Transaction = (SqliteTransaction)transaction;
+                info.CommandText =
+                    "SELECT EntityType, EntityKey FROM EntityReviews WHERE Id=$reviewId;";
+                info.Parameters.AddWithValue("$reviewId", id);
+                await using var reader = await info.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    entityType = reader.GetString(0);
+                    entityKey = reader.GetString(1);
+                }
+                if (entityType is not null && entityKey is not null)
+                {
+                    await NotifyReviewMentionsAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        id,
+                        userId,
+                        entityType,
+                        entityKey,
+                        newlyMentioned);
+                }
+            }
+        }
+        await transaction.CommitAsync();
         // 与其它四条评价写路径保持一致：评价是成就输入之一。引擎目前只消费 Reviews.Count，
         // 而本方法改不动 EntityType/EntityKey，所以今天不会改变成就 —— 留着是为了日后
         // 成就要用到评分/内容时，这里不会成为静默的漏网之鱼。

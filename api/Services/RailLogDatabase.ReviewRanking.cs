@@ -224,6 +224,15 @@ public sealed partial class RailLogDatabase
                        FROM UserAchievements achievement
                        WHERE achievement.UserId=r.UserId
                    ), 0),
+                   COALESCE((
+                       SELECT json_group_array(json_object(
+                           'UserId', mention.UserId,
+                           'DisplayName', mentionUser.DisplayName,
+                           'MentionedName', mention.MentionedName))
+                       FROM EntityReviewMentions mention
+                       JOIN AspNetUsers mentionUser ON mentionUser.Id=mention.UserId
+                       WHERE mention.ReviewId=r.Id
+                   ), '[]'),
                    e.Uses,e.LastTripAt
             FROM EntityReviews r
             JOIN AspNetUsers u ON u.Id=r.UserId
@@ -246,8 +255,8 @@ public sealed partial class RailLogDatabase
         while (await reader.ReadAsync())
         {
             var review = ReadEntityReview(reader);
-            var uses = reader.GetInt32(50);
-            var lastTripAt = ParseDbTimestamp(reader.GetString(51));
+            var uses = reader.GetInt32(51);
+            var lastTripAt = ParseDbTimestamp(reader.GetString(52));
             if (review.EntityType.Equals("route", StringComparison.OrdinalIgnoreCase))
             {
                 if (!TryGetRouteLastTrip(review, profile, routeStations, out var routeLastTripAt))

@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
+import 'package:raillog/src/models/search_result.dart';
 import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
 import 'package:raillog/src/services/route_service.dart';
+import 'package:raillog/src/services/search_service.dart';
 import 'package:raillog/src/theme/app_theme.dart';
+import 'package:raillog/src/widgets/cached_avatar.dart';
 
 /// 评价编辑器。实体详情页与设置里的「我的评价」共用同一个弹窗，
 /// 因此这里的行程候选、换乘配对、线路站点都按同一套规则算。
@@ -28,6 +33,7 @@ class ReviewDraft {
     this.routeToStation,
     this.dish,
     this.price,
+    this.mentionUserIds = const [],
   });
 
   final int rating;
@@ -39,6 +45,7 @@ class ReviewDraft {
   final String? routeToStation;
   final String? dish;
   final double? price;
+  final List<String> mentionUserIds;
 }
 
 class ReviewEditorDialog extends StatefulWidget {
@@ -62,11 +69,14 @@ class ReviewEditorDialog extends StatefulWidget {
 }
 
 class _ReviewEditorDialogState extends State<ReviewEditorDialog> {
+  static const _maxMentionedUsers = 10;
+
   late final List<TripRecord> _trips;
   late final TextEditingController _comment;
   late final TextEditingController _dish;
   late final TextEditingController _price;
   late int _rating;
+  final List<EntityReviewMention> _mentions = [];
   int? _tripId;
   int? _secondTripId;
   List<String> _routeStationOptions = const [];
@@ -88,8 +98,24 @@ class _ReviewEditorDialogState extends State<ReviewEditorDialog> {
       ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
     final initial = widget.initial;
     _rating = (initial?.rating ?? 5).clamp(1, 5);
-    _comment = TextEditingController(text: initial?.comment ?? '')
+    final initialMentions = initial?.mentions ?? const <EntityReviewMention>[];
+    final normalizedComment = normalizeReviewMentionNames(
+      initial?.comment ?? '',
+      initialMentions,
+    );
+    _comment = TextEditingController(text: normalizedComment)
       ..addListener(_handleChanged);
+    // 编辑时正文里的旧名字已经换成当前显示名，提及列表也统一用显示名来定位。
+    _mentions.addAll(
+      usedReviewMentions(normalizedComment, [
+        for (final mention in initialMentions)
+          EntityReviewMention(
+            userId: mention.userId,
+            displayName: mention.displayName,
+            mentionedName: mention.displayName,
+          ),
+      ]),
+    );
     _dish = TextEditingController(text: initial?.dish ?? '');
     final price = initial?.price;
     _price = TextEditingController(
@@ -242,11 +268,75 @@ class _ReviewEditorDialogState extends State<ReviewEditorDialog> {
     return null;
   }
 
+  Future<void> _pickMention() async {
+    final user = await showDialog<UserSearchResult>(
+      context: context,
+      builder: (_) => const _MentionPickerDialog(),
+    );
+    if (user == null || !mounted) return;
+    final existing = _mentions.indexWhere(
+      (mention) => mention.userId == user.id,
+    );
+    if (existing < 0 && _mentions.length >= _maxMentionedUsers) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('最多提及 $_maxMentionedUsers 位用户')),
+      );
+      return;
+    }
+    final mention = EntityReviewMention(
+      userId: user.id,
+      displayName: user.displayName,
+      mentionedName: user.displayName,
+    );
+    setState(() {
+      if (existing < 0) {
+        _mentions.add(mention);
+      } else {
+        _mentions[existing] = mention;
+      }
+    });
+    _insertMentionText(user.displayName);
+  }
+
+  void _insertMentionText(String displayName) {
+    final text = _comment.text;
+    final selection = _comment.selection;
+    final start = selection.isValid
+        ? selection.start.clamp(0, text.length)
+        : text.length;
+    final end = selection.isValid
+        ? selection.end.clamp(start, text.length)
+        : text.length;
+    final insertion = '@$displayName ';
+    final updated = text.replaceRange(start, end, insertion);
+    _comment.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + insertion.length),
+    );
+  }
+
+  void _removeMention(EntityReviewMention mention) {
+    setState(() => _mentions.removeWhere((item) => item.userId == mention.userId));
+    final matches = matchReviewMentions(_comment.text, [mention]);
+    if (matches.isEmpty) return;
+    final match = matches.first;
+    var end = match.end;
+    if (end < _comment.text.length && _comment.text[end] == ' ') end++;
+    final text = _comment.text.replaceRange(match.start, end, '');
+    _comment.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(
+        offset: match.start.clamp(0, text.length),
+      ),
+    );
+  }
+
   void _submit() {
     final comment = _comment.text.trim();
     if (comment.isEmpty) return;
     if (_isTransfer && (_tripId == null || _secondTripId == null)) return;
     if (_isRoute && !_hasRouteRange) return;
+    final mentions = usedReviewMentions(comment, _mentions);
     Navigator.of(context).pop(
       ReviewDraft(
         rating: _rating,
@@ -260,6 +350,7 @@ class _ReviewEditorDialogState extends State<ReviewEditorDialog> {
             ? _dish.text.trim()
             : null,
         price: _isMeal ? double.tryParse(_price.text.trim()) : null,
+        mentionUserIds: [for (final mention in mentions) mention.userId],
       ),
     );
   }
@@ -554,6 +645,32 @@ class _ReviewEditorDialogState extends State<ReviewEditorDialog> {
               ],
               const SizedBox(height: 16),
               commentField,
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _pickMention,
+                  icon: const Icon(Icons.alternate_email, size: 18),
+                  label: const Text('提及用户'),
+                ),
+              ),
+              if (_mentions.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final mention in _mentions)
+                      InputChip(
+                        label: Text(
+                          '@${mention.displayName}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onDeleted: () => _removeMention(mention),
+                      ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -565,6 +682,164 @@ class _ReviewEditorDialogState extends State<ReviewEditorDialog> {
           label: Text(_isEditing ? '保存' : '发布'),
         ),
       ],
+    );
+  }
+}
+
+class _MentionPickerDialog extends StatefulWidget {
+  const _MentionPickerDialog();
+
+  @override
+  State<_MentionPickerDialog> createState() => _MentionPickerDialogState();
+}
+
+class _MentionPickerDialogState extends State<_MentionPickerDialog> {
+  final TextEditingController _controller = TextEditingController();
+  Timer? _debounce;
+  int _requestId = 0;
+  List<UserSearchResult> _results = const [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    final requestId = ++_requestId;
+    final query = value.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _results = const [];
+        _loading = false;
+        _error = null;
+      });
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _debounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _search(query, requestId),
+    );
+  }
+
+  Future<void> _search(String query, int requestId) async {
+    try {
+      final results = await SearchService.searchUsers(query);
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _results = results;
+        _loading = false;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _results = const [];
+        _loading = false;
+        _error = error is SearchException ? error.message : '搜索用户失败';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colors = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('提及用户'),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      content: SizedBox(
+        width: 360,
+        height: 380,
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              onChanged: _onQueryChanged,
+              decoration: const InputDecoration(
+                hintText: '输入用户名搜索',
+                prefixIcon: Icon(Icons.search, size: 20),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(child: _buildResults(textTheme, colors)),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResults(TextTheme textTheme, ColorScheme colors) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    final error = _error;
+    if (error != null) {
+      return Center(
+        child: Text(
+          error,
+          style: textTheme.bodyMedium?.copyWith(color: colors.error),
+        ),
+      );
+    }
+    if (_controller.text.trim().isEmpty) {
+      return Center(
+        child: Text(
+          '输入用户名开始搜索',
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    if (_results.isEmpty) {
+      return Center(
+        child: Text(
+          '没有找到用户',
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      itemCount: _results.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 60),
+      itemBuilder: (context, index) {
+        final user = _results[index];
+        final bio = user.bio?.trim() ?? '';
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: CachedAvatar(
+            name: user.displayName,
+            imageUrl: user.avatarUrl,
+            size: 40,
+          ),
+          title: Text(
+            user.displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: bio.isEmpty
+              ? Text('${user.tripCount} 趟行程')
+              : Text(bio, maxLines: 1, overflow: TextOverflow.ellipsis),
+          trailing: const Icon(Icons.add_circle_outline, size: 20),
+          onTap: () => Navigator.of(context).pop(user),
+        );
+      },
     );
   }
 }

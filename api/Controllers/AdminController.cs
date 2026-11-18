@@ -635,6 +635,19 @@ public sealed class AdminController(
         return NoContent();
     }
 
+    [HttpPut("reviews/{id:long}")]
+    public async Task<IActionResult> UpdateReview(
+        long id,
+        AdminReviewUpdateRequest request)
+    {
+        if (request.Rating is < 1 or > 5 || string.IsNullOrWhiteSpace(request.Comment))
+            return BadRequest(new MessageResponse("评分和评价内容不能为空，评分范围为 1-5"));
+        if (!await database.UpdateAdminReviewAsync(id, request.Rating, request.Comment.Trim()))
+            return NotFound();
+        await AuditAsync("review.update", id.ToString());
+        return NoContent();
+    }
+
     /// <summary>某条评价收到的全部回应，供详情弹窗展开查看与逐条删除。</summary>
     [HttpGet("reviews/{id:long}/reactions")]
     public async Task<ActionResult<IReadOnlyList<AdminReviewReaction>>> GetReviewReactions(

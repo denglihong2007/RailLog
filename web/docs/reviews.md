@@ -154,4 +154,8 @@ curl "https://api.raillog.top/api/trips/123/reviews"
 | `reactions[].emoji` | string | 表情符号。 |
 | `reactions[].count` | integer | 该表情的回应数量。 |
 | `reactions[].reactedByCurrentUser` | boolean | 匿名请求恒为 `false`。 |
+| `mentions` | `array<object>` | 正文中被 `@` 的用户；没有时为空数组。 |
+| `mentions[].userId` | string | 被提及用户的公开用户 ID。 |
+| `mentions[].displayName` | string | 被提及用户的当前显示名称，展示时应以它为准。 |
+| `mentions[].mentionedName` | string | 发表时正文里写的名字，用于在 `comment` 中定位被提及的位置。 |
 | `achievementExperience` | integer | 作者当前累计的成就经验值。 |

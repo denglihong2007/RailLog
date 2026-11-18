@@ -52,6 +52,13 @@ class EntityReview {
               Map<String, dynamic>.from(value as Map),
             ),
           )
+          .toList(),
+      mentions = (json['mentions'] as List? ?? const [])
+          .map(
+            (value) => EntityReviewMention.fromJson(
+              Map<String, dynamic>.from(value as Map),
+            ),
+          )
           .toList();
   final int id;
   final String entityType;
@@ -74,6 +81,7 @@ class EntityReview {
   final TripRecord? trip;
   final TripRecord? secondTrip;
   final List<EntityReviewReaction> reactions;
+  final List<EntityReviewMention> mentions;
 
   EntityReview._({
     required this.id,
@@ -97,6 +105,7 @@ class EntityReview {
     required this.trip,
     required this.secondTrip,
     required this.reactions,
+    required this.mentions,
   });
 
   /// 只替换表情回应，其余字段不变。回应接口只回 204，列表拿到本地算出的新状态
@@ -124,7 +133,134 @@ class EntityReview {
         trip: trip,
         secondTrip: secondTrip,
         reactions: reactions,
+        mentions: mentions,
       );
+}
+
+/// 评价正文里被 @ 的用户。[mentionedName] 是发表时正文中写的名字（用于定位），
+/// [displayName] 是当前名字（用于渲染）。
+class EntityReviewMention {
+  const EntityReviewMention({
+    required this.userId,
+    required this.displayName,
+    required this.mentionedName,
+  });
+
+  factory EntityReviewMention.fromJson(Map<String, dynamic> json) =>
+      EntityReviewMention(
+        userId: json['userId'] as String,
+        displayName: json['displayName'] as String? ?? '',
+        mentionedName: json['mentionedName'] as String? ?? '',
+      );
+
+  final String userId;
+  final String displayName;
+  final String mentionedName;
+}
+
+class ReviewMentionMatch {
+  const ReviewMentionMatch({
+    required this.start,
+    required this.end,
+    required this.mention,
+  });
+
+  final int start;
+  final int end;
+  final EntityReviewMention mention;
+}
+
+/// 在正文里找出被 @ 的用户。名字长的优先匹配，避免「张三」把「张三丰」截断；
+/// 名字后面紧跟文字/数字时不算提及（防止 @张三 命中 @张三丰 的前缀）。
+List<ReviewMentionMatch> matchReviewMentions(
+  String comment,
+  Iterable<EntityReviewMention> mentions,
+) {
+  final candidates =
+      mentions
+          .where(
+            (mention) =>
+                mention.mentionedName.trim().isNotEmpty &&
+                mention.displayName.trim().isNotEmpty,
+          )
+          .map(
+            (mention) =>
+                (mention: mention, needle: '@${mention.mentionedName.trim()}'),
+          )
+          .toList()
+        ..sort((a, b) => b.needle.length.compareTo(a.needle.length));
+  if (candidates.isEmpty) return const [];
+
+  final matches = <ReviewMentionMatch>[];
+  var index = 0;
+  while (index < comment.length) {
+    if (comment[index] != '@' ||
+        (index > 0 && _isMentionNameChar(comment[index - 1]))) {
+      index++;
+      continue;
+    }
+    ReviewMentionMatch? found;
+    for (final candidate in candidates) {
+      final end = index + candidate.needle.length;
+      if (end > comment.length ||
+          !comment.startsWith(candidate.needle, index)) {
+        continue;
+      }
+      if (end < comment.length && _isMentionNameChar(comment[end])) continue;
+      found = ReviewMentionMatch(
+        start: index,
+        end: end,
+        mention: candidate.mention,
+      );
+      break;
+    }
+    if (found == null) {
+      index++;
+      continue;
+    }
+    matches.add(found);
+    index = found.end;
+  }
+  return matches;
+}
+
+/// 把正文里的旧名字统一换成当前显示名，返回新正文。
+String normalizeReviewMentionNames(
+  String comment,
+  Iterable<EntityReviewMention> mentions,
+) {
+  final matches = matchReviewMentions(comment, mentions);
+  if (matches.isEmpty) return comment;
+  final buffer = StringBuffer();
+  var cursor = 0;
+  for (final match in matches) {
+    buffer.write(comment.substring(cursor, match.start));
+    buffer.write('@${match.mention.displayName.trim()}');
+    cursor = match.end;
+  }
+  buffer.write(comment.substring(cursor));
+  return buffer.toString();
+}
+
+/// 正文里实际还保留着的提及。编辑时删掉名字后，不应再把该用户存成提及。
+List<EntityReviewMention> usedReviewMentions(
+  String comment,
+  Iterable<EntityReviewMention> mentions,
+) {
+  final seen = <String>{};
+  return [
+    for (final match in matchReviewMentions(comment, mentions))
+      if (seen.add(match.mention.userId)) match.mention,
+  ];
+}
+
+bool _isMentionNameChar(String value) {
+  final code = value.runes.first;
+  return (code >= 0x30 && code <= 0x39) ||
+      (code >= 0x41 && code <= 0x5A) ||
+      (code >= 0x61 && code <= 0x7A) ||
+      code == 0x5F ||
+      (code >= 0x3400 && code <= 0x9FFF);
 }
 
 class EntityReviewReaction {
@@ -307,6 +443,7 @@ class EntityReviewService {
     String? routeToStation,
     String? dish,
     double? price,
+    List<String> mentionUserIds = const [],
   }) async {
     final token = SessionService.instance.token;
     if (token == null) throw StateError('请先登录');
@@ -325,6 +462,7 @@ class EntityReviewService {
         'routeToStation': routeToStation,
         'dish': dish,
         'price': price,
+        'mentionUserIds': mentionUserIds,
       },
       options: ApiClient.instance.authorized(token),
     );
@@ -346,6 +484,7 @@ class EntityReviewService {
     String? routeToStation,
     String? dish,
     double? price,
+    List<String> mentionUserIds = const [],
   }) async {
     final token = SessionService.instance.token;
     if (token == null) throw StateError('请先登录');
@@ -361,6 +500,7 @@ class EntityReviewService {
         'routeToStation': routeToStation,
         'dish': dish,
         'price': price,
+        'mentionUserIds': mentionUserIds,
       },
       options: ApiClient.instance.authorized(token),
     );

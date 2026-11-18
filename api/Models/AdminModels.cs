@@ -125,6 +125,9 @@ public sealed record AdminReviewPage(
     IReadOnlyList<AdminReview> Items,
     long Total);
 
+/// <summary>管理员修改评价内容与评分；作者会收到一条系统通知。</summary>
+public sealed record AdminReviewUpdateRequest(int Rating, string Comment);
+
 /// <summary>某条评价收到的单个表情回应，回应者信息供管理员核对。</summary>
 public sealed record AdminReviewReaction(
     long ReviewId,

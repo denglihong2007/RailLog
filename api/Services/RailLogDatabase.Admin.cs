@@ -793,6 +793,44 @@ public sealed partial class RailLogDatabase
             update.Parameters.AddWithValue("$syncVersion", version);
             await update.ExecuteNonQueryAsync();
             trip = await ReadAdminTripAsync(connection, ticketId, transaction);
+            if (trip is not null)
+            {
+                var tripLabel =
+                    $"{request.TrainNumber} {request.FromStation}→{request.ToStation}";
+                if (request.IsDeleted && existingDeletedAt is null)
+                {
+                    await AddNotificationAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        userId!,
+                        "trip_deleted",
+                        "系统",
+                        $"系统删除了你的行程 {tripLabel}。",
+                        tripId: ticketId);
+                }
+                else if (!request.IsDeleted && existingDeletedAt is not null)
+                {
+                    await AddNotificationAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        userId!,
+                        "trip_updated",
+                        "系统",
+                        $"系统恢复了你的行程 {tripLabel}。",
+                        tripId: ticketId);
+                }
+                else if (!request.IsDeleted)
+                {
+                    await AddNotificationAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        userId!,
+                        "trip_updated",
+                        "系统",
+                        $"系统修改了你的行程 {tripLabel}。",
+                        tripId: ticketId);
+                }
+            }
             await transaction.CommitAsync();
         }
         finally
@@ -811,6 +849,9 @@ public sealed partial class RailLogDatabase
     public async Task<bool> DeleteAdminTripAsync(long ticketId)
     {
         string? userId = null;
+        string trainNumber = string.Empty;
+        string fromStation = string.Empty;
+        string toStation = string.Empty;
         var deleted = false;
         await _writeLock.WaitAsync();
         try
@@ -822,11 +863,19 @@ public sealed partial class RailLogDatabase
             {
                 owner.Transaction = transaction;
                 owner.CommandText = """
-                    SELECT UserId FROM TripRecords
+                    SELECT UserId, TrainNumber, FromStation, ToStation
+                    FROM TripRecords
                     WHERE Id = $id AND DeletedAt IS NULL LIMIT 1;
                     """;
                 owner.Parameters.AddWithValue("$id", ticketId);
-                userId = await owner.ExecuteScalarAsync() as string;
+                await using var reader = await owner.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    userId = reader.GetString(0);
+                    trainNumber = reader.GetString(1);
+                    fromStation = reader.GetString(2);
+                    toStation = reader.GetString(3);
+                }
             }
             if (userId is null)
             {
@@ -850,6 +899,17 @@ public sealed partial class RailLogDatabase
             command.Parameters.AddWithValue("$syncVersion", version);
             command.Parameters.AddWithValue("$id", ticketId);
             deleted = await command.ExecuteNonQueryAsync() > 0;
+            if (deleted)
+            {
+                await AddNotificationAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId,
+                    "trip_deleted",
+                    "系统",
+                    $"系统删除了你的行程 {trainNumber} {fromStation}→{toStation}。",
+                    tripId: ticketId);
+            }
             await transaction.CommitAsync();
         }
         finally
@@ -985,6 +1045,8 @@ public sealed partial class RailLogDatabase
     public async Task<bool> DeleteAdminReviewAsync(long id)
     {
         string? userId = null;
+        string? entityType = null;
+        string? entityKey = null;
         var deleted = false;
         await _writeLock.WaitAsync();
         try
@@ -995,9 +1057,18 @@ public sealed partial class RailLogDatabase
             await using (var owner = connection.CreateCommand())
             {
                 owner.Transaction = transaction;
-                owner.CommandText = "SELECT UserId FROM EntityReviews WHERE Id = $id LIMIT 1;";
+                owner.CommandText = """
+                    SELECT UserId, EntityType, EntityKey
+                    FROM EntityReviews WHERE Id = $id LIMIT 1;
+                    """;
                 owner.Parameters.AddWithValue("$id", id);
-                userId = await owner.ExecuteScalarAsync() as string;
+                await using var reader = await owner.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    userId = reader.GetString(0);
+                    entityType = reader.GetString(1);
+                    entityKey = reader.GetString(2);
+                }
             }
             if (userId is null)
             {
@@ -1013,6 +1084,19 @@ public sealed partial class RailLogDatabase
                 """;
             command.Parameters.AddWithValue("$id", id);
             deleted = await command.ExecuteNonQueryAsync() > 0;
+            if (deleted)
+            {
+                await AddNotificationAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId,
+                    "review_deleted",
+                    "系统",
+                    $"系统删除了你在「{entityKey}」下的评价。",
+                    reviewId: id,
+                    entityType: entityType,
+                    entityKey: entityKey);
+            }
             await transaction.CommitAsync();
         }
         finally
@@ -1028,6 +1112,81 @@ public sealed partial class RailLogDatabase
             InvalidateStatisticsCache(userId);
         }
         return deleted;
+    }
+
+    public async Task<bool> UpdateAdminReviewAsync(
+        long id,
+        int rating,
+        string comment)
+    {
+        string? userId = null;
+        string? entityType = null;
+        string? entityKey = null;
+        var updated = false;
+        await _writeLock.WaitAsync();
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync();
+            await using var transaction = await BeginTransactionWithRetryAsync(connection);
+            await using (var owner = connection.CreateCommand())
+            {
+                owner.Transaction = transaction;
+                owner.CommandText = """
+                    SELECT UserId, EntityType, EntityKey
+                    FROM EntityReviews WHERE Id = $id LIMIT 1;
+                    """;
+                owner.Parameters.AddWithValue("$id", id);
+                await using var reader = await owner.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    userId = reader.GetString(0);
+                    entityType = reader.GetString(1);
+                    entityKey = reader.GetString(2);
+                }
+            }
+            if (userId is null)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE EntityReviews SET Rating=$rating, Comment=$comment
+                WHERE Id=$id;
+                """;
+            command.Parameters.AddWithValue("$rating", rating);
+            command.Parameters.AddWithValue("$comment", comment);
+            command.Parameters.AddWithValue("$id", id);
+            updated = await command.ExecuteNonQueryAsync() > 0;
+            if (updated)
+            {
+                await AddNotificationAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId,
+                    "review_updated",
+                    "系统",
+                    $"系统修改了你在「{entityKey}」下的评价。",
+                    reviewId: id,
+                    entityType: entityType,
+                    entityKey: entityKey);
+            }
+            await transaction.CommitAsync();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+
+        if (updated && userId is not null)
+        {
+            EnqueueAchievementRecompute(userId);
+            InvalidateStatisticsCache(userId);
+        }
+        return updated;
     }
 
     public async Task<IReadOnlyList<AdminReviewReaction>> GetAdminReviewReactionsAsync(

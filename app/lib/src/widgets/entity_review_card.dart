@@ -6,6 +6,7 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/theme/app_theme.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/entity_review_reaction_bar.dart';
+import 'package:raillog/src/widgets/review_comment_text.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
 
 class EntityReviewCard extends StatelessWidget {
@@ -166,7 +167,11 @@ class EntityReviewCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 2),
-                        Text(review.comment, style: textTheme.bodyMedium),
+                        ReviewCommentText(
+                          comment: review.comment,
+                          mentions: review.mentions,
+                          style: textTheme.bodyMedium,
+                        ),
                         if (showTripLinks && primary != null)
                           _EntityReviewTripLink(
                             roleLabel: review.reviewType == 'transfer'

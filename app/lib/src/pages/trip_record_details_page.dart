@@ -37,6 +37,15 @@ const _tripLoginRequiredMessage = '登录后查看';
 class TripRecordDetailsPage extends StatefulWidget {
   const TripRecordDetailsPage({super.key, required this.tripId})
     : publicTicketId = null,
+      lookupTicketId = null,
+      onOwnerTap = null;
+
+  /// 按服务端行程 ID 打开自己的行程。通知里记录的是 `ticketId`，
+  /// 本地行主键与它并不相同，不能直接当成 [tripId] 用。
+  const TripRecordDetailsPage.forTicket({super.key, required int ticketId})
+    : tripId = null,
+      publicTicketId = null,
+      lookupTicketId = ticketId,
       onOwnerTap = null;
 
   const TripRecordDetailsPage.public({
@@ -44,10 +53,12 @@ class TripRecordDetailsPage extends StatefulWidget {
     required int ticketId,
     this.onOwnerTap,
   }) : tripId = null,
-       publicTicketId = ticketId;
+       publicTicketId = ticketId,
+       lookupTicketId = null;
 
   final int? tripId;
   final int? publicTicketId;
+  final int? lookupTicketId;
   final VoidCallback? onOwnerTap;
 
   bool get isReadOnly => publicTicketId != null;
@@ -71,6 +82,11 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
     if (publicTicketId != null) {
       final details = await PublicTripService.fetch(publicTicketId);
       return _LoadedTrip.public(details);
+    }
+    final lookupTicketId = widget.lookupTicketId;
+    if (lookupTicketId != null) {
+      final trip = await DbHelper.instance.getTripByTicketId(lookupTicketId);
+      return trip == null ? null : _LoadedTrip.local(trip);
     }
     final trip = await DbHelper.instance.getTripById(widget.tripId!);
     return trip == null ? null : _LoadedTrip.local(trip);

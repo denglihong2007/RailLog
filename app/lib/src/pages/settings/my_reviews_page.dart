@@ -135,6 +135,7 @@ class _MyReviewsPageState extends State<MyReviewsPage> {
         routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
+        mentionUserIds: draft.mentionUserIds,
       );
     } catch (error) {
       if (mounted) {

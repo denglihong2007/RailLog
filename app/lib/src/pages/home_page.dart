@@ -14,6 +14,7 @@ import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/dashboard_unlocks_page.dart';
 import 'package:raillog/src/pages/more_statistics_page.dart';
+import 'package:raillog/src/pages/notifications_page.dart';
 import 'package:raillog/src/pages/partner_applications_page.dart';
 import 'package:raillog/src/pages/travel_guide_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
@@ -24,6 +25,7 @@ import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/services/achievement_service.dart';
 import 'package:raillog/src/services/entity_review_navigation.dart';
 import 'package:raillog/src/services/entity_review_service.dart';
+import 'package:raillog/src/services/notification_service.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/services/partner_application_service.dart';
 import 'package:raillog/src/services/public_user_service.dart';
@@ -91,6 +93,7 @@ class _HomePageState extends State<HomePage> {
   Future<List<DashboardAchievement>>? _achievementsFuture;
   TripDashboardStats? _lastStats;
   bool _isResetting = false;
+  int _unreadNotifications = 0;
 
   /// 主页只展示出行指南的少量预览，完整列表在 [TravelGuidePage]。
   final List<EntityReview> _travelGuidePreview = [];
@@ -106,7 +109,30 @@ class _HomePageState extends State<HomePage> {
     if (SessionService.instance.isSignedIn) {
       _achievementsFuture = AchievementService.fetchCurrent();
       _loadTravelGuidePreview();
+      _loadUnreadNotifications();
     }
+  }
+
+  Future<void> _loadUnreadNotifications() async {
+    if (!SessionService.instance.isSignedIn) {
+      if (mounted && _unreadNotifications != 0) {
+        setState(() => _unreadNotifications = 0);
+      }
+      return;
+    }
+    try {
+      final count = await NotificationService.fetchUnreadCount();
+      if (mounted) setState(() => _unreadNotifications = count);
+    } catch (_) {
+      // 角标读取失败不影响主页其它内容。
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(
+      context,
+    ).push(m3PageRoute(builder: (_) => const NotificationsPage()));
+    if (mounted) await _loadUnreadNotifications();
   }
 
   @override
@@ -211,6 +237,7 @@ class _HomePageState extends State<HomePage> {
       }
     }
     await travelGuideFuture;
+    if (signedIn) await _loadUnreadNotifications();
   }
 
   Future<void> _confirmResetDatabase() async {
@@ -384,6 +411,12 @@ class _HomePageState extends State<HomePage> {
                               stats: stats,
                               onChanged: _refresh,
                               openMapTrip: _openTripFromMap,
+                              onOpenNotifications: signedIn
+                                  ? _openNotifications
+                                  : null,
+                              unreadNotifications: signedIn
+                                  ? _unreadNotifications
+                                  : 0,
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -1226,6 +1259,8 @@ class _OverviewSection extends StatelessWidget {
     this.mapTrips,
     this.subject = '你',
     this.enableTripManagement = true,
+    this.onOpenNotifications,
+    this.unreadNotifications = 0,
   });
 
   final TripDashboardStats stats;
@@ -1235,6 +1270,8 @@ class _OverviewSection extends StatelessWidget {
   final List<TripRecord>? mapTrips;
   final String subject;
   final bool enableTripManagement;
+  final VoidCallback? onOpenNotifications;
+  final int unreadNotifications;
 
   @override
   Widget build(BuildContext context) {
@@ -1302,6 +1339,17 @@ class _OverviewSection extends StatelessWidget {
                   tooltip: '全部行程',
                   onPressed: stats.allTrips.isEmpty ? null : openAllTrips,
                 ),
+                if (onOpenNotifications != null)
+                  _SectionAction(
+                    compact: compact,
+                    icon: Icons.notifications_outlined,
+                    label: '通知',
+                    tooltip: unreadNotifications > 0
+                        ? '通知（$unreadNotifications 条未读）'
+                        : '通知',
+                    badgeCount: unreadNotifications,
+                    onPressed: onOpenNotifications,
+                  ),
               ],
             );
           },
@@ -1796,6 +1844,7 @@ class _SectionAction extends StatelessWidget {
     required this.label,
     required this.tooltip,
     required this.onPressed,
+    this.badgeCount = 0,
   });
 
   final bool compact;
@@ -1803,19 +1852,23 @@ class _SectionAction extends StatelessWidget {
   final String label;
   final String tooltip;
   final VoidCallback? onPressed;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
+    final iconWidget = badgeCount > 0
+        ? Badge.count(count: badgeCount, child: Icon(icon, size: 18))
+        : Icon(icon, size: 18);
     if (compact) {
       return IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
-        icon: Icon(icon, size: 18),
+        icon: iconWidget,
       );
     }
     return TextButton.icon(
       onPressed: onPressed,
-      icon: Icon(icon, size: 18),
+      icon: iconWidget,
       label: Text(label),
     );
   }
