@@ -8,6 +8,7 @@ import {
   Inbox,
   LoaderCircle,
   MessageSquareText,
+  Pencil,
   RefreshCw,
   Search,
   Trash2,
@@ -77,6 +78,10 @@ const loading = ref(true)
 const error = ref('')
 const detail = ref<AdminReview | null>(null)
 const deletingId = ref<number | null>(null)
+const editing = ref<AdminReview | null>(null)
+const editRating = ref(5)
+const editComment = ref('')
+const savingEdit = ref(false)
 
 const hasAuthorFilter = computed(() => props.userId.length > 0)
 const authorLabel = computed(() => props.userName || props.userId || '该用户')
@@ -156,6 +161,37 @@ function openDetail(review: AdminReview): void {
   detail.value = review
 }
 
+function openEdit(review: AdminReview): void {
+  editing.value = review
+  editRating.value = review.rating
+  editComment.value = review.comment
+}
+
+async function saveEdit(): Promise<void> {
+  if (!editing.value || savingEdit.value) return
+  const comment = editComment.value.trim()
+  if (comment.length === 0) {
+    toast('评价内容不能为空', 'error')
+    return
+  }
+  if (editRating.value < 1 || editRating.value > 5) {
+    toast('评分范围为 1-5', 'error')
+    return
+  }
+  savingEdit.value = true
+  try {
+    await api.updateReview(editing.value.id, editRating.value, comment)
+    toast('评价已修改，作者会收到通知', 'info')
+    editing.value = null
+    detail.value = null
+    await load()
+  } catch (exception) {
+    toast(exception instanceof ApiError ? exception.message : '修改失败', 'error')
+  } finally {
+    savingEdit.value = false
+  }
+}
+
 function handleReactionsChanged(count: number): void {
   if (!detail.value) return
   detail.value.reactionCount = count
@@ -211,7 +247,7 @@ onMounted(load)
     <div class="panel-head">
       <div>
         <h2><MessageSquareText :size="17" /> 评价列表</h2>
-        <p>检索、查看并删除用户评价。删除会连带清除该评价收到的回应，并触发作者成就重算。</p>
+        <p>检索、查看、编辑并删除用户评价。修改与删除都会通知作者；删除会连带清除该评价收到的回应，并触发作者成就重算。</p>
       </div>
     </div>
 
@@ -358,6 +394,14 @@ onMounted(load)
                   </button>
                   <button
                     type="button"
+                    class="icon-button"
+                    title="编辑评价"
+                    @click="openEdit(review)"
+                  >
+                    <Pencil :size="16" />
+                  </button>
+                  <button
+                    type="button"
                     class="icon-button danger"
                     title="删除评价"
                     :disabled="deletingId === review.id"
@@ -469,6 +513,10 @@ onMounted(load)
           </span>
           <div class="modal-foot-actions">
             <button type="button" class="button ghost" @click="detail = null">关闭</button>
+            <button type="button" class="button ghost" @click="openEdit(detail)">
+              <Pencil :size="16" />
+              编辑评价
+            </button>
             <button
               type="button"
               class="button danger"
@@ -478,6 +526,50 @@ onMounted(load)
               <LoaderCircle v-if="deletingId === detail.id" :size="16" class="spin" />
               <Trash2 v-else :size="16" />
               删除评价
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <div v-if="editing" class="modal-backdrop" @click.self="editing = null">
+      <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="review-edit-title">
+        <header class="modal-head">
+          <div>
+            <h2 id="review-edit-title">编辑评价</h2>
+            <p>#{{ editing.id }} · 保存后作者会收到一条系统通知</p>
+          </div>
+          <button type="button" class="icon-button" aria-label="关闭" @click="editing = null">
+            <span aria-hidden="true">✕</span>
+          </button>
+        </header>
+        <div class="modal-body">
+          <section class="form-section">
+            <label class="field-label" for="review-edit-rating">评分</label>
+            <select id="review-edit-rating" v-model.number="editRating" class="select">
+              <option v-for="value in [1, 2, 3, 4, 5]" :key="value" :value="value">
+                {{ value }} 星
+              </option>
+            </select>
+          </section>
+          <section class="form-section">
+            <label class="field-label" for="review-edit-comment">评价内容</label>
+            <textarea
+              id="review-edit-comment"
+              v-model="editComment"
+              rows="5"
+              maxlength="2000"
+              placeholder="评价内容"
+            />
+          </section>
+        </div>
+        <footer class="modal-foot">
+          <div class="modal-foot-actions">
+            <button type="button" class="button ghost" @click="editing = null">取消</button>
+            <button type="button" class="button primary" :disabled="savingEdit" @click="saveEdit">
+              <LoaderCircle v-if="savingEdit" :size="16" class="spin" />
+              <Pencil v-else :size="16" />
+              保存修改
             </button>
           </div>
         </footer>

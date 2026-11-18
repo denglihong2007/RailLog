@@ -63,6 +63,44 @@ curl "https://api.raillog.top/api/entities/station/北京南/reviews"
 
 响应正文是 `array<object>`，元素字段见[评价对象](#评价对象)。
 
+## 实体综合星级
+
+<Badge type="tip" text="GET" /> `/api/entities/{type}/{key}/rating`
+
+返回实体的综合星级。星级不是简单的算术平均，而是按以下规则加权：
+
+- 同一用户对该实体的多条评价先合并成一张选票（取这些评价的均值），避免一个人反复评价把星级拉高或拉低；
+- 每张选票按该用户最近一条评价的发布时间衰减加权，半衰期为 180 天，新评价权重更高。
+
+App 排行榜里的实体星级使用同一套算法。
+
+### 路径参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `type` | string | 是 | 实体类型：`station`、`route`、`company`、`rollingstock` 或 `train`。 |
+| `key` | string | 是 | 实体名称，需进行 URL 编码。 |
+
+::: tip 名称匹配
+该接口与[实体关联行程数](#实体关联行程数)一样，会对类型与名称做大小写、空白归一化后匹配，因此结果可能合并写法略有差异的历史评价。
+:::
+
+### 请求示例
+
+```bash
+curl "https://api.raillog.top/api/entities/station/北京南/rating"
+```
+
+### 响应字段
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `entityType` | string | 请求的实体类型。 |
+| `entityKey` | string | 请求的实体名称。 |
+| `averageRating` | `number \| null` | 综合星级，范围 1–5；没有评价时为 `null`。 |
+| `reviewCount` | integer | 评价总条数；无评价时为 0。 |
+| `raterCount` | integer | 参与评价的用户数；无评价时为 0。 |
+
 ## 行程评价
 
 <Badge type="tip" text="GET" /> `/api/trips/{ticketId}/reviews`
@@ -116,4 +154,8 @@ curl "https://api.raillog.top/api/trips/123/reviews"
 | `reactions[].emoji` | string | 表情符号。 |
 | `reactions[].count` | integer | 该表情的回应数量。 |
 | `reactions[].reactedByCurrentUser` | boolean | 匿名请求恒为 `false`。 |
+| `mentions` | `array<object>` | 正文中被 `@` 的用户；没有时为空数组。 |
+| `mentions[].userId` | string | 被提及用户的公开用户 ID。 |
+| `mentions[].displayName` | string | 被提及用户的当前显示名称，展示时应以它为准。 |
+| `mentions[].mentionedName` | string | 发表时正文里写的名字，用于在 `comment` 中定位被提及的位置。 |
 | `achievementExperience` | integer | 作者当前累计的成就经验值。 |

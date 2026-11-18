@@ -793,6 +793,44 @@ public sealed partial class RailLogDatabase
             update.Parameters.AddWithValue("$syncVersion", version);
             await update.ExecuteNonQueryAsync();
             trip = await ReadAdminTripAsync(connection, ticketId, transaction);
+            if (trip is not null)
+            {
+                var tripLabel =
+                    $"{request.TrainNumber} {request.FromStation}→{request.ToStation}";
+                if (request.IsDeleted && existingDeletedAt is null)
+                {
+                    await AddNotificationAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        userId!,
+                        "trip_deleted",
+                        "系统",
+                        $"系统删除了你的行程 {tripLabel}。",
+                        tripId: ticketId);
+                }
+                else if (!request.IsDeleted && existingDeletedAt is not null)
+                {
+                    await AddNotificationAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        userId!,
+                        "trip_updated",
+                        "系统",
+                        $"系统恢复了你的行程 {tripLabel}。",
+                        tripId: ticketId);
+                }
+                else if (!request.IsDeleted)
+                {
+                    await AddNotificationAsync(
+                        connection,
+                        (SqliteTransaction)transaction,
+                        userId!,
+                        "trip_updated",
+                        "系统",
+                        $"系统修改了你的行程 {tripLabel}。",
+                        tripId: ticketId);
+                }
+            }
             await transaction.CommitAsync();
         }
         finally
@@ -811,6 +849,9 @@ public sealed partial class RailLogDatabase
     public async Task<bool> DeleteAdminTripAsync(long ticketId)
     {
         string? userId = null;
+        string trainNumber = string.Empty;
+        string fromStation = string.Empty;
+        string toStation = string.Empty;
         var deleted = false;
         await _writeLock.WaitAsync();
         try
@@ -822,11 +863,19 @@ public sealed partial class RailLogDatabase
             {
                 owner.Transaction = transaction;
                 owner.CommandText = """
-                    SELECT UserId FROM TripRecords
+                    SELECT UserId, TrainNumber, FromStation, ToStation
+                    FROM TripRecords
                     WHERE Id = $id AND DeletedAt IS NULL LIMIT 1;
                     """;
                 owner.Parameters.AddWithValue("$id", ticketId);
-                userId = await owner.ExecuteScalarAsync() as string;
+                await using var reader = await owner.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    userId = reader.GetString(0);
+                    trainNumber = reader.GetString(1);
+                    fromStation = reader.GetString(2);
+                    toStation = reader.GetString(3);
+                }
             }
             if (userId is null)
             {
@@ -850,6 +899,17 @@ public sealed partial class RailLogDatabase
             command.Parameters.AddWithValue("$syncVersion", version);
             command.Parameters.AddWithValue("$id", ticketId);
             deleted = await command.ExecuteNonQueryAsync() > 0;
+            if (deleted)
+            {
+                await AddNotificationAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId,
+                    "trip_deleted",
+                    "系统",
+                    $"系统删除了你的行程 {trainNumber} {fromStation}→{toStation}。",
+                    tripId: ticketId);
+            }
             await transaction.CommitAsync();
         }
         finally
@@ -985,6 +1045,8 @@ public sealed partial class RailLogDatabase
     public async Task<bool> DeleteAdminReviewAsync(long id)
     {
         string? userId = null;
+        string? entityType = null;
+        string? entityKey = null;
         var deleted = false;
         await _writeLock.WaitAsync();
         try
@@ -995,9 +1057,18 @@ public sealed partial class RailLogDatabase
             await using (var owner = connection.CreateCommand())
             {
                 owner.Transaction = transaction;
-                owner.CommandText = "SELECT UserId FROM EntityReviews WHERE Id = $id LIMIT 1;";
+                owner.CommandText = """
+                    SELECT UserId, EntityType, EntityKey
+                    FROM EntityReviews WHERE Id = $id LIMIT 1;
+                    """;
                 owner.Parameters.AddWithValue("$id", id);
-                userId = await owner.ExecuteScalarAsync() as string;
+                await using var reader = await owner.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    userId = reader.GetString(0);
+                    entityType = reader.GetString(1);
+                    entityKey = reader.GetString(2);
+                }
             }
             if (userId is null)
             {
@@ -1013,6 +1084,19 @@ public sealed partial class RailLogDatabase
                 """;
             command.Parameters.AddWithValue("$id", id);
             deleted = await command.ExecuteNonQueryAsync() > 0;
+            if (deleted)
+            {
+                await AddNotificationAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId,
+                    "review_deleted",
+                    "系统",
+                    $"系统删除了你在「{entityKey}」下的评价。",
+                    reviewId: id,
+                    entityType: entityType,
+                    entityKey: entityKey);
+            }
             await transaction.CommitAsync();
         }
         finally
@@ -1028,6 +1112,81 @@ public sealed partial class RailLogDatabase
             InvalidateStatisticsCache(userId);
         }
         return deleted;
+    }
+
+    public async Task<bool> UpdateAdminReviewAsync(
+        long id,
+        int rating,
+        string comment)
+    {
+        string? userId = null;
+        string? entityType = null;
+        string? entityKey = null;
+        var updated = false;
+        await _writeLock.WaitAsync();
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync();
+            await using var transaction = await BeginTransactionWithRetryAsync(connection);
+            await using (var owner = connection.CreateCommand())
+            {
+                owner.Transaction = transaction;
+                owner.CommandText = """
+                    SELECT UserId, EntityType, EntityKey
+                    FROM EntityReviews WHERE Id = $id LIMIT 1;
+                    """;
+                owner.Parameters.AddWithValue("$id", id);
+                await using var reader = await owner.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    userId = reader.GetString(0);
+                    entityType = reader.GetString(1);
+                    entityKey = reader.GetString(2);
+                }
+            }
+            if (userId is null)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE EntityReviews SET Rating=$rating, Comment=$comment
+                WHERE Id=$id;
+                """;
+            command.Parameters.AddWithValue("$rating", rating);
+            command.Parameters.AddWithValue("$comment", comment);
+            command.Parameters.AddWithValue("$id", id);
+            updated = await command.ExecuteNonQueryAsync() > 0;
+            if (updated)
+            {
+                await AddNotificationAsync(
+                    connection,
+                    (SqliteTransaction)transaction,
+                    userId,
+                    "review_updated",
+                    "系统",
+                    $"系统修改了你在「{entityKey}」下的评价。",
+                    reviewId: id,
+                    entityType: entityType,
+                    entityKey: entityKey);
+            }
+            await transaction.CommitAsync();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+
+        if (updated && userId is not null)
+        {
+            EnqueueAchievementRecompute(userId);
+            InvalidateStatisticsCache(userId);
+        }
+        return updated;
     }
 
     public async Task<IReadOnlyList<AdminReviewReaction>> GetAdminReviewReactionsAsync(
@@ -1468,6 +1627,24 @@ public sealed partial class RailLogDatabase
         """;
 
     /// <summary>
+    /// 组内挑保留项的排序：已填的可选字段多的在前，其次才是录入时间、ID 更早。
+    /// 字段清单与客户端 `_completenessScore` 一致，里程、票价为 0 视为没填。
+    /// </summary>
+    private const string DuplicateKeepOrder = """
+        (CASE WHEN trip.ArrivalTime IS NOT NULL AND trim(trip.ArrivalTime) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trip.MileageKm > 0 THEN 1 ELSE 0 END
+         + CASE WHEN trip.Price > 0 THEN 1 ELSE 0 END
+         + CASE WHEN trip.RollingStock IS NOT NULL AND trim(trip.RollingStock) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trip.CompanyName IS NOT NULL AND trim(trip.CompanyName) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trip.SeatType IS NOT NULL AND trim(trip.SeatType) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trip.SeatNumber IS NOT NULL AND trim(trip.SeatNumber) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trip.Notes IS NOT NULL AND trim(trip.Notes) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trip.GroupName IS NOT NULL AND trim(trip.GroupName) <> '' THEN 1 ELSE 0 END
+         + CASE WHEN trim(trip.ViaRoutes) NOT IN ('', '[]') THEN 1 ELSE 0 END
+        ) DESC
+        """;
+
+    /// <summary>
     /// 判重查询专用的连接：注册与客户端同名的归一化函数，让 SQL 里的分组
     /// 与 App 端的 `_trainCodes` / `normalizeStationName` 走同一套规则。
     /// </summary>
@@ -1687,8 +1864,9 @@ public sealed partial class RailLogDatabase
     }
 
     /// <summary>
-    /// 一键处理全站疑似重复行程：每组按「录入时间、ID」保留最早的一条，
-    /// 其余软删除。整批在同一个写事务里完成，避免处理到一半留下新的重复。
+    /// 一键处理全站疑似重复行程：每组保留数据最全的一条（字段数相同再按录入
+    /// 时间、ID 取最早），其余软删除。整批在同一个写事务里完成，避免处理到一半
+    /// 留下新的重复。
     /// </summary>
     public async Task<AdminDuplicateResolveResult> ResolveAdminDuplicateGroupsAsync()
     {
@@ -1715,7 +1893,7 @@ public sealed partial class RailLogDatabase
                 totalGroups = reader.GetInt64(0);
             }
 
-            // 组内按与列表页一致的顺序排名，rn = 1 的那条就是「保留最早录入」。
+            // 组内按与列表页一致的顺序排名，rn = 1 的那条就是保留项。
             var victims = new Dictionary<string, List<long>>(StringComparer.Ordinal);
             await using (var command = connection.CreateCommand())
             {
@@ -1728,7 +1906,7 @@ public sealed partial class RailLogDatabase
                                         PARTITION BY duplicate.UserId, duplicate.TrainNumber,
                                                      duplicate.Day, duplicate.FromStation,
                                                      duplicate.ToStation
-                                        ORDER BY trip.CreatedAt, trip.Id) AS rn
+                                        ORDER BY {DuplicateKeepOrder}, trip.CreatedAt, trip.Id) AS rn
                              FROM duplicate
                              JOIN TripRecords trip ON {DuplicateTripJoin}
                              WHERE trip.IsRailTrip = 1 AND trip.DeletedAt IS NULL
@@ -1818,7 +1996,8 @@ public sealed partial class RailLogDatabase
             JOIN TripRecords trip ON {DuplicateTripJoin}
             WHERE trip.IsRailTrip = 1 AND trip.DeletedAt IS NULL
             ORDER BY duplicate.Day DESC, duplicate.TrainNumber, duplicate.UserId,
-                     duplicate.FromStation, duplicate.ToStation, trip.CreatedAt, trip.Id;
+                     duplicate.FromStation, duplicate.ToStation,
+                     {DuplicateKeepOrder}, trip.CreatedAt, trip.Id;
             """;
         command.Parameters.AddWithValue("$limit", limit);
         command.Parameters.AddWithValue("$offset", offset);
@@ -1834,7 +2013,7 @@ public sealed partial class RailLogDatabase
             var day = reader.GetString(3);
             var fromStation = reader.GetString(4);
             var toStation = reader.GetString(5);
-            // 同组记录的票价/里程可能不同，组头展示最早一条（保留项）的值。
+            // 同组记录的票价/里程可能不同，组头展示排在最前的保留项的值。
             var groupMileage = reader.GetDouble(11);
             var groupPrice = reader.GetDouble(12);
             var key = string.Join('\u001f',

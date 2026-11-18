@@ -1,4 +1,4 @@
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/theme/app_theme.dart';
@@ -101,6 +101,14 @@ class _CapsuleDestination extends StatelessWidget {
     required this.onTap,
   });
 
+  /// 展开/收起的缓动。对称曲线让宽度变化有可感的起步和收尾。
+  static const _expandCurve = Curves.easeInOutCubicEmphasized;
+
+  static const _collapsedPadding =
+      (FloatingCapsuleNavigationBar.itemMinWidth -
+          FloatingCapsuleNavigationBar.iconSize) /
+      2;
+
   final NavigationDestination destination;
   final bool selected;
   final VoidCallback onTap;
@@ -112,9 +120,11 @@ class _CapsuleDestination extends StatelessWidget {
     final icon = selected
         ? (destination.selectedIcon ?? destination.icon)
         : destination.icon;
-    final foreground = selected
-        ? colorScheme.onSecondaryContainer
-        : colorScheme.onSurfaceVariant;
+    final labelStyle = theme.textTheme.labelLarge?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
     return Semantics(
       label: destination.label,
@@ -127,55 +137,87 @@ class _CapsuleDestination extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           customBorder: const StadiumBorder(),
-          child: AnimatedContainer(
-            duration: m3MotionDurationShort,
-            curve: Easing.emphasizedDecelerate,
-            constraints: const BoxConstraints(
-              minWidth: FloatingCapsuleNavigationBar.itemMinWidth,
-              minHeight: FloatingCapsuleNavigationBar.itemMinHeight,
+          // 宽度、底色、图标颜色与文字显隐全部挂在同一个展开系数上。拆成
+          // 几个隐式动画时（AnimatedContainer 的 padding + AnimatedSize 的
+          // 文字宽度），切换的第一帧会各自跳到新值，胶囊先缩一下再补回来。
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: selected ? 1 : 0,
+              end: selected ? 1 : 0,
             ),
-            padding: EdgeInsets.symmetric(
-              horizontal: selected ? AppSpacing.lg : AppSpacing.md,
-            ),
-            decoration: selected
-                ? BoxDecoration(
-                    color: colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  )
-                : null,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconTheme.merge(
-                  data: IconThemeData(
-                    color: foreground,
-                    size: FloatingCapsuleNavigationBar.iconSize,
+            duration: reduceMotion ? Duration.zero : m3MotionDuration,
+            curve: _expandCurve,
+            builder: (context, expanded, _) {
+              return Container(
+                constraints: const BoxConstraints(
+                  minWidth: FloatingCapsuleNavigationBar.itemMinWidth,
+                  minHeight: FloatingCapsuleNavigationBar.itemMinHeight,
+                ),
+                padding: EdgeInsets.symmetric(
+                  horizontal: lerpDouble(
+                    // 收起态的内边距要让「图标 + 两侧留白」正好等于
+                    // itemMinWidth：否则最小宽度会吃掉展开初期的一截宽度，
+                    // 一收一放加起来不再守恒，整条胶囊中途会先缩一下。
+                    _collapsedPadding,
+                    AppSpacing.lg,
+                    expanded,
+                  )!,
+                ),
+                decoration: BoxDecoration(
+                  color: Color.lerp(
+                    colorScheme.secondaryContainer.withValues(alpha: 0),
+                    colorScheme.secondaryContainer,
+                    expanded,
                   ),
-                  child: icon,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
-                AnimatedSize(
-                  duration: m3MotionDurationShort,
-                  curve: Easing.emphasizedDecelerate,
-                  alignment: Alignment.centerLeft,
-                  child: selected
-                      ? Padding(
-                          padding: const EdgeInsets.only(left: AppSpacing.xs),
-                          child: Text(
-                            destination.label,
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: colorScheme.onSecondaryContainer,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconTheme.merge(
+                      data: IconThemeData(
+                        color: Color.lerp(
+                          colorScheme.onSurfaceVariant,
+                          colorScheme.onSecondaryContainer,
+                          expanded,
+                        ),
+                        size: FloatingCapsuleNavigationBar.iconSize,
+                      ),
+                      child: icon,
+                    ),
+                    ClipRect(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        // 只按系数裁宽度，文字始终按自然宽度排版：展开途中
+                        // 不会被挤压重新断行，也不会突然补上省略号。
+                        widthFactor: expanded,
+                        heightFactor: 1,
+                        child: expanded == 0
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(
+                                  left: AppSpacing.xs,
+                                ),
+                                child: Opacity(
+                                  opacity: expanded,
+                                  child: Text(
+                                    destination.label,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: labelStyle?.copyWith(
+                                      color: colorScheme.onSecondaryContainer,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),

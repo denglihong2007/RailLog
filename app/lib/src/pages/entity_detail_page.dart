@@ -30,9 +30,17 @@ enum EntityType { station, route, company, rollingStock, train }
 const _entityMaxWidth = AppLayout.detailMaxWidth;
 
 class EntityDetailPage extends StatefulWidget {
-  const EntityDetailPage({super.key, required this.type, required this.name});
+  const EntityDetailPage({
+    super.key,
+    required this.type,
+    required this.name,
+    this.focusReviewId,
+  });
   final EntityType type;
   final String name;
+
+  /// 从通知进入时定位到的那条评价；页面会自动滚动并高亮它。
+  final int? focusReviewId;
 
   @override
   State<EntityDetailPage> createState() => _EntityDetailPageState();
@@ -41,6 +49,7 @@ class EntityDetailPage extends StatefulWidget {
 class _EntityDetailPageState extends State<EntityDetailPage> {
   Future<List<TripRecord>>? _future;
   Future<int>? _globalFuture;
+  Future<EntityRating>? _ratingFuture;
   Future<List<OnlineIntersection>>? _intersectionFuture;
   late bool _wasSignedIn;
 
@@ -65,6 +74,20 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
       _typeKey(widget.type),
       widget.name,
     );
+    _ratingFuture = EntityReviewService.fetchRating(
+      _typeKey(widget.type),
+      widget.name,
+    );
+  }
+
+  void _refreshRating() {
+    if (!mounted) return;
+    setState(() {
+      _ratingFuture = EntityReviewService.fetchRating(
+        _typeKey(widget.type),
+        widget.name,
+      );
+    });
   }
 
   void _handleSessionChanged() {
@@ -77,6 +100,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
     } else {
       _future = null;
       _globalFuture = null;
+      _ratingFuture = null;
       _intersectionFuture = null;
     }
     setState(() {});
@@ -171,7 +195,8 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
     }
     final future = _future;
     final globalFuture = _globalFuture;
-    if (future == null || globalFuture == null) {
+    final ratingFuture = _ratingFuture;
+    if (future == null || globalFuture == null || ratingFuture == null) {
       return Scaffold(
         appBar: appBar,
         body: const Center(child: CircularProgressIndicator()),
@@ -203,8 +228,32 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                         const SizedBox(height: 12),
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            final wide = constraints.maxWidth >= 560;
+                            final wide = constraints.maxWidth >= 760;
+                            final colors = Theme.of(context).colorScheme;
                             final metrics = [
+                              FutureBuilder<EntityRating>(
+                                future: ratingFuture,
+                                builder: (context, snap) {
+                                  final rating = snap.data;
+                                  final average = rating?.averageRating;
+                                  return _MetricCard(
+                                    icon: Icons.star_rounded,
+                                    label:
+                                        rating != null && rating.raterCount > 0
+                                        ? '综合星级 · ${rating.raterCount} 人'
+                                        : '综合星级',
+                                    value: rating == null
+                                        ? '—'
+                                        : average == null
+                                        ? '暂无评分'
+                                        : '★ ${average.toStringAsFixed(1)}',
+                                    iconColor: colors.tertiary,
+                                    valueColor: average == null
+                                        ? null
+                                        : colors.tertiary,
+                                  );
+                                },
+                              ),
                               FutureBuilder<int>(
                                 future: globalFuture,
                                 builder: (context, snap) => _MetricCard(
@@ -213,30 +262,36 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                                   value: snap.data == null
                                       ? '—'
                                       : '${snap.data} 次',
-                                  highlighted: true,
+                                  iconColor: colors.primary,
                                 ),
                               ),
                               _MetricCard(
                                 icon: Icons.person_outline,
                                 label: '你的记录',
                                 value: '${trips.length} 次',
+                                iconColor: colors.primary,
                               ),
                             ];
-                            return wide
-                                ? Row(
-                                    children: [
-                                      Expanded(child: metrics[0]),
-                                      const SizedBox(width: 12),
-                                      Expanded(child: metrics[1]),
-                                    ],
-                                  )
-                                : Column(
-                                    children: [
-                                      metrics[0],
-                                      const SizedBox(height: 12),
-                                      metrics[1],
-                                    ],
-                                  );
+                            if (wide) {
+                              return Row(
+                                children: [
+                                  Expanded(child: metrics[0]),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: metrics[1]),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: metrics[2]),
+                                ],
+                              );
+                            }
+                            return Column(
+                              children: [
+                                metrics[0],
+                                const SizedBox(height: 12),
+                                metrics[1],
+                                const SizedBox(height: 12),
+                                metrics[2],
+                              ],
+                            );
                           },
                         ),
                         const SizedBox(height: 12),
@@ -347,6 +402,8 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                           type: widget.type,
                           name: widget.name,
                           trips: trips,
+                          onChanged: _refreshRating,
+                          focusReviewId: widget.focusReviewId,
                         ),
                       ],
                     ),
@@ -454,27 +511,33 @@ class _MetricCard extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    this.highlighted = false,
+    required this.iconColor,
+    this.valueColor,
   });
   final IconData icon;
   final String label;
   final String value;
-  final bool highlighted;
+  final Color iconColor;
+  final Color? valueColor;
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return AppCard.filled(
-      color: highlighted
-          ? colors.secondaryContainer
-          : colors.surfaceContainerLow,
+      color: colors.surfaceContainerLow,
       padding: EdgeInsets.zero,
       child: ListTile(
-        leading: Icon(
-          icon,
-          color: highlighted ? colors.onSecondaryContainer : colors.primary,
+        leading: Icon(icon, color: iconColor),
+        title: Text(
+          label,
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
         ),
-        title: Text(label),
-        trailing: Text(value, style: Theme.of(context).textTheme.titleLarge),
+        trailing: Text(
+          value,
+          style: textTheme.titleLarge?.copyWith(color: valueColor),
+        ),
       ),
     );
   }
@@ -674,16 +737,24 @@ class _ReviewsSection extends StatefulWidget {
     required this.type,
     required this.name,
     required this.trips,
+    required this.onChanged,
+    this.focusReviewId,
   });
   final EntityType type;
   final String name;
   final List<TripRecord> trips;
+  final int? focusReviewId;
+
+  /// 评价增删改后通知外层刷新综合星级等派生数据。
+  final VoidCallback onChanged;
   @override
   State<_ReviewsSection> createState() => _ReviewsSectionState();
 }
 
 class _ReviewsSectionState extends State<_ReviewsSection> {
   late Future<List<EntityReview>> _future;
+  final GlobalKey _focusKey = GlobalKey();
+  bool _focusScheduled = false;
   List<TripRecord> get _reviewTrips =>
       widget.trips.where(canUseAsReviewTrip).toList()
         ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
@@ -693,13 +764,32 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
     _future = EntityReviewService.fetch(_typeKey(widget.type), widget.name);
   }
 
+  void _scheduleFocusScroll(List<EntityReview> reviews) {
+    final focusReviewId = widget.focusReviewId;
+    if (focusReviewId == null || _focusScheduled) return;
+    if (!reviews.any((review) => review.id == focusReviewId)) return;
+    _focusScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final focusContext = _focusKey.currentContext;
+      if (focusContext == null) return;
+      Scrollable.ensureVisible(
+        focusContext,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        alignment: 0.08,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<List<EntityReview>>(
     future: _future,
     builder: (context, snapshot) {
+      final data = snapshot.data;
+      if (data != null) _scheduleFocusScroll(data);
       final reviewTrips = _reviewTrips;
-      final groups = snapshot.hasData
-          ? _groupReviews(snapshot.data!).entries.toList()
+      final groups = data != null
+          ? _groupReviews(data).entries.toList()
           : <MapEntry<String, List<EntityReview>>>[];
       final keys = _reviewKeys(widget.type);
       return Column(
@@ -716,6 +806,8 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
                     )
                     .value,
                 trips: reviewTrips,
+                focusReviewId: widget.focusReviewId,
+                focusKey: _focusKey,
                 enabled: key == 'transfer'
                     ? _hasTransferPair(widget.name, reviewTrips)
                     : reviewTrips.isNotEmpty,
@@ -754,6 +846,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
         routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
+        mentionUserIds: draft.mentionUserIds,
       );
     } catch (e) {
       if (mounted) {
@@ -768,6 +861,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
 
   void _refreshReviews() {
     if (!mounted) return;
+    widget.onChanged();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
@@ -814,6 +908,8 @@ class _ReviewGroupCard extends StatelessWidget {
     required this.enabled,
     required this.onReview,
     required this.onChanged,
+    this.focusReviewId,
+    this.focusKey,
   });
   final String title;
   final IconData icon;
@@ -823,42 +919,55 @@ class _ReviewGroupCard extends StatelessWidget {
   final bool enabled;
   final VoidCallback onReview;
   final VoidCallback onChanged;
+  final int? focusReviewId;
+  final GlobalKey? focusKey;
+
   @override
-  Widget build(BuildContext context) => AppCard.filled(
-    title: title,
-    icon: icon,
-    margin: const EdgeInsets.only(bottom: AppSpacing.md),
-    trailing: FilledButton.tonalIcon(
-      onPressed: enabled ? onReview : null,
-      icon: const Icon(Icons.edit_outlined, size: 18),
-      label: const Text('评论'),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (reviews.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('暂无评价'),
-          )
-        else
-          ...reviews
-              .take(10)
-              .toList()
-              .asMap()
-              .entries
-              .map(
-                (entry) => _ReviewTile(
-                  review: entry.value,
-                  trips: trips,
-                  entityName: entityName,
-                  onChanged: onChanged,
-                  showDivider: entry.key < reviews.take(10).length - 1,
-                ),
+  Widget build(BuildContext context) {
+    final visibleReviews = reviews.take(10).toList();
+    final focusIndex = focusReviewId == null
+        ? -1
+        : reviews.indexWhere((review) => review.id == focusReviewId);
+    // 目标评价在「只显示前 10 条」之外时，把它挪进可见范围，通知才能定位到它。
+    if (focusIndex >= 0 &&
+        !visibleReviews.any((review) => review.id == focusReviewId)) {
+      if (visibleReviews.length >= 10) visibleReviews.removeLast();
+      visibleReviews.add(reviews[focusIndex]);
+    }
+    return AppCard.filled(
+      title: title,
+      icon: icon,
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      trailing: FilledButton.tonalIcon(
+        onPressed: enabled ? onReview : null,
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: const Text('评论'),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (visibleReviews.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text('暂无评价'),
+            )
+          else
+            for (var index = 0; index < visibleReviews.length; index++)
+              _ReviewTile(
+                key: visibleReviews[index].id == focusReviewId
+                    ? focusKey
+                    : null,
+                review: visibleReviews[index],
+                trips: trips,
+                entityName: entityName,
+                onChanged: onChanged,
+                highlighted: visibleReviews[index].id == focusReviewId,
+                showDivider: index < visibleReviews.length - 1,
               ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 Map<String, List<EntityReview>> _groupReviews(List<EntityReview> reviews) {
@@ -882,31 +991,52 @@ String _reviewTypeLabel(String type) => switch (type) {
 
 class _ReviewTile extends StatelessWidget {
   const _ReviewTile({
+    super.key,
     required this.review,
     required this.trips,
     required this.entityName,
     required this.onChanged,
     required this.showDivider,
+    this.highlighted = false,
   });
   final EntityReview review;
   final List<TripRecord> trips;
   final String entityName;
   final VoidCallback onChanged;
   final bool showDivider;
+  final bool highlighted;
 
   @override
-  Widget build(BuildContext context) => EntityReviewCard(
-    review: review,
-    trips: trips,
-    entityName: entityName,
-    showDivider: showDivider,
-    contentPadding: EdgeInsets.fromLTRB(12, 12, 8, showDivider ? 14 : 4),
-    onChanged: onChanged,
-    onEdit: () => _editReview(context),
-    onDelete: () => _deleteReview(context),
-    onUserTap: () => _openUser(context),
-    onTripTap: (trip) => _openTrip(context, trip),
-  );
+  Widget build(BuildContext context) {
+    final card = EntityReviewCard(
+      review: review,
+      trips: trips,
+      entityName: entityName,
+      showDivider: showDivider,
+      contentPadding: EdgeInsets.fromLTRB(12, 12, 8, showDivider ? 14 : 4),
+      onChanged: onChanged,
+      onEdit: () => _editReview(context),
+      onDelete: () => _deleteReview(context),
+      onUserTap: () => _openUser(context),
+      onTripTap: (trip) => _openTrip(context, trip),
+    );
+    if (!highlighted) return card;
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.primaryContainer.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(color: colors.primary.withValues(alpha: 0.65)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: card,
+        ),
+      ),
+    );
+  }
 
   Future<void> _editReview(BuildContext context) async {
     final draft = await showDialog<ReviewDraft>(
@@ -932,6 +1062,7 @@ class _ReviewTile extends StatelessWidget {
         routeToStation: draft.routeToStation,
         dish: draft.dish,
         price: draft.price,
+        mentionUserIds: draft.mentionUserIds,
       );
     } catch (e) {
       if (context.mounted) {

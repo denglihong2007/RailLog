@@ -37,6 +37,15 @@ const _tripLoginRequiredMessage = '登录后查看';
 class TripRecordDetailsPage extends StatefulWidget {
   const TripRecordDetailsPage({super.key, required this.tripId})
     : publicTicketId = null,
+      lookupTicketId = null,
+      onOwnerTap = null;
+
+  /// 按服务端行程 ID 打开自己的行程。通知里记录的是 `ticketId`，
+  /// 本地行主键与它并不相同，不能直接当成 [tripId] 用。
+  const TripRecordDetailsPage.forTicket({super.key, required int ticketId})
+    : tripId = null,
+      publicTicketId = null,
+      lookupTicketId = ticketId,
       onOwnerTap = null;
 
   const TripRecordDetailsPage.public({
@@ -44,10 +53,12 @@ class TripRecordDetailsPage extends StatefulWidget {
     required int ticketId,
     this.onOwnerTap,
   }) : tripId = null,
-       publicTicketId = ticketId;
+       publicTicketId = ticketId,
+       lookupTicketId = null;
 
   final int? tripId;
   final int? publicTicketId;
+  final int? lookupTicketId;
   final VoidCallback? onOwnerTap;
 
   bool get isReadOnly => publicTicketId != null;
@@ -71,6 +82,11 @@ class _TripRecordDetailsPageState extends State<TripRecordDetailsPage> {
     if (publicTicketId != null) {
       final details = await PublicTripService.fetch(publicTicketId);
       return _LoadedTrip.public(details);
+    }
+    final lookupTicketId = widget.lookupTicketId;
+    if (lookupTicketId != null) {
+      final trip = await DbHelper.instance.getTripByTicketId(lookupTicketId);
+      return trip == null ? null : _LoadedTrip.local(trip);
     }
     final trip = await DbHelper.instance.getTripById(widget.tripId!);
     return trip == null ? null : _LoadedTrip.local(trip);
@@ -1648,7 +1664,8 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
   static const _rowHeight = 88.0;
   Map<int, List<RouteStation>> _routeStations = const {};
   final Set<int> _expandedRouteSections = {};
-  bool _isLoading = false;
+  final Set<int> _loadingRouteSections = {};
+  final Set<int> _nonExpandableRouteSections = {};
   int _stationRequestId = 0;
 
   @override
@@ -1663,14 +1680,15 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       _stationRequestId++;
       _routeStations = const {};
       _expandedRouteSections.clear();
-      _isLoading = false;
+      _loadingRouteSections.clear();
+      _nonExpandableRouteSections.clear();
     }
   }
 
-  /// 与 build 中的区间分组保持一致，列出所有线路区间 ID。
-  Set<int> _routeSectionIds() {
+  /// 与 build 中的区间分组保持一致，把每个线路区间映射到它覆盖的段序号。
+  Map<int, List<int>> _routeSectionSegments() {
     final segments = widget.trip.viaRouteSegments;
-    final ids = <int>{};
+    final sections = <int, List<int>>{};
     var routeSectionId = 0;
     String? previousRoute;
     for (var index = 0; index < segments.length; index++) {
@@ -1679,61 +1697,127 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         routeSectionId = index;
       }
       previousRoute = route;
-      ids.add(routeSectionId);
+      sections.putIfAbsent(routeSectionId, () => []).add(index);
     }
-    return ids;
+    return sections;
   }
 
-  bool get _allSectionsExpanded =>
-      _expandedRouteSections.containsAll(_routeSectionIds());
+  Set<int> _routeSectionIds() => _routeSectionSegments().keys.toSet();
 
-  /// 全部展开时才去读完整经由（含中间站）；此前只画各段端点，省掉无谓的读库。
+  /// 线路名是空的区间（手写的自由线路）没有站序可读，不给展开箭头。
+  bool _isRouteSectionExpandable(int sectionId) {
+    if (_nonExpandableRouteSections.contains(sectionId)) return false;
+    final segmentIndexes = _routeSectionSegments()[sectionId];
+    if (segmentIndexes == null || segmentIndexes.isEmpty) return false;
+    final routeName =
+        widget.trip.viaRouteSegments[segmentIndexes.first].routeName;
+    return viaRouteLabel(routeName).trim().isNotEmpty;
+  }
+
+  bool get _allSectionsExpanded => _routeSectionIds().every(
+    (sectionId) =>
+        !_isRouteSectionExpandable(sectionId) ||
+        _expandedRouteSections.contains(sectionId),
+  );
+
+  /// 展开/收起单个线路区间。展开前先读这条线路的完整站序，读到才真正展开；
+  /// 线路上没有中间站（或读库失败）时收起箭头并保持收起。
+  Future<void> _toggleRouteSection(int sectionId) async {
+    if (_expandedRouteSections.contains(sectionId)) {
+      setState(() => _expandedRouteSections.remove(sectionId));
+      return;
+    }
+    final segmentIndexes =
+        _routeSectionSegments()[sectionId] ?? const <int>[];
+    final missing = [
+      for (final index in segmentIndexes)
+        if (!_routeStations.containsKey(index)) index,
+    ];
+    if (missing.isEmpty) {
+      setState(() => _expandedRouteSections.add(sectionId));
+      return;
+    }
+    final requestId = _stationRequestId;
+    setState(() => _loadingRouteSections.add(sectionId));
+    final loaded = <int, List<RouteStation>>{};
+    await Future.wait([
+      for (final index in missing) _loadRouteSection(index, loaded),
+    ]);
+    if (!mounted || requestId != _stationRequestId) return;
+    setState(() {
+      _routeStations = {..._routeStations, ...loaded};
+      _loadingRouteSections.remove(sectionId);
+      if (_sectionHasIntermediateStations(segmentIndexes)) {
+        _expandedRouteSections.add(sectionId);
+      } else {
+        _nonExpandableRouteSections.add(sectionId);
+      }
+    });
+  }
+
+  /// 全部展开/收起。展开时只读还没读过的段，读完再一次性展开有中间站的区间。
   Future<void> _toggleAllSections() async {
+    if (_loadingRouteSections.isNotEmpty) return;
     if (_allSectionsExpanded) {
       setState(_expandedRouteSections.clear);
       return;
     }
-    await _loadAllRouteStations();
-  }
-
-  Future<void> _loadAllRouteStations() async {
-    final requestId = ++_stationRequestId;
-    final segmentCount = widget.trip.viaRouteSegments.length;
+    final sections = _routeSectionSegments();
+    final sectionIds = sections.keys.toSet();
     final missing = [
-      for (var index = 0; index < segmentCount; index++)
-        if (!_routeStations.containsKey(index)) index,
+      for (final indexes in sections.values)
+        for (final index in indexes)
+          if (!_routeStations.containsKey(index)) index,
     ];
+    final requestId = _stationRequestId;
     if (missing.isNotEmpty) {
-      setState(() => _isLoading = true);
-      final results = {..._routeStations};
+      setState(() => _loadingRouteSections.addAll(sectionIds));
+      final loaded = <int, List<RouteStation>>{};
       await Future.wait([
-        for (final index in missing) _loadRouteSection(index, results),
+        for (final index in missing) _loadRouteSection(index, loaded),
       ]);
       if (!mounted || requestId != _stationRequestId) return;
       setState(() {
-        _routeStations = results;
-        _isLoading = false;
+        _routeStations = {..._routeStations, ...loaded};
+        _loadingRouteSections.removeAll(sectionIds);
       });
     }
     if (!mounted) return;
-    setState(() => _expandedRouteSections.addAll(_routeSectionIds()));
+    setState(() {
+      for (final entry in sections.entries) {
+        if (_sectionHasIntermediateStations(entry.value)) {
+          _expandedRouteSections.add(entry.key);
+        } else {
+          _nonExpandableRouteSections.add(entry.key);
+        }
+      }
+    });
   }
+
+  bool _sectionHasIntermediateStations(List<int> segmentIndexes) =>
+      segmentIndexes.any((index) => (_routeStations[index]?.length ?? 0) > 2);
 
   Future<void> _loadRouteSection(
     int index,
     Map<int, List<RouteStation>> results,
   ) async {
     final segment = widget.trip.viaRouteSegments[index];
-    if (segment.routeName.trim().isEmpty) return;
+    // 读不到站序也记一条空结果：这样「没有中间站」不会被当成「还没读过」，
+    // 每次点开都重新读一遍库。
+    if (segment.routeName.trim().isEmpty) {
+      results[index] = const [];
+      return;
+    }
     try {
       final stations = await RouteService.getStationsBetweenRoute(
         segment.routeName,
         segment.fromStation,
         segment.toStation,
       );
-      if (stations.length >= 2) results[index] = stations;
+      results[index] = stations.length >= 2 ? stations : const [];
     } catch (_) {
       // 手动线路或数据库读取失败时保留区间端点。
+      results[index] = const [];
     }
   }
 
@@ -1741,30 +1825,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
   Widget build(BuildContext context) {
     super.build(context);
     final colors = Theme.of(context).colorScheme;
-    if (_isLoading) {
-      return const SizedBox(
-        height: 112,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
-              SizedBox(height: 12),
-              Text('正在读取经由线路'),
-            ],
-          ),
-        ),
-      );
-    }
     final segments = widget.trip.viaRouteSegments;
     final segmentColors = <Color>[];
     final routeNames = <String>[];
     final routeSectionIds = <int>[];
-    final expandableRouteSectionIds = <int>{};
     final stations = <String>[widget.trip.fromStation];
     final stationReversals = <bool>[false];
     final cumulativeMileage = <double>[0];
@@ -1787,9 +1851,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       previousRoute = route;
       final color = findViaRouteColor(route, widget.lineStyles) ?? colors.primary;
       final routeStations = _routeStations[index];
-      if ((routeStations?.length ?? 0) > 2) {
-        expandableRouteSectionIds.add(routeSectionId);
-      }
       if (!_expandedRouteSections.contains(routeSectionId)) {
         collapsedMileage += segment.mileageKm;
         final nextRoute = index + 1 < segments.length
@@ -1815,7 +1876,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         if (endsAtReversal) collapsedMileage = 0;
         continue;
       }
-      if (routeStations == null) {
+      if (routeStations == null || routeStations.length < 2) {
         _appendStation(
           stations,
           stationReversals,
@@ -1891,7 +1952,9 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                   ),
                 ),
                 TextButton.icon(
-                  onPressed: _toggleAllSections,
+                  onPressed: _loadingRouteSections.isEmpty
+                      ? _toggleAllSections
+                      : null,
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1955,7 +2018,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                     context,
                     routeNames: routeNames,
                     routeSectionIds: routeSectionIds,
-                    expandableRouteSectionIds: expandableRouteSectionIds,
                     segmentColors: segmentColors,
                     width: constraints.maxWidth,
                     columns: columns,
@@ -1974,7 +2036,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     BuildContext context, {
     required List<String> routeNames,
     required List<int> routeSectionIds,
-    required Set<int> expandableRouteSectionIds,
     required List<Color> segmentColors,
     required double width,
     required int columns,
@@ -1984,7 +2045,6 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     var firstSegment = 0;
     while (firstSegment < routeSectionIds.length) {
       final sectionId = routeSectionIds[firstSegment];
-      final canExpand = expandableRouteSectionIds.contains(sectionId);
       var lastSegment = firstSegment;
       while (lastSegment + 1 < routeSectionIds.length &&
           routeSectionIds[lastSegment + 1] == sectionId) {
@@ -1998,6 +2058,9 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         trackLayout,
       );
       final routeName = routeNames[firstSegment];
+      // 中间站要读库才知道有没有，所以线路名存在就先给出展开箭头；
+      // 点开发现没有中间站（或读库失败）后再收掉。
+      final canExpand = _isRouteSectionExpandable(sectionId);
       final labelWidth = math.min(112.0, width);
       labels.add(
         Positioned(
@@ -2014,15 +2077,10 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
               route: routeName,
               color: segmentColors[firstSegment],
               expanded: canExpand && _expandedRouteSections.contains(sectionId),
+              loading: _loadingRouteSections.contains(sectionId),
               onTap: () => openEntityPage(context, EntityType.route, routeName),
               onToggle: canExpand
-                  ? () {
-                      setState(() {
-                        if (!_expandedRouteSections.add(sectionId)) {
-                          _expandedRouteSections.remove(sectionId);
-                        }
-                      });
-                    }
+                  ? () => _toggleRouteSection(sectionId)
                   : null,
             ),
           ),
@@ -2209,6 +2267,7 @@ class _ViaRouteLabel extends StatelessWidget {
     required this.route,
     required this.color,
     required this.expanded,
+    this.loading = false,
     this.onTap,
     this.onToggle,
   });
@@ -2216,6 +2275,7 @@ class _ViaRouteLabel extends StatelessWidget {
   final String route;
   final Color color;
   final bool expanded;
+  final bool loading;
   final VoidCallback? onTap;
   final VoidCallback? onToggle;
 
@@ -2262,19 +2322,33 @@ class _ViaRouteLabel extends StatelessWidget {
                 color: color.withValues(alpha: 0.32),
               ),
               Tooltip(
-                message: expanded ? '收起$route' : '展开$route',
+                message: loading
+                    ? '正在读取$route'
+                    : expanded
+                    ? '收起$route'
+                    : '展开$route',
                 child: InkWell(
-                  onTap: onToggle,
+                  onTap: loading ? null : onToggle,
                   splashFactory: NoSplash.splashFactory,
                   highlightColor: Colors.transparent,
                   child: SizedBox(
                     width: 22,
                     height: 24,
-                    child: Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 14,
-                      color: colors.onSurfaceVariant,
-                    ),
+                    child: loading
+                        ? Center(
+                            child: SizedBox.square(
+                              dimension: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: color,
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            expanded ? Icons.expand_less : Icons.expand_more,
+                            size: 14,
+                            color: colors.onSurfaceVariant,
+                          ),
                   ),
                 ),
               ),

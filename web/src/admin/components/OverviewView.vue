@@ -91,7 +91,7 @@ async function deleteDuplicateTrip(trip: AdminDuplicateTrip): Promise<void> {
   }
 }
 
-async function keepEarliestTrip(group: AdminDuplicateGroup): Promise<void> {
+async function keepRichestTrip(group: AdminDuplicateGroup): Promise<void> {
   const keep = group.trips[0]
   const removed = group.trips.slice(1)
   if (!keep) return
@@ -102,7 +102,7 @@ async function keepEarliestTrip(group: AdminDuplicateGroup): Promise<void> {
     if (result.failed.length > 0) {
       toast(`保留 #${keep.ticketId}，但有 ${result.failed.length} 条删除失败`, 'error')
     } else {
-      toast(`已保留最早录入的 #${keep.ticketId}，删除其余 ${removed.length} 条`, 'info')
+      toast(`已保留数据最全的 #${keep.ticketId}，删除其余 ${removed.length} 条`, 'info')
     }
     await load(true)
     syncHandlingGroup()
@@ -390,7 +390,7 @@ onMounted(load)
             :groups="[handlingGroup]"
             :busy="duplicateBusy"
             @delete-trip="deleteDuplicateTrip"
-            @keep-earliest="keepEarliestTrip"
+            @keep-richest="keepRichestTrip"
             @open-trip="(userId, ticketId) => emit('open-trip', userId, ticketId)"
             @open-user="(userId) => emit('open-user', userId)"
           />

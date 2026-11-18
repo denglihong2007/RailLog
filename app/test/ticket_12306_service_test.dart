@@ -108,6 +108,186 @@ void main() {
     });
   });
 
+  group('Ticket12306Service.credentials', () {
+    test('restores unexpired cookies and exports them again', () {
+      final service = Ticket12306Service();
+      addTearDown(service.dispose);
+
+      final restored = service.restoreCredentials(
+        Ticket12306Credentials(
+          username: '张三',
+          loginAt: DateTime(2026, 11, 18, 10, 30),
+          cookies: [
+            Ticket12306Cookie(
+              name: 'tk',
+              value: 'abc',
+              domain: 'kyfw.12306.cn',
+              path: '/',
+              expires: DateTime.now().add(const Duration(days: 1)),
+            ),
+            const Ticket12306Cookie(
+              name: 'RAIL_EXPIRATION',
+              value: '123',
+              domain: 'kyfw.12306.cn',
+              path: '/',
+            ),
+          ],
+        ),
+      );
+
+      expect(restored, isTrue);
+      expect(service.hasSession, isTrue);
+      expect(service.username, '张三');
+
+      final exported = service.exportCredentials(invoiceVerified: true);
+      expect(exported.username, '张三');
+      expect(exported.cookies, hasLength(2));
+      expect(exported.invoiceVerified, isTrue);
+      expect(
+        exported.loginAt.difference(DateTime.now()).inMinutes,
+        inInclusiveRange(-1, 1),
+      );
+    });
+
+    test('drops expired cookies when restoring', () {
+      final service = Ticket12306Service();
+      addTearDown(service.dispose);
+
+      final restored = service.restoreCredentials(
+        Ticket12306Credentials(
+          username: '张三',
+          loginAt: DateTime(2026, 11, 18),
+          cookies: [
+            Ticket12306Cookie(
+              name: 'tk',
+              value: 'abc',
+              expires: DateTime.now().subtract(const Duration(minutes: 1)),
+            ),
+          ],
+        ),
+      );
+
+      expect(restored, isFalse);
+      expect(service.hasSession, isFalse);
+    });
+  });
+
+  group('describeTicket12306LoginFailure', () {
+    test('keeps the server message for a wrong password', () {
+      expect(describeTicket12306LoginFailure(4, '密码输入错误'), '密码输入错误');
+    });
+
+    test('falls back to a generic message when the server returns none', () {
+      expect(describeTicket12306LoginFailure(4, ''), '账号或密码错误');
+    });
+
+    test('points extra verification accounts to QR login', () {
+      expect(
+        describeTicket12306LoginFailure(97, '请完成验证'),
+        '该账号还需要额外身份验证，请改用扫码登录',
+      );
+    });
+
+    test('keeps the password-too-old message', () {
+      expect(
+        describeTicket12306LoginFailure(101, ''),
+        '密码太久没有修改，请先在 12306 修改密码',
+      );
+    });
+  });
+
+  group('Ticket12306Service.parsePersonalTicket', () {
+    test('maps 本人车票 payload fields into a trip order', () {
+      final parsed = Ticket12306Service.parsePersonalTicket(const {
+        'local_start_time': '202611081633',
+        'local_arrive_time': '202611081723',
+        'start_date': '2026-11-08',
+        'start_time': '16:33',
+        'arrive_date': '20261108',
+        'arrive_time': '17:23',
+        'train_code': 'D1937',
+        'board_train_code': 'D1937',
+        'from_station_name': '广元',
+        'to_station_name': '绵阳',
+        'distance': '165',
+        'passenger_name': '邓力洪',
+        'seat_type_name': '二等座',
+        'coach_name': '99',
+        'seat_name': '无座',
+        'ticket_price': '750',
+        'status_name': '已出站',
+        'sequence_no': 'YD18073845',
+        'ext_ticket_no': '4541370001110900001562026',
+      });
+
+      expect(parsed, isNotNull);
+      expect(parsed!.trainCode, 'D1937');
+      expect(parsed.fromStation, '广元');
+      expect(parsed.toStation, '绵阳');
+      expect(parsed.startTime, DateTime(2026, 11, 8, 16, 33));
+      expect(parsed.arriveTime, DateTime(2026, 11, 8, 17, 23));
+      expect(parsed.distance, 165);
+      expect(parsed.price, 75);
+      expect(parsed.passengerName, '邓力洪');
+      expect(parsed.statusText, '已出站');
+      expect(parsed.canImport, isTrue);
+    });
+
+    test('falls back to the separate date and time fields', () {
+      final parsed = Ticket12306Service.parsePersonalTicket(const {
+        'start_date': '2026-11-08',
+        'start_time': '16:33',
+        'arrive_date': '20261108',
+        'arrive_time': '17:23',
+        'train_code': 'D1937',
+      });
+
+      expect(parsed, isNotNull);
+      expect(parsed!.startTime, DateTime(2026, 11, 8, 16, 33));
+      expect(parsed.arriveTime, DateTime(2026, 11, 8, 17, 23));
+    });
+
+    test('returns null when the departure time cannot be parsed', () {
+      expect(
+        Ticket12306Service.parsePersonalTicket(const {'train_code': 'D1937'}),
+        isNull,
+      );
+    });
+  });
+
+  group('Ticket12306Service.buildPersonalTripWindows', () {
+    test('splits a year into windows of at most 180 days', () {
+      final windows = Ticket12306Service.buildPersonalTripWindows(
+        DateTime(2026, 11, 19),
+      );
+
+      expect(windows, hasLength(3));
+      expect(windows[0].start, DateTime(2026, 5, 24));
+      expect(windows[0].end, DateTime(2026, 11, 19));
+      expect(windows[1].start, DateTime(2025, 11, 25));
+      expect(windows[1].end, DateTime(2026, 5, 23));
+      expect(windows[2].start, DateTime(2025, 11, 20));
+      expect(windows[2].end, DateTime(2025, 11, 24));
+      for (final window in windows) {
+        expect(
+          window.end.difference(window.start).inDays + 1,
+          lessThanOrEqualTo(180),
+        );
+      }
+    });
+
+    test('keeps short ranges in a single window', () {
+      final windows = Ticket12306Service.buildPersonalTripWindows(
+        DateTime(2026, 11, 19),
+        totalDays: 30,
+      );
+
+      expect(windows, hasLength(1));
+      expect(windows.single.start, DateTime(2026, 10, 21));
+      expect(windows.single.end, DateTime(2026, 11, 19));
+    });
+  });
+
   group('Ticket12306Service.mergeTrips', () {
     test('deduplicates the same ticket and prefers the extra source', () {
       final base = _order(statusText: '已支付');

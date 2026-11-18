@@ -280,4 +280,62 @@ void main() {
       );
     });
   });
+
+  group('TrainService.isConventionalTrain', () {
+    final before = DateTime(2026, 11, 24, 23, 59);
+    final after = DateTime(2026, 11, 25);
+
+    test('recognizes Z/T/K/Y/L/N/A and pure digits before the cutover', () {
+      for (final number in ['Z1', 'T1', 'K1', 'Y1', 'L1', 'N1', 'A1', '1461']) {
+        expect(
+          TrainService.isConventionalTrain(number, before),
+          isTrue,
+          reason: number,
+        );
+      }
+      for (final number in ['G1', 'D1', 'C1', 'S1', 'V1']) {
+        expect(
+          TrainService.isConventionalTrain(number, before),
+          isFalse,
+          reason: number,
+        );
+      }
+    });
+
+    test('switches to Z/N/V/Y and drops T/K/L/A at the cutover', () {
+      for (final number in ['Z1', 'N1', 'V1', 'Y1', '1461']) {
+        expect(
+          TrainService.isConventionalTrain(number, after),
+          isTrue,
+          reason: number,
+        );
+      }
+      for (final number in ['T1', 'K1', 'L1', 'A1', 'G1', 'D1', 'C1', 'S1']) {
+        expect(
+          TrainService.isConventionalTrain(number, after),
+          isFalse,
+          reason: number,
+        );
+      }
+    });
+
+    test('normalizes spaces, the 次 suffix and train number pairs', () {
+      expect(TrainService.isConventionalTrain(' k 123次', before), isTrue);
+      expect(TrainService.isConventionalTrain('K123/T456', before), isTrue);
+      expect(TrainService.isConventionalTrain('G1/D2', before), isFalse);
+      expect(TrainService.isConventionalTrain('', before), isFalse);
+    });
+  });
+
+  group('TrainService.shouldFetchRollingStock', () {
+    final before = DateTime(2026, 1, 1);
+
+    test('only fetches EMU data for non-conventional trains', () {
+      expect(TrainService.shouldFetchRollingStock('G1', before), isTrue);
+      expect(TrainService.shouldFetchRollingStock('D111/D114', before), isTrue);
+      expect(TrainService.shouldFetchRollingStock('K123', before), isFalse);
+      expect(TrainService.shouldFetchRollingStock('1461', before), isFalse);
+      expect(TrainService.shouldFetchRollingStock('', before), isFalse);
+    });
+  });
 }

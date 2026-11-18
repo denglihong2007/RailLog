@@ -5,13 +5,13 @@ function describe(trip: AdminDuplicateTrip): string {
   return `#${trip.ticketId} ${trip.fromStation} → ${trip.toStation}`
 }
 
-/** 全站一键处理：每组保留最早录入的一条，删除其余记录。 */
+/** 全站一键处理：每组保留数据最全的一条（其次最早录入），删除其余记录。 */
 export function confirmResolveAllDuplicateGroups(groups: number, trips: number): boolean {
   if (groups <= 0) return false
   const removable = Math.max(0, trips - groups)
   return confirmDestructive({
     title: `一键处理全部 ${groups} 组重复行程？`,
-    message: `将扫描全站所有疑似重复行程（不只是当前页），每组保留录入时间最早的一条，共删除其余 ${removable} 条记录。`,
+    message: `将扫描全站所有疑似重复行程（不只是当前页），每组保留数据最全的一条（可选字段填得最多，一样全时取最早录入的），共删除其余 ${removable} 条记录。`,
     reversible: true,
     footnote: '删除是软删除，之后可以在对应用户的「行程管理」中恢复。',
   })

@@ -10,7 +10,7 @@ defineProps<{
 
 const emit = defineEmits<{
   'delete-trip': [trip: AdminDuplicateTrip]
-  'keep-earliest': [group: AdminDuplicateGroup]
+  'keep-richest': [group: AdminDuplicateGroup]
   'open-trip': [userId: string, ticketId: number]
   'open-user': [userId: string]
 }>()
@@ -40,7 +40,7 @@ function timeRange(trip: AdminDuplicateTrip): string {
           <strong>{{ group.trainNumber }}</strong>
           <span class="muted-text">{{ group.fromStation }} → {{ group.toStation }}</span>
           <span class="muted-text">{{ formatDate(group.travelDate) }}</span>
-          <span class="muted-text" title="最早录入记录的里程与票价">
+          <span class="muted-text" title="保留项（数据最全，其次最早录入）的里程与票价">
             {{ formatMileage(group.mileageKm) }} · {{ formatMoney(group.price) }}
           </span>
           <button
@@ -59,10 +59,10 @@ function timeRange(trip: AdminDuplicateTrip): string {
             type="button"
             class="button subtle small"
             :disabled="busy"
-            title="保留最早录入的一条，删除同组其余记录"
-            @click="emit('keep-earliest', group)"
+            title="保留数据最全的一条（其次最早录入），删除同组其余记录"
+            @click="emit('keep-richest', group)"
           >
-            保留最早录入
+            保留最全的一条
           </button>
         </div>
       </header>
@@ -102,7 +102,7 @@ function timeRange(trip: AdminDuplicateTrip): string {
               <td class="col-number">{{ formatMoney(trip.price) }}</td>
               <td class="col-time muted-text">
                 {{ formatDateTime(trip.createdAt) }}
-                <span v-if="index === 0" class="pill subtle">最早</span>
+                <span v-if="index === 0" class="pill subtle">保留</span>
               </td>
               <td>
                 <div class="row-actions">

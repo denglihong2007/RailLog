@@ -356,8 +356,7 @@ public sealed class AdminController(
                     backupStorage.Location,
                     _backupOptions.IntervalDays,
                     _backupOptions.KeepCount,
-                    remoteFiles,
-                    Encrypted: true));
+                    remoteFiles));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -388,8 +387,7 @@ public sealed class AdminController(
                 : _backupOptions.Directory,
             _backupOptions.IntervalDays,
             _backupOptions.KeepCount,
-            files,
-            Encrypted: false));
+            files));
     }
 
     /// <summary>
@@ -438,16 +436,7 @@ public sealed class AdminController(
             var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}-{name}");
             try
             {
-                await backupStorage.DownloadDecryptedAsync(
-                    name, tempPath, cancellationToken);
-            }
-            catch (InvalidDataException exception)
-            {
-                TryDeleteFile(tempPath);
-                logger.LogError(exception, "Failed to decrypt database backup {Name}.", name);
-                return StatusCode(
-                    StatusCodes.Status500InternalServerError,
-                    new MessageResponse("备份文件无法解密，请检查对象存储的加密口令配置"));
+                await backupStorage.DownloadAsync(name, tempPath, cancellationToken);
             }
             catch
             {
@@ -603,7 +592,8 @@ public sealed class AdminController(
         Ok(await database.GetAdminDuplicateGroupsAsync(offset, limit));
 
     /// <summary>
-    /// 一键处理全部疑似重复行程：每组保留最早录入的一条，其余软删除。
+    /// 一键处理全部疑似重复行程：每组保留数据最全的一条（其次录入时间最早），
+    /// 其余软删除。
     /// </summary>
     [HttpPost("duplicates/resolve")]
     public async Task<ActionResult<AdminDuplicateResolveResult>> ResolveDuplicates()
@@ -642,6 +632,19 @@ public sealed class AdminController(
     {
         if (!await database.DeleteAdminReviewAsync(id)) return NotFound();
         await AuditAsync("review.delete", id.ToString());
+        return NoContent();
+    }
+
+    [HttpPut("reviews/{id:long}")]
+    public async Task<IActionResult> UpdateReview(
+        long id,
+        AdminReviewUpdateRequest request)
+    {
+        if (request.Rating is < 1 or > 5 || string.IsNullOrWhiteSpace(request.Comment))
+            return BadRequest(new MessageResponse("评分和评价内容不能为空，评分范围为 1-5"));
+        if (!await database.UpdateAdminReviewAsync(id, request.Rating, request.Comment.Trim()))
+            return NotFound();
+        await AuditAsync("review.update", id.ToString());
         return NoContent();
     }
 

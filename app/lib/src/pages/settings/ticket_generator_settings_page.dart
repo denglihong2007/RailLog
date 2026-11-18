@@ -146,7 +146,7 @@ class _TicketGeneratorSettingsPageState
                         contentPadding: EdgeInsets.zero,
                         secondary: const Icon(Icons.ac_unit_outlined),
                         title: const Text('普速显示“新空调”'),
-                        subtitle: const Text('硬座、硬卧、软座和软卧等席别自动添加前缀'),
+                        subtitle: const Text('普速列车的席别自动添加前缀'),
                         value: settings.showNewAirConditioned,
                         onChanged: settings.setShowNewAirConditioned,
                       ),

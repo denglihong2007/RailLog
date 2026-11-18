@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/achievement_unlock_trip.dart';
+import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/home_page.dart';
+import 'package:raillog/src/pages/public_achievement_requirements_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/achievement_unlock_service.dart';
 import 'package:raillog/src/services/db_helper.dart';
@@ -10,14 +12,9 @@ import 'package:raillog/src/widgets/leaderboard_row.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class AchievementUnlockTripsPage extends StatefulWidget {
-  const AchievementUnlockTripsPage({
-    super.key,
-    required this.achievementId,
-    required this.title,
-  });
+  const AchievementUnlockTripsPage({super.key, required this.achievement});
 
-  final String achievementId;
-  final String title;
+  final DashboardAchievement achievement;
 
   @override
   State<AchievementUnlockTripsPage> createState() =>
@@ -31,18 +28,18 @@ class _AchievementUnlockTripsPageState
   @override
   void initState() {
     super.initState();
-    _future = AchievementUnlockService.fetch(widget.achievementId);
+    _future = AchievementUnlockService.fetch(widget.achievement.id);
   }
 
   Future<void> _retry() async {
-    final future = AchievementUnlockService.fetch(widget.achievementId);
+    final future = AchievementUnlockService.fetch(widget.achievement.id);
     setState(() => _future = future);
     await future;
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text('${widget.title} · 解锁行程')),
+    appBar: AppBar(title: Text('${widget.achievement.title} · 解锁行程')),
     body: FutureBuilder<AchievementUnlockTrips>(
       future: _future,
       builder: (context, snapshot) {
@@ -73,7 +70,13 @@ class _AchievementUnlockTripsPageState
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final entry = ranking[index];
-                return AchievementTripRow(trip: entry.trip, rank: entry.rank);
+                return AchievementTripRow(
+                  trip: entry.trip,
+                  rank: entry.rank,
+                  onTap: widget.achievement.hasRequirements
+                      ? () => _openAchievementProgress(context, entry.trip)
+                      : null,
+                );
               },
             ),
           ),
@@ -81,6 +84,23 @@ class _AchievementUnlockTripsPageState
       },
     ),
   );
+
+  /// 有达成要求的成就，行点开的是这个人的成就进度页；本页仍在栈里，返回即回到排行榜。
+  void _openAchievementProgress(
+    BuildContext context,
+    AchievementUnlockTrip trip,
+  ) {
+    Navigator.of(context).push(
+      m3PageRoute(
+        builder: (_) => PublicAchievementRequirementsPage(
+          userId: trip.userId,
+          displayName: trip.displayName,
+          achievementId: widget.achievement.id,
+          achievementTitle: widget.achievement.title,
+        ),
+      ),
+    );
+  }
 }
 
 class AchievementTripRow extends StatelessWidget {
@@ -89,6 +109,7 @@ class AchievementTripRow extends StatelessWidget {
     required this.trip,
     this.rank,
     this.highlight = false,
+    this.onTap,
   });
 
   final AchievementUnlockTrip trip;
@@ -98,6 +119,9 @@ class AchievementTripRow extends StatelessWidget {
 
   /// 实体详情页用它标出严格匹配的行程。
   final bool highlight;
+
+  /// 覆盖默认的「打开这条行程」。
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +133,7 @@ class AchievementTripRow extends StatelessWidget {
       subtitle: _subtitle(trip),
       value: rank == null ? null : '${trip.experience} XP',
       color: highlight ? colors.primaryContainer : null,
-      onTap: () => _openTrip(context),
+      onTap: onTap ?? () => _openTrip(context),
     );
   }
 

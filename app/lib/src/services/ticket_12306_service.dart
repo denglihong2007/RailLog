@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:raillog/src/models/ticket_12306_order.dart';
+import 'package:raillog/src/services/ticket_12306_crypto.dart';
 
 class Ticket12306QrCode {
   const Ticket12306QrCode({required this.uuid, required this.imageBase64});
@@ -31,6 +32,136 @@ class Ticket12306Exception implements Exception {
   String toString() => message;
 }
 
+/// 凭证失效。导入页据此把用户引到设置页重新扫码。
+class Ticket12306AuthException extends Ticket12306Exception {
+  const Ticket12306AuthException(super.message);
+}
+
+/// 12306 账号登录失败时的用户可读提示。
+String describeTicket12306LoginFailure(int code, String message) {
+  final text = message.trim();
+  if (code == 101) {
+    return text.isEmpty ? '密码太久没有修改，请先在 12306 修改密码' : text;
+  }
+  if (const {91, 92, 94, 95, 97}.contains(code)) {
+    return '该账号还需要额外身份验证，请改用扫码登录';
+  }
+  return text.isEmpty ? '账号或密码错误' : text;
+}
+
+/// 服务端返回的凭证有效性。两个凭证分开判断。
+class Ticket12306CredentialState {
+  const Ticket12306CredentialState({
+    required this.loginValid,
+    required this.invoiceVerified,
+    this.username = '',
+  });
+
+  final bool loginValid;
+  final bool invoiceVerified;
+  final String username;
+}
+
+/// 本人车票查询的日期窗口。接口单次查询的跨度有限，需要分段。
+class Ticket12306DateWindow {
+  const Ticket12306DateWindow(this.start, this.end);
+
+  final DateTime start;
+  final DateTime end;
+}
+
+/// 可持久化的 Cookie。`dart:io` 的 [Cookie] 不能直接序列化。
+class Ticket12306Cookie {
+  const Ticket12306Cookie({
+    required this.name,
+    required this.value,
+    this.domain = '',
+    this.path = '/',
+    this.expires,
+    this.secure = false,
+  });
+
+  final String name;
+  final String value;
+  final String domain;
+  final String path;
+  final DateTime? expires;
+  final bool secure;
+
+  bool get isExpired => expires != null && !expires!.isAfter(DateTime.now());
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'value': value,
+    if (domain.isNotEmpty) 'domain': domain,
+    if (path.isNotEmpty) 'path': path,
+    if (expires != null) 'expires': expires!.toUtc().toIso8601String(),
+    if (secure) 'secure': true,
+  };
+
+  static Ticket12306Cookie? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final name = value['name']?.toString().trim() ?? '';
+    if (name.isEmpty) return null;
+    return Ticket12306Cookie(
+      name: name,
+      value: value['value']?.toString() ?? '',
+      domain: value['domain']?.toString() ?? '',
+      path: value['path']?.toString() ?? '/',
+      expires: DateTime.tryParse(value['expires']?.toString() ?? ''),
+      secure: value['secure'] == true,
+    );
+  }
+}
+
+/// 12306 会话凭证：登录 Cookie 与人证核验状态。
+class Ticket12306Credentials {
+  const Ticket12306Credentials({
+    required this.username,
+    required this.cookies,
+    required this.loginAt,
+    this.invoiceVerified = false,
+  });
+
+  final String username;
+  final List<Ticket12306Cookie> cookies;
+
+  /// 扫码登录的时间。后续查询只刷新 Cookie，不改这个时间。
+  final DateTime loginAt;
+  final bool invoiceVerified;
+
+  bool get isComplete => cookies.any((cookie) => !cookie.isExpired);
+
+  Map<String, dynamic> toJson() => {
+    'version': 1,
+    'username': username,
+    'login_at': loginAt.toUtc().toIso8601String(),
+    'invoice_verified': invoiceVerified,
+    'cookies': [for (final cookie in cookies) cookie.toJson()],
+  };
+
+  static Ticket12306Credentials? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final cookies = <Ticket12306Cookie>[];
+    final rawCookies = value['cookies'];
+    if (rawCookies is List) {
+      for (final rawCookie in rawCookies) {
+        final cookie = Ticket12306Cookie.fromJson(rawCookie);
+        if (cookie != null) cookies.add(cookie);
+      }
+    }
+    if (cookies.isEmpty) return null;
+    return Ticket12306Credentials(
+      username: value['username']?.toString() ?? '',
+      cookies: cookies,
+      loginAt:
+          DateTime.tryParse(value['login_at']?.toString() ?? '') ??
+          DateTime.now(),
+      invoiceVerified: value['invoice_verified'] == true,
+    );
+  }
+}
+
 class Ticket12306Service {
   Ticket12306Service({HttpClient? httpClient})
     : _client = httpClient ?? HttpClient() {
@@ -50,7 +181,10 @@ class Ticket12306Service {
   static const _invoiceListPage =
       '$_otnBase/view/invoice_ticket_list.html?tab_type=1';
   static const _trainOrderPage = '$_otnBase/view/train_order.html';
+  static const _personalTravelPage = '$_otnBase/view/personal_travel.html';
   static const _orderPageSize = 8;
+  static const _personalTripTotalDays = 365;
+  static const _personalTripWindowDays = 180;
   static const _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
       'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 '
@@ -58,11 +192,66 @@ class Ticket12306Service {
 
   final HttpClient _client;
   final Map<String, Cookie> _cookies = {};
+  String? _username;
   bool _disposed = false;
+
+  bool get hasSession => _cookies.isNotEmpty;
+
+  String? get username => _username;
+
+  /// 恢复持久化的会话凭证。过期 Cookie 会被丢弃。
+  bool restoreCredentials(Ticket12306Credentials credentials) {
+    _ensureActive();
+    _cookies.clear();
+    final name = credentials.username.trim();
+    _username = name.isEmpty ? null : name;
+    final now = DateTime.now();
+    for (final item in credentials.cookies) {
+      if (item.expires != null && !item.expires!.isAfter(now)) continue;
+      final cookie = Cookie(item.name, item.value)
+        ..domain = item.domain.isEmpty ? _host : item.domain
+        ..path = item.path.isEmpty ? '/' : item.path
+        ..secure = item.secure;
+      if (item.expires != null) cookie.expires = item.expires;
+      _storeCookie(cookie);
+    }
+    return _cookies.isNotEmpty;
+  }
+
+  /// 导出当前会话，用于持久化。只保留未过期的 Cookie。
+  Ticket12306Credentials exportCredentials({
+    required bool invoiceVerified,
+    DateTime? loginAt,
+  }) {
+    final now = DateTime.now();
+    return Ticket12306Credentials(
+      username: _username ?? '',
+      cookies: [
+        for (final cookie in _cookies.values)
+          if (cookie.expires == null || cookie.expires!.isAfter(now))
+            Ticket12306Cookie(
+              name: cookie.name,
+              value: cookie.value,
+              domain: cookie.domain ?? _host,
+              path: cookie.path ?? '/',
+              expires: cookie.expires,
+              secure: cookie.secure,
+            ),
+      ],
+      loginAt: loginAt ?? now,
+      invoiceVerified: invoiceVerified,
+    );
+  }
+
+  void clearSession() {
+    _cookies.clear();
+    _username = null;
+  }
 
   Future<Ticket12306QrCode> createQrCode() async {
     _ensureActive();
     _cookies.clear();
+    _username = null;
     final json = await _postForm(
       '$_passportBase/create-qr64',
       const {'appid': 'otn'},
@@ -127,7 +316,113 @@ class Ticket12306Service {
       );
     }
     await _navigate('$_otnBase/login/userLogin', referer: _passportRedirect);
-    return _readString(clientAuth, 'username');
+    final username = _readString(clientAuth, 'username');
+    _username = username.isEmpty ? null : username;
+    return username;
+  }
+
+  /// 检查账号登录前是否还需要短信 / 滑块验证。
+  /// 返回 0 表示可直接登录，3 表示需要短信验证，其余值暂不支持。
+  Future<String> checkLoginVerify(String username) async {
+    _ensureActive();
+    _cookies.clear();
+    _username = null;
+    await _navigate(_loginPage, referer: '$_otnBase/');
+    final json = await _postForm(
+      '$_passportBase/checkLoginVerify',
+      {'username': username.trim(), 'appid': 'otn'},
+      referer: _loginPage,
+      accept: '*/*',
+    );
+    final message = _readString(json, 'result_message');
+    if (_readInt(json, 'result_code') != 0) {
+      throw Ticket12306Exception(message.isEmpty ? '无法检查账号登录状态' : message);
+    }
+    return _readValue(json, 'login_check_code');
+  }
+
+  /// 发送短信验证码。[idSuffix] 是账号绑定证件号的后四位。
+  Future<void> requestSmsCode({
+    required String username,
+    required String idSuffix,
+  }) async {
+    final json = await _postForm(
+      '$_passportBase/getMessageCode',
+      {'appid': 'otn', 'username': username.trim(), 'castNum': idSuffix.trim()},
+      referer: _loginPage,
+      accept: '*/*',
+    );
+    final message = _readString(json, 'result_message');
+    if (_readInt(json, 'result_code') != 0) {
+      throw Ticket12306Exception(message.isEmpty ? '短信验证码发送失败' : message);
+    }
+  }
+
+  /// 账号密码登录。成功时返回后续统一认证需要的 UAMTK。
+  Future<String> loginWithPassword(
+    String username,
+    String password, {
+    String smsCode = '',
+  }) async {
+    _ensureActive();
+    final json = await _postForm(
+      '$_passportBase/login',
+      {
+        'sessionId': '',
+        'sig': '',
+        'if_check_slide_passcode_token': '',
+        'scene': '',
+        'checkMode': smsCode.isEmpty ? '' : '0',
+        'randCode': smsCode.trim(),
+        'username': username.trim(),
+        'password': encryptTicket12306Password(password),
+        'appid': 'otn',
+      },
+      referer: _loginPage,
+      accept: 'application/json, text/javascript, */*; q=0.01',
+    );
+    final code = _readInt(json, 'result_code');
+    if (code != 0) {
+      throw Ticket12306AuthException(
+        describeTicket12306LoginFailure(
+          code,
+          _readString(json, 'result_message'),
+        ),
+      );
+    }
+    final uamtk = _readString(json, 'uamtk');
+    if (uamtk.isEmpty) {
+      throw const Ticket12306Exception('登录成功，但未获得登录票据');
+    }
+    return uamtk;
+  }
+
+  /// 向服务端确认登录凭证与人证核验凭证是否仍然有效。
+  Future<Ticket12306CredentialState> checkCredentials() async {
+    _ensureActive();
+    // 电子发票列表页的登录配置里同时带有 is_login 与 psr_qr_code_result。
+    await _navigate(_invoiceListPage, referer: _invoiceIndexPage);
+    final json = await _postForm(
+      '$_otnBase/login/conf',
+      const {},
+      referer: _invoiceListPage,
+      accept: '*/*',
+    );
+    final data = json['data'];
+    final map = data is Map
+        ? Map<String, dynamic>.from(data)
+        : const <String, dynamic>{};
+    final loginValid =
+        json['status'] == true && map['is_login']?.toString() == 'Y';
+    final invoiceVerified =
+        loginValid && map['psr_qr_code_result']?.toString() == 'Y';
+    final name = _readString(map, 'name');
+    if (name.isNotEmpty) _username = name;
+    return Ticket12306CredentialState(
+      loginValid: loginValid,
+      invoiceVerified: invoiceVerified,
+      username: name,
+    );
   }
 
   Future<Ticket12306QrCode> createInvoiceVerificationQr() async {
@@ -141,7 +436,7 @@ class Ticket12306Service {
     final uuid = _readString(json, 'uuid');
     final image = _readString(json, 'image');
     if (uuid.isEmpty || image.isEmpty) {
-      throw const Ticket12306Exception('12306 未返回有效的电子发票核验二维码');
+      throw const Ticket12306AuthException('无法获取人证核验二维码，登录凭证可能已失效');
     }
     return Ticket12306QrCode(uuid: uuid, imageBase64: image);
   }
@@ -157,8 +452,8 @@ class Ticket12306Service {
     final message = switch (code) {
       '0' => '等待扫描核验二维码',
       '1' => '已扫描，请在铁路 12306 App 中确认',
-      '2' => '电子发票访问核验通过',
-      _ => '等待电子发票访问核验',
+      '2' => '人证核验通过',
+      _ => '等待人证核验',
     };
     return Ticket12306QrStatus(code: code, message: message);
   }
@@ -179,7 +474,7 @@ class Ticket12306Service {
     return result;
   }
 
-  /// 查询普通订单行程，仅需扫码登录，无需电子发票访问核验。
+  /// 查询普通订单行程，仅需登录，无需人证核验。
   Future<List<Ticket12306Order>> queryOrderTrips({DateTime? now}) async {
     await _navigate(_trainOrderPage, referer: '$_otnBase/login/userLogin');
     final today = _dateOnly(now ?? DateTime.now());
@@ -197,6 +492,159 @@ class Ticket12306Service {
     final result = merged.values.toList()
       ..sort((a, b) => b.startTime.compareTo(a.startTime));
     return result;
+  }
+
+  /// 查询「本人车票」。需要与人证核验相同的第二凭证。
+  ///
+  /// 单次查询的日期跨度有限，按 180 天分段；最多回溯一年，并逐页取完。
+  Future<List<Ticket12306Order>> queryPersonalTrips({DateTime? now}) async {
+    final windows = buildPersonalTripWindows(now ?? DateTime.now());
+    await _navigate(_personalTravelPage, referer: '$_otnBase/login/userLogin');
+    await _ensureIdentityVerified(_personalTravelPage);
+
+    final merged = <String, Ticket12306Order>{};
+    for (final window in windows) {
+      for (final ticketType in const [1, 3]) {
+        for (final order in await _queryPersonalWindow(window, ticketType)) {
+          merged[order.id] = order;
+        }
+      }
+    }
+    final result = merged.values.toList()
+      ..sort((a, b) => b.startTime.compareTo(a.startTime));
+    return result;
+  }
+
+  /// 把最近一年切成不超过 180 天的查询窗口，避免超过接口的日期跨度上限。
+  static List<Ticket12306DateWindow> buildPersonalTripWindows(
+    DateTime now, {
+    int totalDays = _personalTripTotalDays,
+    int maxWindowDays = _personalTripWindowDays,
+  }) {
+    if (totalDays <= 0 || maxWindowDays <= 0) return const [];
+    final today = _dateOnly(now);
+    final earliest = today.subtract(Duration(days: totalDays - 1));
+    final windows = <Ticket12306DateWindow>[];
+    var end = today;
+    while (!end.isBefore(earliest)) {
+      final candidate = end.subtract(Duration(days: maxWindowDays - 1));
+      final start = candidate.isBefore(earliest) ? earliest : candidate;
+      windows.add(Ticket12306DateWindow(start, end));
+      if (!start.isAfter(earliest)) break;
+      end = start.subtract(const Duration(days: 1));
+    }
+    return windows;
+  }
+
+  Future<List<Ticket12306Order>> _queryPersonalWindow(
+    Ticket12306DateWindow window,
+    int ticketType,
+  ) async {
+    final result = <Ticket12306Order>[];
+    var pageIndex = 1;
+    var total = 1 << 30;
+    var fetched = 0;
+
+    while (fetched < total) {
+      final json = await _postForm(
+        '$_otnBase/psr/query',
+        {
+          'from_date': _formatCompactDate(window.start),
+          'end_date': _formatCompactDate(window.end),
+          'order_num': '',
+          'pageIndex': '$pageIndex',
+          'ticket_type': '$ticketType',
+        },
+        referer: _personalTravelPage,
+        accept: 'application/json, text/javascript, */*; q=0.01',
+      );
+      if (json['status'] != true) {
+        throw const Ticket12306AuthException('本人车票查询失败，人证核验可能已失效');
+      }
+      final data = json['data'];
+      if (data is! Map) break;
+      final psr = data['psr'];
+      if (psr is! Map) break;
+      total = _asInt(psr['total']) ?? 0;
+      final rows = psr['results'];
+      if (rows is! List || rows.isEmpty) break;
+      for (final rawRow in rows) {
+        if (rawRow is! Map) continue;
+        final parsed = parsePersonalTicket(Map<String, dynamic>.from(rawRow));
+        if (parsed != null) result.add(parsed);
+      }
+      fetched += rows.length;
+      final pageSize = _asInt(psr['pageSize']) ?? rows.length;
+      if (pageSize <= 0) break;
+      if (pageIndex * pageSize >= total) break;
+      pageIndex++;
+    }
+    return result;
+  }
+
+  static Ticket12306Order? parsePersonalTicket(Map<String, dynamic> ticket) {
+    final startTime = _parsePersonalDateTime(
+      _readString(ticket, 'local_start_time'),
+      _readString(ticket, 'start_date'),
+      _readString(ticket, 'start_time'),
+    );
+    if (startTime == null) return null;
+    final arriveTime = _parsePersonalDateTime(
+      _readString(ticket, 'local_arrive_time'),
+      _readString(ticket, 'arrive_date'),
+      _readString(ticket, 'arrive_time'),
+    );
+    final sequenceNo = _readString(ticket, 'sequence_no');
+    final trainCode = _readString(ticket, 'board_train_code').isNotEmpty
+        ? _readString(ticket, 'board_train_code')
+        : _readString(ticket, 'train_code');
+    final passengerName = _readString(ticket, 'passenger_name');
+    final id = [
+      _readString(ticket, 'ext_ticket_no'),
+      sequenceNo,
+      _readString(ticket, 'batch_no'),
+      trainCode,
+      startTime.toIso8601String(),
+      passengerName,
+    ].join('|');
+
+    return Ticket12306Order(
+      id: id,
+      sequenceNo: sequenceNo,
+      startTime: startTime,
+      arriveTime: arriveTime,
+      trainCode: trainCode,
+      fromStation: _readString(ticket, 'from_station_name'),
+      toStation: _readString(ticket, 'to_station_name'),
+      distance: _parseNumber(_readString(ticket, 'distance')),
+      passengerName: passengerName,
+      seatType: _readString(ticket, 'seat_type_name'),
+      coachName: _readString(ticket, 'coach_name'),
+      seatName: _readString(ticket, 'seat_name'),
+      price: _parseNumber(_readString(ticket, 'ticket_price')) / 10,
+      statusText: _readString(ticket, 'status_name'),
+    );
+  }
+
+  static DateTime? _parsePersonalDateTime(
+    String local,
+    String date,
+    String time,
+  ) {
+    final compact = _parseCompactDateTime(local);
+    if (compact != null) return compact;
+    final spaced = _parseSpaceDateTime('$date $time');
+    if (spaced != null) return spaced;
+    if (!RegExp(r'^\d{8}$').hasMatch(date)) return null;
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(time.trim());
+    if (match == null) return null;
+    return DateTime(
+      int.parse(date.substring(0, 4)),
+      int.parse(date.substring(4, 6)),
+      int.parse(date.substring(6, 8)),
+      int.parse(match.group(1)!),
+      int.parse(match.group(2)!),
+    );
   }
 
   Future<List<Ticket12306Order>> _queryOrdersByType(
@@ -226,7 +674,9 @@ class Ticket12306Service {
         accept: 'application/json, text/javascript, */*; q=0.01',
       );
       if (json['status'] != true) {
-        throw Ticket12306Exception('12306 订单查询失败（query_where=$queryWhere）');
+        throw Ticket12306AuthException(
+          '12306 订单查询失败（query_where=$queryWhere），登录凭证可能已失效',
+        );
       }
       final data = json['data'];
       if (data is! Map) break;
@@ -260,20 +710,24 @@ class Ticket12306Service {
     return result;
   }
 
-  Future<void> _prepareInvoiceQuery() async {
-    await _navigate(_invoiceListPage, referer: _invoiceIndexPage);
+  Future<void> _ensureIdentityVerified(String referer) async {
     final login = await _postForm(
       '$_otnBase/login/conf',
       const {},
-      referer: _invoiceListPage,
+      referer: referer,
       accept: '*/*',
     );
     final loginData = login['data'];
     if (login['status'] != true ||
         loginData is! Map ||
         loginData['psr_qr_code_result']?.toString() != 'Y') {
-      throw const Ticket12306Exception('电子发票访问核验已失效，请重新扫码');
+      throw const Ticket12306AuthException('人证核验已失效，请前往设置重新核验');
     }
+  }
+
+  Future<void> _prepareInvoiceQuery() async {
+    await _navigate(_invoiceListPage, referer: _invoiceIndexPage);
+    await _ensureIdentityVerified(_invoiceListPage);
     final info = await _postForm(
       '$_otnBase/eInvoice/queryInfo',
       const {},
@@ -311,7 +765,7 @@ class Ticket12306Service {
         accept: 'application/json, text/javascript, */*; q=0.01',
       );
       if (json['status'] != true) {
-        throw Ticket12306Exception('电子发票行程查询失败（type=$type）');
+        throw Ticket12306AuthException('电子发票行程查询失败（type=$type）');
       }
       final data = json['data'];
       if (data is! Map<String, dynamic>) break;
@@ -425,7 +879,7 @@ class Ticket12306Service {
     );
   }
 
-  /// 合并两个来源的行程：同一张票以 [extra]（电子发票，信息更全）为准。
+  /// 合并两个来源的行程：同一张票以 [extra]（信息更全的来源）为准。
   static List<Ticket12306Order> mergeTrips(
     List<Ticket12306Order> base,
     List<Ticket12306Order> extra,

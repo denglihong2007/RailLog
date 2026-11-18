@@ -633,7 +633,7 @@ class _AddTripPageState extends State<AddTripPage> {
         EntryMethodCard(
           icon: Icons.download_for_offline_outlined,
           title: '从 12306 导入',
-          description: '核验电子发票，导入近 180 天行程并逐条确认',
+          description: '使用设置中保存的登录与核验凭证，导入近 180 天行程并逐条确认',
           onTap: _open12306Import,
         ),
         const SizedBox(height: 12),

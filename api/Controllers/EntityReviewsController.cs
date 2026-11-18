@@ -15,11 +15,18 @@ public sealed class EntityReviewsController(
 {
     private static readonly HashSet<string> AllowedReviewReactions =
         ["👍", "❤️", "😂", "😮", "😢", "🎉", "🥵", "🤔", "❔"];
+    private const int MaxMentionedUsers = 10;
 
     [HttpGet("{type}/{key}/count")]
     [AllowAnonymous]
     [EnableCors("public-api")]
     public async Task<ActionResult<EntityCountResponse>> Count(string type, string key) => Ok(new EntityCountResponse(type, key, await database.GetEntityCountAsync(type, key)));
+
+    [HttpGet("{type}/{key}/rating")]
+    [AllowAnonymous]
+    [EnableCors("public-api")]
+    public async Task<ActionResult<EntityRatingResponse>> Rating(string type, string key) =>
+        Ok(await database.GetEntityRatingAsync(type, key));
 
     [HttpGet("{type}/{key}/reviews")]
     [AllowAnonymous]
@@ -46,6 +53,8 @@ public sealed class EntityReviewsController(
     public async Task<ActionResult<EntityReviewResponse>> Post(string type, string key, CreateEntityReviewRequest request)
     {
         if (request.Rating is < 1 or > 5 || string.IsNullOrWhiteSpace(request.Comment)) return BadRequest(new { message = "评分和评论不能为空，评分范围为 1-5" });
+        if (request.MentionUserIds is { Count: > MaxMentionedUsers })
+            return BadRequest(new { message = $"最多提及 {MaxMentionedUsers} 位用户" });
         if (sensitiveWords.ContainsSensitiveWord(request.Comment))
             return BadRequest(new { message = "内容不合法" });
         if (!string.Equals(type, request.EntityType, StringComparison.OrdinalIgnoreCase) || !string.Equals(key, request.EntityKey, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { message = "实体参数不匹配" });
@@ -69,6 +78,8 @@ public sealed class EntityReviewsController(
     public async Task<IActionResult> Put(long id, UpdateEntityReviewRequest request)
     {
         if (request.Rating is < 1 or > 5 || string.IsNullOrWhiteSpace(request.Comment)) return BadRequest(new { message = "评分和评论不能为空，评分范围为 1-5" });
+        if (request.MentionUserIds is { Count: > MaxMentionedUsers })
+            return BadRequest(new { message = $"最多提及 {MaxMentionedUsers} 位用户" });
         if (sensitiveWords.ContainsSensitiveWord(request.Comment))
             return BadRequest(new { message = "内容不合法" });
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

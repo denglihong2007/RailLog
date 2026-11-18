@@ -245,12 +245,7 @@ class _AboutPageState extends State<AboutPage> {
                         const _InfoTile(
                           icon: Icons.emoji_events_outlined,
                           title: '西行寺启动子',
-                          subtitle: '提供部分成就',
-                        ),
-                        const _InfoTile(
-                          icon: Icons.cloud_outlined,
-                          title: 'SS7D',
-                          subtitle: '提供下载服务器',
+                          subtitle: '提供部分成就、计算经验梯度',
                         ),
                         const _InfoTile(
                           icon: Icons.data_object_outlined,

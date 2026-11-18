@@ -41,11 +41,39 @@ public sealed record DownloadLinksResponse(
     string? AndroidDomesticDownloadUrl);
 
 public sealed record EntityReviewReactionSummary(string Emoji, int Count, bool ReactedByCurrentUser);
-public sealed record EntityReviewResponse(long Id, string EntityType, string EntityKey, string ReviewType, string UserId, string DisplayName, string? AvatarUrl, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price, DateTime CreatedAt, PublicTrip? Trip, PublicTrip? SecondTrip, IReadOnlyList<EntityReviewReactionSummary> Reactions, int AchievementExperience = 0);
-public sealed record CreateEntityReviewRequest(string EntityType, string EntityKey, string ReviewType, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price);
-public sealed record UpdateEntityReviewRequest(int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price);
+/// <summary>评价正文里被 @ 的用户。MentionedName 是发表时正文中写的名字，
+/// 用于在正文中定位；DisplayName 是当前名字，前端按它渲染。</summary>
+public sealed record EntityReviewMention(string UserId, string DisplayName, string MentionedName);
+public sealed record EntityReviewResponse(long Id, string EntityType, string EntityKey, string ReviewType, string UserId, string DisplayName, string? AvatarUrl, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price, DateTime CreatedAt, PublicTrip? Trip, PublicTrip? SecondTrip, IReadOnlyList<EntityReviewReactionSummary> Reactions, int AchievementExperience = 0, IReadOnlyList<EntityReviewMention>? Mentions = null);
+public sealed record CreateEntityReviewRequest(string EntityType, string EntityKey, string ReviewType, int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price, IReadOnlyList<string>? MentionUserIds = null);
+public sealed record UpdateEntityReviewRequest(int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price, IReadOnlyList<string>? MentionUserIds = null);
 public sealed record SetEntityReviewReactionRequest(string Emoji);
+public sealed record NotificationResponse(
+    long Id,
+    string Type,
+    string ActorName,
+    string Message,
+    long? TripId,
+    long? ReviewId,
+    string? EntityType,
+    string? EntityKey,
+    DateTime CreatedAt,
+    DateTime? ReadAt);
+public sealed record NotificationPageResponse(
+    IReadOnlyList<NotificationResponse> Items,
+    int UnreadCount,
+    long Total);
+public sealed record NotificationUnreadCountResponse(int UnreadCount);
+public sealed record MarkNotificationsReadRequest(IReadOnlyList<long>? Ids);
 public sealed record EntityCountResponse(string EntityType, string EntityKey, long TotalCount);
+/// <summary>实体综合星级。AverageRating 按评价新鲜度加权、同一用户只算一张
+/// 选票；没有评价时为 null。</summary>
+public sealed record EntityRatingResponse(
+    string EntityType,
+    string EntityKey,
+    double? AverageRating,
+    int ReviewCount,
+    int RaterCount);
 public sealed record EntitySearchResult(string EntityType, string EntityKey, long TripCount);
 public sealed record UserSearchResult(
     string Id,

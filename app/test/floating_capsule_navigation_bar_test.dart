@@ -86,6 +86,12 @@ final _pillFinder = find
     )
     .first;
 
+/// 每个条目的水波纹都铺满自身，取它的尺寸就是条目尺寸。
+final _itemFinder = find.descendant(
+  of: find.byType(FloatingCapsuleNavigationBar),
+  matching: find.byType(InkWell),
+);
+
 void main() {
   testWidgets('选中项图标与文字并排，未选中项只留图标', (tester) async {
     await _pump(tester, width: 360);
@@ -116,6 +122,46 @@ void main() {
     expect(find.text('录入'), findsOneWidget);
     expect(find.text('主页'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('切换时一收一放连续变化，胶囊长度不跳变', (tester) async {
+    await _pump(tester, width: 360);
+
+    List<double> itemWidths() => [
+      for (var i = 0; i < 4; i++) tester.getSize(_itemFinder.at(i)).width,
+    ];
+    double pillWidth() => tester.getSize(_pillFinder).width;
+
+    final initialPill = pillWidth();
+    final initialItems = itemWidths();
+    expect(initialItems[0], greaterThan(initialItems[1]));
+
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pump();
+
+    var previous = itemWidths();
+    expect(
+      previous[0],
+      moreOrLessEquals(initialItems[0], epsilon: 0.01),
+      reason: '切换后的第一帧不应立刻改变宽度',
+    );
+
+    // 四个标签等宽，一收一放加起来应当守恒：胶囊总宽全程不变。
+    for (var frame = 0; frame < 30; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        pillWidth(),
+        moreOrLessEquals(initialPill, epsilon: 0.01),
+        reason: '第 $frame 帧胶囊长度跳变了',
+      );
+      final current = itemWidths();
+      expect(current[0], lessThanOrEqualTo(previous[0] + 0.01));
+      expect(current[1], greaterThanOrEqualTo(previous[1] - 0.01));
+      previous = current;
+    }
+
+    expect(previous[0], equals(60));
+    expect(previous[1], greaterThan(initialItems[1] + 10));
   });
 
   testWidgets('320dp 窄屏、2 倍字体下也不溢出', (tester) async {

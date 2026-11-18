@@ -80,21 +80,21 @@ public sealed class DatabaseBackupService(
             return;
 
         var name = NewBackupName();
-        var plaintextPath = Path.Combine(
+        var snapshotPath = Path.Combine(
             Path.GetTempPath(), $"{Guid.NewGuid():N}-{name}");
 
         try
         {
-            await database.BackupToAsync(plaintextPath, cancellationToken);
-            await storage.UploadAsync(name, plaintextPath, cancellationToken);
+            await database.BackupToAsync(snapshotPath, cancellationToken);
+            await storage.UploadAsync(name, snapshotPath, cancellationToken);
         }
         finally
         {
-            TryDeleteFile(plaintextPath);
+            TryDeleteFile(snapshotPath);
         }
 
         logger.LogInformation(
-            "Database backup uploaded to {Location}/{Name}.enc.", storage.Location, name);
+            "Database backup uploaded to {Location}/{Name}.", storage.Location, name);
 
         await PruneRemoteBackupsAsync(keepCount, cancellationToken);
     }

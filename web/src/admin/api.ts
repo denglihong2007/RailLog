@@ -510,7 +510,6 @@ export interface AdminBackupOverview {
   intervalDays: number
   keepCount: number
   items: AdminBackupFile[]
-  encrypted: boolean
 }
 
 export interface AdminTimetableVersion {
@@ -805,6 +804,12 @@ export const api = {
   },
   deleteReview(id: number) {
     return request<void>(`/api/admin/reviews/${id}`, { method: 'DELETE' })
+  },
+  updateReview(id: number, rating: number, comment: string) {
+    return request<void>(`/api/admin/reviews/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ rating, comment }),
+    })
   },
   reviewReactions(reviewId: number) {
     return request<AdminReviewReaction[]>(`/api/admin/reviews/${reviewId}/reactions`)

@@ -170,7 +170,7 @@ void main() {
       expect(copies.map((value) => value.id), [2]);
     });
 
-    test('三条重复时优先保留云端副本，其余都是副本', () {
+    test('三条重复时优先保留数据最全的一条，其余都是副本', () {
       final richest = trip(
         id: 1,
         ticketId: 100,
@@ -195,23 +195,27 @@ void main() {
       expect(copies.map((value) => value.id), [2, 3]);
     });
 
-    test('云端副本优先于更早的本地副本', () {
-      final local = trip(id: 1, createdAt: DateTime(2024, 1, 1));
-      final synced = trip(
+    test('数据更全的副本优先于录入更早的一条', () {
+      final earlierBare = trip(
+        id: 1,
+        createdAt: DateTime(2024, 1, 1),
+        mileageKm: 0,
+      );
+      final laterRich = trip(
         id: 2,
-        ticketId: 100,
         createdAt: DateTime(2024, 1, 2),
+        arrival: DateTime(2024, 5, 1, 12),
       );
 
       final copies = TimetableRebuildService.findDuplicateCopies([
-        local,
-        synced,
+        earlierBare,
+        laterRich,
       ]);
 
       expect(copies.map((value) => value.id), [1]);
     });
 
-    test('同一同步状态下按录入时间保留最早的一条', () {
+    test('数据同样完整时按录入时间保留最早的一条', () {
       final later = trip(id: 1, createdAt: DateTime(2024, 1, 2));
       final earlier = trip(id: 2, createdAt: DateTime(2024, 1, 1));
 

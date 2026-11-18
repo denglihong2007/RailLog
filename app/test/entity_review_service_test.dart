@@ -11,6 +11,24 @@ void main() {
     expect(EntityReviewService.pageSize, 20);
   });
 
+  test('EntityRating 解析综合星级与参与人数', () {
+    final rated = EntityRating.fromJson({
+      'averageRating': 4.25,
+      'reviewCount': 7,
+      'raterCount': 5,
+    });
+    expect(rated.averageRating, 4.25);
+    expect(rated.reviewCount, 7);
+    expect(rated.raterCount, 5);
+
+    final empty = EntityRating.fromJson({
+      'averageRating': null,
+      'reviewCount': 0,
+      'raterCount': 0,
+    });
+    expect(empty.averageRating, isNull);
+  });
+
   test('EntityReview parses associated public trips', () {
     final review = EntityReview.fromJson({
       'id': 1,
@@ -183,6 +201,94 @@ void main() {
       ], null, '❤️');
 
       expect(result.map((reaction) => reaction.emoji), ['👍', '❤️', '🎉']);
+    });
+  });
+  test('EntityReview parses mentions', () {
+    final review = EntityReview.fromJson({
+      'id': 4,
+      'entityType': 'station',
+      'entityKey': '济南西',
+      'reviewType': 'station',
+      'userId': 'user-1',
+      'displayName': '测试用户',
+      'avatarUrl': null,
+      'rating': 5,
+      'comment': '同行的 @旧名字 也这么觉得',
+      'tripId': null,
+      'secondTripId': null,
+      'transferMinutes': null,
+      'dish': null,
+      'price': null,
+      'createdAt': '2026-09-14T10:00:00Z',
+      'trip': null,
+      'secondTrip': null,
+      'mentions': [
+        {'userId': 'user-2', 'displayName': '新名字', 'mentionedName': '旧名字'},
+      ],
+    });
+
+    expect(review.mentions.single.userId, 'user-2');
+    expect(review.mentions.single.displayName, '新名字');
+    expect(review.mentions.single.mentionedName, '旧名字');
+  });
+
+  group('matchReviewMentions', () {
+    test('长名字优先，避免被短名字截断', () {
+      final matches = matchReviewMentions('找 @张三丰 和 @张三', const [
+        EntityReviewMention(
+          userId: 'short',
+          displayName: '张三',
+          mentionedName: '张三',
+        ),
+        EntityReviewMention(
+          userId: 'long',
+          displayName: '张三丰',
+          mentionedName: '张三丰',
+        ),
+      ]);
+
+      expect(matches.map((match) => match.mention.userId), ['long', 'short']);
+    });
+
+    test('名字后紧跟文字时不算提及', () {
+      final matches = matchReviewMentions('@张三丰来了', const [
+        EntityReviewMention(
+          userId: 'short',
+          displayName: '张三',
+          mentionedName: '张三',
+        ),
+      ]);
+
+      expect(matches, isEmpty);
+    });
+
+    test('normalizeReviewMentionNames 把旧名字换成当前名字', () {
+      final text = normalizeReviewMentionNames('感谢 @旧名字 的建议', const [
+        EntityReviewMention(
+          userId: 'user-2',
+          displayName: '新名字',
+          mentionedName: '旧名字',
+        ),
+      ]);
+
+      expect(text, '感谢 @新名字 的建议');
+    });
+
+    test('usedReviewMentions 丢掉正文里已经删掉的提及', () {
+      final mentions = usedReviewMentions('只剩 @保留', const [
+        EntityReviewMention(
+          userId: 'kept',
+          displayName: '保留',
+          mentionedName: '保留',
+        ),
+        EntityReviewMention(
+          userId: 'removed',
+          displayName: '删除',
+          mentionedName: '删除',
+        ),
+      ]);
+
+      expect(mentions.map((mention) => mention.userId), ['kept']);
     });
   });
 }

@@ -58,6 +58,7 @@ void main() {
     expect(find.text('行程手账'), findsOneWidget);
     expect(find.text('我的评价'), findsOneWidget);
     expect(find.text('历史时刻表重建'), findsOneWidget);
+    expect(find.text('12306 导入'), findsOneWidget);
     expect(tester.takeException(), isNull);
   }, timeout: const Timeout(Duration(seconds: 30)));
 

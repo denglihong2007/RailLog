@@ -10,6 +10,7 @@ import 'package:raillog/src/pages/settings/display_settings_page.dart';
 import 'package:raillog/src/pages/settings/email_connection_settings_page.dart';
 import 'package:raillog/src/pages/settings/journal_settings_page.dart';
 import 'package:raillog/src/pages/settings/my_reviews_page.dart';
+import 'package:raillog/src/pages/settings/ticket_12306_settings_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
 import 'package:raillog/src/pages/settings/ticket_ocr_settings_page.dart';
 import 'package:raillog/src/pages/settings/timetable_rebuild_page.dart';
@@ -69,6 +70,7 @@ class SettingsPage extends StatelessWidget {
                       const SizedBox(height: AppSpacing.sm),
                       const SettingsListCard(
                         children: [
+                          _Ticket12306Entry(),
                           _MailImportEntry(),
                           _DataSyncEntry(),
                           _TimetableRebuildEntry(),
@@ -291,6 +293,18 @@ class _TicketOcrEntry extends StatelessWidget {
     title: '车票识别',
     subtitle: '配置百度智能云或阿里云密钥，自动识别车票信息',
     onTap: () => _push(context, const TicketOcrSettingsPage()),
+  );
+}
+
+class _Ticket12306Entry extends StatelessWidget {
+  const _Ticket12306Entry();
+
+  @override
+  Widget build(BuildContext context) => SettingsNavTile(
+    icon: Icons.download_for_offline_outlined,
+    title: '12306 导入',
+    subtitle: '配置账号密码或扫码登录、人证核验，导入 12306 行程',
+    onTap: () => _push(context, const Ticket12306SettingsPage()),
   );
 }
 

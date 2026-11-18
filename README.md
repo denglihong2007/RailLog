@@ -24,8 +24,8 @@ Back up a production database before its first migration.
 
 While the API is running it backs up the database every other day via the
 SQLite online backup API. When object storage is configured, each snapshot is
-encrypted and uploaded to the bucket, and older objects are pruned by
-`KeepCount`; otherwise backups are written to `api\backups` as before.
+uploaded to a private bucket, and older objects are pruned by `KeepCount`;
+otherwise backups are written to `api\backups` as before.
 Configure the behavior in `appsettings.json`:
 
 ```json
@@ -37,28 +37,26 @@ Configure the behavior in `appsettings.json`:
   "Storage": {
     "Endpoint": "https://cn-nb2.rains3.com",
     "Region": "cn-nb2",
-    "Bucket": "raillog",
+    "Bucket": "raillog-backups",
     "Prefix": "backups",
     "AccessKey": "",
-    "SecretKey": "",
-    "Passphrase": ""
+    "SecretKey": ""
   }
 }
 ```
 
 `Directory` may be absolute and is only used when the storage secrets are not
-configured. Supply `AccessKey`, `SecretKey`, and `Passphrase` through
-environment variables (for example `DatabaseBackup__Storage__Passphrase`) or
-user-secrets; never commit them. The interval is measured from the newest
-existing backup, so restarting the process does not create a duplicate, and a
-missed window is caught up on the next hourly check.
+configured. Supply `AccessKey` and `SecretKey` through environment variables
+(for example `DatabaseBackup__Storage__AccessKey`) or user-secrets; never
+commit them. The interval is measured from the newest existing backup, so
+restarting the process does not create a duplicate, and a missed window is
+caught up on the next hourly check.
 
-The bucket may allow public reads, so backups are encrypted with AES-256-CBC
-and authenticated with HMAC-SHA256 before upload; the passphrase stays on the
-API host. `tools/decrypt-backup.py` decrypts an object outside the server
-(requires `pip install cryptography`; the passphrase is read from
-`RAILLOG_BACKUP_PASSPHRASE`). Keep a copy of the passphrase somewhere other
-than the server disk: without it the uploaded backups cannot be recovered.
+The backup bucket (`raillog-backups`) has no anonymous access: only the API's
+credentials can read or write it, so snapshots are stored as plain `.db` files
+and downloaded as-is from the admin console. Keep it that way — do not attach a
+bucket policy that grants `s3:GetObject` to everyone. The release bucket
+(`raillog`) is public and must never hold database snapshots.
 
 The historical timetables (about 860MB in total) are not included in the
 repository. The API syncs them from the private `denglihong2007/Timetable-Results`

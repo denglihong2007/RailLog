@@ -478,6 +478,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('unlock trip row lets the page override the tap target', (
+    tester,
+  ) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.build(
+          ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+        ),
+        home: Scaffold(
+          body: AchievementTripRow(
+            trip: AchievementUnlockTrip(
+              ticketId: 42,
+              userId: 'u1',
+              displayName: '测试用户',
+              avatarUrl: null,
+              occurredAt: DateTime(2026, 9, 2, 9),
+              trainNumber: 'G1',
+              fromStation: '北京南',
+              toStation: '上海虹桥',
+              isCurrentUser: true,
+            ),
+            onTap: () => taps++,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(AchievementTripRow));
+    await tester.pump();
+    expect(taps, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('unlocked experience chip walks the seven-colour scale', (
     tester,
   ) async {
