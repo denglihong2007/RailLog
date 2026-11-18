@@ -8,9 +8,16 @@ import 'package:raillog/src/widgets/dashboard_achievement_card.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
 
 class AchievementRequirementsPage extends StatelessWidget {
-  const AchievementRequirementsPage({super.key, required this.achievement});
+  const AchievementRequirementsPage({
+    super.key,
+    required this.achievement,
+    this.ownerName,
+  });
 
   final DashboardAchievement achievement;
+
+  /// 看别人的进度时传昵称，标题里标明这是 TA 的页面。
+  final String? ownerName;
 
   @override
   Widget build(BuildContext context) {
@@ -20,19 +27,23 @@ class AchievementRequirementsPage extends StatelessWidget {
         (requirement) => !requirement.completed,
       ),
     ];
+    final ownerName = this.ownerName;
     return Scaffold(
       appBar: AppBar(
-        title: Text('${achievement.title} · 达成要求'),
+        title: Text(
+          ownerName == null
+              ? '${achievement.title} · 达成要求'
+              : '$ownerName 的成就进度',
+        ),
         actions: [
-          if (achievement.isUnlocked)
+          // 从解锁行程排行榜点进来的页面，排行榜就在下一层，不再重复放入口。
+          if (achievement.isUnlocked && ownerName == null)
             IconButton(
               tooltip: '查看解锁行程',
               onPressed: () => Navigator.of(context).push(
                 m3PageRoute(
-                  builder: (_) => AchievementUnlockTripsPage(
-                    achievementId: achievement.id,
-                    title: achievement.title,
-                  ),
+                  builder: (_) =>
+                      AchievementUnlockTripsPage(achievement: achievement),
                 ),
               ),
               icon: const Icon(Icons.people_outline),

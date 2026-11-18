@@ -1043,10 +1043,7 @@ class _AchievementsSection extends StatelessWidget {
   ) async {
     await Navigator.of(context).push(
       m3PageRoute(
-        builder: (_) => AchievementUnlockTripsPage(
-          achievementId: achievement.id,
-          title: achievement.title,
-        ),
+        builder: (_) => AchievementUnlockTripsPage(achievement: achievement),
       ),
     );
   }
