@@ -3110,14 +3110,56 @@ public sealed partial class RailLogDatabase
         return reviews;
     }
 
-    /// <summary>某个要素在全站评价里的评分合计与条数。</summary>
-    private readonly record struct EntityRatingAggregate(int Sum, int Count)
+    /// <summary>
+    /// 实体综合星级：同一用户的多条评价先合并成一张选票（取均值），再按
+    /// 该用户最近一条评价的发布时间衰减加权。这样一个人反复评价不会把
+    /// 星级刷高，老评价也会随时间淡出。
+    /// </summary>
+    private const double EntityRatingHalfLifeDays = 180.0;
+
+    private sealed class EntityRatingAccumulator
     {
-        public double Average => (double)Sum / Count;
+        public Dictionary<string, EntityRaterVotes> Users { get; } =
+            new(StringComparer.Ordinal);
+        public int ReviewCount { get; set; }
+    }
+
+    private sealed class EntityRaterVotes
+    {
+        public int Sum { get; set; }
+        public int Count { get; set; }
+        public DateTime LatestAt { get; set; }
+    }
+
+    /// <summary>某个要素的综合星级、评价条数与参与评价的人数。</summary>
+    private readonly record struct EntityRatingAggregate(
+        double Average,
+        int ReviewCount,
+        int RaterCount);
+
+    private static EntityRatingAggregate FinalizeRating(
+        EntityRatingAccumulator accumulator,
+        DateTime now)
+    {
+        double weightedSum = 0;
+        double weightSum = 0;
+        foreach (var votes in accumulator.Users.Values)
+        {
+            var rating = (double)votes.Sum / votes.Count;
+            var ageDays = Math.Max(0.0, (now - votes.LatestAt).TotalDays);
+            var weight = Math.Pow(0.5, ageDays / EntityRatingHalfLifeDays);
+            weightedSum += rating * weight;
+            weightSum += weight;
+        }
+        var average = weightSum > 0 ? weightedSum / weightSum : 0.0;
+        return new EntityRatingAggregate(
+            average,
+            accumulator.ReviewCount,
+            accumulator.Users.Count);
     }
 
     /// <summary>
-    /// 按「要素类别 + 归一化名称」汇总评价评分。EntityKey 是评价时页面传入的
+    /// 按「要素类别 + 归一化名称」汇总评价星级。EntityKey 是评价时页面传入的
     /// 原始名称，大小写与空白可能和排行榜里的写法不同，因此两侧都归一化后再匹配。
     /// </summary>
     private static async Task<Dictionary<string, EntityRatingAggregate>> GetEntityRatingAggregatesAsync(
@@ -3125,11 +3167,11 @@ public sealed partial class RailLogDatabase
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT lower(EntityType), EntityKey, SUM(Rating), COUNT(*)
-            FROM EntityReviews
-            GROUP BY lower(EntityType), EntityKey;
+            SELECT lower(EntityType), EntityKey, UserId, Rating, CreatedAt
+            FROM EntityReviews;
             """;
-        var aggregates = new Dictionary<string, EntityRatingAggregate>(StringComparer.Ordinal);
+        var accumulators = new Dictionary<string, EntityRatingAccumulator>(StringComparer.Ordinal);
+        var now = DateTime.UtcNow;
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
@@ -3137,14 +3179,74 @@ public sealed partial class RailLogDatabase
             if (!IsRatedElementType(type)) continue;
             var lookupKey = RatingLookupKey(type, reader.GetString(1));
             if (lookupKey is null) continue;
-            var count = reader.GetInt32(3);
-            if (count <= 0) continue;
-            var sum = reader.GetInt32(2);
-            aggregates[lookupKey] = aggregates.TryGetValue(lookupKey, out var existing)
-                ? new EntityRatingAggregate(existing.Sum + sum, existing.Count + count)
-                : new EntityRatingAggregate(sum, count);
+            if (!accumulators.TryGetValue(lookupKey, out var accumulator))
+                accumulators[lookupKey] = accumulator = new EntityRatingAccumulator();
+            AccumulateRating(
+                accumulator,
+                reader.GetString(2),
+                reader.GetInt32(3),
+                ParseDbTimestamp(reader.GetString(4)));
         }
-        return aggregates;
+        return accumulators.ToDictionary(
+            item => item.Key,
+            item => FinalizeRating(item.Value, now),
+            StringComparer.Ordinal);
+    }
+
+    private static void AccumulateRating(
+        EntityRatingAccumulator accumulator,
+        string userId,
+        int rating,
+        DateTime createdAt)
+    {
+        accumulator.ReviewCount++;
+        if (!accumulator.Users.TryGetValue(userId, out var votes))
+            accumulator.Users[userId] = votes = new EntityRaterVotes();
+        votes.Sum += rating;
+        votes.Count++;
+        if (createdAt > votes.LatestAt) votes.LatestAt = createdAt;
+    }
+
+    /// <summary>单个实体的综合星级；没有评价时平均星级为 null。</summary>
+    public async Task<EntityRatingResponse> GetEntityRatingAsync(string type, string key)
+    {
+        var normalizedType = type.Trim().ToLowerInvariant();
+        var lookupKey = IsRatedElementType(normalizedType)
+            ? RatingLookupKey(normalizedType, key)
+            : null;
+        if (lookupKey is null)
+            return new EntityRatingResponse(type, key, null, 0, 0);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EntityKey, UserId, Rating, CreatedAt
+            FROM EntityReviews
+            WHERE lower(EntityType) = $type;
+            """;
+        command.Parameters.AddWithValue("$type", normalizedType);
+        var accumulator = new EntityRatingAccumulator();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            if (RatingLookupKey(normalizedType, reader.GetString(0)) != lookupKey)
+                continue;
+            AccumulateRating(
+                accumulator,
+                reader.GetString(1),
+                reader.GetInt32(2),
+                ParseDbTimestamp(reader.GetString(3)));
+        }
+        if (accumulator.ReviewCount == 0)
+            return new EntityRatingResponse(type, key, null, 0, 0);
+        var aggregate = FinalizeRating(accumulator, DateTime.UtcNow);
+        return new EntityRatingResponse(
+            type,
+            key,
+            aggregate.Average,
+            aggregate.ReviewCount,
+            aggregate.RaterCount);
     }
 
     private static bool IsRatedElementType(string type) =>

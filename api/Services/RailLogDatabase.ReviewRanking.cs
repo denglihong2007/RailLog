@@ -23,10 +23,9 @@ public sealed partial class RailLogDatabase
     private const int RelatedEntityHalfLifeDays = 365;
     private const int RelatedReviewHalfLifeDays = 90;
 
-    // 多样性惩罚：同一实体、同一作者、同一类型每多出现一次，后续条目的
-    // 分数就按这个比例下调。实体惩罚最重，作者次之，类型最轻。
+    // 多样性惩罚：同一实体、同一类型每多出现一次，后续条目的分数就按这个
+    // 比例下调。实体惩罚最重，类型最轻。
     private const double RelatedEntityPenalty = 2.0;
-    private const double RelatedAuthorPenalty = 0.6;
     private const double RelatedTypePenalty = 0.4;
     private const int RelatedCacheSeconds = 60;
 
@@ -338,8 +337,9 @@ public sealed partial class RailLogDatabase
     }
 
     /// <summary>
-    /// 按分数从高到低贪心选取，每次对同实体、同作者、同类型的重复出现做
-    /// 惩罚。只要前 <paramref name="take"/> 条，分页时前缀与整体排序一致。
+    /// 按分数从高到低贪心选取，每次对同实体、同类型的重复出现做惩罚。
+    /// 同一作者可以连续出现，不再额外降权。只要前 <paramref name="take"/>
+    /// 条，分页时前缀与整体排序一致。
     /// </summary>
     private static List<EntityReviewResponse> RankRelatedReviewCandidates(
         IReadOnlyList<RelatedReviewCandidate> candidates,
@@ -350,7 +350,6 @@ public sealed partial class RailLogDatabase
 
         var remaining = candidates.ToList();
         var entityCounts = new Dictionary<(string Type, string Key), int>();
-        var authorCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         while (remaining.Count > 0 && result.Count < take)
@@ -365,7 +364,6 @@ public sealed partial class RailLogDatabase
                 var entityKey = (type, review.EntityKey.Trim().ToLowerInvariant());
                 var penalty = 1.0
                     + RelatedEntityPenalty * GetCount(entityCounts, entityKey)
-                    + RelatedAuthorPenalty * GetCount(authorCounts, review.UserId)
                     + RelatedTypePenalty * GetCount(typeCounts, type);
                 var value = candidate.Score / penalty;
                 if (value > bestValue)
@@ -381,8 +379,6 @@ public sealed partial class RailLogDatabase
             var chosenType = chosenReview.EntityType.ToLowerInvariant();
             var chosenKey = (chosenType, chosenReview.EntityKey.Trim().ToLowerInvariant());
             entityCounts[chosenKey] = GetCount(entityCounts, chosenKey) + 1;
-            authorCounts[chosenReview.UserId] =
-                GetCount(authorCounts, chosenReview.UserId) + 1;
             typeCounts[chosenType] = GetCount(typeCounts, chosenType) + 1;
             result.Add(chosenReview);
         }

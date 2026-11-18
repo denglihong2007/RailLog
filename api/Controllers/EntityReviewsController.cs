@@ -21,6 +21,12 @@ public sealed class EntityReviewsController(
     [EnableCors("public-api")]
     public async Task<ActionResult<EntityCountResponse>> Count(string type, string key) => Ok(new EntityCountResponse(type, key, await database.GetEntityCountAsync(type, key)));
 
+    [HttpGet("{type}/{key}/rating")]
+    [AllowAnonymous]
+    [EnableCors("public-api")]
+    public async Task<ActionResult<EntityRatingResponse>> Rating(string type, string key) =>
+        Ok(await database.GetEntityRatingAsync(type, key));
+
     [HttpGet("{type}/{key}/reviews")]
     [AllowAnonymous]
     [EnableCors("public-api")]

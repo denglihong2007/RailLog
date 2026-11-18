@@ -11,6 +11,24 @@ void main() {
     expect(EntityReviewService.pageSize, 20);
   });
 
+  test('EntityRating 解析综合星级与参与人数', () {
+    final rated = EntityRating.fromJson({
+      'averageRating': 4.25,
+      'reviewCount': 7,
+      'raterCount': 5,
+    });
+    expect(rated.averageRating, 4.25);
+    expect(rated.reviewCount, 7);
+    expect(rated.raterCount, 5);
+
+    final empty = EntityRating.fromJson({
+      'averageRating': null,
+      'reviewCount': 0,
+      'raterCount': 0,
+    });
+    expect(empty.averageRating, isNull);
+  });
+
   test('EntityReview parses associated public trips', () {
     final review = EntityReview.fromJson({
       'id': 1,

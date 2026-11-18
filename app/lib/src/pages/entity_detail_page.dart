@@ -41,6 +41,7 @@ class EntityDetailPage extends StatefulWidget {
 class _EntityDetailPageState extends State<EntityDetailPage> {
   Future<List<TripRecord>>? _future;
   Future<int>? _globalFuture;
+  Future<EntityRating>? _ratingFuture;
   Future<List<OnlineIntersection>>? _intersectionFuture;
   late bool _wasSignedIn;
 
@@ -65,6 +66,20 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
       _typeKey(widget.type),
       widget.name,
     );
+    _ratingFuture = EntityReviewService.fetchRating(
+      _typeKey(widget.type),
+      widget.name,
+    );
+  }
+
+  void _refreshRating() {
+    if (!mounted) return;
+    setState(() {
+      _ratingFuture = EntityReviewService.fetchRating(
+        _typeKey(widget.type),
+        widget.name,
+      );
+    });
   }
 
   void _handleSessionChanged() {
@@ -77,6 +92,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
     } else {
       _future = null;
       _globalFuture = null;
+      _ratingFuture = null;
       _intersectionFuture = null;
     }
     setState(() {});
@@ -171,7 +187,8 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
     }
     final future = _future;
     final globalFuture = _globalFuture;
-    if (future == null || globalFuture == null) {
+    final ratingFuture = _ratingFuture;
+    if (future == null || globalFuture == null || ratingFuture == null) {
       return Scaffold(
         appBar: appBar,
         body: const Center(child: CircularProgressIndicator()),
@@ -203,8 +220,32 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                         const SizedBox(height: 12),
                         LayoutBuilder(
                           builder: (context, constraints) {
-                            final wide = constraints.maxWidth >= 560;
+                            final wide = constraints.maxWidth >= 760;
+                            final colors = Theme.of(context).colorScheme;
                             final metrics = [
+                              FutureBuilder<EntityRating>(
+                                future: ratingFuture,
+                                builder: (context, snap) {
+                                  final rating = snap.data;
+                                  final average = rating?.averageRating;
+                                  return _MetricCard(
+                                    icon: Icons.star_rounded,
+                                    label:
+                                        rating != null && rating.raterCount > 0
+                                        ? '综合星级 · ${rating.raterCount} 人'
+                                        : '综合星级',
+                                    value: rating == null
+                                        ? '—'
+                                        : average == null
+                                        ? '暂无评分'
+                                        : '★ ${average.toStringAsFixed(1)}',
+                                    iconColor: colors.tertiary,
+                                    valueColor: average == null
+                                        ? null
+                                        : colors.tertiary,
+                                  );
+                                },
+                              ),
                               FutureBuilder<int>(
                                 future: globalFuture,
                                 builder: (context, snap) => _MetricCard(
@@ -213,30 +254,36 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                                   value: snap.data == null
                                       ? '—'
                                       : '${snap.data} 次',
-                                  highlighted: true,
+                                  iconColor: colors.primary,
                                 ),
                               ),
                               _MetricCard(
                                 icon: Icons.person_outline,
                                 label: '你的记录',
                                 value: '${trips.length} 次',
+                                iconColor: colors.primary,
                               ),
                             ];
-                            return wide
-                                ? Row(
-                                    children: [
-                                      Expanded(child: metrics[0]),
-                                      const SizedBox(width: 12),
-                                      Expanded(child: metrics[1]),
-                                    ],
-                                  )
-                                : Column(
-                                    children: [
-                                      metrics[0],
-                                      const SizedBox(height: 12),
-                                      metrics[1],
-                                    ],
-                                  );
+                            if (wide) {
+                              return Row(
+                                children: [
+                                  Expanded(child: metrics[0]),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: metrics[1]),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: metrics[2]),
+                                ],
+                              );
+                            }
+                            return Column(
+                              children: [
+                                metrics[0],
+                                const SizedBox(height: 12),
+                                metrics[1],
+                                const SizedBox(height: 12),
+                                metrics[2],
+                              ],
+                            );
                           },
                         ),
                         const SizedBox(height: 12),
@@ -347,6 +394,7 @@ class _EntityDetailPageState extends State<EntityDetailPage> {
                           type: widget.type,
                           name: widget.name,
                           trips: trips,
+                          onChanged: _refreshRating,
                         ),
                       ],
                     ),
@@ -454,27 +502,33 @@ class _MetricCard extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
-    this.highlighted = false,
+    required this.iconColor,
+    this.valueColor,
   });
   final IconData icon;
   final String label;
   final String value;
-  final bool highlighted;
+  final Color iconColor;
+  final Color? valueColor;
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     return AppCard.filled(
-      color: highlighted
-          ? colors.secondaryContainer
-          : colors.surfaceContainerLow,
+      color: colors.surfaceContainerLow,
       padding: EdgeInsets.zero,
       child: ListTile(
-        leading: Icon(
-          icon,
-          color: highlighted ? colors.onSecondaryContainer : colors.primary,
+        leading: Icon(icon, color: iconColor),
+        title: Text(
+          label,
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
         ),
-        title: Text(label),
-        trailing: Text(value, style: Theme.of(context).textTheme.titleLarge),
+        trailing: Text(
+          value,
+          style: textTheme.titleLarge?.copyWith(color: valueColor),
+        ),
       ),
     );
   }
@@ -674,10 +728,14 @@ class _ReviewsSection extends StatefulWidget {
     required this.type,
     required this.name,
     required this.trips,
+    required this.onChanged,
   });
   final EntityType type;
   final String name;
   final List<TripRecord> trips;
+
+  /// 评价增删改后通知外层刷新综合星级等派生数据。
+  final VoidCallback onChanged;
   @override
   State<_ReviewsSection> createState() => _ReviewsSectionState();
 }
@@ -768,6 +826,7 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
 
   void _refreshReviews() {
     if (!mounted) return;
+    widget.onChanged();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {

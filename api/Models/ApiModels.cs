@@ -46,6 +46,14 @@ public sealed record CreateEntityReviewRequest(string EntityType, string EntityK
 public sealed record UpdateEntityReviewRequest(int Rating, string Comment, long? TripId, long? SecondTripId, int? TransferMinutes, string? RouteFromStation, string? RouteToStation, string? Dish, decimal? Price);
 public sealed record SetEntityReviewReactionRequest(string Emoji);
 public sealed record EntityCountResponse(string EntityType, string EntityKey, long TotalCount);
+/// <summary>实体综合星级。AverageRating 按评价新鲜度加权、同一用户只算一张
+/// 选票；没有评价时为 null。</summary>
+public sealed record EntityRatingResponse(
+    string EntityType,
+    string EntityKey,
+    double? AverageRating,
+    int ReviewCount,
+    int RaterCount);
 public sealed record EntitySearchResult(string EntityType, string EntityKey, long TripCount);
 public sealed record UserSearchResult(
     string Id,

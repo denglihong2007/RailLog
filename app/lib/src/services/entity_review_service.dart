@@ -3,6 +3,26 @@ import 'package:raillog/src/models/trip_record.dart';
 import 'package:raillog/src/services/api_client.dart';
 import 'package:raillog/src/services/session_service.dart';
 
+/// 实体的综合星级。后端按评价新鲜度加权，同一用户只算一张选票；
+/// 没有评价时 [averageRating] 为空。
+class EntityRating {
+  const EntityRating({
+    required this.averageRating,
+    required this.reviewCount,
+    required this.raterCount,
+  });
+
+  factory EntityRating.fromJson(Map<String, dynamic> json) => EntityRating(
+    averageRating: (json['averageRating'] as num?)?.toDouble(),
+    reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+    raterCount: (json['raterCount'] as num?)?.toInt() ?? 0,
+  );
+
+  final double? averageRating;
+  final int reviewCount;
+  final int raterCount;
+}
+
 class EntityReview {
   EntityReview.fromJson(Map<String, dynamic> json)
     : id = json['id'] as int,
@@ -187,6 +207,15 @@ class EntityReviewService {
       '/api/entities/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}/count',
     );
     return (response.data as Map<String, dynamic>)['totalCount'] as int;
+  }
+
+  static Future<EntityRating> fetchRating(String type, String key) async {
+    final response = await ApiClient.instance.dio.get(
+      '/api/entities/${Uri.encodeComponent(type)}/${Uri.encodeComponent(key)}/rating',
+    );
+    return EntityRating.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
   }
 
   static Future<List<EntityReview>> fetch(String type, String key) async {
