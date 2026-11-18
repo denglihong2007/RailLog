@@ -290,7 +290,6 @@ class _BerthCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _CardDescription('百分比按全部有铺位记录的行程计算。'),
           if (total == 0)
             const _EmptyHint()
           else
@@ -335,7 +334,6 @@ class _SeatClassCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _CardDescription('百分比按全部有席别记录的行程计算。'),
           if (total == 0)
             const _EmptyHint()
           else
