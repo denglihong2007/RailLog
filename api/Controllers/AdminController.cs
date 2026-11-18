@@ -356,8 +356,7 @@ public sealed class AdminController(
                     backupStorage.Location,
                     _backupOptions.IntervalDays,
                     _backupOptions.KeepCount,
-                    remoteFiles,
-                    Encrypted: true));
+                    remoteFiles));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -388,8 +387,7 @@ public sealed class AdminController(
                 : _backupOptions.Directory,
             _backupOptions.IntervalDays,
             _backupOptions.KeepCount,
-            files,
-            Encrypted: false));
+            files));
     }
 
     /// <summary>
@@ -438,16 +436,7 @@ public sealed class AdminController(
             var tempPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}-{name}");
             try
             {
-                await backupStorage.DownloadDecryptedAsync(
-                    name, tempPath, cancellationToken);
-            }
-            catch (InvalidDataException exception)
-            {
-                TryDeleteFile(tempPath);
-                logger.LogError(exception, "Failed to decrypt database backup {Name}.", name);
-                return StatusCode(
-                    StatusCodes.Status500InternalServerError,
-                    new MessageResponse("备份文件无法解密，请检查对象存储的加密口令配置"));
+                await backupStorage.DownloadAsync(name, tempPath, cancellationToken);
             }
             catch
             {

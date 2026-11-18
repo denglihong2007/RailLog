@@ -510,7 +510,6 @@ export interface AdminBackupOverview {
   intervalDays: number
   keepCount: number
   items: AdminBackupFile[]
-  encrypted: boolean
 }
 
 export interface AdminTimetableVersion {

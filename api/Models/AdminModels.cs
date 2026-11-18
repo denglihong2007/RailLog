@@ -394,8 +394,7 @@ public sealed record AdminBackupOverview(
     string Directory,
     int IntervalDays,
     int KeepCount,
-    IReadOnlyList<AdminBackupFile> Items,
-    bool Encrypted);
+    IReadOnlyList<AdminBackupFile> Items);
 
 // ---- 历史时刻表同步 ----
 

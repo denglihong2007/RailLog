@@ -9,15 +9,13 @@ namespace RailLog.API.Services;
 public sealed record RemoteBackup(string Name, long SizeBytes, DateTime CreatedAt);
 
 /// <summary>
-/// 备份文件的对象存储读写。上传的是 <see cref="BackupCrypto"/> 加密后的
-/// 字节流，即使桶允许公开读取，拿到的也只是密文。
+/// 备份文件的对象存储读写。桶是私有的，只有服务端的访问密钥能读，
+/// 因此这里直接存取数据库快照本身，不再做额外加密。
 /// </summary>
 public sealed class BackupStorageService : IDisposable
 {
     private const string BackupNamePrefix = "raillog-";
     private const string BackupNameSuffix = ".db";
-    private const string EncryptionSuffix = ".enc";
-    private const string EncryptedSuffix = BackupNameSuffix + EncryptionSuffix;
     private const int BufferSize = 64 * 1024;
 
     private readonly BackupStorageOptions _options;
@@ -120,71 +118,47 @@ public sealed class BackupStorageService : IDisposable
         }
     }
 
-    /// <summary>加密明文备份并上传；临时密文文件无论成功与否都会删除。</summary>
     public async Task UploadAsync(
         string name,
-        string plaintextPath,
+        string sourcePath,
         CancellationToken cancellationToken)
     {
         EnsureEnabled();
-        var encryptedPath = $"{plaintextPath}.{Guid.NewGuid():N}.enc";
-        try
-        {
-            await BackupCrypto.EncryptFileAsync(
-                plaintextPath, encryptedPath, _options.Passphrase, cancellationToken);
-            await _client!.PutObjectAsync(
-                new PutObjectRequest
-                {
-                    BucketName = _options.Bucket,
-                    Key = KeyFor(name),
-                    FilePath = encryptedPath,
-                    ContentType = "application/octet-stream",
-                },
-                cancellationToken);
-        }
-        finally
-        {
-            TryDeleteFile(encryptedPath);
-        }
+        await _client!.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = _options.Bucket,
+                Key = KeyFor(name),
+                FilePath = sourcePath,
+                ContentType = "application/octet-stream",
+            },
+            cancellationToken);
     }
 
-    /// <summary>下载并解密到指定路径；调用方负责删除明文文件。</summary>
-    public async Task DownloadDecryptedAsync(
+    /// <summary>下载到指定路径；调用方负责删除明文文件。</summary>
+    public async Task DownloadAsync(
         string name,
         string destinationPath,
         CancellationToken cancellationToken)
     {
         EnsureEnabled();
-        var encryptedPath = $"{destinationPath}.{Guid.NewGuid():N}.enc";
-        try
-        {
-            using var response = await _client!.GetObjectAsync(
-                new GetObjectRequest
-                {
-                    BucketName = _options.Bucket,
-                    Key = KeyFor(name),
-                },
-                cancellationToken);
-            await using (var source = response.ResponseStream)
-            await using (var destination = new FileStream(
-                             encryptedPath,
-                             FileMode.Create,
-                             FileAccess.Write,
-                             FileShare.None,
-                             BufferSize,
-                             FileOptions.Asynchronous))
+        using var response = await _client!.GetObjectAsync(
+            new GetObjectRequest
             {
-                await source.CopyToAsync(destination, BufferSize, cancellationToken);
-                await destination.FlushAsync(cancellationToken);
-            }
-
-            await BackupCrypto.DecryptFileAsync(
-                encryptedPath, destinationPath, _options.Passphrase, cancellationToken);
-        }
-        finally
-        {
-            TryDeleteFile(encryptedPath);
-        }
+                BucketName = _options.Bucket,
+                Key = KeyFor(name),
+            },
+            cancellationToken);
+        await using var source = response.ResponseStream;
+        await using var destination = new FileStream(
+            destinationPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            BufferSize,
+            FileOptions.Asynchronous);
+        await source.CopyToAsync(destination, BufferSize, cancellationToken);
+        await destination.FlushAsync(cancellationToken);
     }
 
     public async Task DeleteAsync(string name, CancellationToken cancellationToken)
@@ -199,17 +173,17 @@ public sealed class BackupStorageService : IDisposable
             cancellationToken);
     }
 
-    private string KeyFor(string name) => $"{Prefix}/{name}.enc";
+    private string KeyFor(string name) => $"{Prefix}/{name}";
 
     private static string? ParseBackupName(string key, string prefix)
     {
         if (!key.StartsWith(prefix, StringComparison.Ordinal) ||
-            !key.EndsWith(EncryptedSuffix, StringComparison.Ordinal))
+            !key.EndsWith(BackupNameSuffix, StringComparison.Ordinal))
             return null;
 
-        var name = key[prefix.Length..^EncryptionSuffix.Length];
+        var name = key[prefix.Length..];
         return name.StartsWith(BackupNamePrefix, StringComparison.Ordinal) &&
-               name.EndsWith(BackupNameSuffix, StringComparison.Ordinal)
+               !name.Contains('/')
             ? name
             : null;
     }
@@ -218,22 +192,6 @@ public sealed class BackupStorageService : IDisposable
     {
         if (_client is null)
             throw new InvalidOperationException("对象存储未配置，无法读写远程备份。");
-    }
-
-    private static void TryDeleteFile(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
-            // 下次清理或系统临时目录回收会处理。
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // 下次清理或系统临时目录回收会处理。
-        }
     }
 
     public void Dispose() => _client?.Dispose();
