@@ -620,7 +620,10 @@ jobs:
   deploy-web:
     name: Deploy website to IIS
     # 官网把官方下载指向对象存储，等上传成功再发布，避免短时间里链接 404
-    needs: [prepare, build-web, release, upload-storage]
+    # 排在 deploy-api 之后：两个作业和 upload-storage 共用 deploy-iis 组，
+    # 同时就绪时 GitHub 会取消先排队的那个（只有一台自建 runner，
+    # 三者必然排队），串起来之后组里永远只有一个候选。
+    needs: [prepare, build-web, release, upload-storage, deploy-api]
     if: needs.prepare.outputs.changed == 'true'
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
