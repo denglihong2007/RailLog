@@ -603,6 +603,7 @@ public sealed class TrainTimetableService(
         if (pair is null) return new TrainTimetableSchedule([], normalizedTrainNumber);
 
         var (code1, code2, winner) = pair.Value;
+        var anomalies = await ReadAnomaliesAsync(connection, winner, cancellationToken);
         await using var command = connection.CreateCommand();
         // 首站没有到点、末站没有发点：Release 库里本来就是 "-"，个别快照里即使填了
         // 也按旧约定抹掉。
@@ -655,11 +656,44 @@ public sealed class TrainTimetableService(
                 string.Empty,
                 string.Empty,
                 arriveDayDiff,
-                ReadDouble(reader, "mileage")));
+                ReadDouble(reader, "mileage"),
+                ReadAnomaly(anomalies, reader.GetInt64(reader.GetOrdinal("station_no")))));
         }
 
         return new TrainTimetableSchedule(result, trainCodes);
     }
+
+    /// <summary>
+    /// 快照里由 <c>tools/sanitize.py</c> 标出的异常停站：<c>seq = 0</c> 表示整趟
+    /// 不可靠，优先于具体停站。旧快照没有 <c>anomalies</c> 表，按无异常处理。
+    /// </summary>
+    private static async Task<Dictionary<long, string>> ReadAnomaliesAsync(
+        SqliteConnection connection,
+        string winner,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<long, string>();
+        await using (var check = connection.CreateCommand())
+        {
+            // 旧快照没有 anomalies 表 —— 那时还没有清洗。
+            check.CommandText =
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'anomalies' LIMIT 1";
+            if (await check.ExecuteScalarAsync(cancellationToken) is null) return result;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT seq, kind FROM anomalies WHERE train_no = @winner";
+        command.Parameters.AddWithValue("@winner", winner);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result[reader.GetInt64(0)] = reader.GetString(1);
+        return result;
+    }
+
+    private static string ReadAnomaly(Dictionary<long, string> anomalies, long seq) =>
+        anomalies.TryGetValue(0, out var whole)
+            ? whole
+            : anomalies.TryGetValue(seq, out var kind) ? kind : string.Empty;
 
     /// <summary>
     /// 把请求里的号对/单号解析成库里唯一一个号对（<c>code1</c>/<c>code2</c>），
@@ -801,6 +835,11 @@ public sealed record TrainTimetableSchedule(
     IReadOnlyList<TrainTimetableStop> Stops,
     string TrainCodes);
 
+/// <summary>
+/// 一个停站。<c>anomaly</c> 是清洗后仍讲不通的标记：空串表示正常，
+/// <c>anomaly</c> 顺序有矛盾、<c>too_fast</c> 区间速度超过 400 km/h
+/// （也可能是里程错）、<c>train_unreliable</c> 整趟不可靠。旧快照一律为空串。
+/// </summary>
 public sealed record TrainTimetableStop(
     [property: JsonPropertyName("station_name")] string StationName,
     [property: JsonPropertyName("station_no")] string StationNo,
@@ -809,7 +848,8 @@ public sealed record TrainTimetableStop(
     [property: JsonPropertyName("running_time")] string RunningTime,
     [property: JsonPropertyName("arrive_day_str")] string ArriveDayStr,
     [property: JsonPropertyName("arrive_day_diff")] int ArriveDayDiff,
-    [property: JsonPropertyName("mileage")] double Mileage);
+    [property: JsonPropertyName("mileage")] double Mileage,
+    [property: JsonPropertyName("anomaly")] string Anomaly);
 
 /// <summary>
 /// 车次号前缀搜索的结果项。**每个号对一条**。

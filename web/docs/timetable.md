@@ -63,6 +63,7 @@ curl "https://api.raillog.top/api/train-timetables?trainNumber=G1&version=2026.1
 | `stops[].arrive_day_str` | string | 预留的到达日描述；当前历史数据返回空字符串。 |
 | `stops[].arrive_day_diff` | integer | 相对始发日的自然日偏移，`0` 表示当日，`1` 表示次日；最小值为 0。 |
 | `stops[].mileage` | number | 从车次起点累计至该站的里程，单位 km；缺失或无法解析时为 0。 |
+| `stops[].anomaly` | string | 清洗后仍讲不通的标记，正常为空字符串。`anomaly` 表示到发顺序有矛盾，`too_fast` 表示区间速度超过 400 km/h（也可能是里程字段错），`train_unreliable` 表示整趟数据不可靠。未经过清洗的旧快照一律为空字符串。 |
 
 ## 车次搜索
 

@@ -235,10 +235,13 @@ public sealed class TimetableSyncService(
         TimetableSyncOptions settings,
         CancellationToken cancellationToken)
     {
-        var existing = ReadExistingVersions();
+        var local = ReadLocalSizes();
         var releases = await ListReleasesAsync(settings, cancellationToken);
+        // 同名资产可能被重新上传（例如数据清洗后重发历史 Release）。本地文件就是
+        // 资产原样，直接比大小即可判断要不要重下；大小相同则跳过，避免每天重拉。
         var missing = releases
-            .Where(release => !existing.Contains(release.Version))
+            .Where(release => !local.TryGetValue(release.Version, out var size)
+                              || (release.Size > 0 && size != release.Size))
             .OrderByDescending(release => release.Version, StringComparer.Ordinal)
             .ToList();
 
@@ -246,12 +249,12 @@ public sealed class TimetableSyncService(
         {
             logger.LogInformation(
                 "Historical timetable database is up to date ({Count} versions).",
-                existing.Count);
+                local.Count);
             return (0, 0);
         }
 
         logger.LogInformation(
-            "Syncing {Count} new historical timetable version(s), newest {Newest} .. oldest {Oldest}.",
+            "Syncing {Count} new or updated historical timetable version(s), newest {Newest} .. oldest {Oldest}.",
             missing.Count,
             missing[0].Version,
             missing[^1].Version);
@@ -291,6 +294,10 @@ public sealed class TimetableSyncService(
         ListLocalVersions()
             .Select(item => item.Version)
             .ToHashSet(StringComparer.Ordinal);
+
+    private Dictionary<string, long> ReadLocalSizes() =>
+        ListLocalVersions()
+            .ToDictionary(item => item.Version, item => item.SizeBytes, StringComparer.Ordinal);
 
     private async Task<List<ReleaseVersion>> ListReleasesAsync(
         TimetableSyncOptions settings,
