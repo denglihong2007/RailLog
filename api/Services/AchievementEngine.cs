@@ -18,6 +18,8 @@ public sealed record AchievementEvaluation(
 {
     public AchievementProgress? Progress { get; init; }
     public AchievementProgress? MaxProgress { get; init; }
+    /// <summary>取得当前最高经验的行程；固定经验成就即解锁行程。</summary>
+    public long? PeakTripId { get; init; }
     public int Experience { get; init; }
     public int BaseExperience { get; init; }
     /// <summary>已解锁且经验已达该成就的最高经验（用于无进度条成就的满分装饰）。</summary>
@@ -253,6 +255,18 @@ public static partial class AchievementEngine
         new("CR400AF", "2186"),
         new("CR400AF", "2187")
     ];
+    // 「名不副实」：CRH3A 的两组样车。
+    private static readonly IReadOnlyList<RollingStockTarget> MisnomerModels =
+    [
+        new("CRH3A", "0302"), new("CRH3A", "0502")
+    ];
+    // 「师夷长技」：外国整车进口的和谐号动车组。
+    private static readonly IReadOnlyList<RollingStockTarget> ImportedEmuModels =
+    [
+        new("CRH2A", "2001"), new("CRH2A", "2002"), new("CRH2A", "2003"),
+        new("CRH3C", "3002"), new("CRH3C", "3004"),
+        new("CRH5A", "5001"), new("CRH5A", "5002"), new("CRH5A", "5003")
+    ];
     private static readonly IReadOnlyList<RollingStockTarget> PrototypeModels =
     [
         new("CR400BF", "0305"), new("CR400BF", "0503"), new("CR400BF", "0507"),
@@ -289,6 +303,23 @@ public static partial class AchievementEngine
         new("HXD3D", "1921"), new("HXD1", "1937"), new("HXD1C", "1927"),
         new("HXD1D", "1898"), new("HXD2B", "0001"), new("SS3B", "5151")
     ];
+    // 「功成名就」的命名机车称号。键用 Targets 的显示名（机车为「型号 车号」）。
+    private static readonly IReadOnlyDictionary<string, string> HonoraryLocomotiveTitles =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["HXD3CA 8161"] = "黄继光号",
+            ["HXD3D 0035"] = "雷锋号",
+            ["HXD3D 0039"] = "共青团号",
+            ["HXD3D 0631"] = "钢人铁马号",
+            ["HXD3D 1886"] = "朱德号",
+            ["HXD3D 1893"] = "毛泽东号",
+            ["HXD3D 1921"] = "共产党员号",
+            ["HXD1 1937"] = "延安号",
+            ["HXD1C 1927"] = "八一号",
+            ["HXD1D 1898"] = "周恩来号",
+            ["HXD2B 0001"] = "新解放号",
+            ["SS3B 5151"] = "共青团号"
+        };
     private static readonly IReadOnlyList<RollingStockTarget> EarlyImportedLocomotives =
     [
         new("6Y2"), new("6G"), new("6K"), new("8G"), new("8K"), new("DJ1"),
@@ -298,10 +329,22 @@ public static partial class AchievementEngine
     [
         new("JF"), new("SL"), new("KD"), new("FD"), new("KF"), new("JS"), new("RM"), new("QJ")
     ];
+    // 「日薄西山」：2000 年以前停产的国内量产干线电力或内燃机车。
+    private static readonly IReadOnlyList<RollingStockTarget> DiscontinuedLocomotives =
+    [
+        new("SS1"), new("SS6"), new("DF1"), new("DF3"), new("DF4"), new("DF4C"),
+        new("DF7D"), new("DF8"), new("DF10F"), new("DFH1"), new("DFH3"), new("DFH21"),
+        new("BJ")
+    ];
+    // 「御驾亲征」：专运型机车。
+    private static readonly IReadOnlyList<RollingStockTarget> SpecialDutyLocomotives =
+    [
+        new("NY6"), new("DF10F"), new("DF11Z"), new("FXSY")
+    ];
     private static readonly HashSet<string> ModernLocomotives =
     [
         "HXD1", "HXD1B", "HXD1C", "HXD1D", "HXD2", "HXD2B", "HXD2C",
-        "HXD3", "HXD3B", "HXD3C", "HXD3D", "HXN3", "HXN5", "FXD1",
+        "HXD3", "HXD3B", "HXD3C", "HXD3CA", "HXD3D", "HXN3", "HXN5", "FXD1",
         "FXD1BA", "FXD2BA", "FXD3", "FXN3C", "FXN5C", "FXSY"
     ];
     private static readonly HashSet<string> DongfengShaoshanLocomotives =
@@ -315,8 +358,8 @@ public static partial class AchievementEngine
     private static readonly IReadOnlyList<RollingStockTarget> HighPowerFreightLocomotives =
     [
         new("SS3B"), new("SS4"), new("8G"), new("8K"), new("DJ1"),
-        new("HXD1"), new("HXD1B"), new("HXD2"), new("HXD2B"), new("HXD3B"),
-        new("FXD1BA"), new("FXD2BA")
+        new("HXD1"), new("HXD1B"), new("HXD1C"), new("HXD2"), new("HXD2B"),
+        new("HXD2C"), new("HXD3B"), new("HXD3CA"), new("FXD1BA"), new("FXD2BA")
     ];
     // 「熊熊烈火」：发生过起火事故的动车组车组。
     private static readonly IReadOnlyList<RollingStockTarget> FireIncidentEmus =
@@ -336,7 +379,33 @@ public static partial class AchievementEngine
     [
         "北京北", "延庆", "珲春", "青岛", "烟台", "荣成", "连云", "营口",
         "南京西", "浦口", "厦门", "韶山", "珠海", "香港西九龙", "重庆",
-        "彭州", "青城山", "离堆公园", "峨眉山", "河口北", "拉萨"
+        "彭州", "离堆公园", "峨眉山", "拉萨"
+    ];
+
+    // 「高屋建瓴」：附表7 的多层站场。每层记录该层实际办理客运的线路（用 routes.db 的线名）。
+    private static readonly IReadOnlyList<MultiLevelStation> MultiLevelStations =
+    [
+        new("北京丰台",
+            ["丰沙线", "京广线", "京沪线", "永丰线"],
+            ["京广高铁"]),
+        new("鄂州", ["武九线"], ["武石城际线"]),
+        // 通甬高速线目前不在 routes.db 里，苏州南的上层只能等库补齐后才会判定。
+        new("苏州南", ["沪苏湖高铁"], ["通甬高速线"]),
+        new("嵊州新昌", ["甬金铁路"], ["杭台高铁绍台段"]),
+        new("绍兴北", ["杭深线", "镜湖联络线"], ["杭台高铁绍台段"]),
+        // 上饶：全程车次在沪昆高速线与合福高速线之间跨线时停靠上层站场。
+        new("上饶", ["沪昆线", "上铅线"], ["沪昆高速线", "合福高速线"]),
+        new("东莞西", ["穗深城际线"], ["广惠城际"])
+    ];
+
+    private static readonly int MultiLevelLevelCount = MultiLevelStations.Count * 2;
+
+    // 「六龙回日」：最大坡度大于 30‰ 的线路区间。
+    private static readonly IReadOnlyList<RailwaySection> SteepGradeSections =
+    [
+        new("南口—八达岭", "京包线", "南口", "八达岭"),
+        new("宝鸡—秦岭", "宝成线", "宝鸡", "秦岭"),
+        new("忠工屯—新绰源", "博林线", "忠工屯", "新绰源")
     ];
 
     // Non-air-conditioned coaches are the older 21/22/23/25B/30/31/M1 types plus
@@ -747,8 +816,13 @@ public static partial class AchievementEngine
 
     private static readonly IReadOnlyList<string> FourFamousNorthStations =
         ["阳泉北", "盘锦北", "孝感北", "邵阳北"];
-    private static readonly IReadOnlyList<string> BorderPortStations =
-        ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"];
+    // 「异域风情」的口岸目标。崇左站不再单独判，改为凭祥交界线（凭祥站或行经凭祥交界）。
+    private static readonly IReadOnlyList<(string Key, string Label)> BorderPortTargets =
+    [
+        ("阿拉山口", "阿拉山口站"), ("二连", "二连站"), ("满洲里", "满洲里站"),
+        ("绥芬河", "绥芬河站"), ("丹东", "丹东站"), ("磨憨", "磨憨站"),
+        ("凭祥交界", "凭祥交界")
+    ];
     private static readonly IReadOnlyList<string> VerticalChinaStations = ["漠河", "三亚"];
     private static readonly IReadOnlyList<string> HorizontalChinaStations = ["阿克陶", "抚远"];
     private static readonly IReadOnlyList<string> SkyAndSeaStations = ["雁石坪", "香港西九龙"];
@@ -796,8 +870,8 @@ public static partial class AchievementEngine
             NarrativeNote: "在候车厅打发时间的方式其实很多",
             Trigger: i => FirstWellPreparedTransfer(i.Trips)),
         new("twinInterchange", ExtremeChallenges, "compare_arrows", "两面一体",
-            "在拥有同一个站前广场的国铁车站与对应的异名城际车站之间完成间隔不超过 1 小时的换乘", 10,
-            MaxExperience: 30,
+            "在拥有同一站前广场的国铁车站与对应的异名城际车站之间完成间隔不超过 1 小时的换乘", 10,
+            MaxExperience: 25,
             NarrativeNote: "其他地方也学着点，除了票价",
             Progress: (trips, reviews, today, context) => P(TwinInterchangeCount(trips), 1),
             MaxProgress: (trips, oneStoneConditions) => M(TwinInterchangeCount(trips), TwinInterchangePairs.Count),
@@ -805,7 +879,7 @@ public static partial class AchievementEngine
             Tier: new(
                 trips => Percent(TwinInterchangeCount(trips), TwinInterchangePairs.Count),
                 p => 0.2 * p - 5),
-            ChangeNote: new($"{TwinInterchangePairs.Count} 组站对全部完成换乘", "完成的站对数越多，经验越高（线性递增）", 25),
+            ChangeNote: new($"{TwinInterchangePairs.Count} 组站对全部完成换乘", "完成的站对数越多，经验越高（线性递增）"),
             Trigger: i => FirstTwinInterchange(i.Trips)),
         new("sevenDayStreak", Milestones, "local_fire_department", "马不停蹄", "连续 7 天乘坐列车", 15,
             NarrativeNote: "买了计次票的话就会很方便",
@@ -932,7 +1006,7 @@ public static partial class AchievementEngine
             Tier: new(
                 trips => StationPairPerDayCount(trips, "漠河", "三亚", 30),
                 d => DailyWindowBonus(d), AdditionalCount: true),
-            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（线性递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "漠河", "三亚")),
         new("horizontalChina", Touring, "swap_horiz", "东奔西走", "分别到访阿克陶站和抚远站", 10,
             MaxExperience: 50,
@@ -942,12 +1016,17 @@ public static partial class AchievementEngine
             Tier: new(
                 trips => StationPairPerDayCount(trips, "阿克陶", "抚远", 30),
                 d => DailyWindowBonus(d), AdditionalCount: true),
-            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（线性递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "阿克陶", "抚远")),
-        new("eastRedSunRises", Touring, "wb_sunny_outlined", "其道大光", "分别到访东方红站和太阳升站", 30,
+        new("eastRedSunRises", Touring, "wb_sunny_outlined", "其道大光", "分别到访东方红站和太阳升站", 15,
+            MaxExperience: 30,
             NarrativeNote: "我们的生活天天向上♪我们的前程万丈光芒♪",
             Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, EastRedSunRisesStations), EastRedSunRisesStations.Count),
             Requirements: trips => StationRequirements(trips, EastRedSunRisesStations),
+            Tier: new(
+                trips => StationPairPerDayCount(trips, "东方红", "太阳升", 30),
+                d => 1.5 * (d + 2), AdditionalCount: true),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（线性递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "东方红", "太阳升")),
         new("highSpeedExperiment", ExtremeChallenges, "speed_outlined", "冲高试验", "完成时长超过 1 小时且均速超过 300 公里/小时的行程", 15,
             NarrativeNote: "虽乘奔御风，不以疾也",
@@ -962,19 +1041,18 @@ public static partial class AchievementEngine
         new("fleetingMoment", FunJourneys, "flash_on_outlined", "转瞬即逝", "乘坐福田或深圳北与香港西九龙之间的一等座、特等座或商务座", 20,
             NarrativeNote: "指你的钱",
             Trigger: i => First(i.Trips, UnlocksFleetingMoment)),
-        new("borderPorts", Touring, "language_outlined", "异域风情", "到访阿拉山口站、二连站、满洲里站、绥芬河站、丹东站、崇左站或磨憨站", 20,
+        new("borderPorts", Touring, "language_outlined", "异域风情",
+            "到访阿拉山口站、二连站、满洲里站、绥芬河站、丹东站、磨憨站或凭祥交界", 20,
             MaxExperience: 50,
             NarrativeNote: "前面的区域，办了护照再来探索吧",
-            Progress: (trips, reviews, today, context) => P(
-                VisitedStationCount(trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"]),
-                1),
-            MaxProgress: (trips, oneStoneConditions) => M(VisitedStationCount(trips, BorderPortStations), BorderPortStations.Count),
-            Requirements: trips => StationRequirements(trips, BorderPortStations),
+            Progress: (trips, reviews, today, context) => P(BorderPortCount(trips), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(BorderPortCount(trips), BorderPortTargets.Count),
+            Requirements: trips => BorderPortRequirements(trips),
             Tier: new(
-                trips => Percent(VisitedStationCount(trips, BorderPortStations), BorderPortStations.Count),
+                trips => Percent(BorderPortCount(trips), BorderPortTargets.Count),
                 p => 0.3 * p),
-            ChangeNote: new($"{BorderPortStations.Count} 座口岸车站全部到访", "到访站数越多，经验越高（线性递增）"),
-            Trigger: i => FirstStationVisit(i.Trips, ["阿拉山口", "二连", "满洲里", "绥芬河", "丹东", "崇左", "磨憨"])),
+            ChangeNote: new($"{BorderPortTargets.Count} 处口岸全部到访", "到访处数越多，经验越高（线性递增）"),
+            Trigger: i => First(i.Trips, trip => BorderPortTargets.Any(target => MatchesBorderPort(trip, target.Key)))),
         new("singleBikeBorder", Touring, "departure_board_outlined", "单车问边", "乘坐联运列车从任一口岸车站出入境", 30,
             NarrativeNote: "……我护照领到了",
             Trigger: i => First(i.Trips, UnlocksBorderCrossing)),
@@ -989,7 +1067,7 @@ public static partial class AchievementEngine
             Tier: new(
                 trips => StationPairPerDayCount(trips, "雁石坪", "香港西九龙", 30),
                 d => DailyWindowBonus(d), AdditionalCount: true),
-            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（对数递增）"),
+            ChangeNote: new("两次到访间隔不超过 4 天", "间隔越短，经验越高（线性递增）"),
             Trigger: i => FirstStationPairCompletion(i.Trips, "雁石坪", "香港西九龙")),
         new("greatWallExpress", RailwayCatalog, "electric_bolt_outlined", "飞驰长城", "乘坐一种 17 编组的动力分散动车组", 10,
             NarrativeNote: "惊人的长度，极致的运量",
@@ -1071,7 +1149,7 @@ public static partial class AchievementEngine
             NarrativeNote: "站场规模，是15线对13线",
             Requirements: trips => StationRequirements(trips, ["徐州", "徐州东"]),
             Trigger: i => FirstStationVisit(i.Trips, ["徐州", "徐州东"])),
-        new("thousandMilesToSea", Touring, "sailing_outlined", "去海千里", "到访额敏站或铁厂沟站", 15,
+        new("thousandMilesToSea", Touring, "waves_outlined", "去海千里", "到访额敏站或铁厂沟站", 15,
             NarrativeNote: "欧亚大陆难抵极并没有想象的那样干燥",
             Requirements: trips => StationRequirements(trips, ["额敏", "铁厂沟"]),
             Trigger: i => FirstStationVisit(i.Trips, ["额敏", "铁厂沟"])),
@@ -1081,6 +1159,11 @@ public static partial class AchievementEngine
         new("gobiThunder", Touring, "bolt", "戈壁惊雷", "到访低窝铺站", 20,
             MaxExperience: 50,
             NarrativeNote: "Not found.",
+            Progress: (trips, reviews, today, context) => P(
+                VisitedStationCount(trips, ["低窝铺"]), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(
+                ArrivedByGobiTrain(trips) ? 1 : 0, 1),
+            Requirements: trips => GobiThunderRequirements(trips),
             Bonus: trips => ArrivedByGobiTrain(trips) ? 30 : 0,
             ChangeNote: new("乘 8921/2/3/4 次（新车次 Z1121/2/3/4）到达", "阶梯式：普通到达 20 点，指定车次 50 点"),
             Trigger: i => FirstStationVisit(i.Trips, ["低窝铺"])),
@@ -1103,7 +1186,7 @@ public static partial class AchievementEngine
             Trigger: i => First(i.Trips, trip => Departure(trip) < new DateTime(2010, 1, 1))),
         new("sevenExperienceTiers", Milestones, "filter_drama_outlined", "不霁何虹",
             "所有 7 种初始经验值的成就都至少取得一项", 30,
-            Note: "10, 15, 20, 25, 30, 40, 50",
+            Note: "10, 15, 20, 25, 30, 40, 50；包括 50 点经验的隐藏成就",
             NarrativeNote: "漂亮！"),
         new("strategist", Touring, "psychology_outlined", "文韬武略", "乘坐定西北站至镇江南站的列车", 25,
             Note: "方向不限",
@@ -1140,22 +1223,22 @@ public static partial class AchievementEngine
                 p => 0.2 * p - 10),
             ChangeNote: new("同一车次累计乘坐 30 次", "次数越多，经验越高（线性递增）"),
             Trigger: i => FirstRepeatedTrainCompletion(i.Trips, 10)),
-        new("tenNumericTrains", RailwayCatalog, "pin_outlined", "慢慢旅途", "累计乘坐至少 10 次纯数字车次", 25,
+        new("tenNumericTrains", RailwayCatalog, "hiking", "慢慢旅途", "累计乘坐至少 10 次普客或路用列车", 20,
             MaxExperience: 50,
+            Note: "车次 6001-8998（新车次 V7001-V7998）、57XXX、40XXX",
             NarrativeNote: "时间充足的话，何必还要过分追求速度",
-            Progress: (trips, reviews, today, context) => P(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 10),
-            MaxProgress: (trips, oneStoneConditions) => M(
-                trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")), 25),
+            Progress: (trips, reviews, today, context) => P(SlowPassengerCount(trips), 10),
+            MaxProgress: (trips, oneStoneConditions) => M(SlowPassengerCount(trips), 30),
             Tier: new(
-                trips => Percent(trips.Count(trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$")) - 10, 10),
-                p => 0.3 * p - 15),
-            ChangeNote: new("累计乘坐 25 次纯数字车次", "累计次数越多，经验越高（线性递增）"),
-            Trigger: i => FirstCountCompletion(i.Trips, 10, trip => Regex.IsMatch(trip.TrainNumber.Trim(), @"^\d+$"))),
+                trips => Percent(SlowPassengerCount(trips) - 10, 10),
+                p => 0.15 * p),
+            ChangeNote: new("累计乘坐 30 次普客或路用列车", "累计次数越多，经验越高（线性递增）"),
+            Trigger: i => FirstCountCompletion(i.Trips, 10, IsSlowPassengerTrain)),
         new("overnightSleeper", FunJourneys, "bedtime_outlined", "夕发朝至",
             "乘坐 18:00 至 00:00 发车且 05:00 至 11:00 到达的卧铺列车", 10,
             NarrativeNote: "省了一夜酒店房钱",
             Trigger: i => First(i.Trips, UnlocksOvernightSleeper)),
-        new("tripleTransfer", ExtremeChallenges, "multiple_stop_outlined", "辗转挪移", "连续换乘至少 2 次，每次换乘间隔不超过 3 小时", 10,
+        new("tripleTransfer", ExtremeChallenges, "multiple_stop_outlined", "辗转挪移", "首程发车与末程到达间隔不超过 24 小时，连续换乘至少 2 次，每次换乘间隔不超过 3 小时", 10,
             MaxExperience: 50,
             NarrativeNote: "专业提示：有时中转反而比直达更实惠",
             Progress: (trips, reviews, today, context) => P(MaxTransferCount(trips), 2),
@@ -1235,7 +1318,7 @@ public static partial class AchievementEngine
             Tier: new(
                 trips => Percent(400 - MinTripMileage(trips, trip => trip.MileageKm is > 0 and <= 400 &&
                     NormalizedSeatType(trip.SeatType) is "高级软卧" or "高级动卧", 400), 400),
-                p => 0.75 * Math.Exp(0.045 * p)),
+                p => 0.8 * Math.Exp(0.04 * p) + 1),
             ChangeNote: new("里程不超过 80 公里", "里程越短，经验越高（指数递增）"),
             Trigger: i => First(i.Trips, trip => trip.MileageKm is > 0 and <= 400 &&
                 NormalizedSeatType(trip.SeatType) is "高级软卧" or "高级动卧")),
@@ -1253,7 +1336,7 @@ public static partial class AchievementEngine
             Trigger: i => First(i.Trips, trip =>
                 NormalizedStation(trip.ToStation) == "延安" &&
                 NormalizedStation(trip.FromStation) is "韶山南" or "瑞金")),
-        new("greatWallWatch", Touring, "account_balance_outlined", "长城守望", "到访八达岭站或八达岭长城站", 10,
+        new("greatWallWatch", Touring, "castle_outlined", "长城守望", "到访八达岭站或八达岭长城站", 10,
             NarrativeNote: "中国人的铁路就应该中国人自己建",
             Requirements: trips => StationRequirements(trips, ["八达岭", "八达岭长城"]),
             Trigger: i => FirstStationVisit(i.Trips, ["八达岭", "八达岭长城"])),
@@ -1292,7 +1375,7 @@ public static partial class AchievementEngine
         new("moistensJiangnan", RailwayCatalog, "water_drop_outlined", "润泽江南", "乘坐一次杭州亚运会限定车型 CR400BF-Z-0524", 25,
             NarrativeNote: "天王老子来了这也是紫茄子",
             Trigger: i => FirstRollingStockMatch(i.Trips, [new("CR400BF-Z", "0524")])),
-        new("lkjEquippedEmu", RailwayCatalog, "help_outline", "宫车之过",
+        new("lkjEquippedEmu", RailwayCatalog, "security_outlined", "宫车之过",
             "累计乘坐至少 3 列加装 LKJ 装置的高速动车组", 25,
             MaxExperience: 40,
             NarrativeNote: "开门，社区送温暖",
@@ -1342,7 +1425,7 @@ public static partial class AchievementEngine
         new("vibrantJourney", RailwayCatalog, "movie_outlined", "动感之旅", "乘坐一次港铁动感号列车", 20,
             NarrativeNote: "Caring for life's money",
             Trigger: i => FirstRollingStockMatch(i.Trips, VibrantExpressModels)),
-        new("dreamExpress", RailwayCatalog, "format_list_numbered_outlined", "梦之特快",
+        new("dreamExpress", RailwayCatalog, "night_shelter_outlined", "梦之特快",
             "分别乘坐全部种类的动力分散式动卧列车", 20,
             NarrativeNote: "现在已经很晚啦，做个好梦，晚安~",
             Progress: (trips, reviews, today, context) => P(
@@ -1453,7 +1536,7 @@ public static partial class AchievementEngine
             NarrativeNote: "顷刻——炼化！",
             Requirements: trips => RollingStockRequirements(trips, FireIncidentEmus),
             Trigger: i => FirstRollingStockMatch(i.Trips, FireIncidentEmus)),
-        new("railwayTrailblazer", RailwayCatalog, "rocket_launch_outlined", "开路先锋",
+        new("railwayTrailblazer", RailwayCatalog, "emoji_objects_outlined", "开路先锋",
             "乘坐一种早期动车组列车（不含退役后编入普通列车的 25DT）", 25,
             MaxExperience: 50,
             NarrativeNote: "对前辈们艰辛的探索致以崇高的敬意",
@@ -1466,7 +1549,7 @@ public static partial class AchievementEngine
                 trips => Percent(CollectedCount(trips, trip =>
                     RollingStockMatches(trip.RollingStock, EarlyEmuModels)),
                     EarlyEmuModels.Count),
-                p => 0.25 * p),
+                p => 0.4 * p),
             ChangeNote: new($"{EarlyEmuModels.Count} 种早期动车组全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, EarlyEmuModels)),
         new("modestAppetite", FunJourneys, "near_me_outlined", "腹犹果然", "完成单程不超过 20 公里的行程", 10,
@@ -1489,7 +1572,7 @@ public static partial class AchievementEngine
                 trips => Percent(CollectedCount(trips, trip =>
                     RollingStockMatches(trip.RollingStock, EarlyPassengerCoachModels)),
                     EarlyPassengerCoachModels.Count),
-                p => 0.3 * p),
+                p => 0.4 * p),
             ChangeNote: new($"{EarlyPassengerCoachModels.Count} 种客车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, EarlyPassengerCoachModels)),
         new("centuryMeterGauge", RailwayCatalog, "map_outlined", "碧色芳华", "乘坐经由昆河线的列车", 15,
@@ -1522,7 +1605,11 @@ public static partial class AchievementEngine
             Trigger: i => First(i.Trips, trip => HasQuadrupleSetNumber(trip.RollingStock))),
         new("allAlone", FunJourneys, "person_outline", "茕茕孑立", "乘坐一次 RZ25K 111111 车厢或 CR400AF-AS-1111 的 11 车厢", 30,
             MaxExperience: 50,
+            Note: "以下附加条件每满足一项额外获得 10 点经验，总上限为 50 点：(1) 座位号为 11，不限后缀；(2) 乘车日期为 11 月 11 日",
             NarrativeNote: "你最好是刻意来完成这个成就的QAQ",
+            Progress: (trips, reviews, today, context) => P(
+                trips.Any(UnlocksAllAlone) ? 1 : 0, 1),
+            MaxProgress: (trips, oneStoneConditions) => M(AllAloneBonus(trips), 20),
             Requirements: trips => AllAloneRequirements(trips),
             Bonus: AllAloneBonus,
             ChangeNote: new("解锁时座号为 11（不限后缀）且乘车日期为 11 月 11 日（两项各加 10 点）",
@@ -1587,7 +1674,7 @@ public static partial class AchievementEngine
                 trips => Percent(CollectedCount(trips, trip =>
                     RollingStockMatches(trip.RollingStock, HighPowerFreightLocomotives)),
                     HighPowerFreightLocomotives.Count),
-                p => 0.25 * p),
+                p => 0.3 * p),
             ChangeNote: new($"{HighPowerFreightLocomotives.Count} 种大功率货运电力机车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, HighPowerFreightLocomotives)),
         new("firstTrip", Milestones, "trip_origin", "始于足下", "首次录入行程", 10,
@@ -1671,7 +1758,7 @@ public static partial class AchievementEngine
             Tier: new(
                 trips => FourExtremesPerDayCount(trips),
                 d => DailyWindowBonus(d), AdditionalCount: true),
-            ChangeNote: new("四站到访间隔不超过 8 天", "间隔越短，经验越高（对数递增）"),
+            ChangeNote: new("四站到访间隔不超过 8 天", "间隔越短，经验越高（线性递增）"),
             Trigger: i => FirstFourExtremesCompletion(i.Trips, TimeSpan.MaxValue)),
         new("waterIsCalm", Touring, "water_outlined", "水何澹澹", "到访东戴河站", 20,
             NarrativeNote: "萧瑟秋风今又是，换了人间",
@@ -1682,8 +1769,8 @@ public static partial class AchievementEngine
         new("remoteWilderness", Touring, "forest_outlined", "渺无人烟", "到访茫崖站", 20,
             NarrativeNote: "望不到周围有别的城市",
             Trigger: i => FirstStationVisit(i.Trips, ["茫崖"])),
-        new("deadEnd", Touring, "wrong_location", "走投无路", "到访任意永久尽头式车站", 10,
-            MaxExperience: 40,
+        new("deadEnd", Touring, "wrong_location", "走投无路", "到访任意线路无法延伸的永久尽头式车站", 10,
+            MaxExperience: 50,
             NarrativeNote: "给我达速跨一个试试？",
             Progress: (trips, reviews, today, context) => P(VisitedStationCount(trips, DeadEndStations), 1),
             MaxProgress: (trips, oneStoneConditions) => M(VisitedStationCount(trips, DeadEndStations), DeadEndStations.Count),
@@ -1693,7 +1780,7 @@ public static partial class AchievementEngine
                 p => 0.4 * p - 5),
             ChangeNote: new($"{DeadEndStations.Count} 座永久尽头式车站全部到访", "到访站数越多，经验越高（线性递增）"),
             Trigger: i => FirstStationVisit(i.Trips, DeadEndStations)),
-        new("goddessYangtzeBridges", Touring, "architecture_outlined", "神女无恙", "行经至少 10 座承担客运的铁路长江大桥", 20,
+        new("goddessYangtzeBridges", Touring, "architecture_outlined", "天堑通途", "行经至少 10 座承担客运的铁路长江大桥", 20,
             MaxExperience: 50,
             Note: $"{AsOfNow}共 {DistinctSectionNameCount(YangtzeBridges)} 座，详见附表1",
             NarrativeNote: "高峡出平湖的梦想我们也实现了",
@@ -1790,7 +1877,7 @@ public static partial class AchievementEngine
             NarrativeNote: "这波你在大气层",
             Hidden: true),
         new("immovableMountain", ExtremeChallenges, "accessibility_new", "不动如山", "持硬座或二等座无座车票乘坐至少 24 小时", 50,
-            NarrativeNote: "你站你也麻",
+            NarrativeNote: "你的脚，还有你的精神状态，都还好吗",
             Hidden: true,
             Progress: (trips, reviews, today, context) => P(MaxDurationHours(trips.Where(IsNoSeat)), 24),
             Trigger: i => First(i.Trips, trip => IsNoSeat(trip) &&
@@ -1868,7 +1955,7 @@ public static partial class AchievementEngine
                 UnifiedCoachModels.Count),
             Trigger: i => FirstCollectionCompletion(i.Trips, UnifiedCoachModels, trip => UnifiedCoachMatches(trip.RollingStock))),
         new("refinedMechanic", RailwayCatalog, "handyman_outlined", "精益求精", "分别乘坐全部和谐型与复兴型量产机车牵引的列车（不含动集动力车、调机与非国铁机车）", 80,
-            Note: "HXD1, HXD1B, HXD1C, HXD1D, HXD2, HXD2B, HXD2C, HXD3, HXD3B, HXD3C, HXD3D, HXN3, HXN5, FXD1, FXD1BA, FXD2BA, FXD3, FXN3C, FXN5C, FXSY",
+            Note: "HXD1, HXD1B, HXD1C, HXD1D, HXD2, HXD2B, HXD2C, HXD3, HXD3B, HXD3C, HXD3CA, HXD3D, HXN3, HXN5, FXD1, FXD1BA, FXD2BA, FXD3, FXN3C, FXN5C, FXSY",
             NarrativeNote: "更大功率，更高运力",
             Hidden: true,
             Progress: (trips, reviews, today, context) => P(
@@ -1903,8 +1990,8 @@ public static partial class AchievementEngine
             MaxProgress: (trips, oneStoneConditions) => M(CompleteEmuFamilyCount(trips), 6),
             Tier: new(
                 trips => Math.Max(0, CompleteEmuFamilyCount(trips) - 1),
-                d => 20 * Math.Exp(0.2 * (d + 6)) - 60, AdditionalCount: true),
-            ChangeNote: new("完成 6 个系列的全部车组", "完成的系列数越多，经验越高（指数递增）"),
+                d => 15 * Math.Sqrt(15 * d) - 2, AdditionalCount: true),
+            ChangeNote: new("完成 6 个系列的全部车组", "完成的系列数越多，经验越高（增长逐渐放缓）"),
             Trigger: i => FirstCompleteEmuFamily(i.Trips)),
         new("hundredPeople", RailwayCatalog, "groups_outlined", "百人百相", "分别乘坐全部客运段担当的列车", 50,
             NarrativeNote: "所以你觉得哪个客运段的服务最好，哪个又最差？",
@@ -1961,9 +2048,136 @@ public static partial class AchievementEngine
                 trips => Percent(CollectedCount(trips, trip =>
                     RollingStockMatches(trip.RollingStock, EarlyImportedLocomotives)),
                     EarlyImportedLocomotives.Count),
-                p => 0.25 * p),
+                p => 0.4 * p),
             ChangeNote: new($"{EarlyImportedLocomotives.Count} 种早期进口机车全部乘坐", "乘坐的型号数越多，经验越高（线性递增）"),
             Trigger: i => FirstRollingStockMatch(i.Trips, EarlyImportedLocomotives)),
+        new("peakAttainment", Milestones, "leaderboard_outlined", "登峰造极", "至少将 3 个分阶成就的经验提升至最高", 25,
+            Note: "包括隐藏成就",
+            NarrativeNote: "完美主义者来了"),
+        new("lightningSpeed", RailwayCatalog, "rocket_launch_outlined", "风驰电掣", "乘坐一次 CRH380AL-2541 号列车", 20,
+            MaxExperience: 30,
+            Note: "以下附加条件每满足一项额外获得 5 点经验，总上限为 30 点：(1) 均速不低于 250 公里/小时；(2) 行经京沪高速线枣庄—蚌埠南区间",
+            NarrativeNote: "致敬所有研究高铁技术的前辈们",
+            Progress: (trips, reviews, today, context) => P(RodeLightningSpeed(trips) ? 1 : 0, 1),
+            MaxProgress: (trips, oneStoneConditions) => M(LightningSpeedBonus(trips) / 5, 2),
+            Requirements: trips => LightningSpeedRequirements(trips),
+            Bonus: LightningSpeedBonus,
+            ChangeNote: new("两项附加条件全部满足", "阶梯式：基础 20 点，每满足一项附加 +5 点，最高 30 点"),
+            Trigger: i => FirstRollingStockMatch(i.Trips, [new("CRH380AL", "2541")])),
+        new("misnomer", RailwayCatalog, "label_off_outlined", "名不副实", "乘坐一次 CRH3A-0302 或 0502 号列车", 20,
+            NarrativeNote: "好好好，CJ1 也是金凤凰是吧",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, MisnomerModels)), 1),
+            Requirements: trips => RollingStockRequirements(trips, MisnomerModels),
+            Trigger: i => FirstRollingStockMatch(i.Trips, MisnomerModels)),
+        new("learnFromForeigners", RailwayCatalog, "translate", "师夷长技", "乘坐一种由外国整车进口的和谐号动车组", 20,
+            MaxExperience: 50,
+            NarrativeNote: "来自斯坦福的权威认可，新世纪二桃杀三士",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, ImportedEmuModels)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, ImportedEmuModels)), ImportedEmuModels.Count),
+            Requirements: trips => RollingStockRequirements(trips, ImportedEmuModels),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, ImportedEmuModels)),
+                    ImportedEmuModels.Count),
+                p => 0.3 * p),
+            ChangeNote: new($"{ImportedEmuModels.Count} 组进口动车组全部乘坐", $"阶梯式：起码 20 点，收满 {ImportedEmuModels.Count} 组 50 点"),
+            Trigger: i => FirstRollingStockMatch(i.Trips, ImportedEmuModels)),
+        new("settingSun", RailwayCatalog, "brightness_3_outlined", "日薄西山",
+            "乘坐至少一种 2000 年以前停产的国内量产干线电力或内燃机车牵引的列车", 25,
+            MaxExperience: 50,
+            NarrativeNote: "且看且珍惜",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, DiscontinuedLocomotives)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, DiscontinuedLocomotives)), DiscontinuedLocomotives.Count),
+            Requirements: trips => RollingStockRequirements(trips, DiscontinuedLocomotives),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, DiscontinuedLocomotives)),
+                    DiscontinuedLocomotives.Count),
+                p => 0.4 * p),
+            ChangeNote: new($"{DiscontinuedLocomotives.Count} 种停产机车全部乘坐", $"阶梯式：起码 25 点，收满 {DiscontinuedLocomotives.Count} 种 50 点"),
+            Trigger: i => FirstRollingStockMatch(i.Trips, DiscontinuedLocomotives)),
+        new("royalProgress", RailwayCatalog, "shield_outlined", "御驾亲征", "乘坐至少一种专运型机车牵引的列车", 25,
+            MaxExperience: 40,
+            NarrativeNote: "防弹车体！小子",
+            Progress: (trips, reviews, today, context) => P(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, SpecialDutyLocomotives)), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(CollectedCount(trips, trip =>
+                RollingStockMatches(trip.RollingStock, SpecialDutyLocomotives)), SpecialDutyLocomotives.Count),
+            Requirements: trips => RollingStockRequirements(trips, SpecialDutyLocomotives),
+            Tier: new(
+                trips => Percent(CollectedCount(trips, trip =>
+                    RollingStockMatches(trip.RollingStock, SpecialDutyLocomotives)),
+                    SpecialDutyLocomotives.Count),
+                p => 0.2 * p - 5),
+            ChangeNote: new($"{SpecialDutyLocomotives.Count} 种专运型机车全部乘坐", $"阶梯式：起码 25 点，收满 {SpecialDutyLocomotives.Count} 种 40 点"),
+            Trigger: i => FirstRollingStockMatch(i.Trips, SpecialDutyLocomotives)),
+        new("stackedStations", Touring, "stairs_outlined", "高屋建瓴",
+            "到访任意多层站场的车站并在每一层的站场都至少乘降一次", 20,
+            MaxExperience: 40,
+            Note: "不含国铁站与异名城际站的组合车站，不计地铁、市域铁路等城市轨道交通的站场，详见附表7",
+            NarrativeNote: "往外扩建不了了吗？欸，还可以往上啊!",
+            Progress: (trips, reviews, today, context) => P(MaxLevelsAtOneStation(trips), 2),
+            MaxProgress: (trips, oneStoneConditions) => M(MultiLevelVisitedLevelCount(trips), MultiLevelLevelCount),
+            Requirements: trips => MultiLevelRequirements(trips),
+            Tier: new(
+                trips => Percent(MultiLevelVisitedLevelCount(trips), MultiLevelLevelCount),
+                p => 0.4 * p - 20),
+            ChangeNote: new($"{MultiLevelStations.Count} 座多层站场的所有层全部乘降", $"阶梯式：起码 20 点，{MultiLevelLevelCount} 层全部乘降 40 点"),
+            Trigger: i => FirstMultiLevelStationCompletion(i.Trips)),
+        new("sixDragons", Touring, "trending_up_outlined", "六龙回日", "行经任意最大坡度大于 30‰ 的线路区间", 20,
+            MaxExperience: 30,
+            NarrativeNote: "火车火车行对佗位去♪爬去山顶拖甲在喘气♪",
+            Progress: (trips, reviews, today, context) => P(SteepGradeSectionCount(trips), 1),
+            MaxProgress: (trips, oneStoneConditions) => M(SteepGradeSectionCount(trips), SteepGradeSections.Count),
+            Requirements: trips => SectionRequirements(trips, AvailableSections(SteepGradeSections)),
+            Tier: new(
+                trips => Percent(SteepGradeSectionCount(trips), SteepGradeSections.Count),
+                p => 0.1 * p),
+            ChangeNote: new($"{SteepGradeSections.Count} 个大坡度区间全部行经", $"阶梯式：起码 20 点，{SteepGradeSections.Count} 段全部行经 30 点"),
+            Trigger: i => FirstSectionThresholdCompletion(i.Trips, AvailableSections(SteepGradeSections), 1)),
+        new("twinChaoyang", Touring, "north_east_outlined", "双朝驰迹", "乘坐北京朝阳站至辽宁朝阳站的列车", 20,
+            Note: "方向不限",
+            NarrativeNote: "京辽相望，双朝留迹",
+            Trigger: i => FirstTwinChaoyang(i.Trips)),
+        new("bowDownPunishment", FunJourneys, "power_off_outlined", "降弓用刑",
+            "乘坐 K1806 次（新车次 V1806）行经沪昆线石湖荡—上海松江上行区间", 15,
+            NarrativeNote: "你在期待什么",
+            Trigger: i => First(i.Trips, UnlocksBowDownPunishment)),
+        new("wildThursday", FunJourneys, "event_note_outlined", "狂乱木曜", "乘坐一次 V550 次列车", 15,
+            MaxExperience: 25,
+            Note: "区间不限；若乘车日或下车日为周四则为 25 点",
+            NarrativeNote: "三道出站信号好去劲脆鸡腿堡方向",
+            Progress: (trips, reviews, today, context) => P(RodeWildThursday(trips) ? 1 : 0, 1),
+            MaxProgress: (trips, oneStoneConditions) => M(WildThursdayBonus(trips) / 10, 1),
+            Requirements: trips => WildThursdayRequirements(trips),
+            Bonus: WildThursdayBonus,
+            ChangeNote: new("乘车日或下车日为周四", "阶梯式：普通 15 点，周四 25 点"),
+            Trigger: i => First(i.Trips, trip =>
+                TrainNumberClassifier.Normalize(trip.TrainNumber) == "V550")),
+        new("neverForget", FunJourneys, "remember_me_outlined", "念念不忘",
+            "在 2026-11-21 至 2026-11-26 乘坐 K 字头、T 字头或纯数字车次", 25,
+            NarrativeNote: "再坐一次吧，以后它就不属于你了",
+            Trigger: i => First(i.Trips, UnlocksNeverForget)),
+        new("heterogeneousCoupling", FunJourneys, "link", "各如其面", "乘坐异形重联的动车组车次", 25,
+            Note: "重联的两列动车组型号不同，或 CRH2A-2460 参与重联",
+            NarrativeNote: "生异形吗你们哥俩",
+            Trigger: i => First(i.Trips, trip => HasHeterogeneousCoupling(trip.RollingStock))),
+        new("yesterdayOnceMore", FunJourneys, "update_outlined", "昨日重现",
+            "至少连续 3 天乘坐除日期和车号外均一致的行程", 50,
+            MaxExperience: 80,
+            NarrativeNote: "wo ka le ma",
+            Hidden: true,
+            Progress: (trips, reviews, today, context) => P(MaxConsecutiveRepeatedTripDays(trips), 3),
+            Tier: new(
+                trips => Math.Max(0, MaxConsecutiveRepeatedTripDays(trips) - 3),
+                d => Math.Exp(1.2 * d) + 2, AdditionalCount: true),
+            ChangeNote: new("连续 6 天乘坐同一行程", "阶梯式：连续 3 天 50 点，连续 6 天 80 点"),
+            Trigger: i => FirstConsecutiveRepeatedTripCompletion(i.Trips, 3)),
     ];
 
     private static readonly IReadOnlyDictionary<string, AchievementDefinition> DefinitionById =
@@ -2005,7 +2219,9 @@ public static partial class AchievementEngine
         IEnumerable<PublicTrip> sourceTrips,
         IEnumerable<AchievementReview>? sourceReviews = null,
         AchievementContext? context = null,
-        DateTime? now = null)
+        DateTime? now = null,
+        // 最高分行程要按前缀二分，个人成就页等高频调用默认不算；只有落库重算时开启。
+        bool computePeakTrip = false)
     {
         var trips = sourceTrips
             .Where(trip => trip.IsRailTrip)
@@ -2068,6 +2284,21 @@ public static partial class AchievementEngine
         var oneStoneConditions = oneStoneGroups.Count == 0 ? 0 : oneStoneGroups[0].Count;
         if (oneStoneGroups.Count > 0)
             values[oneStoneIndex] = values[oneStoneIndex] with { TriggerTripId = oneStoneGroups[0].TripId };
+
+        // 登峰造极：至少 3 个分阶成就的经验已经封顶，取第 3 个到顶的解锁行程。
+        var peakIndex = values.FindIndex(item => item.Id == "peakAttainment");
+        var maxedTierTriggers = values
+            .Where(item => item.Id != "peakAttainment" && item.TriggerTripId.HasValue &&
+                DefinitionFor(item.Id).Tier is not null &&
+                DefinitionFor(item.Id).MaxExperience is int peakMaximum &&
+                ExperienceFor(DefinitionFor(item.Id), true, trips) >= peakMaximum)
+            .Select(item => item.TriggerTripId!.Value)
+            .Distinct()
+            .OrderBy(id => trips.FindIndex(trip => trip.TicketId == id))
+            .ToList();
+        var peakMaxedCount = maxedTierTriggers.Count;
+        if (peakMaxedCount >= 3)
+            values[peakIndex] = values[peakIndex] with { TriggerTripId = maxedTierTriggers[2] };
 
         var hiddenTriggers = values
             .Where(item => item.Id != "unknownTerritory" && IsHidden(item.Id) && item.TriggerTripId.HasValue)
@@ -2133,6 +2364,7 @@ public static partial class AchievementEngine
                     "sevenExperienceTiers" => P(coveredTiers, ExperienceTiers.Length),
                     "nineHeavens" => P(hiddenAchievementCount, 9),
                     "oneStoneThreeBirds" => P(oneStoneConditions, 3),
+                    "peakAttainment" => P(peakMaxedCount, 3),
                     _ => definition.Progress?.Invoke(trips, reviews, today, context)
                 };
                 var requirements = definition.Hidden
@@ -2156,13 +2388,45 @@ public static partial class AchievementEngine
                     MaxExperienceReached = item.TriggerTripId.HasValue &&
                         definition.MaxExperience is int maximum &&
                         experience >= maximum,
+                    PeakTripId = computePeakTrip
+                        ? PeakTripIdFor(definition, trips, item.TriggerTripId)
+                        : item.TriggerTripId,
                     Hidden = definition.Hidden,
                     Note = NoteWithExperienceChange(definition),
                     NarrativeNote = definition.NarrativeNote
                 };
             })
-            .OrderByDescending(item => item.TriggerTripId.HasValue)
+            .OrderBy(item => DefinitionFor(item.Id).Hidden)
+            .ThenByDescending(item => item.TriggerTripId.HasValue)
             .ToList();
+    }
+
+    /// <summary>取得当前最高经验的行程。经验对行程前缀单调不减，所以二分找第一个
+    /// 达到最终经验的前缀；固定经验成就、以及「一石三鸟」这类依赖其他成就触发结果的
+    /// 聚合成就直接返回解锁行程。</summary>
+    private static long? PeakTripIdFor(
+        AchievementDefinition definition,
+        List<PublicTrip> trips,
+        long? triggerTripId)
+    {
+        if (triggerTripId is null) return null;
+        if (definition.Tier is null && definition.Bonus is null) return triggerTripId;
+        if (definition.Id == "oneStoneThreeBirds") return triggerTripId;
+        var unlockIndex = trips.FindIndex(trip => trip.TicketId == triggerTripId);
+        if (unlockIndex < 0) return triggerTripId;
+        var finalExperience = ExperienceFor(definition, true, trips);
+        if (finalExperience <= definition.Experience) return triggerTripId;
+        var low = unlockIndex;
+        var high = trips.Count - 1;
+        while (low < high)
+        {
+            var mid = (low + high) / 2;
+            var prefix = trips.GetRange(0, mid + 1);
+            var experience = ExperienceFor(definition, mid >= unlockIndex, prefix);
+            if (experience >= finalExperience) high = mid;
+            else low = mid + 1;
+        }
+        return trips[low].TicketId;
     }
 
     private static AchievementDefinition DefinitionFor(string id) => DefinitionById[id];
@@ -2291,13 +2555,14 @@ public static partial class AchievementEngine
 
     /// <summary>按到达站归并到达时刻并排序：换乘类判定只关心同站「最晚一次不晚于发车的到达」。</summary>
     private static Dictionary<string, List<(DateTime Arrival, int Index)>> ArrivalsByStation(
-        List<PublicTrip> trips)
+        List<PublicTrip> trips, Func<string, string>? stationKey = null)
     {
         var arrivals = new Dictionary<string, List<(DateTime Arrival, int Index)>>(StringComparer.Ordinal);
         for (var index = 0; index < trips.Count; index++)
         {
             if (trips[index].ArrivalTime is not { } arrival) continue;
             var station = NormalizedStation(trips[index].ToStation);
+            if (stationKey is not null) station = stationKey(station);
             if (station.Length == 0) continue;
             if (!arrivals.TryGetValue(station, out var list))
                 arrivals[station] = list = [];
@@ -2387,8 +2652,7 @@ public static partial class AchievementEngine
         return days <= 0 ? 9 : Math.Min(9, Math.Floor(perDay / days));
     }
 
-    private static double DailyWindowBonus(double days) =>
-        days <= 0 ? 0 : 15 * (Math.Log(5 * days) - 1);
+    private static double DailyWindowBonus(double days) => 4 * (days + 1);
 
     private static double FourExtremesPerDayCount(List<PublicTrip> trips)
     {
@@ -2417,6 +2681,317 @@ public static partial class AchievementEngine
                 foreach (var section in available)
                     if (IntersectsRouteSection(segment, section)) covered.Add(section.Name);
         return covered.Count;
+    }
+
+    /// <summary>「六龙回日」：行经过的大坡度区间数（按区间名去重，有交集即可）。</summary>
+    private static int SteepGradeSectionCount(IEnumerable<PublicTrip> trips)
+    {
+        var available = AvailableSections(SteepGradeSections);
+        var covered = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var trip in trips)
+            foreach (var segment in RouteSegments(trip))
+                foreach (var section in available)
+                    if (IntersectsRouteSection(segment, section)) covered.Add(section.Name);
+        return covered.Count;
+    }
+
+    /// <summary>整段行经某个区间（用合并后的 RouteSpans 判定）。</summary>
+    private static bool TripCoversSection(PublicTrip trip, RailwaySection section) =>
+        RouteSpans(trip).Any(segment => CoversRouteSection(segment, section));
+
+    /// <summary>「风驰电掣」的两项附加条件，每项 5 点，最多 10 点。</summary>
+    private static int LightningSpeedBonus(List<PublicTrip> trips)
+    {
+        var target = new RollingStockTarget("CRH380AL", "2541");
+        var section = new RailwaySection("京沪高速线枣庄—蚌埠南", "京沪高速线", "枣庄", "蚌埠南");
+        var best = 0;
+        foreach (var trip in trips)
+        {
+            if (!RollingStockMatches(trip.RollingStock, target)) continue;
+            var extras = 0;
+            if (AverageSpeed(trip) >= 250) extras++;
+            if (TripCoversSection(trip, section)) extras++;
+            best = Math.Max(best, extras);
+        }
+        return best * 5;
+    }
+
+    private static bool RodeLightningSpeed(List<PublicTrip> trips) =>
+        FirstRollingStockMatch(trips, [new("CRH380AL", "2541")]) is not null;
+
+    private static IReadOnlyList<AchievementRequirement> LightningSpeedRequirements(
+        List<PublicTrip> trips)
+    {
+        var target = new RollingStockTarget("CRH380AL", "2541");
+        var section = new RailwaySection(
+            "京沪高速线枣庄—蚌埠南", "京沪高速线", "枣庄", "蚌埠南");
+        return
+        [
+            new(
+                "CRH380AL-2541",
+                "CRH380AL-2541 号列车",
+                FirstRollingStockMatch(trips, [target])),
+            new(
+                "lightning-speed-250",
+                "均速不低于 250 公里/小时",
+                First(trips, trip => RollingStockMatches(trip.RollingStock, target) &&
+                    AverageSpeed(trip) >= 250)),
+            new(
+                "lightning-zaozhuang-bengbu",
+                "行经京沪高速线枣庄—蚌埠南",
+                First(trips, trip => RollingStockMatches(trip.RollingStock, target) &&
+                    TripCoversSection(trip, section)))
+        ];
+    }
+
+    private static bool RodeWildThursday(List<PublicTrip> trips) => trips.Any(trip =>
+        TrainNumberClassifier.Normalize(trip.TrainNumber) == "V550");
+
+    private static IReadOnlyList<AchievementRequirement> WildThursdayRequirements(
+        List<PublicTrip> trips) =>
+        [
+            new(
+                "V550",
+                "V550 次列车",
+                First(trips, trip =>
+                    TrainNumberClassifier.Normalize(trip.TrainNumber) == "V550")),
+            new(
+                "wild-thursday",
+                "乘车日或下车日为周四",
+                First(trips, trip =>
+                    TrainNumberClassifier.Normalize(trip.TrainNumber) == "V550" &&
+                    (Departure(trip).DayOfWeek == DayOfWeek.Thursday ||
+                     Arrival(trip).DayOfWeek == DayOfWeek.Thursday)))
+        ];
+
+    private static IReadOnlyList<AchievementRequirement> GobiThunderRequirements(
+        List<PublicTrip> trips) =>
+        [
+            new(
+                "lowpuzhen",
+                "低窝铺站",
+                FirstStationVisit(trips, ["低窝铺"])),
+            new(
+                "gobi-train",
+                "乘 8921/2/3/4 次（新车次 Z1121/2/3/4）到达",
+                First(trips, trip =>
+                    NormalizedStation(trip.ToStation) == "低窝铺" &&
+                    Regex.IsMatch(
+                        trip.TrainNumber.Trim(),
+                        @"^(?:892[1-4]|Z112[1-4])$",
+                        RegexOptions.IgnoreCase)))
+        ];
+
+    /// <summary>「狂乱木曜」：乘车日或下车日为周四时再加 10 点。</summary>
+    private static int WildThursdayBonus(List<PublicTrip> trips) => trips.Any(trip =>
+        TrainNumberClassifier.Normalize(trip.TrainNumber) == "V550" &&
+        (Departure(trip).DayOfWeek == DayOfWeek.Thursday ||
+         Arrival(trip).DayOfWeek == DayOfWeek.Thursday)) ? 10 : 0;
+
+    private static bool UnlocksNeverForget(PublicTrip trip)
+    {
+        var date = Departure(trip).Date;
+        if (date < new DateTime(2026, 11, 21) || date > new DateTime(2026, 11, 26)) return false;
+        var train = TrainNumberClassifier.Normalize(trip.TrainNumber);
+        if (train.Length == 0) return false;
+        return train.All(char.IsAsciiDigit) || train[0] is 'K' or 'T';
+    }
+
+    private static bool UnlocksBowDownPunishment(PublicTrip trip)
+    {
+        var train = TrainNumberClassifier.Normalize(trip.TrainNumber);
+        if (train is not ("K1806" or "V1806")) return false;
+        // 石湖荡不在 routes.db 里，用两侧的 上海松江—枫泾 区间近似。
+        // 上行指沿沪昆线站序减小（朝上海）的方向。
+        var stations = RouteStations.Value.GetValueOrDefault("沪昆线");
+        if (stations is null ||
+            !TryRouteStation(stations, "上海松江", out var songjiang) ||
+            !TryRouteStation(stations, "枫泾", out var fengjing)) return false;
+        var low = Math.Min(songjiang, fengjing);
+        var high = Math.Max(songjiang, fengjing);
+        foreach (var segment in RouteSpans(trip))
+        {
+            if (!RouteNameMatches(segment.RouteName, "沪昆线")) continue;
+            if (!TryRouteStation(stations, segment.FromStation, out var from) ||
+                !TryRouteStation(stations, segment.ToStation, out var to)) continue;
+            if (Math.Min(from, to) >= high || Math.Max(from, to) <= low) continue;
+            if (from > to) return true;
+        }
+        return false;
+    }
+
+    /// <summary>「各如其面」：同一编组里出现不同型号的动车组，或 CRH2A-2460 参与重联。</summary>
+    private static bool HasHeterogeneousCoupling(string? value)
+    {
+        foreach (var formation in TrainModelParser.ParseTrainFormations(value))
+        {
+            var emus = formation.Where(model => model.Category == TrainCategory.EMU).ToList();
+            if (emus.Count >= 2) return true;
+            foreach (var emu in emus)
+                if (emu.Numbers.Count > 1 &&
+                    NormalizedModelCode(emu.ModelCode) == "CRH2A" &&
+                    emu.Numbers.Contains("2460", StringComparer.OrdinalIgnoreCase))
+                    return true;
+        }
+        return false;
+    }
+
+    private static PublicTrip? FirstTwinChaoyang(List<PublicTrip> trips) =>
+        First(trips, trip =>
+        {
+            var from = NormalizedStation(trip.FromStation);
+            var to = NormalizedStation(trip.ToStation);
+            return (from == "北京朝阳" && to == "辽宁朝阳") ||
+                (from == "辽宁朝阳" && to == "北京朝阳");
+        });
+
+    private static bool IsStationEndpoint(PublicTrip trip, string station)
+    {
+        var name = NormalizedStation(station);
+        return NormalizedStation(trip.FromStation) == name ||
+            NormalizedStation(trip.ToStation) == name;
+    }
+
+    private static bool TripUsesStationLevel(
+        PublicTrip trip, string station, IReadOnlyList<string> routes)
+    {
+        var name = NormalizedStation(station);
+        foreach (var segment in RouteSegments(trip))
+        {
+            if (NormalizedStation(segment.FromStation) != name &&
+                NormalizedStation(segment.ToStation) != name) continue;
+            if (routes.Any(route => RouteNameMatches(segment.RouteName, route))) return true;
+        }
+        return false;
+    }
+
+    private static int MaxLevelsAtOneStation(IEnumerable<PublicTrip> source)
+    {
+        var trips = source as List<PublicTrip> ?? source.ToList();
+        var best = 0;
+        foreach (var station in MultiLevelStations)
+        {
+            var levels = 0;
+            if (trips.Any(trip => IsStationEndpoint(trip, station.Station) &&
+                    TripUsesStationLevel(trip, station.Station, station.LowerRoutes))) levels++;
+            if (trips.Any(trip => IsStationEndpoint(trip, station.Station) &&
+                    TripUsesStationLevel(trip, station.Station, station.UpperRoutes))) levels++;
+            best = Math.Max(best, levels);
+        }
+        return best;
+    }
+
+    private static int MultiLevelVisitedLevelCount(IEnumerable<PublicTrip> source)
+    {
+        var trips = source as List<PublicTrip> ?? source.ToList();
+        var count = 0;
+        foreach (var station in MultiLevelStations)
+        {
+            if (trips.Any(trip => IsStationEndpoint(trip, station.Station) &&
+                    TripUsesStationLevel(trip, station.Station, station.LowerRoutes))) count++;
+            if (trips.Any(trip => IsStationEndpoint(trip, station.Station) &&
+                    TripUsesStationLevel(trip, station.Station, station.UpperRoutes))) count++;
+        }
+        return count;
+    }
+
+    private static PublicTrip? FirstMultiLevelStationCompletion(List<PublicTrip> trips)
+    {
+        var lower = new HashSet<string>(StringComparer.Ordinal);
+        var upper = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var trip in trips)
+        {
+            foreach (var station in MultiLevelStations)
+            {
+                if (!IsStationEndpoint(trip, station.Station)) continue;
+                if (TripUsesStationLevel(trip, station.Station, station.LowerRoutes))
+                    lower.Add(station.Station);
+                if (TripUsesStationLevel(trip, station.Station, station.UpperRoutes))
+                    upper.Add(station.Station);
+                if (lower.Contains(station.Station) && upper.Contains(station.Station)) return trip;
+            }
+        }
+        return null;
+    }
+
+    private static IReadOnlyList<AchievementRequirement> MultiLevelRequirements(List<PublicTrip> trips)
+    {
+        var items = new List<AchievementRequirement>();
+        foreach (var station in MultiLevelStations)
+        {
+            items.Add(new AchievementRequirement(
+                $"{station.Station}-lower",
+                $"{station.Station} 下层",
+                First(trips, trip => IsStationEndpoint(trip, station.Station) &&
+                    TripUsesStationLevel(trip, station.Station, station.LowerRoutes))));
+            items.Add(new AchievementRequirement(
+                $"{station.Station}-upper",
+                $"{station.Station} 上层",
+                First(trips, trip => IsStationEndpoint(trip, station.Station) &&
+                    TripUsesStationLevel(trip, station.Station, station.UpperRoutes))));
+        }
+        return items;
+    }
+
+    /// <summary>「慢慢旅途」：普客或路用列车。6001-8998 次在调图后改为 V7001-V7998，
+    /// 57XXX 与 40XXX 始终算路用。</summary>
+    private static bool IsSlowPassengerTrain(PublicTrip trip)
+    {
+        var train = TrainNumberClassifier.Normalize(trip.TrainNumber);
+        if (train.Length == 0) return false;
+        var beforeCutover = Departure(trip) < TrainNumberClassifier.ConventionalCutover;
+        if (train.All(char.IsAsciiDigit))
+        {
+            if (train.Length == 5 && (train.StartsWith("57") || train.StartsWith("40"))) return true;
+            return train.Length == 4 && int.TryParse(train, out var number) &&
+                beforeCutover && number is >= 6001 and <= 8998;
+        }
+        return train[0] == 'V' && train.Length == 5 &&
+            int.TryParse(train[1..], out var v) && !beforeCutover && v is >= 7001 and <= 7998;
+    }
+
+    private static int SlowPassengerCount(IEnumerable<PublicTrip> trips) =>
+        trips.Count(IsSlowPassengerTrain);
+
+    /// <summary>「昨日重现」：同一行程连续乘坐的天数（按日期去重）。</summary>
+    private static int MaxConsecutiveRepeatedTripDays(List<PublicTrip> trips)
+    {
+        var best = 0;
+        var streaks = new Dictionary<RepeatedTripKey, (DateTime Date, int Streak)>();
+        foreach (var trip in trips)
+        {
+            var (date, streak) = RepeatedTripStreak(streaks, trip);
+            best = Math.Max(best, streak);
+        }
+        return best;
+    }
+
+    private static PublicTrip? FirstConsecutiveRepeatedTripCompletion(
+        List<PublicTrip> trips, int target)
+    {
+        var streaks = new Dictionary<RepeatedTripKey, (DateTime Date, int Streak)>();
+        foreach (var trip in trips)
+        {
+            var (_, streak) = RepeatedTripStreak(streaks, trip);
+            if (streak >= target) return trip;
+        }
+        return null;
+    }
+
+    private static (DateTime Date, int Streak) RepeatedTripStreak(
+        Dictionary<RepeatedTripKey, (DateTime Date, int Streak)> streaks, PublicTrip trip)
+    {
+        var key = RepeatedTripKeyFor(trip);
+        var date = Departure(trip).Date;
+        var streak = 1;
+        if (streaks.TryGetValue(key, out var previous))
+        {
+            var gap = (date - previous.Date).TotalDays;
+            if (gap == 0) streak = previous.Streak;
+            else if (gap == 1) streak = previous.Streak + 1;
+        }
+        streaks[key] = (date, streak);
+        return (date, streak);
     }
 
     /// <summary>满分进度用的度量：当前值不夹紧，UI 才能算出「解锁之后又走了多少」。</summary>
@@ -2467,6 +3042,33 @@ public static partial class AchievementEngine
                 return (Key: normalized, Label: $"{normalized}站");
             }),
             trip => new[] { trip.FromStation, trip.ToStation }.Select(NormalizedStation));
+
+    /// <summary>「异域风情」的一处口岸：凭祥交界按凭祥站或凭祥交界线判定，其余按到站判定。</summary>
+    private static bool MatchesBorderPort(PublicTrip trip, string key)
+    {
+        if (key == "凭祥交界")
+            return NormalizedStation(trip.FromStation) == "凭祥" ||
+                NormalizedStation(trip.ToStation) == "凭祥" ||
+                RouteNames(trip).Any(name => name.Contains("凭祥交界", StringComparison.Ordinal));
+        var station = NormalizedStation(key);
+        return NormalizedStation(trip.FromStation) == station ||
+            NormalizedStation(trip.ToStation) == station;
+    }
+
+    private static int BorderPortCount(IEnumerable<PublicTrip> source)
+    {
+        var trips = source as List<PublicTrip> ?? source.ToList();
+        return BorderPortTargets.Count(target =>
+            trips.Any(trip => MatchesBorderPort(trip, target.Key)));
+    }
+
+    private static IReadOnlyList<AchievementRequirement> BorderPortRequirements(List<PublicTrip> trips) =>
+        CollectionRequirements(
+            trips,
+            BorderPortTargets,
+            trip => BorderPortTargets
+                .Where(target => MatchesBorderPort(trip, target.Key))
+                .Select(target => target.Key));
 
     private static IReadOnlyList<AchievementRequirement> RouteRequirements(
         List<PublicTrip> trips,
@@ -2610,8 +3212,13 @@ public static partial class AchievementEngine
     private static string RollingStockTargetKey(RollingStockTarget target) =>
         RollingStockTargetDisplay(target);
 
-    private static string RollingStockTargetLabel(RollingStockTarget target) =>
-        RollingStockTargetDisplay(target);
+    private static string RollingStockTargetLabel(RollingStockTarget target)
+    {
+        var display = RollingStockTargetDisplay(target);
+        return HonoraryLocomotiveTitles.TryGetValue(display, out var title)
+            ? $"{display}：{title}"
+            : display;
+    }
 
     /// <summary>机车车号用空格（SS3B 5151），动车组车组号用连字符（CR400AF-AS-1111）。</summary>
     private static string RollingStockTargetDisplay(RollingStockTarget target)
@@ -2793,28 +3400,19 @@ public static partial class AchievementEngine
         .DefaultIfEmpty(0)
         .Max();
 
-    private static int MaxTransferCount(List<PublicTrip> trips)
+    private static int MaxTransferCount(List<PublicTrip> trips) =>
+        TransferChain(trips, int.MaxValue).MaxCount;
+
+    /// <summary>「两面一体」的站对在「辗转挪移」里算同一座换乘站。</summary>
+    private static string TransferStationKey(string station)
     {
-        var arrivals = ArrivalsByStation(trips);
-        var transferCounts = new int[trips.Count];
-        for (var outgoingIndex = 0; outgoingIndex < trips.Count; outgoingIndex++)
+        foreach (var pair in TwinInterchangePairs)
         {
-            var outgoing = trips[outgoingIndex];
-            var station = NormalizedStation(outgoing.FromStation);
-            if (station.Length == 0 || !arrivals.TryGetValue(station, out var list)) continue;
-            var departure = Departure(outgoing);
-            var earliest = departure - TimeSpan.FromHours(3);
-            for (var index = LastArrivalAtOrBefore(list, departure);
-                 index >= 0 && list[index].Arrival >= earliest;
-                 index--)
-            {
-                var incomingIndex = list[index].Index;
-                if (incomingIndex >= outgoingIndex) continue;
-                transferCounts[outgoingIndex] = Math.Max(
-                    transferCounts[outgoingIndex], transferCounts[incomingIndex] + 1);
-            }
+            var rail = NormalizedStation(pair.Rail);
+            var intercity = NormalizedStation(pair.Intercity);
+            if (station == rail || station == intercity) return $"pair:{rail}|{intercity}";
         }
-        return transferCounts.DefaultIfEmpty(0).Max();
+        return station;
     }
 
     private static int MaxSameTrainTicketChain(List<PublicTrip> trips)
@@ -3338,11 +3936,19 @@ public static partial class AchievementEngine
     /// <summary>“其利断金”要的是同时牵引，故按编组分别计数后取最大值：中途换挂
     /// 机车（各编组各一台）不算双机。机车上按台数计——同一型号写成两个车号
     /// （HXD1D 0001&amp;0002）就是两台重联机车。</summary>
+    /// <summary>「其利断金」只算编组最前端连续相邻的机车——车前一台本务加尾部补机不算多机牵引。</summary>
     private static int LocomotiveCount(string? value) =>
         TrainModelParser.ParseTrainFormations(value)
-            .Select(formation => formation
-                .Where(model => model.Category == TrainCategory.Locomotive)
-                .Sum(model => Math.Max(model.Numbers.Count, 1)))
+            .Select(formation =>
+            {
+                var count = 0;
+                foreach (var model in formation)
+                {
+                    if (model.Category != TrainCategory.Locomotive) break;
+                    count += Math.Max(model.Numbers.Count, 1);
+                }
+                return count;
+            })
             .DefaultIfEmpty(0)
             .Max();
 
@@ -4676,29 +5282,54 @@ public static partial class AchievementEngine
         return null;
     }
 
-    private static PublicTrip? FirstTransferChainCompletion(List<PublicTrip> trips, int targetTransfers)
+    private static PublicTrip? FirstTransferChainCompletion(List<PublicTrip> trips, int targetTransfers) =>
+        TransferChain(trips, targetTransfers).Trigger;
+
+    /// <summary>「辗转挪移」的换乘链。每次换乘间隔 ≤3 小时，且首程发车到末程到达
+    /// 必须落在同一个 24 小时窗口内。同一座站（含「两面一体」站对）返回每换乘次数下
+    /// 最晚的首程发车时间——越晚越容易满足 24 小时窗口，且不影响次数。</summary>
+    private static (int MaxCount, PublicTrip? Trigger) TransferChain(
+        List<PublicTrip> trips, int targetTransfers)
     {
-        var arrivals = ArrivalsByStation(trips);
-        var transferCounts = new int[trips.Count];
+        var arrivals = ArrivalsByStation(trips, TransferStationKey);
+        var starts = new Dictionary<int, DateTime>[trips.Count];
+        for (var index = 0; index < trips.Count; index++) starts[index] = [];
+        var maxCount = 0;
+        PublicTrip? trigger = null;
         for (var outgoingIndex = 0; outgoingIndex < trips.Count; outgoingIndex++)
         {
             var outgoing = trips[outgoingIndex];
-            var station = NormalizedStation(outgoing.FromStation);
-            if (station.Length == 0 || !arrivals.TryGetValue(station, out var list)) continue;
             var departure = Departure(outgoing);
-            var earliest = departure - TimeSpan.FromHours(3);
-            for (var index = LastArrivalAtOrBefore(list, departure);
-                 index >= 0 && list[index].Arrival >= earliest;
-                 index--)
+            var arrival = Arrival(outgoing);
+            starts[outgoingIndex][0] = departure;
+            var station = TransferStationKey(NormalizedStation(outgoing.FromStation));
+            if (station.Length > 0 && arrivals.TryGetValue(station, out var list))
             {
-                var incomingIndex = list[index].Index;
-                if (incomingIndex >= outgoingIndex) continue;
-                transferCounts[outgoingIndex] = Math.Max(
-                    transferCounts[outgoingIndex], transferCounts[incomingIndex] + 1);
+                var earliest = departure - TimeSpan.FromHours(3);
+                for (var index = LastArrivalAtOrBefore(list, departure);
+                     index >= 0 && list[index].Arrival >= earliest;
+                     index--)
+                {
+                    var incomingIndex = list[index].Index;
+                    if (incomingIndex >= outgoingIndex) continue;
+                    foreach (var (count, start) in starts[incomingIndex])
+                    {
+                        if (arrival - start > TimeSpan.FromHours(24)) continue;
+                        var next = count + 1;
+                        if (!starts[outgoingIndex].TryGetValue(next, out var existing) ||
+                            existing < start)
+                            starts[outgoingIndex][next] = start;
+                    }
+                }
             }
-            if (transferCounts[outgoingIndex] >= targetTransfers) return outgoing;
+            foreach (var (count, start) in starts[outgoingIndex])
+            {
+                if (arrival - start > TimeSpan.FromHours(24)) continue;
+                maxCount = Math.Max(maxCount, count);
+                if (trigger is null && count >= targetTransfers) trigger = outgoing;
+            }
         }
-        return null;
+        return (maxCount, trigger);
     }
 
     private static readonly ConditionalWeakTable<PublicTrip, IReadOnlyList<string>> RouteNameCache = new();
@@ -4921,6 +5552,13 @@ public static partial class AchievementEngine
         string FromStation,
         string ToStation,
         bool SpansLines = false);
+
+    /// <summary>附表7 的多层站场：<paramref name="LowerRoutes"/> 与
+    /// <paramref name="UpperRoutes"/> 是该层办理客运的线路（routes.db 的写法）。</summary>
+    private sealed record MultiLevelStation(
+        string Station,
+        IReadOnlyList<string> LowerRoutes,
+        IReadOnlyList<string> UpperRoutes);
 
     private sealed record StationVisit(string Station, DateTime Time, PublicTrip Trip);
 

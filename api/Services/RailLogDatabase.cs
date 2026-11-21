@@ -166,6 +166,7 @@ public sealed partial class RailLogDatabase
                 UserId TEXT NOT NULL,
                 AchievementId TEXT NOT NULL,
                 TriggerTripId INTEGER NOT NULL,
+                PeakTripId INTEGER NULL,
                 Experience INTEGER NOT NULL DEFAULT 0,
                 EvaluatedAt TEXT NOT NULL,
                 PRIMARY KEY (UserId, AchievementId),
@@ -334,6 +335,7 @@ public sealed partial class RailLogDatabase
         await EnsureColumnAsync(connection, "EntityReviews", "RouteFromStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteToStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "UserAchievements", "Experience", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "UserAchievements", "PeakTripId", "INTEGER NULL");
         await ExecuteAsync(connection, $"""
             UPDATE AspNetUsers
             SET CreatedAt = '{ToDb(DateTime.Now)}'
@@ -2286,7 +2288,10 @@ public sealed partial class RailLogDatabase
                    CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END,
                    achievement.Experience
             FROM UserAchievements achievement
-            JOIN TripRecords trip ON trip.Id = achievement.TriggerTripId
+            JOIN TripRecords trip ON trip.Id = COALESCE(
+                (SELECT peak.Id FROM TripRecords peak
+                 WHERE peak.Id = achievement.PeakTripId AND peak.DeletedAt IS NULL),
+                achievement.TriggerTripId)
             JOIN AspNetUsers user ON user.Id = achievement.UserId
             WHERE achievement.AchievementId = $achievementId
               AND trip.DeletedAt IS NULL
@@ -3184,7 +3189,9 @@ public sealed partial class RailLogDatabase
         for (var pass = 0; pass < 8; pass++)
         {
             var context = new AchievementContext(totalExperience, totalReviewReactions);
-            unlocked = AchievementEngine.Evaluate(trips, reviews, context)
+            // 最高分行程要做前缀二分，代价比普通求值高，只在最后一轮算。
+            unlocked = AchievementEngine.Evaluate(
+                    trips, reviews, context, computePeakTrip: pass == 7)
                 .Where(item => item.TriggerTripId.HasValue)
                 .ToList();
             totalExperience = unlocked.Sum(item => item.Experience);
@@ -3226,13 +3233,16 @@ public sealed partial class RailLogDatabase
                 insert.Transaction = (SqliteTransaction)transaction;
                 insert.CommandText = """
                     INSERT INTO UserAchievements
-                        (UserId, AchievementId, TriggerTripId, Experience, EvaluatedAt)
-                    SELECT $userId, $achievementId, $triggerTripId, $experience, $evaluatedAt
+                        (UserId, AchievementId, TriggerTripId, PeakTripId, Experience, EvaluatedAt)
+                    SELECT $userId, $achievementId, $triggerTripId, $peakTripId,
+                           $experience, $evaluatedAt
                     WHERE EXISTS (SELECT 1 FROM AspNetUsers WHERE Id = $userId);
                     """;
                 insert.Parameters.AddWithValue("$userId", userId);
                 insert.Parameters.AddWithValue("$achievementId", achievement.Id);
                 insert.Parameters.AddWithValue("$triggerTripId", achievement.TriggerTripId!.Value);
+                insert.Parameters.AddWithValue(
+                    "$peakTripId", achievement.PeakTripId ?? achievement.TriggerTripId!.Value);
                 insert.Parameters.AddWithValue("$experience", achievement.Experience);
                 insert.Parameters.AddWithValue("$evaluatedAt", ToDb(DateTime.Now));
                 await insert.ExecuteNonQueryAsync();

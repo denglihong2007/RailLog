@@ -8,7 +8,7 @@ namespace RailLog.API.Services;
 /// </summary>
 public static class UserLevels
 {
-    public static readonly IReadOnlyList<int> DefaultThresholds = [0, 1, 50, 125, 250, 450, 800];
+    public static readonly IReadOnlyList<int> DefaultThresholds = [0, 1, 100, 250, 500, 800, 1100];
 
     public static string? Validate(IReadOnlyList<int>? thresholds)
     {

@@ -6,7 +6,7 @@ import { readonly, ref } from 'vue'
  * 等级门槛可以在管理后台调整，官网不能继续写死一份副本，否则后台改了分界线、
  * 官网徽章仍按旧值显示。这里在首次使用时从公开接口拉取，失败时回退到内置默认值。
  */
-const DEFAULT_THRESHOLDS = [0, 1, 50, 125, 250, 450, 800]
+const DEFAULT_THRESHOLDS = [0, 1, 100, 250, 500, 800, 1100]
 
 const thresholds = ref<number[]>([...DEFAULT_THRESHOLDS])
 let request: Promise<void> | null = null

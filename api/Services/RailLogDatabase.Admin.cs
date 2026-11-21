@@ -1553,7 +1553,10 @@ public sealed partial class RailLogDatabase
                    COALESCE(trip.DepartureTime, trip.CreatedAt), trip.DeletedAt
             FROM UserAchievements achievement
             JOIN AspNetUsers user ON user.Id = achievement.UserId
-            JOIN TripRecords trip ON trip.Id = achievement.TriggerTripId
+            JOIN TripRecords trip ON trip.Id = COALESCE(
+                (SELECT peak.Id FROM TripRecords peak
+                 WHERE peak.Id = achievement.PeakTripId AND peak.DeletedAt IS NULL),
+                achievement.TriggerTripId)
             WHERE achievement.AchievementId = $achievementId
             ORDER BY julianday(COALESCE(trip.DepartureTime, trip.CreatedAt)) DESC,
                      trip.Id DESC
