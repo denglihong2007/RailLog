@@ -47,6 +47,7 @@ class UserNotification {
   bool get isReviewUpdated => type == 'review_updated';
   bool get isReaction => type == 'review_reaction';
   bool get isMention => type == 'review_mention';
+  bool get isAdminMessage => type == 'admin_message';
 
   UserNotification asRead() => UserNotification(
     id: id,

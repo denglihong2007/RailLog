@@ -53,6 +53,10 @@ export interface AnnouncementInput {
   sortOrder: number
 }
 
+export interface AdminNotificationResult {
+  recipientCount: number
+}
+
 export interface AdminUserSummary {
   id: string
   email: string
@@ -692,6 +696,12 @@ export const api = {
   deleteAnnouncement(id: string) {
     return request<void>(`/api/admin/announcements/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    })
+  },
+  sendNotification(message: string, allUsers: boolean, userIds: string[]) {
+    return request<AdminNotificationResult>('/api/admin/notifications', {
+      method: 'POST',
+      body: JSON.stringify({ message, allUsers, userIds }),
     })
   },
   users(

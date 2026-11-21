@@ -3159,3 +3159,130 @@ tr.muted {
   color: var(--muted);
   font-size: 12.5px;
 }
+
+/* ---------- 系统通知 ---------- */
+.notification-compose {
+  display: grid;
+  gap: 16px;
+}
+
+.notification-compose .field {
+  margin: 0;
+}
+
+.recipient-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recipient-results {
+  display: grid;
+  gap: 1px;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--line);
+}
+
+.recipient-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.recipient-option:hover {
+  background: var(--surface-low);
+}
+
+.recipient-option > svg {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.recipient-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.recipient-copy strong,
+.recipient-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipient-copy strong {
+  font-size: 13px;
+}
+
+.recipient-copy small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.notification-search-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.notification-search-state.error {
+  color: var(--danger);
+}
+
+.recipient-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.recipient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 12.5px;
+}
+
+.recipient-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.recipient-chip button:hover {
+  background: var(--surface);
+}
+
+.notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
