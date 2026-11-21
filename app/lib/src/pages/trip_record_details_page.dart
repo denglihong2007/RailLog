@@ -1626,7 +1626,11 @@ class _ViaRouteDisplayState extends State<_ViaRouteDisplay> {
             onCorrectSchedule: _openTimetableCorrection,
           )
         else
-          TripViaRouteMap(trip: widget.trip, lineStyles: lineStyles),
+          TripViaRouteMap(
+            trip: widget.trip,
+            lineStyles: lineStyles,
+            overlay: _overlay,
+          ),
         _ViaRouteLegend(lines: lineStyles),
       ],
     );

@@ -1121,6 +1121,256 @@ void main() {
     });
   });
 
+  group('buildAmapHtml 播放动画', () {
+    TripMapRoute route() => TripMapRoute(
+      name: '北京站 - 上海虹桥站',
+      entries: const [],
+      direction: TripMapDirection.direction1,
+      fromStation: '北京站',
+      toStation: '上海虹桥站',
+      fromCoordinate: StationCoordinate(latitude: 39.9, longitude: 116.4),
+      toCoordinate: StationCoordinate(latitude: 31.2, longitude: 121.3),
+      points: [
+        StationCoordinate(latitude: 39.9, longitude: 116.4),
+        StationCoordinate(latitude: 31.2, longitude: 121.3),
+      ],
+    );
+
+    TripAnimationPlan plan() {
+      final departure = DateTime(2026, 1, 1, 8);
+      final middle = DateTime(2026, 1, 1, 10, 30);
+      final arrival = DateTime(2026, 1, 1, 13);
+      const beijing = StationCoordinate(latitude: 39.9022, longitude: 116.4211);
+      const shanghai = StationCoordinate(latitude: 31.196, longitude: 121.316);
+      return TripAnimationPlan(
+        departure: departure,
+        arrival: arrival,
+        utcOffsetMinutes: 480,
+        sourceLabel: '历史时刻表',
+        stops: [
+          TripAnimationStop(
+            name: '北京站',
+            coordinate: beijing,
+            time: departure,
+            departure: departure,
+            lineName: '京沪高速线',
+          ),
+          TripAnimationStop(
+            name: '济南西站',
+            coordinate: const StationCoordinate(
+              latitude: 36.67,
+              longitude: 116.89,
+            ),
+            time: middle,
+            arrival: middle,
+            departure: middle,
+            estimated: true,
+            lineName: '京沪高速线',
+          ),
+          TripAnimationStop(
+            name: '上海虹桥站',
+            coordinate: shanghai,
+            time: arrival,
+            arrival: arrival,
+            lineName: '京沪高速线',
+          ),
+        ],
+        moves: [
+          TripAnimationMove(
+            fromIndex: 0,
+            toIndex: 1,
+            start: departure,
+            end: middle,
+            color: '#FF0000',
+            lineName: '京沪高速线',
+            points: const [
+              beijing,
+              StationCoordinate(latitude: 36.67, longitude: 116.89),
+            ],
+          ),
+          TripAnimationMove(
+            fromIndex: 1,
+            toIndex: 2,
+            start: middle,
+            end: arrival,
+            color: '#FF0000',
+            lineName: '京沪高速线',
+            points: const [
+              StationCoordinate(latitude: 36.67, longitude: 116.89),
+              shanghai,
+            ],
+          ),
+        ],
+      );
+    }
+
+    String animatedHtml() => buildAmapHtml(
+      [route()],
+      darkMode: false,
+      backgroundColor: '#FFFFFF',
+      // 有动画时站点标记由动画脚本画，底图不再叠一套。
+      showStationMarkers: false,
+      colorByRoute: true,
+      // 详情页的单趟行程地图：不再从线上点出车次。
+      tripLinks: false,
+      animation: plan(),
+    );
+
+    // 不传动画时整段播放代码都不该出现：全量地图用的是脉冲图层，多出播放条
+    // 既没数据可放，还会改变已有的 HTML 行为。
+    test('不传动画时不插入播放条', () {
+      final html = buildAmapHtml(
+        [route()],
+        darkMode: false,
+        backgroundColor: '#FFFFFF',
+        showStationMarkers: true,
+        colorByRoute: true,
+      );
+      expect(html, isNot(contains('const animation =')));
+      expect(html, isNot(contains('id="pb"')));
+      expect(
+        html,
+        contains('map.setFitView(hitLines, false, [48, 48, 48, 48])'),
+      );
+    });
+
+    test('传入动画后带上播放条、时间轴与折线色', () {
+      final html = animatedHtml();
+      expect(html, contains('<div class="pb" id="pb" hidden>'));
+      expect(html, contains('id="pb-range"'));
+      expect(html, contains('id="pb-toggle"'));
+      expect(html, contains('const animation = {"departure":'));
+      expect(html, contains('"sourceLabel":"历史时刻表"'));
+      expect(html, contains('"utcOffsetMinutes":480'));
+      // 时刻统一走「时间戳 + 时区偏移」再读 UTC 字段，才会和 App 里显示的一致。
+      expect(html, contains('new Date(value + offsetMs)'));
+      expect(html, contains("date.getUTCHours()"));
+      // 默认倍速与可切换的档位。
+      expect(html, contains('const speeds = [60, 300, 900, 1800];'));
+      expect(html, contains("'1秒=30分'"));
+      // 按线路着色的折线要收进 routePolylines，动画才能把它们压暗。
+      expect(
+        html,
+        contains('polylines.forEach((line) => routePolylines.push(line));'),
+      );
+      expect(html, contains('strokeColor: route.color'));
+      // 底部留出播放条的高度；比例尺和工具栏也要抬到播放条上面。
+      expect(
+        html,
+        contains('map.setFitView(hitLines, false, [48, 150, 48, 48])'),
+      );
+      expect(html, contains("new AMap.Scale({ position: 'LB', offset: [15, 130] })"));
+      expect(
+        html,
+        contains("new AMap.ToolBar({ position: 'RB', offset: [15, 130] })"),
+      );
+      // 站点圆点按简图的样式画：办客站带中心点、通过站是小空心圈。
+      expect(html, contains('pb-station-dot is-pass'));
+      expect(html, contains('pb-station-dot-core'));
+      expect(html, contains('stop.kind === \'pass\''));
+      // 换线 / 通过 / 停靠三种站点都有类型提示：悬停出冒泡，点击弹窗也写一遍。
+      expect(html, contains('pb-station-tip'));
+      expect(html, contains("'通过站' : '停靠站'"));
+      expect(html, contains("tags.push('换线')"));
+      expect(html, contains('lineChangeAt(index)'));
+      expect(html, contains('stationPopup(stop, index)'));
+      // 换线写明上一条线与下一条线；气泡靠 marker 事件开关，不靠 DOM 悬停。
+      expect(html, contains("' → '"));
+      expect(html, contains('pb-station-tip-line'));
+      expect(html, contains("marker.on('mouseover'"));
+      expect(html, contains("marker.on('mouseout'"));
+      // 播放时列车经过站点自动冒泡，按停靠 / 通过 / 到达区分。
+      expect(html, contains('pb-announce'));
+      expect(html, contains('announceStation(boundary)'));
+      expect(html, contains("'停靠 ' + stop.name"));
+      expect(html, contains("'通过 ' + stop.name"));
+      expect(html, contains("'到达 ' + stop.name"));
+      // 进度条轨道按线路分段着色，滑块圆点跟随当前线路颜色。
+      expect(html, contains("'--track'"));
+      expect(html, contains("'linear-gradient(to right, '"));
+      expect(html, contains("'--thumb', color"));
+      expect(html, contains('var(--track'));
+      expect(html, contains('var(--thumb'));
+      // 地图上站点只是参照，圆点要小一点，别把线路盖住。
+      expect(html, contains('width: 10px; height: 10px; border: 1.5px solid'));
+      expect(html, contains('width: 4.5px; height: 4.5px; margin: -2.25px'));
+      expect(html, contains('width: 7px; height: 7px; border-width: 1.5px'));
+    });
+
+    // 单趟行程的详情地图不需要从线上点出车次与日期：透明命中线只留给
+    // fitView 用，点击一律不挂。
+    test('tripLinks 为假时不挂线路点击弹窗', () {
+      final html = animatedHtml();
+      expect(html, contains('const tripLinks = false;'));
+      expect(
+        html,
+        contains("if (tripLinks) hitLine.on('click', openRoutePopup);"),
+      );
+      expect(html, contains("cursor: tripLinks ? 'pointer' : 'default'"));
+    });
+
+    // 往回拖进度条时，画到后面的「已走过」折线必须收回去；否则轨迹只增不减，
+    // 往回拖剩下一条残线。高德 2.0 的 Polyline#setPath([]) 会走 error 分支、
+    // 保留旧几何，清空只能把折线从地图上摘掉。
+    test('未走过的区间把折线从地图上摘掉，而不是 setPath 空数组', () {
+      final html = animatedHtml();
+      expect(html, isNot(contains('setPath([])')));
+      expect(html, isNot(contains('clearDrawn')));
+      expect(html, contains('map.remove([entry.casing, entry.line]);'));
+      expect(html, contains('map.add([entry.casing, entry.line]);'));
+      // 一开始不入图：没走过的区间不该有折线对象占着渲染层。
+      expect(html, contains('shown: false'));
+    });
+
+    // 停站跨过下一段发车时刻时，以前只按「下一段是否已发车」判断停站，列车
+    // 位置留在上一站，轨迹却把下一段整段画满——每个停站后面都拖着一截残线。
+    test('停站按本段到点判断，不依赖下一段的发车时刻', () {
+      final html = animatedHtml();
+      expect(
+        html,
+        contains("phase: index === moves.length - 1 ? 'end' : 'dwell',"),
+      );
+      expect(html, isNot(contains('timeMs < moves[index + 1].start')));
+    });
+
+    // 已经走完、当前时刻又不在它这段里的区间要整段画满；还没走到的区间里程为
+    // 0，由 applyDrawn 摘掉折线。停在站上过一会儿才发车时也不会多出一截。
+    test('走完的区间整段画满，没到的区间摘掉折线', () {
+      final html = animatedHtml();
+      expect(html, contains('distance = moves[index].length + 0.001;'));
+      expect(html, contains("(index === state.move && state.phase !== 'run')"));
+      expect(html, contains('if (distance <= 0) {'));
+    });
+
+    test('带动画的脚本括号同样配平', () {
+      final match = RegExp(r'<script>\n([\s\S]*?)\n\s*</script>')
+          .firstMatch(animatedHtml());
+      expect(match, isNotNull, reason: '没找到内联的 <script> 块');
+      expectBalancedBrackets(match!.group(1)!);
+    });
+
+    // 站名是用户录入的，可能带尖括号；动画 JSON 同样要按 \u003c 转义，否则
+    // 站名里的 `</script>` 会提前截断脚本。
+    test('动画 JSON 也做尖括号转义', () {
+      final hostile = TripAnimationPlan(
+        departure: plan().departure,
+        arrival: plan().arrival,
+        utcOffsetMinutes: 480,
+        sourceLabel: '</script>',
+        stops: plan().stops,
+        moves: plan().moves,
+      );
+      final escaped = buildAmapHtml(
+        [route()],
+        darkMode: false,
+        backgroundColor: '#FFFFFF',
+        showStationMarkers: false,
+        animation: hostile,
+      );
+      expect(escaped, contains(r'\u003c/script>'));
+    });
+  });
+
   group('反向查到的折线要掉头', () {
     // 管线每段只存一个走向，一趟车走过的方向不一定就是那一行。这时用反向键命中的折线
     // 必须倒过来再交给渲染层，否则它会被当成 from→to 的点列，首尾各被补上一个站坐标，
