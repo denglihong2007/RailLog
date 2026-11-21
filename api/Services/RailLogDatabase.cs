@@ -257,6 +257,63 @@ public sealed partial class RailLogDatabase
                 Detail TEXT NULL,
                 CreatedAt TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS OAuthClients (
+                ClientId TEXT NOT NULL PRIMARY KEY,
+                Name TEXT NOT NULL,
+                LogoUrl TEXT NULL,
+                ClientSecretHash TEXT NULL,
+                RedirectUris TEXT NOT NULL,
+                Scopes TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                RevokedAt TEXT NULL
+            );
+            CREATE TABLE IF NOT EXISTS OAuthAuthorizationCodes (
+                CodeHash TEXT NOT NULL PRIMARY KEY,
+                ClientId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                RedirectUri TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CodeChallenge TEXT NOT NULL,
+                CodeChallengeMethod TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                ConsumedAt TEXT NULL,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OAuthAccessTokens (
+                TokenHash TEXT NOT NULL PRIMARY KEY,
+                ClientId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                RevokedAt TEXT NULL,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OAuthRefreshTokens (
+                TokenHash TEXT NOT NULL PRIMARY KEY,
+                ClientId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                RevokedAt TEXT NULL,
+                RotatedAt TEXT NULL,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OAuthConsents (
+                UserId TEXT NOT NULL,
+                ClientId TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                RevokedAt TEXT NULL,
+                PRIMARY KEY (UserId, ClientId),
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE
+            );
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -314,6 +371,14 @@ public sealed partial class RailLogDatabase
                 ON UserAchievements (AchievementId);
             CREATE INDEX IF NOT EXISTS IX_AdminAuditLogs_CreatedAt
                 ON AdminAuditLogs (CreatedAt DESC);
+            CREATE INDEX IF NOT EXISTS IX_OAuthAuthorizationCodes_ExpiresAt
+                ON OAuthAuthorizationCodes (ExpiresAt);
+            CREATE INDEX IF NOT EXISTS IX_OAuthAccessTokens_UserClient
+                ON OAuthAccessTokens (UserId, ClientId);
+            CREATE INDEX IF NOT EXISTS IX_OAuthRefreshTokens_UserClient
+                ON OAuthRefreshTokens (UserId, ClientId);
+            CREATE INDEX IF NOT EXISTS IX_OAuthConsents_UserId
+                ON OAuthConsents (UserId);
             """);
     }
 
@@ -2824,7 +2889,7 @@ public sealed partial class RailLogDatabase
     private SqliteConnection OpenConnection() => new(_connectionString);
     private static bool IsValidEmail(string value) =>
         value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');
-    private static string HashToken(string token) =>
+    internal static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private static string ToDb(DateTime value) => value.ToString("O");
     private static string ToDbUtc(DateTime value) =>
