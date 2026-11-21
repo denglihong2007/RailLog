@@ -80,6 +80,7 @@ class _PublicAchievementRequirementsPageState
         return AchievementRequirementsPage(
           achievement: achievement,
           ownerName: widget.displayName,
+          ownerUserId: widget.userId,
         );
       },
     );
