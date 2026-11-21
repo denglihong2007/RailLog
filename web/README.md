@@ -36,6 +36,7 @@ npm run build
 构建结果位于 `dist`，部署时应确保：
 
 - `/download` 能访问 `dist/download/index.html`
+- `/oauth/` 能访问 `dist/oauth/index.html`（第三方应用 OAuth 授权页）
 - `/api-docs/` 能访问 `dist/api-docs/index.html`
 - `/api-docs/xxx.html` 这类文档深链能直接返回对应静态文件（文档启用了 `cleanUrls: false`，不依赖服务端重写；裸 `/api-docs` 由官网前端重定向到 `/api-docs/`）
 
