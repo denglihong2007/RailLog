@@ -816,12 +816,12 @@ public static partial class AchievementEngine
 
     private static readonly IReadOnlyList<string> FourFamousNorthStations =
         ["阳泉北", "盘锦北", "孝感北", "邵阳北"];
-    // 「异域风情」的口岸目标。崇左站不再单独判，改为凭祥交界线（凭祥站或行经凭祥交界）。
+    // 「异域风情」的口岸目标。崇左站改判凭祥站；出入境判定另走 BorderRouteMarkers 的凭祥交界线。
     private static readonly IReadOnlyList<(string Key, string Label)> BorderPortTargets =
     [
         ("阿拉山口", "阿拉山口站"), ("二连", "二连站"), ("满洲里", "满洲里站"),
         ("绥芬河", "绥芬河站"), ("丹东", "丹东站"), ("磨憨", "磨憨站"),
-        ("凭祥交界", "凭祥交界")
+        ("凭祥", "凭祥站")
     ];
     private static readonly IReadOnlyList<string> VerticalChinaStations = ["漠河", "三亚"];
     private static readonly IReadOnlyList<string> HorizontalChinaStations = ["阿克陶", "抚远"];
@@ -1042,7 +1042,7 @@ public static partial class AchievementEngine
             NarrativeNote: "指你的钱",
             Trigger: i => First(i.Trips, UnlocksFleetingMoment)),
         new("borderPorts", Touring, "language_outlined", "异域风情",
-            "到访阿拉山口站、二连站、满洲里站、绥芬河站、丹东站、磨憨站或凭祥交界", 20,
+            "到访阿拉山口站、二连站、满洲里站、绥芬河站、丹东站、磨憨站或凭祥站", 20,
             MaxExperience: 50,
             NarrativeNote: "前面的区域，办了护照再来探索吧",
             Progress: (trips, reviews, today, context) => P(BorderPortCount(trips), 1),
@@ -3043,13 +3043,9 @@ public static partial class AchievementEngine
             }),
             trip => new[] { trip.FromStation, trip.ToStation }.Select(NormalizedStation));
 
-    /// <summary>「异域风情」的一处口岸：凭祥交界按凭祥站或凭祥交界线判定，其余按到站判定。</summary>
+    /// <summary>「异域风情」的一处口岸：按到站判定。</summary>
     private static bool MatchesBorderPort(PublicTrip trip, string key)
     {
-        if (key == "凭祥交界")
-            return NormalizedStation(trip.FromStation) == "凭祥" ||
-                NormalizedStation(trip.ToStation) == "凭祥" ||
-                RouteNames(trip).Any(name => name.Contains("凭祥交界", StringComparison.Ordinal));
         var station = NormalizedStation(key);
         return NormalizedStation(trip.FromStation) == station ||
             NormalizedStation(trip.ToStation) == station;
