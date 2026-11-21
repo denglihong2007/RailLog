@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/dashboard_achievement.dart';
 import 'package:raillog/src/pages/achievement_unlock_trips_page.dart';
+import 'package:raillog/src/pages/home_page.dart';
 import 'package:raillog/src/pages/trip_record_details_page.dart';
 import 'package:raillog/src/services/db_helper.dart';
 import 'package:raillog/src/widgets/app_card.dart';
@@ -12,12 +13,16 @@ class AchievementRequirementsPage extends StatelessWidget {
     super.key,
     required this.achievement,
     this.ownerName,
+    this.ownerUserId,
   });
 
   final DashboardAchievement achievement;
 
   /// 看别人的进度时传昵称，标题里标明这是 TA 的页面。
   final String? ownerName;
+
+  /// 看别人的进度时一并传 userId，行程详情里才能跳回 TA 的主页。
+  final String? ownerUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +74,7 @@ class AchievementRequirementsPage extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: AchievementRequirementRow(
                   requirement: requirements[index - 1],
+                  ownerUserId: ownerUserId,
                 ),
               );
             },
@@ -170,9 +176,16 @@ class _RequirementsHeader extends StatelessWidget {
 }
 
 class AchievementRequirementRow extends StatelessWidget {
-  const AchievementRequirementRow({super.key, required this.requirement});
+  const AchievementRequirementRow({
+    super.key,
+    required this.requirement,
+    this.ownerUserId,
+  });
 
   final DashboardAchievementRequirement requirement;
+
+  /// 非空表示这些行程属于该用户（看别人的进度），详情页需要能跳回 TA 的主页。
+  final String? ownerUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -218,22 +231,34 @@ class AchievementRequirementRow extends StatelessWidget {
     );
   }
 
-  /// 达成要求里的行程都是自己的，有本地副本时走可编辑的详情页。
+  /// 自己的达成要求优先走本地可编辑详情；别人的只读，并把作者卡片接到 TA 的主页。
   Future<void> _openTrip(
     BuildContext context,
     AchievementRequirementTrip trip,
   ) async {
     final navigator = Navigator.of(context);
-    final local = await DbHelper.instance.getTripByTicketId(trip.ticketId);
-    if (local != null) {
-      navigator.push(
-        m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: local.id)),
-      );
-      return;
+    final ownerUserId = this.ownerUserId;
+    if (ownerUserId == null) {
+      final local = await DbHelper.instance.getTripByTicketId(trip.ticketId);
+      if (local != null) {
+        navigator.push(
+          m3PageRoute(builder: (_) => TripRecordDetailsPage(tripId: local.id)),
+        );
+        return;
+      }
     }
     navigator.push(
       m3PageRoute(
-        builder: (_) => TripRecordDetailsPage.public(ticketId: trip.ticketId),
+        builder: (_) => TripRecordDetailsPage.public(
+          ticketId: trip.ticketId,
+          onOwnerTap: ownerUserId == null
+              ? null
+              : () => navigator.push(
+                  m3PageRoute(
+                    builder: (_) => PublicUserPage(userId: ownerUserId),
+                  ),
+                ),
+        ),
       ),
     );
   }

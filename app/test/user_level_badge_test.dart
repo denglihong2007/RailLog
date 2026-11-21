@@ -7,16 +7,16 @@ void main() {
     expect(userLevelForExperience(-1), 0);
     expect(userLevelForExperience(0), 0);
     expect(userLevelForExperience(1), 1);
-    expect(userLevelForExperience(49), 1);
-    expect(userLevelForExperience(50), 2);
-    expect(userLevelForExperience(124), 2);
-    expect(userLevelForExperience(125), 3);
-    expect(userLevelForExperience(249), 3);
-    expect(userLevelForExperience(250), 4);
-    expect(userLevelForExperience(449), 4);
-    expect(userLevelForExperience(450), 5);
-    expect(userLevelForExperience(799), 5);
-    expect(userLevelForExperience(800), 6);
+    expect(userLevelForExperience(99), 1);
+    expect(userLevelForExperience(100), 2);
+    expect(userLevelForExperience(249), 2);
+    expect(userLevelForExperience(250), 3);
+    expect(userLevelForExperience(499), 3);
+    expect(userLevelForExperience(500), 4);
+    expect(userLevelForExperience(799), 4);
+    expect(userLevelForExperience(800), 5);
+    expect(userLevelForExperience(1099), 5);
+    expect(userLevelForExperience(1100), 6);
     expect(userLevelForExperience(5000), 6);
   });
 
@@ -29,17 +29,17 @@ void main() {
 
     final levelOneStart = userLevelProgressForExperience(1);
     expect(levelOneStart.level, 1);
-    expect(levelOneStart.remainingExperience, 49);
+    expect(levelOneStart.remainingExperience, 99);
     expect(levelOneStart.value, 0);
 
-    final levelOneEnd = userLevelProgressForExperience(49);
-    expect(levelOneEnd.value, closeTo(48 / 49, 0.0001));
+    final levelOneEnd = userLevelProgressForExperience(99);
+    expect(levelOneEnd.value, closeTo(98 / 99, 0.0001));
 
-    final levelTwoStart = userLevelProgressForExperience(50);
+    final levelTwoStart = userLevelProgressForExperience(100);
     expect(levelTwoStart.level, 2);
     expect(levelTwoStart.value, 0);
 
-    final maxLevel = userLevelProgressForExperience(800);
+    final maxLevel = userLevelProgressForExperience(1100);
     expect(maxLevel.level, 6);
     expect(maxLevel.isMaxLevel, isTrue);
     expect(maxLevel.value, 1);

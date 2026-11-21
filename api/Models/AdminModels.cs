@@ -24,6 +24,13 @@ public sealed record AdminAnnouncement(
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
+public sealed record AdminNotificationRequest(
+    string Message,
+    bool AllUsers,
+    IReadOnlyList<string>? UserIds);
+
+public sealed record AdminNotificationResult(int RecipientCount);
+
 public sealed record AdminUserSummary(
     string Id,
     string Email,

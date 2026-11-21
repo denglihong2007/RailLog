@@ -318,6 +318,7 @@ IconData _notificationIcon(String type) => switch (type) {
   'review_updated' => Icons.edit_note,
   'review_reaction' => Icons.chat_bubble_outline,
   'review_mention' => Icons.alternate_email,
+  'admin_message' => Icons.campaign_outlined,
   _ => Icons.notifications_outlined,
 };
 

@@ -29,6 +29,23 @@ void main() {
     expect(read.reviewId, notification.reviewId);
   });
 
+  test('admin messages are plain text without a navigation target', () {
+    final notification = UserNotification.fromJson({
+      'id': 9,
+      'type': 'admin_message',
+      'actorName': '管理员',
+      'message': '系统将于今晚 23:00 进行维护。',
+      'createdAt': '2026-11-21T10:00:00Z',
+      'readAt': null,
+    });
+
+    expect(notification.isAdminMessage, isTrue);
+    expect(notification.tripId, isNull);
+    expect(notification.reviewId, isNull);
+    expect(notification.entityType, isNull);
+    expect(notification.entityKey, isNull);
+  });
+
   test('NotificationPage parses empty pages', () {
     final page = NotificationPage.fromJson({
       'items': [],

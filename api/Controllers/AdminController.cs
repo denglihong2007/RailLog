@@ -118,6 +118,36 @@ public sealed class AdminController(
         return NoContent();
     }
 
+    // ---- 系统通知 ----
+
+    /// <summary>
+    /// 向所有用户或指定用户推送一条纯文本系统通知。通知写入每个账户的
+    /// 收件箱，用户下次打开 App 即可看到；通知不携带跳转目标。
+    /// </summary>
+    [HttpPost("notifications")]
+    public async Task<ActionResult<AdminNotificationResult>> SendNotification(
+        AdminNotificationRequest request)
+    {
+        var message = request.Message?.Trim() ?? string.Empty;
+        if (message.Length == 0)
+            return BadRequest(new MessageResponse("通知内容不能为空"));
+        if (message.Length > 1000)
+            return BadRequest(new MessageResponse("通知内容不能超过 1000 个字符"));
+        if (!request.AllUsers && (request.UserIds is null || request.UserIds.Count == 0))
+            return BadRequest(new MessageResponse("请选择接收通知的用户"));
+
+        var recipients = await database.SendAdminNotificationAsync(
+            AdminUserId!, message, request.AllUsers, request.UserIds);
+        if (recipients == 0)
+            return BadRequest(new MessageResponse("没有找到可接收通知的用户"));
+
+        await AuditAsync(
+            "notification.send",
+            request.AllUsers ? "全体用户" : $"{recipients} 位用户",
+            message);
+        return Ok(new AdminNotificationResult(recipients));
+    }
+
     // ---- 用户与行程 ----
 
     [HttpGet("users")]

@@ -40,7 +40,9 @@ class _ReviewCommentTextState extends State<ReviewCommentText> {
     _resetRecognizers();
     final matches = matchReviewMentions(widget.comment, widget.mentions);
     if (matches.isEmpty) {
-      return Text(widget.comment, style: widget.style);
+      return SelectionArea(
+        child: Text(widget.comment, style: widget.style),
+      );
     }
 
     final colors = Theme.of(context).colorScheme;
@@ -68,7 +70,9 @@ class _ReviewCommentTextState extends State<ReviewCommentText> {
     if (cursor < widget.comment.length) {
       spans.add(TextSpan(text: widget.comment.substring(cursor)));
     }
-    return Text.rich(TextSpan(children: spans), style: widget.style);
+    return SelectionArea(
+      child: Text.rich(TextSpan(children: spans), style: widget.style),
+    );
   }
 
   void _openUser(String userId) {

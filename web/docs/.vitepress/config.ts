@@ -26,6 +26,7 @@ export default defineConfig({
             { text: '评价', link: '/reviews' },
             { text: '行程详情', link: '/trips' },
             { text: '用户信息', link: '/users' },
+            { text: '账户授权', link: '/oauth' },
             {
                 text: '官网',
                 items: [
@@ -49,6 +50,7 @@ export default defineConfig({
                     { text: '评价', link: '/reviews' },
                     { text: '行程详情', link: '/trips' },
                     { text: '用户信息', link: '/users' },
+                    { text: '账户授权（OAuth 2.0）', link: '/oauth' },
                 ],
             },
             {

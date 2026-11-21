@@ -87,6 +87,88 @@ public sealed partial class RailLogDatabase
         }
     }
 
+    /// <summary>
+    /// 管理员群发系统通知：AllUsers 为 true 时发给全部账户，否则只发给
+    /// UserIds 里仍然存在的账户。返回实际写入的通知条数。
+    /// </summary>
+    public async Task<int> SendAdminNotificationAsync(
+        string adminUserId,
+        string message,
+        bool allUsers,
+        IReadOnlyList<string>? userIds)
+    {
+        var recipients = (userIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct()
+            .ToList();
+        if (!allUsers && recipients.Count == 0) return 0;
+
+        await _writeLock.WaitAsync();
+        try
+        {
+            await using var connection = OpenConnection();
+            await connection.OpenAsync();
+            var actorName =
+                await GetUserDisplayNameAsync(connection, null, adminUserId) ?? "系统";
+            var now = ToDbUtc(DateTime.UtcNow);
+
+            if (allUsers)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO Notifications
+                        (UserId, Type, ActorUserId, ActorName, Message, CreatedAt)
+                    SELECT Id, $type, $actorUserId, $actorName, $message, $now
+                    FROM AspNetUsers;
+                    """;
+                AddAdminNotificationParameters(
+                    command, adminUserId, actorName, message, now);
+                return await command.ExecuteNonQueryAsync();
+            }
+
+            // SQLite 的单条语句参数数量有上限，批量群发时分段执行。
+            var inserted = 0;
+            foreach (var batch in recipients.Chunk(400))
+            {
+                await using var command = connection.CreateCommand();
+                var parameters = batch
+                    .Select((_, index) => $"$user{index}")
+                    .ToList();
+                command.CommandText = $"""
+                    INSERT INTO Notifications
+                        (UserId, Type, ActorUserId, ActorName, Message, CreatedAt)
+                    SELECT Id, $type, $actorUserId, $actorName, $message, $now
+                    FROM AspNetUsers
+                    WHERE Id IN ({string.Join(",", parameters)});
+                    """;
+                for (var index = 0; index < batch.Length; index++)
+                    command.Parameters.AddWithValue(parameters[index], batch[index]);
+                AddAdminNotificationParameters(
+                    command, adminUserId, actorName, message, now);
+                inserted += await command.ExecuteNonQueryAsync();
+            }
+            return inserted;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private static void AddAdminNotificationParameters(
+        SqliteCommand command,
+        string adminUserId,
+        string actorName,
+        string message,
+        string now)
+    {
+        command.Parameters.AddWithValue("$type", "admin_message");
+        command.Parameters.AddWithValue("$actorUserId", adminUserId);
+        command.Parameters.AddWithValue("$actorName", actorName);
+        command.Parameters.AddWithValue("$message", message);
+        command.Parameters.AddWithValue("$now", now);
+    }
+
     public async Task<NotificationPageResponse> GetNotificationsAsync(
         string userId,
         int offset,

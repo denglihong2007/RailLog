@@ -166,6 +166,7 @@ public sealed partial class RailLogDatabase
                 UserId TEXT NOT NULL,
                 AchievementId TEXT NOT NULL,
                 TriggerTripId INTEGER NOT NULL,
+                PeakTripId INTEGER NULL,
                 Experience INTEGER NOT NULL DEFAULT 0,
                 EvaluatedAt TEXT NOT NULL,
                 PRIMARY KEY (UserId, AchievementId),
@@ -257,6 +258,63 @@ public sealed partial class RailLogDatabase
                 Detail TEXT NULL,
                 CreatedAt TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS OAuthClients (
+                ClientId TEXT NOT NULL PRIMARY KEY,
+                Name TEXT NOT NULL,
+                LogoUrl TEXT NULL,
+                ClientSecretHash TEXT NULL,
+                RedirectUris TEXT NOT NULL,
+                Scopes TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                RevokedAt TEXT NULL
+            );
+            CREATE TABLE IF NOT EXISTS OAuthAuthorizationCodes (
+                CodeHash TEXT NOT NULL PRIMARY KEY,
+                ClientId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                RedirectUri TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CodeChallenge TEXT NOT NULL,
+                CodeChallengeMethod TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                ConsumedAt TEXT NULL,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OAuthAccessTokens (
+                TokenHash TEXT NOT NULL PRIMARY KEY,
+                ClientId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                RevokedAt TEXT NULL,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OAuthRefreshTokens (
+                TokenHash TEXT NOT NULL PRIMARY KEY,
+                ClientId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                ExpiresAt TEXT NOT NULL,
+                RevokedAt TEXT NULL,
+                RotatedAt TEXT NULL,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE,
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS OAuthConsents (
+                UserId TEXT NOT NULL,
+                ClientId TEXT NOT NULL,
+                Scope TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                RevokedAt TEXT NULL,
+                PRIMARY KEY (UserId, ClientId),
+                FOREIGN KEY (UserId) REFERENCES AspNetUsers (Id) ON DELETE CASCADE,
+                FOREIGN KEY (ClientId) REFERENCES OAuthClients (ClientId) ON DELETE CASCADE
+            );
             """);
         // Remove indexes left by older Identity-compatible schemas before
         // dropping the no-longer-used normalized email column.
@@ -277,6 +335,7 @@ public sealed partial class RailLogDatabase
         await EnsureColumnAsync(connection, "EntityReviews", "RouteFromStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "EntityReviews", "RouteToStation", "TEXT NULL");
         await EnsureColumnAsync(connection, "UserAchievements", "Experience", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync(connection, "UserAchievements", "PeakTripId", "INTEGER NULL");
         await ExecuteAsync(connection, $"""
             UPDATE AspNetUsers
             SET CreatedAt = '{ToDb(DateTime.Now)}'
@@ -314,6 +373,14 @@ public sealed partial class RailLogDatabase
                 ON UserAchievements (AchievementId);
             CREATE INDEX IF NOT EXISTS IX_AdminAuditLogs_CreatedAt
                 ON AdminAuditLogs (CreatedAt DESC);
+            CREATE INDEX IF NOT EXISTS IX_OAuthAuthorizationCodes_ExpiresAt
+                ON OAuthAuthorizationCodes (ExpiresAt);
+            CREATE INDEX IF NOT EXISTS IX_OAuthAccessTokens_UserClient
+                ON OAuthAccessTokens (UserId, ClientId);
+            CREATE INDEX IF NOT EXISTS IX_OAuthRefreshTokens_UserClient
+                ON OAuthRefreshTokens (UserId, ClientId);
+            CREATE INDEX IF NOT EXISTS IX_OAuthConsents_UserId
+                ON OAuthConsents (UserId);
             """);
     }
 
@@ -2221,7 +2288,10 @@ public sealed partial class RailLogDatabase
                    CASE WHEN user.Id = $currentUserId THEN 1 ELSE 0 END,
                    achievement.Experience
             FROM UserAchievements achievement
-            JOIN TripRecords trip ON trip.Id = achievement.TriggerTripId
+            JOIN TripRecords trip ON trip.Id = COALESCE(
+                (SELECT peak.Id FROM TripRecords peak
+                 WHERE peak.Id = achievement.PeakTripId AND peak.DeletedAt IS NULL),
+                achievement.TriggerTripId)
             JOIN AspNetUsers user ON user.Id = achievement.UserId
             WHERE achievement.AchievementId = $achievementId
               AND trip.DeletedAt IS NULL
@@ -2824,7 +2894,7 @@ public sealed partial class RailLogDatabase
     private SqliteConnection OpenConnection() => new(_connectionString);
     private static bool IsValidEmail(string value) =>
         value.Length <= 254 && value.Contains('@') && !value.StartsWith('@') && !value.EndsWith('@');
-    private static string HashToken(string token) =>
+    internal static string HashToken(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private static string ToDb(DateTime value) => value.ToString("O");
     private static string ToDbUtc(DateTime value) =>
@@ -3119,7 +3189,9 @@ public sealed partial class RailLogDatabase
         for (var pass = 0; pass < 8; pass++)
         {
             var context = new AchievementContext(totalExperience, totalReviewReactions);
-            unlocked = AchievementEngine.Evaluate(trips, reviews, context)
+            // 最高分行程要做前缀二分，代价比普通求值高，只在最后一轮算。
+            unlocked = AchievementEngine.Evaluate(
+                    trips, reviews, context, computePeakTrip: pass == 7)
                 .Where(item => item.TriggerTripId.HasValue)
                 .ToList();
             totalExperience = unlocked.Sum(item => item.Experience);
@@ -3161,13 +3233,16 @@ public sealed partial class RailLogDatabase
                 insert.Transaction = (SqliteTransaction)transaction;
                 insert.CommandText = """
                     INSERT INTO UserAchievements
-                        (UserId, AchievementId, TriggerTripId, Experience, EvaluatedAt)
-                    SELECT $userId, $achievementId, $triggerTripId, $experience, $evaluatedAt
+                        (UserId, AchievementId, TriggerTripId, PeakTripId, Experience, EvaluatedAt)
+                    SELECT $userId, $achievementId, $triggerTripId, $peakTripId,
+                           $experience, $evaluatedAt
                     WHERE EXISTS (SELECT 1 FROM AspNetUsers WHERE Id = $userId);
                     """;
                 insert.Parameters.AddWithValue("$userId", userId);
                 insert.Parameters.AddWithValue("$achievementId", achievement.Id);
                 insert.Parameters.AddWithValue("$triggerTripId", achievement.TriggerTripId!.Value);
+                insert.Parameters.AddWithValue(
+                    "$peakTripId", achievement.PeakTripId ?? achievement.TriggerTripId!.Value);
                 insert.Parameters.AddWithValue("$experience", achievement.Experience);
                 insert.Parameters.AddWithValue("$evaluatedAt", ToDb(DateTime.Now));
                 await insert.ExecuteNonQueryAsync();

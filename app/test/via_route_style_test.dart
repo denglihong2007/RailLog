@@ -39,25 +39,25 @@ void main() {
       expect(styles.first.color, isNot(styles.last.color));
     });
 
-    test('同一条线的不同写法合并成一种颜色和一条图例', () {
+    test('线路名不同就是两条线，不按写法归一', () {
       final styles = buildViaRouteLineStyles(const [
         ViaRouteSegment(
-          routeName: '京沪高速铁路',
-          fromStation: '北京南',
-          toStation: '济南西',
-          mileageKm: 406,
+          routeName: '兰新线',
+          fromStation: '乌鲁木齐',
+          toStation: '乌鲁木齐南',
+          mileageKm: 9,
         ),
         ViaRouteSegment(
-          routeName: '京沪高速线',
-          fromStation: '济南西',
-          toStation: '上海虹桥',
-          mileageKm: 912,
+          routeName: '兰新客专线',
+          fromStation: '乌鲁木齐南',
+          toStation: '吐鲁番北',
+          mileageKm: 158,
         ),
       ], colors);
 
-      expect(styles, hasLength(1));
-      expect(styles.single.route, '京沪高速铁路');
-      expect(styles.single.mileageKm, 1318);
+      expect(styles.map((style) => style.route), ['兰新线', '兰新客专线']);
+      expect(styles.map((style) => style.mileageKm), [9, 158]);
+      expect(styles.first.color, isNot(styles.last.color));
     });
 
     test('空线路名归一为手动线路，未记录里程保持 0', () {
@@ -75,7 +75,7 @@ void main() {
   });
 
   group('findViaRouteColor', () {
-    test('规范线路名能对上行程里记录的别名', () {
+    test('按线路原名精确配色', () {
       final styles = buildViaRouteLineStyles(const [
         ViaRouteSegment(
           routeName: '京沪高速铁路',
@@ -84,19 +84,11 @@ void main() {
         ),
       ], colors);
 
-      // 地图折线来自线路库，名字是「京沪高速线」。
-      expect(findViaRouteColor('京沪高速线', styles), styles.single.color);
       expect(findViaRouteColor('京沪高速铁路', styles), styles.single.color);
+      // 名字不同就是另一条线路，不做写法归一去套用别人的颜色。
+      expect(findViaRouteColor('京沪高速线', styles), isNull);
       expect(findViaRouteColor('胶济客专线', styles), isNull);
       expect(findViaRouteColor(null, styles), isNull);
     });
-  });
-
-  test('viaRouteLineKey 去掉线别后缀', () {
-    expect(viaRouteLineKey('京沪高速铁路'), '京沪高速');
-    expect(viaRouteLineKey('京沪高速线'), '京沪高速');
-    expect(viaRouteLineKey('胶济客运专线'), '胶济');
-    expect(viaRouteLineKey('胶济客专线'), '胶济');
-    expect(viaRouteLineKey('宝成线'), '宝成');
   });
 }

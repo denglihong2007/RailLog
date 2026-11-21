@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import {
   Award,
+  BellRing,
   CalendarClock,
   ClipboardList,
   Copy,
@@ -20,6 +21,7 @@ import { api, clearToken, readAdminName, readToken, storeAdminName, storeToken, 
 import LoginView from './components/LoginView.vue'
 import OverviewView from './components/OverviewView.vue'
 import AnnouncementsView from './components/AnnouncementsView.vue'
+import NotificationsView from './components/NotificationsView.vue'
 import LeaderboardsView from './components/LeaderboardsView.vue'
 import ReviewsView from './components/ReviewsView.vue'
 import AchievementsView from './components/AchievementsView.vue'
@@ -36,6 +38,7 @@ import { toast } from './toast'
 type ViewName =
   | 'overview'
   | 'announcements'
+  | 'notifications'
   | 'leaderboards'
   | 'reviews'
   | 'achievements'
@@ -84,6 +87,7 @@ const navGroups: NavGroup[] = [
     label: '内容运营',
     items: [
       { view: 'announcements', label: '公告管理', path: '/announcements', icon: Megaphone },
+      { view: 'notifications', label: '系统通知', path: '/notifications', icon: BellRing },
       { view: 'leaderboards', label: '排行榜', path: '/leaderboards', icon: Trophy },
       { view: 'reviews', label: '评价管理', path: '/reviews', icon: MessageSquareText },
     ],
@@ -110,6 +114,7 @@ const navGroups: NavGroup[] = [
 const titles: Record<ViewName, { title: string; subtitle: string }> = {
   overview: { title: '概览', subtitle: '站务数据、数据健康与最近动态' },
   announcements: { title: '公告管理', subtitle: '维护 App 主页轮播的系统公告' },
+  notifications: { title: '系统通知', subtitle: '向全部或指定用户发送纯文字通知，写入其 App 收件箱' },
   leaderboards: { title: '排行榜', subtitle: '点选排行中的用户或行程，可直接定位并修正数据' },
   reviews: { title: '评价管理', subtitle: '检索、查看与删除用户评价及其回应，并查看评价用户排行' },
   achievements: { title: '等级与成就', subtitle: '用户等级分布与经验分界线、全站成就达成情况（成就只读）' },
@@ -129,6 +134,7 @@ function parseRoute(): Route {
   const parts = path.split('/').filter(Boolean)
   const first = parts[0]
   if (first === 'announcements') return { view: 'announcements' }
+  if (first === 'notifications') return { view: 'notifications' }
   if (first === 'leaderboards') return { view: 'leaderboards' }
   if (first === 'achievements') return { view: 'achievements' }
   if (first === 'duplicates') return { view: 'duplicates' }
@@ -294,6 +300,7 @@ onBeforeUnmount(() => {
           @open-trip="(userId, tripId) => navigate(`/users/${userId}/trips?trip=${tripId}`)"
         />
         <AnnouncementsView v-else-if="route.view === 'announcements'" />
+        <NotificationsView v-else-if="route.view === 'notifications'" />
         <LeaderboardsView
           v-else-if="route.view === 'leaderboards'"
           @open-user="(id) => navigate(`/users/${id}/trips`)"

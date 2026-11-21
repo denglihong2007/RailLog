@@ -8,6 +8,7 @@ import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
+import 'package:raillog/src/models/trip_schedule_times.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
@@ -21,12 +22,14 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
+import 'package:raillog/src/services/trip_schedule_time_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/trip_details/timetable_correction_dialog.dart';
 import 'package:raillog/src/widgets/trip_details/trip_via_route_map.dart';
 import 'package:raillog/src/widgets/trip_details/via_route_style.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
@@ -1541,6 +1544,47 @@ class _ViaRouteDisplay extends StatefulWidget {
 
 class _ViaRouteDisplayState extends State<_ViaRouteDisplay> {
   _ViaRouteDisplayMode _mode = _ViaRouteDisplayMode.diagram;
+  TripScheduleOverlay _overlay = const TripScheduleOverlay();
+  int _scheduleRequestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadScheduleTimes();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ViaRouteDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trip.clientId != widget.trip.clientId ||
+        oldWidget.trip.updatedAt != widget.trip.updatedAt) {
+      _overlay = const TripScheduleOverlay();
+      _loadScheduleTimes();
+    }
+  }
+
+  /// 历史时刻表只用来叠加显示，读不到或时刻对不上就静默不显示。
+  Future<void> _loadScheduleTimes() async {
+    final requestId = ++_scheduleRequestId;
+    final times = await TripScheduleTimeService.load(widget.trip);
+    if (!mounted || requestId != _scheduleRequestId) return;
+    setState(() => _overlay = _overlay.withTimes(times));
+  }
+
+  Future<void> _openTimetableCorrection(
+    List<String> stationNames,
+    List<StationScheduleTime?> scheduleTimes,
+  ) async {
+    final corrected = await showTimetableCorrectionDialog(
+      context,
+      overlay: _overlay,
+      stationNames: stationNames,
+      scheduleTimes: scheduleTimes,
+      baseDate: widget.trip.departureTime,
+    );
+    if (!mounted || corrected == null) return;
+    setState(() => _overlay = corrected);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1575,9 +1619,18 @@ class _ViaRouteDisplayState extends State<_ViaRouteDisplay> {
         ),
         const SizedBox(height: 12),
         if (_mode == _ViaRouteDisplayMode.diagram)
-          _ViaRouteDiagram(trip: widget.trip, lineStyles: lineStyles)
+          _ViaRouteDiagram(
+            trip: widget.trip,
+            lineStyles: lineStyles,
+            overlay: _overlay,
+            onCorrectSchedule: _openTimetableCorrection,
+          )
         else
-          TripViaRouteMap(trip: widget.trip, lineStyles: lineStyles),
+          TripViaRouteMap(
+            trip: widget.trip,
+            lineStyles: lineStyles,
+            overlay: _overlay,
+          ),
         _ViaRouteLegend(lines: lineStyles),
       ],
     );
@@ -1650,10 +1703,21 @@ class _ViaRouteLegend extends StatelessWidget {
 }
 
 class _ViaRouteDiagram extends StatefulWidget {
-  const _ViaRouteDiagram({required this.trip, required this.lineStyles});
+  const _ViaRouteDiagram({
+    required this.trip,
+    required this.lineStyles,
+    required this.overlay,
+    this.onCorrectSchedule,
+  });
 
   final TripRecord trip;
   final List<ViaRouteLineStyle> lineStyles;
+  final TripScheduleOverlay overlay;
+  final Future<void> Function(
+    List<String> stationNames,
+    List<StationScheduleTime?> scheduleTimes,
+  )?
+  onCorrectSchedule;
 
   @override
   State<_ViaRouteDiagram> createState() => _ViaRouteDiagramState();
@@ -1661,12 +1725,12 @@ class _ViaRouteDiagram extends StatefulWidget {
 
 class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     with AutomaticKeepAliveClientMixin<_ViaRouteDiagram> {
-  static const _rowHeight = 88.0;
   Map<int, List<RouteStation>> _routeStations = const {};
   final Set<int> _expandedRouteSections = {};
   final Set<int> _loadingRouteSections = {};
   final Set<int> _nonExpandableRouteSections = {};
   int _stationRequestId = 0;
+  bool _pendingOpenCorrection = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -1682,7 +1746,27 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       _expandedRouteSections.clear();
       _loadingRouteSections.clear();
       _nonExpandableRouteSections.clear();
+      _pendingOpenCorrection = false;
     }
+  }
+
+  /// 编辑时刻需要中间站。线路还没展开时先展开读完站序，再由 build 触发编辑。
+  Future<void> _handleEditSchedule(
+    List<String> stationNames,
+    List<StationScheduleTime?> scheduleTimes,
+  ) async {
+    if (stationNames.length >= 3) {
+      await widget.onCorrectSchedule?.call(stationNames, scheduleTimes);
+      return;
+    }
+    _pendingOpenCorrection = true;
+    await _toggleAllSections();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_pendingOpenCorrection) return;
+    _pendingOpenCorrection = false;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('本段没有可编辑的中间站')));
   }
 
   /// 与 build 中的区间分组保持一致，把每个线路区间映射到它覆盖的段序号。
@@ -1926,6 +2010,27 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       }
     }
 
+    final annotations = widget.overlay.annotate(
+      stationNames: stations,
+      mileage: cumulativeMileage,
+    );
+    final canEditSchedule =
+        widget.onCorrectSchedule != null &&
+        (widget.overlay.hasData ||
+            _routeSectionIds().any(_isRouteSectionExpandable));
+
+    // 点编辑时线路还在收起状态：等站序读完、build 拿到中间站后再弹窗。
+    if (_pendingOpenCorrection && stations.length >= 3) {
+      _pendingOpenCorrection = false;
+      final names = List<String>.of(stations);
+      final values = List<StationScheduleTime?>.of(annotations);
+      final clientId = widget.trip.clientId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.trip.clientId != clientId) return;
+        widget.onCorrectSchedule?.call(names, values);
+      });
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = stations.length == 1
@@ -1937,7 +2042,17 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
           columns: columns,
         );
         final rowCount = (trackLayout.slotCount + columns - 1) ~/ columns;
-        final height = rowCount * _rowHeight;
+        final rowLayout = _ViaRowLayout.build(
+          rowCount: rowCount,
+          labelRows: _routeLabelRows(
+            trackLayout: trackLayout,
+            routeSectionIds: routeSectionIds,
+            columns: columns,
+          ),
+          labelRowHeight: widget.overlay.hasData ? 116.0 : 96.0,
+          compactRowHeight: widget.overlay.hasData ? 96.0 : 76.0,
+        );
+        final height = rowLayout.totalHeight;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1951,6 +2066,20 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                     ),
                   ),
                 ),
+                if (canEditSchedule)
+                  TextButton.icon(
+                    onPressed: _loadingRouteSections.isEmpty
+                        ? () => _handleEditSchedule(stations, annotations)
+                        : null,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                    label: Text(
+                      widget.overlay.times == null ? '添加时刻' : '编辑时刻',
+                    ),
+                  ),
                 TextButton.icon(
                   onPressed: _loadingRouteSections.isEmpty
                       ? _toggleAllSections
@@ -1979,7 +2108,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       painter: _ViaRoutePainter(
                         segmentColors: segmentColors,
                         routeSectionIds: routeSectionIds,
-                        rowHeight: _rowHeight,
+                        rowLayout: rowLayout,
                         stationCount: stations.length,
                         columns: columns,
                         trackUnderlayColor: colors.surfaceContainerHighest,
@@ -1993,6 +2122,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       index: index,
                       station: stations[index],
                       mileage: cumulativeMileage[index],
+                      scheduleTime: annotations[index],
                       isReversal: stationReversals[index],
                       leftColor: _stationSideColor(
                         index,
@@ -2013,6 +2143,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       width: constraints.maxWidth,
                       columns: columns,
                       slot: trackLayout.stationSlots[index],
+                      rowLayout: rowLayout,
                     ),
                   ..._buildRouteLabels(
                     context,
@@ -2022,6 +2153,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                     width: constraints.maxWidth,
                     columns: columns,
                     trackLayout: trackLayout,
+                    rowLayout: rowLayout,
                   ),
                 ],
               ),
@@ -2032,6 +2164,35 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     );
   }
 
+  /// 哪些行放了线路标签。标签所在行要保留标签上方的空间，其余行可以压扁。
+  Set<int> _routeLabelRows({
+    required _ViaTrackLayout trackLayout,
+    required List<int> routeSectionIds,
+    required int columns,
+  }) {
+    final rows = <int>{};
+    var firstSegment = 0;
+    while (firstSegment < routeSectionIds.length) {
+      var lastSegment = firstSegment;
+      while (lastSegment + 1 < routeSectionIds.length &&
+          routeSectionIds[lastSegment + 1] == routeSectionIds[firstSegment]) {
+        lastSegment++;
+      }
+      if (trackLayout.hasVirtualAfter(firstSegment) &&
+          lastSegment == firstSegment) {
+        rows.add(trackLayout.stationSlots[firstSegment + 1] ~/ columns);
+      } else {
+        final firstSlot = trackLayout.stationSlots[firstSegment];
+        final firstRowSlot = firstSlot % columns == columns - 1
+            ? firstSlot + 1
+            : firstSlot;
+        rows.add(firstRowSlot ~/ columns);
+      }
+      firstSegment = lastSegment + 1;
+    }
+    return rows;
+  }
+
   List<Widget> _buildRouteLabels(
     BuildContext context, {
     required List<String> routeNames,
@@ -2040,6 +2201,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required double width,
     required int columns,
     required _ViaTrackLayout trackLayout,
+    required _ViaRowLayout rowLayout,
   }) {
     final labels = <Widget>[];
     var firstSegment = 0;
@@ -2056,6 +2218,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         width,
         columns,
         trackLayout,
+        rowLayout,
       );
       final routeName = routeNames[firstSegment];
       // 中间站要读库才知道有没有，所以线路名存在就先给出展开箭头；
@@ -2068,7 +2231,8 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
             0,
             math.min(width - labelWidth, center.dx - labelWidth / 2),
           ),
-          top: math.max(0, center.dy - 34),
+          // 原标签上移，给轨道留出更明显的间距。
+          top: math.max(0, center.dy - 37),
           width: labelWidth,
           height: 25,
           child: Center(
@@ -2097,6 +2261,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     double width,
     int columns,
     _ViaTrackLayout trackLayout,
+    _ViaRowLayout rowLayout,
   ) {
     final firstSlot = trackLayout.stationSlots[firstSegment];
     if (trackLayout.hasVirtualAfter(firstSegment) &&
@@ -2105,13 +2270,13 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
         trackLayout.virtualSlotAfter(firstSegment),
         width,
         columns,
-        _rowHeight,
+        rowLayout,
       );
       final nextStation = _viaSlotOffset(
         trackLayout.stationSlots[firstSegment + 1],
         width,
         columns,
-        _rowHeight,
+        rowLayout,
       );
       return Offset((virtual.dx + nextStation.dx) / 2, nextStation.dy);
     }
@@ -2120,15 +2285,15 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     final firstRowSlot = startsAtTurn ? firstSlot + 1 : firstSlot;
     final firstRow = firstRowSlot ~/ columns;
     final endSlot = trackLayout.stationSlots[lastSegment + 1];
-    final rowStart = _viaSlotOffset(firstRowSlot, width, columns, _rowHeight);
+    final rowStart = _viaSlotOffset(firstRowSlot, width, columns, rowLayout);
     var endX = rowStart.dx;
     for (var slot = firstRowSlot; slot < endSlot; slot++) {
       if (slot ~/ columns != firstRow) break;
-      final end = _viaSlotOffset(slot + 1, width, columns, _rowHeight);
+      final end = _viaSlotOffset(slot + 1, width, columns, rowLayout);
       if (slot ~/ columns == (slot + 1) ~/ columns) {
         endX = end.dx;
       } else {
-        endX = _viaSlotOffset(slot, width, columns, _rowHeight).dx;
+        endX = _viaSlotOffset(slot, width, columns, rowLayout).dx;
         break;
       }
     }
@@ -2218,21 +2383,24 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required int index,
     required String station,
     required double mileage,
+    required StationScheduleTime? scheduleTime,
     required bool isReversal,
     required Color leftColor,
     required Color rightColor,
     required double width,
     required int columns,
     required int slot,
+    required _ViaRowLayout rowLayout,
   }) {
     final row = slot ~/ columns;
     final x = _viaSlotX(slot, width, columns);
     final labelWidth = math.min(104.0, width / columns);
+    final dotTop = rowLayout.trackY(row) - _ViaStationDot.size / 2;
     return Positioned(
-      top: row * _rowHeight + 25,
+      top: dotTop,
       left: 0,
       width: width,
-      height: _rowHeight - 25,
+      height: rowLayout.top(row + 1) - dotTop,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -2242,6 +2410,8 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
               leftColor: leftColor,
               rightColor: rightColor,
               isReversal: isReversal,
+              isStop: scheduleTime?.isStop ?? false,
+              isPass: scheduleTime != null && !scheduleTime.isStop,
             ),
           ),
           Positioned(
@@ -2251,6 +2421,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
             child: _ViaStationLabel(
               station: station,
               mileage: mileage,
+              scheduleTime: scheduleTime,
               alignEnd: false,
               onTap: () => openEntityPage(context, EntityType.station, station),
             ),
@@ -2364,7 +2535,7 @@ class _ViaRoutePainter extends CustomPainter {
   const _ViaRoutePainter({
     required this.segmentColors,
     required this.routeSectionIds,
-    required this.rowHeight,
+    required this.rowLayout,
     required this.stationCount,
     required this.columns,
     required this.trackUnderlayColor,
@@ -2373,7 +2544,7 @@ class _ViaRoutePainter extends CustomPainter {
 
   final List<Color> segmentColors;
   final List<int> routeSectionIds;
-  final double rowHeight;
+  final _ViaRowLayout rowLayout;
   final int stationCount;
   final int columns;
   final Color trackUnderlayColor;
@@ -2409,7 +2580,7 @@ class _ViaRoutePainter extends CustomPainter {
             trackLayout.stationSlots[station],
             size.width,
             columns,
-            rowHeight,
+            rowLayout,
           ),
         );
         if (trackLayout.hasVirtualAfter(station)) {
@@ -2418,7 +2589,7 @@ class _ViaRoutePainter extends CustomPainter {
               trackLayout.virtualSlotAfter(station),
               size.width,
               columns,
-              rowHeight,
+              rowLayout,
             ),
           );
         }
@@ -2476,7 +2647,7 @@ class _ViaRoutePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ViaRoutePainter oldDelegate) =>
-      oldDelegate.rowHeight != rowHeight ||
+      oldDelegate.rowLayout != rowLayout ||
       oldDelegate.stationCount != stationCount ||
       oldDelegate.columns != columns ||
       oldDelegate.trackUnderlayColor != trackUnderlayColor ||
@@ -2558,15 +2729,94 @@ class _ViaTrackLayout {
   int virtualSlotAfter(int stationIndex) => stationSlots[stationIndex] + 1;
 }
 
-Offset _viaSlotOffset(int slot, double width, int columns, double rowHeight) {
+/// 每行的纵向布局：有线路标签的行保留标签上方的空间，没有标签的行可以压扁。
+class _ViaRowLayout {
+  const _ViaRowLayout({
+    required this.inset,
+    required this.heights,
+    required this.trackOffsets,
+  });
+
+  factory _ViaRowLayout.build({
+    required int rowCount,
+    required Set<int> labelRows,
+    required double labelRowHeight,
+    required double compactRowHeight,
+  }) {
+    final heights = List<double>.filled(rowCount, compactRowHeight);
+    final trackOffsets = List<double>.filled(rowCount, 14.0);
+    for (final row in labelRows) {
+      if (row < 0 || row >= rowCount) continue;
+      heights[row] = labelRowHeight;
+      trackOffsets[row] = 34.0;
+    }
+    return _ViaRowLayout(
+      inset: _diagramTopInset,
+      heights: List.unmodifiable(heights),
+      trackOffsets: List.unmodifiable(trackOffsets),
+    );
+  }
+
+  final double inset;
+  final List<double> heights;
+  final List<double> trackOffsets;
+
+  double top(int row) {
+    var y = inset;
+    final end = row < heights.length ? row : heights.length;
+    for (var index = 0; index < end; index++) {
+      y += heights[index];
+    }
+    return y;
+  }
+
+  double trackY(int row) => top(row) + trackOffsets[row];
+
+  double get totalHeight => top(heights.length);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ViaRowLayout &&
+      other.inset == inset &&
+      _sameDoubles(other.heights, heights) &&
+      _sameDoubles(other.trackOffsets, trackOffsets);
+
+  @override
+  int get hashCode =>
+      Object.hash(inset, Object.hashAll(heights), Object.hashAll(trackOffsets));
+
+  static bool _sameDoubles(List<double> first, List<double> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index] != second[index]) return false;
+    }
+    return true;
+  }
+}
+
+Offset _viaSlotOffset(
+  int slot,
+  double width,
+  int columns,
+  _ViaRowLayout rowLayout,
+) {
   return Offset(
     _viaSlotX(slot, width, columns),
-    slot ~/ columns * rowHeight + 34,
+    rowLayout.trackY(slot ~/ columns),
   );
 }
 
+/// 给第一排线路标签留出上移的空间；否则它会一直被钳在画布顶端。
+const _diagramTopInset = 8.0;
+
 double _viaSlotX(int slot, double width, int columns) {
-  final horizontalPadding = math.min(44.0, width / 4);
+  // 左右留白至少半个站名标签宽，边缘站的标签才不用被钳到画布边上，
+  // 可以真正居中在圆圈下方。宽屏下原来的 44px 会让标签整体偏 8px 左右。
+  final labelWidth = math.min(104.0, width / columns);
+  final horizontalPadding = math.min(
+    math.max(44.0, labelWidth / 2),
+    width / 4,
+  );
   final step = columns == 1
       ? 0.0
       : (width - horizontalPadding * 2) / (columns - 1);
@@ -2581,17 +2831,20 @@ class _ViaStationLabel extends StatelessWidget {
     required this.station,
     required this.mileage,
     required this.alignEnd,
+    this.scheduleTime,
     this.onTap,
   });
 
   final String station;
   final double mileage;
   final bool alignEnd;
+  final StationScheduleTime? scheduleTime;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final scheduleTime = this.scheduleTime;
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: alignEnd
@@ -2614,6 +2867,24 @@ class _ViaStationLabel extends StatelessWidget {
             ),
           ),
         ),
+        if (scheduleTime != null) ...[
+          const SizedBox(height: 2),
+          Tooltip(
+            message: stationScheduleTimeTooltip(scheduleTime),
+            child: Text(
+              stationScheduleTimeLabel(scheduleTime),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: alignEnd ? TextAlign.end : TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheduleTime.isStop
+                    ? colors.primary
+                    : colors.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 3),
         Text(
           '${_number(mileage)} km',
@@ -2633,6 +2904,8 @@ class _ViaStationDot extends StatelessWidget {
     required this.leftColor,
     required this.rightColor,
     this.isReversal = false,
+    this.isStop = false,
+    this.isPass = false,
   });
 
   static const size = 18.0;
@@ -2640,17 +2913,22 @@ class _ViaStationDot extends StatelessWidget {
   final Color leftColor;
   final Color rightColor;
   final bool isReversal;
+  final bool isStop;
+  final bool isPass;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    // 折返站用实心圆承载图标：10px 的空心圆里描边箭头会糊成一团。
-    final solid = isReversal && leftColor == rightColor;
+    // 优先级：折返 > 停车 > 通过。折返用实心圆承载图标；停车画外圈加中心点；
+    // 通过画明显更小的空心圆，避免整块实心大圆显得笨重。
+    final solidReversal = isReversal && leftColor == rightColor;
+    final stopMarker = isStop && !isReversal;
+    final passing = isPass && !isReversal && !isStop;
     final dot = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: solid ? leftColor : colors.surfaceContainerLowest,
+        color: solidReversal ? leftColor : colors.surfaceContainerLowest,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -2668,6 +2946,8 @@ class _ViaStationDot extends StatelessWidget {
               painter: _ViaStationDotPainter(
                 leftColor: leftColor,
                 rightColor: rightColor,
+                stopMarker: stopMarker,
+                passing: passing,
               ),
             ),
           ),
@@ -2675,14 +2955,19 @@ class _ViaStationDot extends StatelessWidget {
             Icon(
               Icons.u_turn_left_rounded,
               size: 12,
-              color: solid
+              color: solidReversal
                   ? colors.surfaceContainerLowest
                   : colors.onSurfaceVariant,
             ),
         ],
       ),
     );
-    return isReversal ? Tooltip(message: '折返（换向）站', child: dot) : dot;
+    if (isReversal) {
+      return Tooltip(message: '折返（换向）站', child: dot);
+    }
+    if (isStop) return Tooltip(message: '本次行程停靠站', child: dot);
+    if (isPass) return Tooltip(message: '本次行程通过站', child: dot);
+    return dot;
   }
 }
 
@@ -2690,17 +2975,60 @@ class _ViaStationDotPainter extends CustomPainter {
   const _ViaStationDotPainter({
     required this.leftColor,
     required this.rightColor,
+    this.stopMarker = false,
+    this.passing = false,
   });
 
   final Color leftColor;
   final Color rightColor;
+  final bool stopMarker;
+  final bool passing;
 
   @override
   void paint(Canvas canvas, Size size) {
-    const strokeWidth = 4.0;
+    if (stopMarker) {
+      _paintStopMarker(canvas, size);
+      return;
+    }
+    if (passing) {
+      _paintRing(canvas, size, inset: 4.0, strokeWidth: 2.2);
+      return;
+    }
+    _paintRing(canvas, size, inset: 2.0, strokeWidth: 4.0);
+  }
+
+  /// 停站：一圈比原来细的外环，中间加一个小实心点，比整块实心圆轻得多。
+  void _paintStopMarker(Canvas canvas, Size size) {
+    _paintRing(canvas, size, inset: 1.5, strokeWidth: 2.2);
+    final center = Offset(size.width / 2, size.height / 2);
+    const radius = 4.0;
+    final paint = Paint()..isAntiAlias = true;
+    if (leftColor == rightColor) {
+      canvas.drawCircle(center, radius, paint..color = leftColor);
+      return;
+    }
     final rect =
-        Offset(strokeWidth / 2, strokeWidth / 2) &
-        Size(size.width - strokeWidth, size.height - strokeWidth);
+        Offset(center.dx - radius, center.dy - radius) &
+        Size(radius * 2, radius * 2);
+    canvas.drawArc(rect, math.pi / 2, math.pi, true, paint..color = leftColor);
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      math.pi,
+      true,
+      paint..color = rightColor,
+    );
+  }
+
+  void _paintRing(
+    Canvas canvas,
+    Size size, {
+    required double inset,
+    required double strokeWidth,
+  }) {
+    final rect =
+        Offset(inset, inset) &
+        Size(size.width - inset * 2, size.height - inset * 2);
     final paint = Paint()
       ..isAntiAlias = true
       ..style = PaintingStyle.stroke
@@ -2723,7 +3051,9 @@ class _ViaStationDotPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ViaStationDotPainter oldDelegate) =>
       oldDelegate.leftColor != leftColor ||
-      oldDelegate.rightColor != rightColor;
+      oldDelegate.rightColor != rightColor ||
+      oldDelegate.stopMarker != stopMarker ||
+      oldDelegate.passing != passing;
 }
 
 class _MessageState extends StatelessWidget {
@@ -2758,6 +3088,45 @@ String _optionalText(String? value) {
   final text = value?.trim() ?? '';
   return text.isEmpty ? '未记录' : text;
 }
+
+/// 简图站名下的时刻行。停站显示到点与停车时间，通过站显示通过时刻，
+/// 始发/终到站只显示本次行程用到的发点/到点。
+String stationScheduleTimeLabel(StationScheduleTime time) {
+  final passTime = time.passTime;
+  if (passTime != null) {
+    return '${_clock(passTime)} 通过';
+  }
+  final arrival = time.arrival;
+  final departure = time.departure;
+  if (arrival != null && departure != null) {
+    return '${_clock(arrival)} 停${time.dwellMinutes ?? 0}分';
+  }
+  if (departure != null) return '发 ${_clock(departure)}';
+  if (arrival != null) return '到 ${_clock(arrival)}';
+  return '';
+}
+
+String stationScheduleTimeTooltip(StationScheduleTime time) {
+  final passTime = time.passTime;
+  if (passTime != null) {
+    return time.estimated
+        ? '通过 ${_clock(passTime)}（按匀速模型估算）'
+        : '通过 ${_clock(passTime)}';
+  }
+  final arrival = time.arrival;
+  final departure = time.departure;
+  if (arrival != null && departure != null) {
+    final dwell = time.dwellMinutes ?? 0;
+    return '到 ${_clock(arrival)} · 发 ${_clock(departure)}（停车 $dwell 分）';
+  }
+  if (departure != null) return '发 ${_clock(departure)}';
+  if (arrival != null) return '到 ${_clock(arrival)}';
+  return '';
+}
+
+String _clock(DateTime value) =>
+    '${value.hour.toString().padLeft(2, '0')}:'
+    '${value.minute.toString().padLeft(2, '0')}';
 
 Future<void> _openRailGoEmu(BuildContext context, String code) async {
   final encoded = Uri.encodeQueryComponent(code);

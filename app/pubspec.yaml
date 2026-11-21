@@ -25,7 +25,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 #
 # 2.8.0 实际发出去的是 +3：当时 +1 比 2.7.3+2 小，装不上，用
 # --build-number=3 重编后覆盖了产物，没有回写本文件。所以下一个版本至少 +4。
-version: 2.9.0+4
+version: 2.10.0+5
 
 environment:
   sdk: ^3.14.0

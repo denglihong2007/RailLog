@@ -91,6 +91,9 @@ builder.Services
         _ => { })
     .AddScheme<AdminAuthenticationOptions, AdminAuthenticationHandler>(
         AdminAuthenticationHandler.SchemeName,
+        _ => { })
+    .AddScheme<OAuthTokenAuthenticationOptions, OAuthTokenAuthenticationHandler>(
+        OAuthTokenAuthenticationHandler.SchemeName,
         _ => { });
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options => options.AddPolicy("ticket-pdf", context =>
@@ -120,6 +123,24 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+    options.AddPolicy("oauth-authorize", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+    options.AddPolicy("oauth-token", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
             }));

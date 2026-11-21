@@ -625,7 +625,7 @@ void main() {
       id: 'goddessYangtzeBridges',
       category: AchievementCategory.touring,
       iconKey: 'architecture_outlined',
-      title: '神女无恙',
+      title: '天堑通途',
       requirement: '行经至少 10 座承担客运的铁路长江大桥',
       unlocked: true,
       triggerTripId: 1,

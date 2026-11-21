@@ -3,9 +3,11 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:raillog/src/models/journey_stations.dart';
 import 'package:raillog/src/models/trip_record.dart';
+import 'package:raillog/src/models/trip_schedule_times.dart';
 import 'package:raillog/src/services/map_settings.dart';
 import 'package:raillog/src/services/rail_track_service.dart';
 import 'package:raillog/src/services/route_service.dart';
+import 'package:raillog/src/services/trip_animation_service.dart';
 import 'package:raillog/src/services/trip_map_service.dart';
 import 'package:raillog/src/widgets/trip_details/via_route_style.dart';
 import 'package:raillog/src/widgets/trip_map_webview.dart';
@@ -19,17 +21,23 @@ class TripViaRouteMap extends StatefulWidget {
     super.key,
     required this.trip,
     required this.lineStyles,
+    required this.overlay,
   });
 
   final TripRecord trip;
   final List<ViaRouteLineStyle> lineStyles;
+
+  /// 简图模式已经匹配好的历史时刻表（含用户手动校准的到发时刻）。
+  ///
+  /// 地图模式拿它生成播放时间轴，两种模式因此共享同一套时刻。
+  final TripScheduleOverlay overlay;
 
   @override
   State<TripViaRouteMap> createState() => _TripViaRouteMapState();
 }
 
 class _TripViaRouteMapState extends State<TripViaRouteMap> {
-  late Future<TripMapData> _dataFuture;
+  late Future<_TripMapBuild> _dataFuture;
 
   @override
   void initState() {
@@ -46,7 +54,7 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
     }
   }
 
-  Future<TripMapData> _load() async {
+  Future<_TripMapBuild> _load() async {
     final results = await Future.wait([
       RouteService.resolveTripStations([widget.trip]),
       RailTrackService.loadData().catchError(
@@ -60,13 +68,24 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
       railData.stations.all,
       results[2] as String,
     );
-    return TripMapService.buildData(
+    final journeyStations = results[0] as Map<String, JourneyStations>;
+    final journey = journeyStations[widget.trip.clientId];
+    final data = TripMapService.buildData(
       [widget.trip],
       coordinates,
-      journeyStations: results[0] as Map<String, JourneyStations>,
+      journeyStations: journeyStations,
       tracks: railData.tracks,
       // 一趟车可能跨几条线；按线路拆开才画得出各自的颜色。
       mergeAcrossLines: false,
+    );
+    return _TripMapBuild(
+      data: data,
+      coordinates: coordinates,
+      tracks: railData.tracks,
+      stationNames:
+          journey?.stations ?? TripMapService.fallbackStationNames(widget.trip),
+      legRouteNames: journey?.legRouteNames ??
+          TripMapService.fallbackLegRouteNames(widget.trip),
     );
   }
 
@@ -91,7 +110,7 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
         );
         return SizedBox(
           height: height,
-          child: FutureBuilder<TripMapData>(
+          child: FutureBuilder<_TripMapBuild>(
             future: _dataFuture,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -104,7 +123,8 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
               if (!snapshot.hasData) {
                 return const _MapStatus(message: '正在生成铁路行程轨迹');
               }
-              final data = snapshot.data!;
+              final build = snapshot.data!;
+              final data = build.data;
               if (data.routes.isEmpty) {
                 return _MapStatus(
                   icon: Icons.location_off_outlined,
@@ -127,6 +147,23 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
                     ),
                   ),
               ];
+              final fallbackCss = _cssColor(fallbackColor);
+              // 每次 build 都按当前 overlay 重算一次：用户在地图上还没切回简图
+              // 时改了时刻，播放条也能立刻跟着变，不需要重新读地图数据。
+              final animation = TripAnimationService.build(
+                trip: widget.trip,
+                stationNames: build.stationNames,
+                legRouteNames: build.legRouteNames,
+                coordinates: build.coordinates,
+                tracks: build.tracks,
+                overlay: widget.overlay,
+                lineColors: {
+                  for (final style in widget.lineStyles)
+                    style.route: _cssColor(style.color),
+                  '手动线路': fallbackCss,
+                },
+                fallbackColor: fallbackCss,
+              );
               return TripMapWebView(
                 backgroundColor: theme.colorScheme.surface,
                 // 地图嵌在可滚动的详情页里，交给 WebView 自己处理拖动与点击。
@@ -135,12 +172,15 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
                   routes,
                   darkMode: theme.brightness == Brightness.dark,
                   backgroundColor: _cssColor(theme.colorScheme.surface),
-                  showStationMarkers: true,
+                  // 有播放时间轴时站点圆点由动画脚本统一画（含起终点标签），
+                  // 再用底图的红色图钉就会叠出两套标记。
+                  showStationMarkers: animation == null,
                   endpoints: data.endpoints,
                   detailLevel: MapSettings.instance.detailLevel,
                   colorByRoute: true,
                   // 已经在这趟行程的详情里，弹窗里的车次再点一次没有去处。
                   tripLinks: false,
+                  animation: animation,
                 ),
               );
             },
@@ -149,6 +189,25 @@ class _TripViaRouteMapState extends State<TripViaRouteMap> {
       },
     );
   }
+}
+
+/// 地图数据与播放时间轴共用的构建结果。
+///
+/// 线路几何和站序只读一次；overlay 变化时只重算动画，不重新读库。
+class _TripMapBuild {
+  const _TripMapBuild({
+    required this.data,
+    required this.coordinates,
+    required this.tracks,
+    required this.stationNames,
+    required this.legRouteNames,
+  });
+
+  final TripMapData data;
+  final StationCoordinateIndex coordinates;
+  final RailTrackIndex? tracks;
+  final List<String> stationNames;
+  final List<String> legRouteNames;
 }
 
 class _MapStatus extends StatelessWidget {

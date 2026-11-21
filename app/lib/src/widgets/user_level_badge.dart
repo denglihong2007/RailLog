@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 /// App 内置默认值。服务端（管理后台）可以下发新的分界线覆盖它。
-const _defaultLevelMinimumExperience = [0, 1, 50, 125, 250, 450, 800];
+const _defaultLevelMinimumExperience = [0, 1, 100, 250, 500, 800, 1100];
 
 List<int> _levelMinimumExperience = _defaultLevelMinimumExperience;
 
