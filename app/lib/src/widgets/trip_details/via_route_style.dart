@@ -41,7 +41,11 @@ String viaRouteLabel(String routeName) {
   return value.isEmpty ? '手动线路' : value;
 }
 
-/// 按线路首次出现的顺序分配颜色；同一条线路的多段里程累加到一起。
+/// 按线路原名分配颜色；同一条线路的多段里程累加到一起。
+///
+/// 线路名只按行程里记录的原名比较，不做「铁路/线」「客专」之类的写法归一：
+/// 兰新线 与 兰新客专线、胶济线 与 胶济客专线 是并行的两条线路，归一后图例里
+/// 只剩先出现的那条名字，两条线还会被涂成同一种颜色。
 List<ViaRouteLineStyle> buildViaRouteLineStyles(
   Iterable<ViaRouteSegment> segments,
   ColorScheme colors,
@@ -50,11 +54,8 @@ List<ViaRouteLineStyle> buildViaRouteLineStyles(
   final styles = <String, _MutableLineStyle>{};
   for (final segment in segments) {
     final route = viaRouteLabel(segment.routeName);
-    // 同一条线可能在不同段里写成「京沪高速铁路」和「京沪高速线」，归一后共用
-    // 一种颜色，里程也合并计算。
-    final key = _styleKey(route);
     final style = styles.putIfAbsent(
-      key,
+      route,
       () => _MutableLineStyle(route, palette[styles.length % palette.length]),
     );
     if (segment.mileageKm > 0) style.mileageKm += segment.mileageKm;
@@ -62,35 +63,11 @@ List<ViaRouteLineStyle> buildViaRouteLineStyles(
   return [for (final style in styles.values) style.freeze()];
 }
 
-String _styleKey(String route) {
-  final key = viaRouteLineKey(route);
-  return key.isEmpty ? route : key;
-}
-
-/// 地图折线用的是线路库里的规范名（京沪高速线），简图用的是行程里记录的名字
-/// （京沪高速铁路）。去掉线别后缀后再比，才认得出是同一条线路。
-String viaRouteLineKey(String value) {
-  var key = value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
-  // 逐个比后缀而不是用正则替换：正则从前往后扫描，会在「京沪高速铁路」里先命中
-  // 中间的「高速铁路」，留下「京沪」；这里要的是整段后缀，得到「京沪高速」。
-  for (final suffix in const ['客运专线', '客专线', '铁路', '线']) {
-    if (key.endsWith(suffix)) {
-      key = key.substring(0, key.length - suffix.length);
-      break;
-    }
-  }
-  return key;
-}
-
 Color? findViaRouteColor(String? lineName, List<ViaRouteLineStyle> styles) {
   final value = lineName?.trim() ?? '';
   if (value.isEmpty) return null;
   for (final style in styles) {
     if (style.route == value) return style.color;
-  }
-  final key = _styleKey(value);
-  for (final style in styles) {
-    if (_styleKey(style.route) == key) return style.color;
   }
   return null;
 }
