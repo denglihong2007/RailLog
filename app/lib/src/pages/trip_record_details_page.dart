@@ -8,6 +8,7 @@ import 'package:raillog/src/models/public_user_dashboard.dart';
 import 'package:raillog/src/models/route_station.dart';
 import 'package:raillog/src/models/train_model_parser.dart';
 import 'package:raillog/src/models/trip_record.dart';
+import 'package:raillog/src/models/trip_schedule_times.dart';
 import 'package:raillog/src/pages/manual_trip_page.dart';
 import 'package:raillog/src/pages/entity_detail_page.dart';
 import 'package:raillog/src/pages/settings/ticket_generator_settings_page.dart';
@@ -21,12 +22,14 @@ import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/services/ticket_generator_service.dart';
 import 'package:raillog/src/services/ticket_generator_settings.dart';
 import 'package:raillog/src/services/ticket_display_policy.dart';
+import 'package:raillog/src/services/trip_schedule_time_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
 import 'package:raillog/src/widgets/cached_avatar.dart';
 import 'package:raillog/src/widgets/engagement_prompt.dart';
 import 'package:raillog/src/widgets/entity_review_card.dart';
 import 'package:raillog/src/widgets/login_required_view.dart';
 import 'package:raillog/src/widgets/motion/m3_motion.dart';
+import 'package:raillog/src/widgets/trip_details/timetable_correction_dialog.dart';
 import 'package:raillog/src/widgets/trip_details/trip_via_route_map.dart';
 import 'package:raillog/src/widgets/trip_details/via_route_style.dart';
 import 'package:raillog/src/widgets/user_level_badge.dart';
@@ -1541,6 +1544,43 @@ class _ViaRouteDisplay extends StatefulWidget {
 
 class _ViaRouteDisplayState extends State<_ViaRouteDisplay> {
   _ViaRouteDisplayMode _mode = _ViaRouteDisplayMode.diagram;
+  TripScheduleTimes? _scheduleTimes;
+  int _scheduleRequestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadScheduleTimes();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ViaRouteDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trip.clientId != widget.trip.clientId ||
+        oldWidget.trip.updatedAt != widget.trip.updatedAt) {
+      _scheduleTimes = null;
+      _loadScheduleTimes();
+    }
+  }
+
+  /// 历史时刻表只用来叠加显示，读不到或时刻对不上就静默不显示。
+  Future<void> _loadScheduleTimes() async {
+    final requestId = ++_scheduleRequestId;
+    final times = await TripScheduleTimeService.load(widget.trip);
+    if (!mounted || requestId != _scheduleRequestId || times == null) return;
+    setState(() => _scheduleTimes = times);
+  }
+
+  Future<void> _openTimetableCorrection() async {
+    final times = _scheduleTimes;
+    if (times == null) return;
+    final corrected = await showTimetableCorrectionDialog(
+      context,
+      times: times,
+    );
+    if (!mounted || corrected == null) return;
+    setState(() => _scheduleTimes = times.withStops(corrected));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1575,7 +1615,12 @@ class _ViaRouteDisplayState extends State<_ViaRouteDisplay> {
         ),
         const SizedBox(height: 12),
         if (_mode == _ViaRouteDisplayMode.diagram)
-          _ViaRouteDiagram(trip: widget.trip, lineStyles: lineStyles)
+          _ViaRouteDiagram(
+            trip: widget.trip,
+            lineStyles: lineStyles,
+            scheduleTimes: _scheduleTimes,
+            onCorrectSchedule: _openTimetableCorrection,
+          )
         else
           TripViaRouteMap(trip: widget.trip, lineStyles: lineStyles),
         _ViaRouteLegend(lines: lineStyles),
@@ -1650,10 +1695,17 @@ class _ViaRouteLegend extends StatelessWidget {
 }
 
 class _ViaRouteDiagram extends StatefulWidget {
-  const _ViaRouteDiagram({required this.trip, required this.lineStyles});
+  const _ViaRouteDiagram({
+    required this.trip,
+    required this.lineStyles,
+    this.scheduleTimes,
+    this.onCorrectSchedule,
+  });
 
   final TripRecord trip;
   final List<ViaRouteLineStyle> lineStyles;
+  final TripScheduleTimes? scheduleTimes;
+  final VoidCallback? onCorrectSchedule;
 
   @override
   State<_ViaRouteDiagram> createState() => _ViaRouteDiagramState();
@@ -1661,12 +1713,15 @@ class _ViaRouteDiagram extends StatefulWidget {
 
 class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     with AutomaticKeepAliveClientMixin<_ViaRouteDiagram> {
-  static const _rowHeight = 88.0;
   Map<int, List<RouteStation>> _routeStations = const {};
   final Set<int> _expandedRouteSections = {};
   final Set<int> _loadingRouteSections = {};
   final Set<int> _nonExpandableRouteSections = {};
   int _stationRequestId = 0;
+
+  /// 叠了时刻之后每站多一行文字，行高跟着加高。
+  double get _rowHeight =>
+      (widget.scheduleTimes?.hasIntermediateStops ?? false) ? 108.0 : 88.0;
 
   @override
   bool get wantKeepAlive => true;
@@ -1926,6 +1981,11 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
       }
     }
 
+    final scheduleTimes = widget.scheduleTimes?.annotate(
+      stationNames: stations,
+      mileage: cumulativeMileage,
+    );
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = stations.length == 1
@@ -1951,6 +2011,16 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                     ),
                   ),
                 ),
+                if (widget.scheduleTimes?.hasIntermediateStops ?? false)
+                  TextButton.icon(
+                    onPressed: widget.onCorrectSchedule,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                    label: const Text('矫正时刻表'),
+                  ),
                 TextButton.icon(
                   onPressed: _loadingRouteSections.isEmpty
                       ? _toggleAllSections
@@ -1993,6 +2063,9 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
                       index: index,
                       station: stations[index],
                       mileage: cumulativeMileage[index],
+                      scheduleTime: scheduleTimes == null
+                          ? null
+                          : scheduleTimes[index],
                       isReversal: stationReversals[index],
                       leftColor: _stationSideColor(
                         index,
@@ -2218,6 +2291,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
     required int index,
     required String station,
     required double mileage,
+    required StationScheduleTime? scheduleTime,
     required bool isReversal,
     required Color leftColor,
     required Color rightColor,
@@ -2251,6 +2325,7 @@ class _ViaRouteDiagramState extends State<_ViaRouteDiagram>
             child: _ViaStationLabel(
               station: station,
               mileage: mileage,
+              scheduleTime: scheduleTime,
               alignEnd: false,
               onTap: () => openEntityPage(context, EntityType.station, station),
             ),
@@ -2581,17 +2656,20 @@ class _ViaStationLabel extends StatelessWidget {
     required this.station,
     required this.mileage,
     required this.alignEnd,
+    this.scheduleTime,
     this.onTap,
   });
 
   final String station;
   final double mileage;
   final bool alignEnd;
+  final StationScheduleTime? scheduleTime;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final scheduleTime = this.scheduleTime;
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: alignEnd
@@ -2614,6 +2692,22 @@ class _ViaStationLabel extends StatelessWidget {
             ),
           ),
         ),
+        if (scheduleTime != null) ...[
+          const SizedBox(height: 2),
+          Tooltip(
+            message: stationScheduleTimeTooltip(scheduleTime),
+            child: Text(
+              stationScheduleTimeLabel(scheduleTime),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: alignEnd ? TextAlign.end : TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 3),
         Text(
           '${_number(mileage)} km',
@@ -2758,6 +2852,35 @@ String _optionalText(String? value) {
   final text = value?.trim() ?? '';
   return text.isEmpty ? '未记录' : text;
 }
+
+/// 简图站名下的时刻行。停站显示到点与停车时间，通过站显示通过时刻。
+String stationScheduleTimeLabel(StationScheduleTime time) {
+  final passTime = time.passTime;
+  if (passTime != null) {
+    return '${time.estimated ? '约' : ''}${_clock(passTime)} 通过';
+  }
+  final arrival = time.arrival;
+  if (arrival == null) return '';
+  return '${_clock(arrival)} 停${time.dwellMinutes ?? 0}分';
+}
+
+String stationScheduleTimeTooltip(StationScheduleTime time) {
+  final passTime = time.passTime;
+  if (passTime != null) {
+    return time.estimated
+        ? '通过 ${_clock(passTime)}（按匀速模型估算）'
+        : '通过 ${_clock(passTime)}';
+  }
+  final arrival = time.arrival;
+  final departure = time.departure;
+  if (arrival == null || departure == null) return '';
+  final dwell = time.dwellMinutes ?? 0;
+  return '到 ${_clock(arrival)} · 发 ${_clock(departure)}（停车 $dwell 分）';
+}
+
+String _clock(DateTime value) =>
+    '${value.hour.toString().padLeft(2, '0')}:'
+    '${value.minute.toString().padLeft(2, '0')}';
 
 Future<void> _openRailGoEmu(BuildContext context, String code) async {
   final encoded = Uri.encodeQueryComponent(code);
