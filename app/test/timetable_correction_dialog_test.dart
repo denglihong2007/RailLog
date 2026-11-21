@@ -30,7 +30,56 @@ TripScheduleTimes _times() => TripScheduleTimes(
   alightingIndex: 2,
 );
 
-Widget _host(_ResultHolder holder, TripScheduleTimes times) {
+TripScheduleTimes _timesWithPass() => TripScheduleTimes(
+  stops: [
+    TripScheduleStop(
+      stationName: '北京南',
+      arrival: null,
+      departure: _at(8, 0),
+      mileage: 0,
+    ),
+    TripScheduleStop(
+      stationName: '沧州西',
+      arrival: _at(8, 40),
+      departure: _at(8, 42),
+      mileage: 210,
+    ),
+    TripScheduleStop(
+      stationName: '德州东',
+      arrival: null,
+      departure: null,
+      mileage: 315,
+    ),
+    TripScheduleStop(
+      stationName: '上海虹桥',
+      arrival: _at(12, 0),
+      departure: null,
+      mileage: 1323,
+    ),
+  ],
+  boardingIndex: 0,
+  alightingIndex: 3,
+);
+
+class _ResultHolder {
+  TripScheduleOverlay? value;
+}
+
+Widget _host(
+  _ResultHolder holder,
+  TripScheduleOverlay overlay,
+  List<String> stationNames, {
+  List<double>? mileage,
+}) {
+  final scheduleTimes = overlay.annotate(
+    stationNames: stationNames,
+    mileage:
+        mileage ??
+        [
+          for (var index = 0; index < stationNames.length; index++)
+            index * 10.0,
+        ],
+  );
   return MaterialApp(
     home: Builder(
       builder: (context) => Scaffold(
@@ -38,7 +87,10 @@ Widget _host(_ResultHolder holder, TripScheduleTimes times) {
           onPressed: () async {
             final corrected = await showTimetableCorrectionDialog(
               context,
-              times: times,
+              overlay: overlay,
+              stationNames: stationNames,
+              scheduleTimes: scheduleTimes,
+              baseDate: _at(0, 0),
             );
             if (corrected != null) holder.value = corrected;
           },
@@ -49,66 +101,97 @@ Widget _host(_ResultHolder holder, TripScheduleTimes times) {
   );
 }
 
-class _ResultHolder {
-  List<TripScheduleStop>? value;
-}
-
 void main() {
-  testWidgets('矫正对话框拒绝非法时刻，应用后返回新的站序', (tester) async {
+  testWidgets('底部编辑器显示停站与通过站的时间胶囊', (tester) async {
     final result = _ResultHolder();
-    await tester.pumpWidget(_host(result, _times()));
+    final overlay = TripScheduleOverlay(times: _timesWithPass());
+    const names = ['北京南', '沧州西', '德州东', '上海虹桥'];
+    const mileage = [0.0, 210.0, 315.0, 1323.0];
+    await tester.pumpWidget(_host(result, overlay, names, mileage: mileage));
 
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
-    expect(find.text('手动矫正时刻表'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).first, '25:99');
-    await tester.tap(find.text('应用'));
-    await tester.pump();
-    expect(find.text('时刻格式应为 HH:mm，例如 08:05'), findsOneWidget);
+    expect(find.text('编辑中间站时刻'), findsOneWidget);
+    expect(find.text('沧州西'), findsOneWidget);
+    expect(find.text('德州东'), findsOneWidget);
+    expect(find.text('到 08:40'), findsOneWidget);
+    expect(find.text('发 08:42'), findsOneWidget);
+    expect(find.textContaining('通过 '), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).first, '08:50');
-    await tester.enterText(find.byType(TextField).at(1), '08:52');
-    await tester.tap(find.text('应用'));
+    await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
     expect(result.value, isNotNull);
-    expect(result.value![1].arrival, _at(8, 50));
-    // 没改动的发点原样保留。
-    expect(result.value![1].departure, _at(8, 52));
+    expect(result.value!.times!.stops[1].arrival, _at(8, 40));
+    expect(result.value!.times!.stops[1].departure, _at(8, 42));
   });
 
-  testWidgets('发点早于到点时拒绝应用', (tester) async {
+  testWidgets('点击圆点可以从通过站改成停站', (tester) async {
     final result = _ResultHolder();
-    await tester.pumpWidget(_host(result, _times()));
+    final overlay = TripScheduleOverlay(times: _timesWithPass());
+    const names = ['北京南', '沧州西', '德州东', '上海虹桥'];
+    const mileage = [0.0, 210.0, 315.0, 1323.0];
+    await tester.pumpWidget(_host(result, overlay, names, mileage: mileage));
 
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, '08:50');
-    await tester.tap(find.text('应用'));
-    await tester.pump();
+    // 第二行是通过站德州东，点圆点改成停站。
+    await tester.tap(find.byTooltip('点击改为停靠站'));
+    await tester.pumpAndSettle();
 
-    expect(find.text('发点不能早于到点'), findsOneWidget);
-    expect(result.value, isNull);
+    expect(find.text('发 时刻'), findsOneWidget);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    final key = stationOccurrenceKeys(names)[2];
+    final custom = result.value!.customTimes[key];
+    expect(custom, isNotNull);
+    expect(custom!.arrival, isNotNull);
+    expect(custom.departure, isNull);
   });
 
-  testWidgets('到发时刻都留空时该站按通过处理', (tester) async {
+  testWidgets('没有历史数据时直接显示添加时刻的胶囊', (tester) async {
     final result = _ResultHolder();
-    await tester.pumpWidget(_host(result, _times()));
+    const overlay = TripScheduleOverlay();
+    const names = ['北京南', '广元', '绵阳'];
+    await tester.pumpWidget(_host(result, overlay, names));
 
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
 
-    final fields = find.byType(TextField);
-    await tester.enterText(fields.at(0), '');
-    await tester.enterText(fields.at(1), '');
-    await tester.tap(find.text('应用'));
+    expect(find.text('到 时刻'), findsOneWidget);
+    expect(find.text('发 时刻'), findsOneWidget);
+
+    await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
-    expect(result.value, isNotNull);
-    expect(result.value![1].arrival, isNull);
-    expect(result.value![1].departure, isNull);
+    expect(result.value!.customTimes, isEmpty);
+  });
+
+  testWidgets('撤销修改会撤销本次编辑', (tester) async {
+    final result = _ResultHolder();
+    final overlay = TripScheduleOverlay(times: _timesWithPass());
+    const names = ['北京南', '沧州西', '德州东', '上海虹桥'];
+    const mileage = [0.0, 210.0, 315.0, 1323.0];
+    await tester.pumpWidget(_host(result, overlay, names, mileage: mileage));
+
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('点击改为停靠站'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('撤销修改'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    expect(result.value!.customTimes, isEmpty);
+    expect(result.value!.times!.passTimeOverrides, isEmpty);
   });
 
   test('构造参数的断言挡住越界的上下车站', () {

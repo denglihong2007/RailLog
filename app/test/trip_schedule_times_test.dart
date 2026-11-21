@@ -72,7 +72,6 @@ void main() {
       expect(times, isNotNull);
       expect(times!.boardingIndex, 0);
       expect(times.alightingIndex, 4);
-      expect(times.hasIntermediateStops, isTrue);
     });
 
     test('发车时刻对不上时不匹配', () {
@@ -141,15 +140,16 @@ void main() {
         mileage: _diagramMileage,
       );
 
-      // 行程自身的首末站不叠时刻。
-      expect(result.first, isNull);
-      expect(result.last, isNull);
+      // 始发/终到站也要显示本次行程用到的发点/到点。
+      expect(result.first!.departure, _at(8, 0));
+      expect(result.last!.arrival, _at(12, 0));
 
       final cangzhou = result[1]!;
       expect(cangzhou.isStop, isTrue);
       expect(cangzhou.arrival, _at(8, 40));
       expect(cangzhou.departure, _at(8, 42));
       expect(cangzhou.dwellMinutes, 2);
+      expect(cangzhou.stopIndex, 1);
 
       // 廊坊：简图有、时刻表没有，夹在沧州西与德州东之间。
       final langfang = result[2]!;
@@ -166,6 +166,58 @@ void main() {
       final jinan = result[4]!;
       expect(jinan.isStop, isTrue);
       expect(jinan.dwellMinutes, 5);
+    });
+
+    test('手动校准的通过时刻覆盖匀速估算值', () {
+      final keys = stationOccurrenceKeys(_diagramStations);
+      final times = TripScheduleTimes(
+        stops: _scheduleStops(),
+        boardingIndex: 0,
+        alightingIndex: 4,
+        passTimeOverrides: {keys[2]: _at(9, 1)},
+      );
+
+      final result = times.annotate(
+        stationNames: _diagramStations,
+        mileage: _diagramMileage,
+      );
+
+      expect(result[2]!.passTime, _at(9, 1));
+      expect(result[2]!.estimated, isFalse);
+      // 没校准的通过站仍走匀速模型。
+      expect(result[3]!.estimated, isTrue);
+
+      final restored = times
+          .withPassTimeOverrides(const {})
+          .annotate(stationNames: _diagramStations, mileage: _diagramMileage);
+      expect(restored[2]!.passTime, _at(8, 55));
+      expect(restored[2]!.estimated, isTrue);
+    });
+
+    test('用户自定义时刻优先于历史时刻表', () {
+      final keys = stationOccurrenceKeys(_diagramStations);
+      final overlay = TripScheduleOverlay(
+        times: TripScheduleTimes(
+          stops: _scheduleStops(),
+          boardingIndex: 0,
+          alightingIndex: 4,
+        ),
+        customTimes: {
+          keys[1]: StationScheduleTime(
+            arrival: _at(8, 45),
+            departure: _at(8, 47),
+          ),
+        },
+      );
+
+      final result = overlay.annotate(
+        stationNames: _diagramStations,
+        mileage: _diagramMileage,
+      );
+
+      expect(result[1]!.arrival, _at(8, 45));
+      expect(result[1]!.departure, _at(8, 47));
+      expect(result[1]!.dwellMinutes, 2);
     });
 
     test('手动矫正后的时刻参与后续通过站的估算', () {
@@ -208,17 +260,20 @@ void main() {
       expect(result[1]!.arrival, _at(8, 40));
     });
 
-    test('简图不足三站时没有中间站可叠加', () {
+    test('只有两站时仍显示始发/终到时刻', () {
       final times = TripScheduleTimes(
         stops: _scheduleStops(),
         boardingIndex: 0,
         alightingIndex: 4,
       );
 
-      expect(
-        times.annotate(stationNames: ['北京南', '上海虹桥'], mileage: [0, 1323]),
-        [null, null],
+      final result = times.annotate(
+        stationNames: ['北京南', '上海虹桥'],
+        mileage: [0, 1323],
       );
+
+      expect(result[0]!.departure, _at(8, 0));
+      expect(result[1]!.arrival, _at(12, 0));
     });
   });
 

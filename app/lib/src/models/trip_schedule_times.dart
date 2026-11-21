@@ -19,18 +19,21 @@ class TripScheduleStop {
 ///
 /// 停站给 [arrival]/[departure]，通过站给 [passTime]；[estimated] 表示这个通过
 /// 时刻不是时刻表里的原始值，而是按前后停站的里程比例估算出来的。
+/// [stopIndex] 只在匹配到历史站序时有值，手动矫正停站时刻时用它定位。
 class StationScheduleTime {
   const StationScheduleTime({
     this.arrival,
     this.departure,
     this.passTime,
     this.estimated = false,
+    this.stopIndex,
   });
 
   final DateTime? arrival;
   final DateTime? departure;
   final DateTime? passTime;
   final bool estimated;
+  final int? stopIndex;
 
   bool get isStop => passTime == null;
 
@@ -51,23 +54,38 @@ class TripScheduleTimes {
     required List<TripScheduleStop> stops,
     required this.boardingIndex,
     required this.alightingIndex,
+    Map<String, DateTime> passTimeOverrides = const {},
   }) : assert(boardingIndex >= 0),
        assert(alightingIndex > boardingIndex),
        assert(alightingIndex < stops.length),
-       stops = List.unmodifiable(stops);
+       stops = List.unmodifiable(stops),
+       passTimeOverrides = Map.unmodifiable(passTimeOverrides);
 
   final List<TripScheduleStop> stops;
   final int boardingIndex;
   final int alightingIndex;
 
-  bool get hasIntermediateStops => alightingIndex - boardingIndex > 1;
+  /// 手动校准过的通过时刻，键见 [stationOccurrenceKeys]。
+  ///
+  /// 通过时刻本来是匀速模型估出来的，用户可以在简图上按实际观察改掉；
+  /// 这类校准只覆盖显示值，不改变前后停站。
+  final Map<String, DateTime> passTimeOverrides;
 
-  /// 手动矫正后替换站序；下标与首末站保持不变。
+  /// 手动矫正后替换站序；下标、校准值保持不变。
   TripScheduleTimes withStops(List<TripScheduleStop> stops) =>
       TripScheduleTimes(
         stops: stops,
         boardingIndex: boardingIndex,
         alightingIndex: alightingIndex,
+        passTimeOverrides: passTimeOverrides,
+      );
+
+  TripScheduleTimes withPassTimeOverrides(Map<String, DateTime> overrides) =>
+      TripScheduleTimes(
+        stops: stops,
+        boardingIndex: boardingIndex,
+        alightingIndex: alightingIndex,
+        passTimeOverrides: overrides,
       );
 
   /// 用已换算成绝对时间的站序校验时刻是否与行程一致。
@@ -112,7 +130,7 @@ class TripScheduleTimes {
     );
   }
 
-  /// 给简图上的每一站算时刻；首末站（行程自身的发/到站）返回 null。
+  /// 给简图上的每一站算时刻；首末站显示发车/到达时刻。
   ///
   /// [stationNames] 与 [mileage] 是简图当前的站序和累计里程，两者等长。站名按
   /// 单调游标对齐历史站序：折返车会在简图里第二次经过同一站，查表只能取到其中
@@ -122,7 +140,7 @@ class TripScheduleTimes {
     required List<double> mileage,
   }) {
     final result = List<StationScheduleTime?>.filled(stationNames.length, null);
-    if (stationNames.length < 3) return result;
+    if (stationNames.length < 2) return result;
 
     final matched = List<int?>.filled(stationNames.length, null);
     var cursor = boardingIndex;
@@ -139,12 +157,17 @@ class TripScheduleTimes {
       }
     }
 
-    for (var index = 1; index < stationNames.length - 1; index++) {
+    final keys = stationOccurrenceKeys(stationNames);
+    for (var index = 0; index < stationNames.length; index++) {
       final stopIndex = matched[index];
+      final isEndpoint = index == 0 || index == stationNames.length - 1;
       if (stopIndex != null) {
-        result[index] = _timeAtStop(stopIndex);
+        result[index] = isEndpoint
+            ? _endpointTime(stopIndex, atStart: index == 0)
+            : _timeAtStop(stopIndex);
         continue;
       }
+      if (isEndpoint) continue;
       final previous = _previousMatched(matched, index);
       final next = _nextMatched(matched, index);
       if (previous == null || next == null) continue;
@@ -156,7 +179,33 @@ class TripScheduleTimes {
         matched: matched,
       );
     }
+
+    for (var index = 0; index < result.length; index++) {
+      result[index] = _applyPassOverride(keys[index], result[index]);
+    }
     return result;
+  }
+
+  /// 始发/终到站只显示本次行程用到的那个时刻。
+  StationScheduleTime? _endpointTime(int stopIndex, {required bool atStart}) {
+    final stop = stops[stopIndex];
+    if (atStart) {
+      final departure = stop.departure ?? stop.arrival;
+      if (departure == null) return null;
+      return StationScheduleTime(departure: departure, stopIndex: stopIndex);
+    }
+    final arrival = stop.arrival ?? stop.departure;
+    if (arrival == null) return null;
+    return StationScheduleTime(arrival: arrival, stopIndex: stopIndex);
+  }
+
+  StationScheduleTime? _applyPassOverride(
+    String key,
+    StationScheduleTime? time,
+  ) {
+    final override = passTimeOverrides[key];
+    if (override == null || time == null || time.isStop) return time;
+    return StationScheduleTime(passTime: override);
   }
 
   StationScheduleTime? _timeAtStop(int index) {
@@ -164,7 +213,11 @@ class TripScheduleTimes {
     final arrival = stop.arrival;
     final departure = stop.departure;
     if (arrival != null && departure != null && departure.isAfter(arrival)) {
-      return StationScheduleTime(arrival: arrival, departure: departure);
+      return StationScheduleTime(
+        arrival: arrival,
+        departure: departure,
+        stopIndex: index,
+      );
     }
     // 只有单边时刻（快照里个别站只给了到点或发点）时按通过处理，但用原值，
     // 不再套匀速模型。
@@ -270,6 +323,60 @@ class TripScheduleTimes {
     }
     return null;
   }
+}
+
+/// 叠在简图上的完整时刻层。
+///
+/// [times] 是匹配到的历史时刻表，可能为空（没数据、版本对不上、时刻不一致）；
+/// [customTimes] 是用户自己补的站时刻，没有历史数据时也能用，键见
+/// [stationOccurrenceKeys]。自定义时刻优先于历史数据。
+class TripScheduleOverlay {
+  const TripScheduleOverlay({this.times, this.customTimes = const {}});
+
+  final TripScheduleTimes? times;
+  final Map<String, StationScheduleTime> customTimes;
+
+  bool get hasData => times != null || customTimes.isNotEmpty;
+
+  TripScheduleOverlay withTimes(TripScheduleTimes? times) =>
+      TripScheduleOverlay(times: times, customTimes: customTimes);
+
+  TripScheduleOverlay withCustomTimes(
+    Map<String, StationScheduleTime> customTimes,
+  ) => TripScheduleOverlay(times: times, customTimes: customTimes);
+
+  List<StationScheduleTime?> annotate({
+    required List<String> stationNames,
+    required List<double> mileage,
+  }) {
+    final result =
+        times?.annotate(stationNames: stationNames, mileage: mileage) ??
+        List<StationScheduleTime?>.filled(stationNames.length, null);
+    if (customTimes.isEmpty) return result;
+
+    final keys = stationOccurrenceKeys(stationNames);
+    for (var index = 0; index < result.length; index++) {
+      final custom = customTimes[keys[index]];
+      if (custom != null) result[index] = custom;
+    }
+    return result;
+  }
+}
+
+/// 简图站序里每站一个稳定键：归一化站名 + 同名站的第几次出现。
+///
+/// 展开/收起只会在已有站之间插入新站，不会改变同名站的先后次序，所以校准
+/// 通过时刻用的键在两种布局下都能落回同一站。
+List<String> stationOccurrenceKeys(List<String> stationNames) {
+  final counts = <String, int>{};
+  final keys = <String>[];
+  for (final name in stationNames) {
+    final normalized = normalizeStationName(name);
+    final occurrence = counts[normalized] ?? 0;
+    counts[normalized] = occurrence + 1;
+    keys.add('$normalized\u0000$occurrence');
+  }
+  return keys;
 }
 
 /// 在车次站序里找出上车站与下车站的下标。

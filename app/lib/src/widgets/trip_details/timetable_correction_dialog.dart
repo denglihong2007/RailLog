@@ -1,221 +1,562 @@
-import 'dart:math' as math;
-
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:raillog/src/models/train_schedule_stop.dart';
 import 'package:raillog/src/models/trip_schedule_times.dart';
 
-/// 手动矫正历史时刻表的中间站到发时刻。
+/// 编辑简图中间站的时刻。
 ///
-/// 矫正只用于当前这次查看：结果只替换页面里的 [TripScheduleTimes]，既不写回历史
-/// 时刻表，也不落到行程记录上。
-Future<List<TripScheduleStop>?> showTimetableCorrectionDialog(
+/// 打开底部时间线：点时刻胶囊打开系统时间选择器；停站/通过用行尾菜单切换；
+/// 没有历史数据的站也可以手动补。编辑只用于当前这次查看，不写回历史时刻表，
+/// 也不落到行程记录上。
+Future<TripScheduleOverlay?> showTimetableCorrectionDialog(
   BuildContext context, {
-  required TripScheduleTimes times,
+  required TripScheduleOverlay overlay,
+  required List<String> stationNames,
+  required List<StationScheduleTime?> scheduleTimes,
+  required DateTime baseDate,
 }) {
-  return showDialog<List<TripScheduleStop>>(
+  return showModalBottomSheet<TripScheduleOverlay>(
     context: context,
-    builder: (_) => _TimetableCorrectionDialog(times: times),
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    constraints: const BoxConstraints(maxWidth: 640),
+    builder: (_) => _TimetableCorrectionSheet(
+      overlay: overlay,
+      stationNames: stationNames,
+      scheduleTimes: scheduleTimes,
+      baseDate: baseDate,
+    ),
   );
 }
 
-class _TimetableCorrectionDialog extends StatefulWidget {
-  const _TimetableCorrectionDialog({required this.times});
+enum _EditKind { stop, pass }
 
-  final TripScheduleTimes times;
+class _EditRow {
+  _EditRow({
+    required this.label,
+    required this.key,
+    required this.kind,
+    this.historicalStopIndex,
+    this.arrival,
+    this.departure,
+    this.passTime,
+    this.originalPassTime,
+    this.passWasOverridden = false,
+  });
 
-  @override
-  State<_TimetableCorrectionDialog> createState() =>
-      _TimetableCorrectionDialogState();
+  final String label;
+  final String key;
+  final int? historicalStopIndex;
+  _EditKind kind;
+  DateTime? arrival;
+  DateTime? departure;
+  DateTime? passTime;
+  DateTime? originalPassTime;
+  bool passWasOverridden;
 }
 
-class _TimetableCorrectionDialogState
-    extends State<_TimetableCorrectionDialog> {
-  final Map<int, TextEditingController> _arrivalControllers = {};
-  final Map<int, TextEditingController> _departureControllers = {};
-  String? _error;
+class _TimetableCorrectionSheet extends StatefulWidget {
+  const _TimetableCorrectionSheet({
+    required this.overlay,
+    required this.stationNames,
+    required this.scheduleTimes,
+    required this.baseDate,
+  });
+
+  final TripScheduleOverlay overlay;
+  final List<String> stationNames;
+  final List<StationScheduleTime?> scheduleTimes;
+  final DateTime baseDate;
+
+  @override
+  State<_TimetableCorrectionSheet> createState() =>
+      _TimetableCorrectionSheetState();
+}
+
+class _TimetableCorrectionSheetState extends State<_TimetableCorrectionSheet> {
+  late List<TripScheduleStop> _stops;
+  late Map<String, DateTime> _passOverrides;
+  late Map<String, StationScheduleTime> _customTimes;
+  late List<_EditRow> _rows;
 
   @override
   void initState() {
     super.initState();
-    for (
-      var index = widget.times.boardingIndex + 1;
-      index < widget.times.alightingIndex;
-      index++
-    ) {
-      final stop = widget.times.stops[index];
-      _arrivalControllers[index] = TextEditingController(
-        text: _formatClock(stop.arrival),
-      );
-      _departureControllers[index] = TextEditingController(
-        text: _formatClock(stop.departure),
-      );
-    }
+    _loadFromOverlay();
   }
 
-  @override
-  void dispose() {
-    for (final controller in _arrivalControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _departureControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
+  void _loadFromOverlay() {
+    final times = widget.overlay.times;
+    _stops = List<TripScheduleStop>.of(
+      times?.stops ?? const <TripScheduleStop>[],
+    );
+    _passOverrides = Map<String, DateTime>.of(
+      times?.passTimeOverrides ?? const <String, DateTime>{},
+    );
+    _customTimes = Map<String, StationScheduleTime>.of(
+      widget.overlay.customTimes,
+    );
+    _rows = _buildRows();
   }
 
-  void _submit() {
-    _error = null;
-    final corrected = List<TripScheduleStop>.of(widget.times.stops);
-    for (final entry in _arrivalControllers.entries) {
-      final index = entry.key;
-      final stop = corrected[index];
-      final fallbackDate = _fallbackDate(index);
-      final arrivalText = entry.value.text.trim();
-      final departureText = _departureControllers[index]!.text.trim();
-      final arrival = _parseClock(
-        arrivalText,
-        original: stop.arrival ?? stop.departure ?? fallbackDate,
-      );
-      final departSource = stop.departure ?? stop.arrival ?? fallbackDate;
-      final departure = _parseClock(departureText, original: departSource);
-      if ((arrival == null && arrivalText.isNotEmpty) ||
-          (departure == null && departureText.isNotEmpty)) {
-        setState(() => _error = '时刻格式应为 HH:mm，例如 08:05');
-        return;
+  List<_EditRow> _buildRows() {
+    final keys = stationOccurrenceKeys(widget.stationNames);
+    final labels = _stationLabels(widget.stationNames);
+    final rows = <_EditRow>[];
+    for (var index = 1; index < widget.stationNames.length - 1; index++) {
+      final key = keys[index];
+      final custom = _customTimes[key];
+      final annotation = widget.scheduleTimes[index];
+      if (custom != null) {
+        rows.add(
+          _EditRow(
+            label: labels[index],
+            key: key,
+            kind: _EditKind.stop,
+            arrival: custom.arrival,
+            departure: custom.departure,
+          ),
+        );
+      } else if (annotation != null &&
+          annotation.isStop &&
+          annotation.stopIndex != null) {
+        final stop = _stops[annotation.stopIndex!];
+        rows.add(
+          _EditRow(
+            label: labels[index],
+            key: key,
+            kind: _EditKind.stop,
+            historicalStopIndex: annotation.stopIndex,
+            arrival: stop.arrival,
+            departure: stop.departure,
+          ),
+        );
+      } else if (annotation?.passTime != null) {
+        rows.add(
+          _EditRow(
+            label: labels[index],
+            key: key,
+            kind: _EditKind.pass,
+            passTime: annotation!.passTime,
+            originalPassTime: annotation.passTime,
+            passWasOverridden: _passOverrides.containsKey(key),
+          ),
+        );
+      } else {
+        rows.add(
+          _EditRow(label: labels[index], key: key, kind: _EditKind.stop),
+        );
       }
-      if (arrival != null && departure != null && departure.isBefore(arrival)) {
-        setState(() => _error = '发点不能早于到点');
-        return;
-      }
-      corrected[index] = TripScheduleStop(
-        stationName: stop.stationName,
-        arrival: arrival,
-        departure: departure,
-        mileage: stop.mileage,
-      );
     }
-    Navigator.of(context).pop(corrected);
+    return rows;
   }
 
-  DateTime _fallbackDate(int index) {
-    for (var probe = index; probe >= 0; probe--) {
-      final stop = widget.times.stops[probe];
-      final value = stop.arrival ?? stop.departure;
+  DateTime _rowBaseDate(int rowIndex) {
+    for (var index = rowIndex - 1; index >= 0; index--) {
+      final row = _rows[index];
+      final value = row.departure ?? row.arrival ?? row.passTime;
       if (value != null) return value;
     }
-    return DateTime.now();
+    return widget.baseDate;
+  }
+
+  Future<DateTime?> _pickTime(DateTime? current, DateTime fallback) async {
+    final initial = current ?? fallback;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+      helpText: '选择时刻',
+    );
+    if (picked == null) return null;
+    return DateTime(
+      initial.year,
+      initial.month,
+      initial.day,
+      picked.hour,
+      picked.minute,
+    );
+  }
+
+  Future<void> _editArrival(_EditRow row, int index) async {
+    final picked = await _pickTime(
+      row.arrival,
+      row.departure ?? _rowBaseDate(index),
+    );
+    if (picked == null) return;
+    setState(() {
+      row.arrival = picked;
+      final departure = row.departure;
+      if (departure != null &&
+          departure.isBefore(picked) &&
+          _sameDay(departure, picked)) {
+        row.departure = departure.add(const Duration(days: 1));
+      }
+    });
+  }
+
+  Future<void> _editDeparture(_EditRow row, int index) async {
+    var picked = await _pickTime(
+      row.departure,
+      row.arrival ?? _rowBaseDate(index),
+    );
+    if (picked == null) return;
+    final arrival = row.arrival;
+    if (arrival != null &&
+        picked.isBefore(arrival) &&
+        _sameDay(picked, arrival)) {
+      picked = picked.add(const Duration(days: 1));
+    }
+    setState(() => row.departure = picked);
+  }
+
+  Future<void> _editPass(_EditRow row, int index) async {
+    final picked = await _pickTime(row.passTime, _rowBaseDate(index));
+    if (picked == null) return;
+    setState(() => row.passTime = picked);
+  }
+
+  /// 点圆点直接在停站/通过之间切换。
+  void _toggleKind(_EditRow row) {
+    setState(() {
+      if (row.kind == _EditKind.stop) {
+        row.kind = _EditKind.pass;
+        row.passTime = row.departure ?? row.arrival;
+        row.originalPassTime = null;
+        row.passWasOverridden = row.passTime != null;
+      } else {
+        row.kind = _EditKind.stop;
+        row.arrival ??= row.passTime;
+      }
+    });
+  }
+
+  void _reset() => setState(_loadFromOverlay);
+
+  void _apply() {
+    final correctedStops = List<TripScheduleStop>.of(_stops);
+    final overrides = Map<String, DateTime>.of(_passOverrides);
+    final custom = Map<String, StationScheduleTime>.of(_customTimes);
+
+    for (final row in _rows) {
+      if (row.kind == _EditKind.pass) {
+        custom.remove(row.key);
+        final stopIndex = row.historicalStopIndex;
+        if (stopIndex != null) {
+          final stop = correctedStops[stopIndex];
+          correctedStops[stopIndex] = TripScheduleStop(
+            stationName: stop.stationName,
+            arrival: null,
+            departure: null,
+            mileage: stop.mileage,
+          );
+        }
+        if (row.passTime == row.originalPassTime) {
+          // 没动过：保留原有的校准（或保持「按均速估算」）。
+        } else if (row.passTime == null) {
+          overrides.remove(row.key);
+        } else {
+          overrides[row.key] = row.passTime!;
+        }
+      } else {
+        overrides.remove(row.key);
+        final stopIndex = row.historicalStopIndex;
+        if (stopIndex != null) {
+          final stop = correctedStops[stopIndex];
+          correctedStops[stopIndex] = TripScheduleStop(
+            stationName: stop.stationName,
+            arrival: row.arrival,
+            departure: row.departure,
+            mileage: stop.mileage,
+          );
+          custom.remove(row.key);
+        } else if (row.arrival == null && row.departure == null) {
+          custom.remove(row.key);
+        } else {
+          custom[row.key] = StationScheduleTime(
+            arrival: row.arrival,
+            departure: row.departure,
+          );
+        }
+      }
+    }
+
+    final times = widget.overlay.times;
+    final correctedTimes = times
+        ?.withStops(correctedStops)
+        .withPassTimeOverrides(overrides);
+    Navigator.of(context)
+        .pop(TripScheduleOverlay(times: correctedTimes, customTimes: custom));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final width = math.min(420.0, MediaQuery.sizeOf(context).width - 96);
-    return AlertDialog(
-      title: const Text('手动矫正时刻表'),
-      content: SizedBox(
-        width: width,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '矫正只对本次查看生效，不会改动历史时刻表。留空表示该站通过。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('编辑中间站时刻', style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 4),
+                      Text(
+                        '点时刻即可修改；没有数据的站可以手动补。',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                  tooltip: '关闭',
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: _rows.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text('本段没有可编辑的中间站'),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: _rows.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1, indent: 48),
+                    itemBuilder: (context, index) =>
+                        _buildRow(context, _rows[index], index),
+                  ),
+          ),
+          const Divider(height: 1),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+              child: Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: _reset,
+                    icon: const Icon(Icons.restart_alt, size: 18),
+                    label: const Text('撤销修改'),
+                  ),
+                  const Spacer(),
+                  FilledButton(onPressed: _apply, child: const Text('完成')),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 360),
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: _arrivalControllers.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (context, offset) => _buildStopRow(offset, theme),
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRow(BuildContext context, _EditRow row, int index) {
+    final theme = Theme.of(context);
+    final chips = row.kind == _EditKind.pass
+        ? <Widget>[_passChip(row, index)]
+        : <Widget>[
+            _timeChip(
+              '到',
+              row.arrival,
+              () => _editArrival(row, index),
+              () => setState(() => row.arrival = null),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
+            _timeChip(
+              '发',
+              row.departure,
+              () => _editDeparture(row, index),
+              () => setState(() => row.departure = null),
+            ),
+          ];
+    final name = Text(
+      row.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+    );
+    final marker = Tooltip(
+      message: row.kind == _EditKind.stop ? '点击改为通过站' : '点击改为停靠站',
+      child: InkWell(
+        onTap: () => _toggleKind(row),
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Center(child: _marker(theme, row.kind)),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 280) {
+            return Row(
+              children: [
+                marker,
+                const SizedBox(width: 4),
+                Expanded(child: name),
+                const SizedBox(width: 8),
+                ..._spacedChips(chips),
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              marker,
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    name,
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 6, runSpacing: 6, children: chips),
+                  ],
                 ),
               ),
             ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('应用')),
-      ],
-    );
-  }
-
-  Widget _buildStopRow(int offset, ThemeData theme) {
-    final index = _arrivalControllers.keys.elementAt(offset);
-    final station = widget.times.stops[index].stationName;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            station,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        _buildClockField(_arrivalControllers[index]!, '到'),
-        const SizedBox(width: 8),
-        _buildClockField(_departureControllers[index]!, '发'),
-      ],
-    );
-  }
-
-  Widget _buildClockField(TextEditingController controller, String label) {
-    return SizedBox(
-      width: 84,
-      child: TextField(
-        controller: controller,
-        keyboardType: TextInputType.datetime,
-        inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'[0-9:]')),
-          LengthLimitingTextInputFormatter(5),
-        ],
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: 'HH:mm',
-          isDense: true,
-          border: const OutlineInputBorder(),
-        ),
-        style: Theme.of(context).textTheme.bodyMedium
-            ?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+          );
+        },
       ),
     );
   }
+
+  List<Widget> _spacedChips(List<Widget> chips) => [
+    for (var index = 0; index < chips.length; index++) ...[
+      if (index > 0) const SizedBox(width: 6),
+      chips[index],
+    ],
+  ];
+
+  Widget _marker(ThemeData theme, _EditKind kind) {
+    final colors = theme.colorScheme;
+    final isPass = kind == _EditKind.pass;
+    return Container(
+      width: 15,
+      height: 15,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isPass ? colors.surfaceContainerLowest : colors.primary,
+        border: Border.all(color: colors.primary, width: 2),
+      ),
+    );
+  }
+
+  Widget _timeChip(
+    String label,
+    DateTime? value,
+    VoidCallback onTap,
+    VoidCallback onClear,
+  ) {
+    final colors = Theme.of(context).colorScheme;
+    if (value == null) {
+      return ActionChip(
+        avatar: Icon(Icons.add, size: 16, color: colors.onSurfaceVariant),
+        label: Text('$label 时刻'),
+        onPressed: onTap,
+        backgroundColor: colors.surfaceContainerHigh,
+        side: BorderSide.none,
+        shape: const StadiumBorder(),
+        labelStyle: TextStyle(color: colors.onSurfaceVariant),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+      );
+    }
+    return InputChip(
+      label: Text('$label ${_clock(value)}'),
+      onPressed: onTap,
+      onDeleted: onClear,
+      deleteIcon: const Icon(Icons.close, size: 16),
+      backgroundColor: colors.secondaryContainer,
+      side: BorderSide.none,
+      shape: const StadiumBorder(),
+      labelStyle: TextStyle(
+        color: colors.onSecondaryContainer,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+    );
+  }
+
+  Widget _passChip(_EditRow row, int index) {
+    final colors = Theme.of(context).colorScheme;
+    final value = row.passTime;
+    final canClear = row.passWasOverridden || row.historicalStopIndex != null;
+    if (value == null) {
+      return ActionChip(
+        avatar: Icon(Icons.add, size: 16, color: colors.onSurfaceVariant),
+        label: const Text('通过时刻'),
+        onPressed: () => _editPass(row, index),
+        backgroundColor: colors.surfaceContainerHigh,
+        side: BorderSide.none,
+        shape: const StadiumBorder(),
+        labelStyle: TextStyle(color: colors.onSurfaceVariant),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+      );
+    }
+    return InputChip(
+      label: Text('通过 ${_clock(value)}'),
+      onPressed: () => _editPass(row, index),
+      onDeleted: canClear ? () => setState(() => row.passTime = null) : null,
+      deleteIcon: canClear ? const Icon(Icons.close, size: 16) : null,
+      backgroundColor: colors.surfaceContainerHigh,
+      side: BorderSide.none,
+      shape: const StadiumBorder(),
+      labelStyle: TextStyle(
+        color: colors.onSurfaceVariant,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      labelPadding: const EdgeInsets.symmetric(horizontal: 3),
+    );
+  }
 }
 
-String _formatClock(DateTime? value) {
-  if (value == null) return '';
-  return '${value.hour.toString().padLeft(2, '0')}:'
-      '${value.minute.toString().padLeft(2, '0')}';
+/// 同名站出现多次（折返）时标出第几次，避免编辑到错误的那个。
+List<String> _stationLabels(List<String> stationNames) {
+  final totals = <String, int>{};
+  for (final name in stationNames) {
+    final normalized = normalizeStationName(name);
+    totals[normalized] = (totals[normalized] ?? 0) + 1;
+  }
+  final seen = <String, int>{};
+  final labels = <String>[];
+  for (final name in stationNames) {
+    final normalized = normalizeStationName(name);
+    final occurrence = (seen[normalized] ?? 0) + 1;
+    seen[normalized] = occurrence;
+    final total = totals[normalized] ?? 1;
+    labels.add(total > 1 ? '$name（第$occurrence次）' : name);
+  }
+  return labels;
 }
 
-/// 把 `HH:mm` 贴回 [original] 的日期；空串表示没有时刻。
-DateTime? _parseClock(String text, {required DateTime original}) {
-  final value = text.trim();
-  if (value.isEmpty) return null;
-  final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(value);
-  if (match == null) return null;
-  final hour = int.parse(match.group(1)!);
-  final minute = int.parse(match.group(2)!);
-  if (hour > 23 || minute > 59) return null;
-  return DateTime(original.year, original.month, original.day, hour, minute);
-}
+String _clock(DateTime value) =>
+    '${value.hour.toString().padLeft(2, '0')}:'
+    '${value.minute.toString().padLeft(2, '0')}';
+
+bool _sameDay(DateTime first, DateTime second) =>
+    first.year == second.year &&
+    first.month == second.month &&
+    first.day == second.day;
