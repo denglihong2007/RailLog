@@ -92,7 +92,9 @@
 
 <Badge type="tip" text="POST" /> `/api/oauth/revoke`
 
-请求体为 `application/x-www-form-urlencoded`，携带 `token`，客户端凭据使用 HTTP Basic。无论令牌是否存在都返回 `200`。
+请求体为 `application/x-www-form-urlencoded`，携带 `token`，客户端凭据使用 HTTP Basic。`token_type_hint` 可选，服务端会自动判断令牌类型。
+
+撤销 `refresh_token` 时，同一应用下该用户的访问令牌会一并失效，**解绑请撤销刷新令牌**；只撤销访问令牌时不影响刷新令牌。无论令牌是否存在都返回 `200`，避免泄露令牌状态。
 
 用户解除授权使用 `DELETE /api/oauth/consents/{clientId}`（需要用户的 RailLog 登录令牌）；解除后该应用名下这个用户的访问令牌和刷新令牌会全部失效。
 

@@ -290,21 +290,51 @@ public sealed partial class RailLogDatabase
         return await command.ExecuteNonQueryAsync() == 1;
     }
 
+    /// <summary>
+    /// 撤销令牌。按 RFC 7009：撤销刷新令牌时一并作废同一授权下的访问令牌；
+    /// 只撤销访问令牌时，刷新令牌仍然有效。解绑请撤销 refresh_token。
+    /// </summary>
     public async Task RevokeOAuthTokenAsync(string tokenHash, string clientId)
     {
         await using var connection = OpenConnection();
         await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+
+        // 先判断是不是刷新令牌；访问令牌与刷新令牌用的是同一套随机格式，
+        // 但两表分别存储，不会同时命中。
+        await using var lookup = connection.CreateCommand();
+        lookup.CommandText = """
+            SELECT UserId FROM OAuthRefreshTokens
+            WHERE TokenHash = $tokenHash AND ClientId = $clientId
+            LIMIT 1;
+            """;
+        lookup.Parameters.AddWithValue("$tokenHash", tokenHash);
+        lookup.Parameters.AddWithValue("$clientId", clientId);
+        var refreshOwner = await lookup.ExecuteScalarAsync() as string;
+        if (refreshOwner is not null)
+        {
+            await using var revokeGrant = connection.CreateCommand();
+            revokeGrant.CommandText = """
+                UPDATE OAuthAccessTokens SET RevokedAt = $now
+                WHERE UserId = $userId AND ClientId = $clientId AND RevokedAt IS NULL;
+                UPDATE OAuthRefreshTokens SET RevokedAt = $now
+                WHERE UserId = $userId AND ClientId = $clientId AND RevokedAt IS NULL;
+                """;
+            revokeGrant.Parameters.AddWithValue("$userId", refreshOwner);
+            revokeGrant.Parameters.AddWithValue("$clientId", clientId);
+            revokeGrant.Parameters.AddWithValue("$now", ToDb(DateTime.Now));
+            await revokeGrant.ExecuteNonQueryAsync();
+            return;
+        }
+
+        await using var revokeAccess = connection.CreateCommand();
+        revokeAccess.CommandText = """
             UPDATE OAuthAccessTokens SET RevokedAt = $now
             WHERE TokenHash = $tokenHash AND ClientId = $clientId AND RevokedAt IS NULL;
-            UPDATE OAuthRefreshTokens SET RevokedAt = $now
-            WHERE TokenHash = $tokenHash AND ClientId = $clientId AND RevokedAt IS NULL;
             """;
-        command.Parameters.AddWithValue("$tokenHash", tokenHash);
-        command.Parameters.AddWithValue("$clientId", clientId);
-        command.Parameters.AddWithValue("$now", ToDb(DateTime.Now));
-        await command.ExecuteNonQueryAsync();
+        revokeAccess.Parameters.AddWithValue("$tokenHash", tokenHash);
+        revokeAccess.Parameters.AddWithValue("$clientId", clientId);
+        revokeAccess.Parameters.AddWithValue("$now", ToDb(DateTime.Now));
+        await revokeAccess.ExecuteNonQueryAsync();
     }
 
     public async Task UpsertOAuthConsentAsync(string userId, string clientId, string scope)
