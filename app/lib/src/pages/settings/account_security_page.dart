@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:raillog/src/models/user_profile.dart';
 import 'package:raillog/src/pages/auth_page.dart';
 import 'package:raillog/src/pages/password_reset_page.dart';
+import 'package:raillog/src/pages/settings/authorized_apps_page.dart';
 import 'package:raillog/src/pages/settings/profile_edit_page.dart';
 import 'package:raillog/src/services/session_service.dart';
 import 'package:raillog/src/widgets/app_card.dart';
@@ -148,6 +149,17 @@ Widget _securityCard(BuildContext context, UserProfile user) {
           subtitle: Text('通过 ${user.email} 接收验证码'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _resetPassword(context, user),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.apps_outlined),
+          title: const Text('已授权的应用'),
+          subtitle: const Text('查看并解除第三方应用对你的账户授权'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push<void>(
+            m3PageRoute(builder: (_) => const AuthorizedAppsPage()),
+          ),
         ),
         const Divider(height: 1),
         ListTile(
