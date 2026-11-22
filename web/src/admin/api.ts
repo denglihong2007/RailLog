@@ -951,4 +951,44 @@ export const api = {
   timetableUpstream() {
     return request<AdminTimetableUpstream>('/api/admin/timetable-sync/upstream')
   },
+  oauthClients() {
+    return request<OAuthClientSummary[]>('/api/admin/oauth/clients')
+  },
+  createOAuthClient(input: CreateOAuthClientInput) {
+    return request<CreateOAuthClientResult>('/api/admin/oauth/clients', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+  revokeOAuthClient(clientId: string) {
+    return request<void>(
+      `/api/admin/oauth/clients/${encodeURIComponent(clientId)}/revoke`,
+      { method: 'POST' },
+    )
+  },
+}
+
+export interface OAuthClientSummary {
+  clientId: string
+  name: string
+  logoUrl: string | null
+  redirectUris: string[]
+  scopes: string[]
+  createdAt: string
+  revokedAt: string | null
+}
+
+export interface CreateOAuthClientInput {
+  name: string
+  logoUrl: string | null
+  redirectUris: string[]
+  scopes: string[]
+}
+
+export interface CreateOAuthClientResult {
+  clientId: string
+  clientSecret: string
+  name: string
+  redirectUris: string[]
+  scopes: string[]
 }

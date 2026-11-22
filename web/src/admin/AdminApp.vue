@@ -8,6 +8,7 @@ import {
   Copy,
   Database,
   FileKey,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Megaphone,
@@ -32,6 +33,7 @@ import PdfDownloadView from './components/PdfDownloadView.vue'
 import BackupView from './components/BackupView.vue'
 import TimetableSyncView from './components/TimetableSyncView.vue'
 import AuditLogView from './components/AuditLogView.vue'
+import OAuthClientsView from './components/OAuthClientsView.vue'
 import ToastHost from './components/ToastHost.vue'
 import { toast } from './toast'
 
@@ -48,6 +50,7 @@ type ViewName =
   | 'pdf-downloads'
   | 'backups'
   | 'timetable-sync'
+  | 'oauth-clients'
   | 'audit-logs'
 
 type ReviewTab = 'reviews' | 'reactions' | 'users'
@@ -106,6 +109,7 @@ const navGroups: NavGroup[] = [
       { view: 'pdf-downloads', label: 'PDF 下载管理', path: '/pdf-downloads', icon: FileKey },
       { view: 'backups', label: '数据备份', path: '/backups', icon: Database },
       { view: 'timetable-sync', label: '时刻表同步', path: '/timetable-sync', icon: CalendarClock },
+      { view: 'oauth-clients', label: '合作应用', path: '/oauth-clients', icon: KeyRound },
       { view: 'audit-logs', label: '操作日志', path: '/audit-logs', icon: ClipboardList },
     ],
   },
@@ -124,6 +128,7 @@ const titles: Record<ViewName, { title: string; subtitle: string }> = {
   'pdf-downloads': { title: 'PDF 下载管理', subtitle: '管理网页端 PDF 下载密码与请求 Key' },
   backups: { title: '数据备份', subtitle: '生成、下载与清理数据库备份' },
   'timetable-sync': { title: '时刻表同步', subtitle: '查看与触发历史时刻表的每日同步' },
+  'oauth-clients': { title: '合作应用', subtitle: '登记第三方 OAuth 客户端，交付凭证并随时停用' },
   'audit-logs': { title: '操作日志', subtitle: '管理员在后台执行的关键操作留痕' },
 }
 
@@ -146,6 +151,7 @@ function parseRoute(): Route {
   if (first === 'pdf-downloads') return { view: 'pdf-downloads' }
   if (first === 'backups') return { view: 'backups' }
   if (first === 'timetable-sync') return { view: 'timetable-sync' }
+  if (first === 'oauth-clients') return { view: 'oauth-clients' }
   if (first === 'audit-logs') return { view: 'audit-logs' }
   if (first === 'reviews') {
     const rawTab = params.get('tab')
@@ -348,6 +354,7 @@ onBeforeUnmount(() => {
         <PdfDownloadView v-else-if="route.view === 'pdf-downloads'" />
         <BackupView v-else-if="route.view === 'backups'" />
         <TimetableSyncView v-else-if="route.view === 'timetable-sync'" />
+        <OAuthClientsView v-else-if="route.view === 'oauth-clients'" />
         <AuditLogView v-else-if="route.view === 'audit-logs'" />
       </main>
     </div>
