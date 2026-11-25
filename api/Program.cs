@@ -161,6 +161,10 @@ builder.Services.AddCors(options => options.AddPolicy("amap-proxy", policy =>
     policy.AllowAnyOrigin().WithMethods("GET").AllowAnyHeader()));
 builder.Services.AddCors(options => options.AddPolicy("public-api", policy =>
     policy.AllowAnyOrigin().WithMethods("GET").AllowAnyHeader()));
+// 公开客户端（H5 / 浏览器）直接调用 token、userinfo 与 revoke，必须允许跨域。
+// 这些端点不依赖 cookie 或 secret，PKCE 绑定授权码，允许任意 Origin 是安全的。
+builder.Services.AddCors(options => options.AddPolicy("oauth-public", policy =>
+    policy.AllowAnyOrigin().WithMethods("GET", "POST").AllowAnyHeader()));
 builder.Services.AddControllers();
 
 var app = builder.Build();

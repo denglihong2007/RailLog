@@ -41,14 +41,16 @@ public sealed record CreateOAuthClientRequest(
     string Name,
     string? LogoUrl,
     IReadOnlyList<string>? RedirectUris,
-    IReadOnlyList<string>? Scopes);
+    IReadOnlyList<string>? Scopes,
+    bool PublicClient = false);
 
 public sealed record CreateOAuthClientResponse(
     string ClientId,
-    string ClientSecret,
+    string? ClientSecret,
     string Name,
     IReadOnlyList<string> RedirectUris,
-    IReadOnlyList<string> Scopes);
+    IReadOnlyList<string> Scopes,
+    bool PublicClient);
 
 public sealed record OAuthClientSummary(
     string ClientId,
@@ -56,5 +58,6 @@ public sealed record OAuthClientSummary(
     string? LogoUrl,
     IReadOnlyList<string> RedirectUris,
     IReadOnlyList<string> Scopes,
+    bool PublicClient,
     DateTime CreatedAt,
     DateTime? RevokedAt);

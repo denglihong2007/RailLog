@@ -15,6 +15,17 @@
 
 请通过仓库 issue 或邮件联系维护者登记，不支持自助注册。
 
+## 客户端类型
+
+| 类型 | 适用场景 | 认证方式 |
+| --- | --- | --- |
+| 机密客户端 | 服务端或自建后端 | `client_secret` + `code_verifier`，换 token 时使用 HTTP Basic |
+| 公开客户端 | 浏览器 / H5，无法保管 secret | 仅 `client_id` + `code_verifier`（PKCE） |
+
+公开客户端不生成 `client_secret`，换 token 时只传 `client_id`。任何 secret 都不能出现在前端代码里；App 与 H5 也不能共用同一个客户端凭据。
+
+`redirect_uri` **不能包含 `#` 片段**（RFC 6749 §3.1.2）。授权码与 `state` 通过查询参数返回，例如 `https://example.com/oauth/callback?code=...&state=...`。如果前端使用 hash 路由，请让回调路径由普通路径承接，再从 `location.search` 读取参数。
+
 ## 流程
 
 1. 客户端生成 PKCE 参数：`code_verifier` 为 43 至 128 位无保留字符，`code_challenge = BASE64URL(SHA256(code_verifier))`。
@@ -46,7 +57,7 @@
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `client_id` | 是 | 登记的应用标识。 |
-| `redirect_uri` | 是 | 必须与登记值完全一致。 |
+| `redirect_uri` | 是 | 必须与登记值完全一致，且不能包含 `#` 片段。 |
 | `response_type` | 是 | 固定为 `code`。 |
 | `scope` | 否 | 默认 `profile`。 |
 | `state` | 是 | 客户端生成，回调时原样返回。 |

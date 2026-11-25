@@ -27,6 +27,7 @@ public sealed class AdminOAuthController(
                 client.LogoUrl,
                 client.RedirectUris,
                 client.Scopes,
+                client.ClientSecretHash is null,
                 client.CreatedAt,
                 client.RevokedAt))
             .ToList());
@@ -68,17 +69,19 @@ public sealed class AdminOAuthController(
             return BadRequest(new MessageResponse("图标地址必须是 https 链接"));
 
         var clientId = OAuthCrypto.NewClientId();
-        var clientSecret = OAuthCrypto.NewToken();
+        // 公开客户端（浏览器 / H5）没有 secret，只能依靠 PKCE；
+        // 机密客户端的 secret 只在创建时返回一次。
+        var clientSecret = request.PublicClient ? null : OAuthCrypto.NewToken();
         await database.CreateOAuthClientAsync(
             clientId,
             name,
             string.IsNullOrEmpty(logoUrl) ? null : logoUrl,
-            RailLogDatabase.HashToken(clientSecret),
+            clientSecret is null ? null : RailLogDatabase.HashToken(clientSecret),
             redirectUris,
             scopes);
         await AuditAsync("oauth-client.create", clientId, name);
         return Ok(new CreateOAuthClientResponse(
-            clientId, clientSecret, name, redirectUris, scopes));
+            clientId, clientSecret, name, redirectUris, scopes, request.PublicClient));
     }
 
     [HttpPost("clients/{clientId}/revoke")]

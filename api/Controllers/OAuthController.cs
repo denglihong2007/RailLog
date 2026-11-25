@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.WebUtilities;
@@ -100,6 +101,7 @@ public sealed class OAuthController(RailLogDatabase database) : ControllerBase
 
     [HttpPost("token")]
     [AllowAnonymous]
+    [EnableCors("oauth-public")]
     [EnableRateLimiting("oauth-token")]
     public async Task<IActionResult> Token()
     {
@@ -128,6 +130,7 @@ public sealed class OAuthController(RailLogDatabase database) : ControllerBase
 
     [HttpPost("revoke")]
     [AllowAnonymous]
+    [EnableCors("oauth-public")]
     [EnableRateLimiting("oauth-token")]
     public async Task<IActionResult> Revoke()
     {
@@ -150,6 +153,7 @@ public sealed class OAuthController(RailLogDatabase database) : ControllerBase
     }
 
     [HttpGet("userinfo")]
+    [EnableCors("oauth-public")]
     [Authorize(AuthenticationSchemes = OAuthTokenAuthenticationHandler.SchemeName)]
     public async Task<ActionResult<OAuthUserInfoResponse>> UserInfo()
     {
