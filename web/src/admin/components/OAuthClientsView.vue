@@ -32,6 +32,7 @@ const form = reactive({
   name: '',
   logoUrl: '',
   redirectUris: '',
+  publicClient: false,
 })
 
 async function load(): Promise<void> {
@@ -50,6 +51,7 @@ function openCreate(): void {
   form.name = ''
   form.logoUrl = ''
   form.redirectUris = ''
+  form.publicClient = false
   showEditor.value = true
 }
 
@@ -80,6 +82,7 @@ async function submit(): Promise<void> {
       logoUrl: form.logoUrl.trim() || null,
       redirectUris,
       scopes: ['profile'],
+      publicClient: form.publicClient,
     })
     showEditor.value = false
     await load()
@@ -162,6 +165,7 @@ onMounted(load)
               <th>应用</th>
               <th>client_id</th>
               <th>回调地址</th>
+              <th>类型</th>
               <th>权限</th>
               <th>状态</th>
               <th>登记时间</th>
@@ -194,6 +198,11 @@ onMounted(load)
                 <div class="redirect-list">
                   <code v-for="uri in item.redirectUris" :key="uri">{{ uri }}</code>
                 </div>
+              </td>
+              <td>
+                <span class="pill neutral">
+                  {{ item.publicClient ? '公开' : '机密' }}
+                </span>
               </td>
               <td>
                 <span v-for="scope in item.scopes" :key="scope" class="pill neutral">
@@ -268,10 +277,25 @@ onMounted(load)
               <textarea
                 v-model="form.redirectUris"
                 rows="3"
-                placeholder="railkale://oauth/callback"
+                placeholder="https://example.com/oauth/callback"
               />
-              <span class="field-hint">每行一个，必须与对方实际使用的一致。</span>
+              <span class="field-hint">
+                每行一个，必须与对方实际使用的一致；不能包含 # 片段，授权码通过查询参数返回。
+              </span>
             </label>
+            <div class="field">
+              <span class="field-label">客户端类型</span>
+              <label class="switch-row">
+                <span>
+                  <strong>公开客户端</strong>
+                  <small>浏览器 / H5 使用，不生成 secret，仅靠 PKCE</small>
+                </span>
+                <input v-model="form.publicClient" type="checkbox" class="switch" />
+              </label>
+              <span class="field-hint">
+                关闭时为机密客户端：secret 只保存在服务端，换 token 时使用 HTTP Basic。
+              </span>
+            </div>
             <div class="field">
               <span class="field-label">权限</span>
               <div><span class="pill neutral">profile</span></div>
@@ -305,8 +329,16 @@ onMounted(load)
         >
           <header class="modal-head">
             <div>
-              <h2 id="oauth-secret-title">凭证只显示这一次</h2>
-              <p>关闭后无法再次查看 client_secret，只能停用后重新登记</p>
+              <h2 id="oauth-secret-title">
+                {{ created.publicClient ? '登记完成' : '凭证只显示这一次' }}
+              </h2>
+              <p>
+                {{
+                  created.publicClient
+                    ? '公开客户端不需要 client_secret，换 token 时只传 client_id 与 code_verifier'
+                    : '关闭后无法再次查看 client_secret，只能停用后重新登记'
+                }}
+              </p>
             </div>
           </header>
 
@@ -325,7 +357,7 @@ onMounted(load)
                 </button>
               </div>
             </div>
-            <div class="secret-row">
+            <div v-if="created.clientSecret" class="secret-row">
               <span class="field-label">client_secret</span>
               <div class="secret-value">
                 <code>{{ created.clientSecret }}</code>
@@ -341,7 +373,13 @@ onMounted(load)
             </div>
             <div class="state-card inline error">
               <ShieldAlert :size="18" />
-              <span>不要通过公开渠道发送 client_secret，也不要把 secret 打进客户端安装包。</span>
+              <span>
+                {{
+                  created.publicClient
+                    ? '公开客户端不要把任何 secret 放进前端代码；授权码必须配合 code_verifier 才能兑换。'
+                    : '不要通过公开渠道发送 client_secret，也不要把 secret 打进客户端安装包。'
+                }}
+              </span>
             </div>
           </div>
 

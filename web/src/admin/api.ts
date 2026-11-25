@@ -974,6 +974,7 @@ export interface OAuthClientSummary {
   logoUrl: string | null
   redirectUris: string[]
   scopes: string[]
+  publicClient: boolean
   createdAt: string
   revokedAt: string | null
 }
@@ -983,12 +984,14 @@ export interface CreateOAuthClientInput {
   logoUrl: string | null
   redirectUris: string[]
   scopes: string[]
+  publicClient: boolean
 }
 
 export interface CreateOAuthClientResult {
   clientId: string
-  clientSecret: string
+  clientSecret: string | null
   name: string
   redirectUris: string[]
   scopes: string[]
+  publicClient: boolean
 }
